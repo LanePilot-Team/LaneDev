@@ -1,0 +1,13 @@
+{
+  "source": "Overpass API (openstreetmap.org, ODbL)",
+  "area": "楠梓區 (relation 2106299)",
+  "fetched_at": "2026-07-05T17:09:18",
+  "roads": 1955,
+  "buildings": 249,
+  "building_bbox": [
+    22.72,
+    120.264,
+    22.74,
+    120.292
+  ]
+}

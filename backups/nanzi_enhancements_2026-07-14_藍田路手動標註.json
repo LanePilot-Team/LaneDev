@@ -1,0 +1,4470 @@
+{
+  "format": "navsim-enhancement-v0.4",
+  "exported_at": "2026-07-14T01:53:15.336Z",
+  "author": "rex",
+  "journal": [
+    {
+      "seq": 1,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325298"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/385650788"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750703"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750709"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/93228856"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "moto_forward": 1
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/24275091"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 0
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750705"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325299"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/772722766"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1
+      }
+    },
+    {
+      "seq": 11,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23674288"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 12,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/93228845"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 13,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325300"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 14,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 15,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715869"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 16,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715871"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 17,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715873"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "seq": 18,
+      "ts": "2026-07-02T12:00:00+08:00",
+      "author": "seed",
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715875"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1
+      }
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 4,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 1,
+        "turn_lanes": "through|through|through|through"
+      },
+      "seq": 19,
+      "ts": "2026-07-02T08:08:18.213Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "turn_lanes": "through"
+      },
+      "seq": 20,
+      "ts": "2026-07-02T08:08:28.374Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325298"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "turn_lanes": "through|through|right"
+      },
+      "seq": 21,
+      "ts": "2026-07-02T08:12:03.883Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325298"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "turn_lanes": "through|through"
+      },
+      "seq": 22,
+      "ts": "2026-07-02T08:12:21.993Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325298"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "turn_lanes": "through|through"
+      },
+      "seq": 23,
+      "ts": "2026-07-02T08:12:28.936Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "turn_lanes": "through|through"
+      },
+      "seq": 24,
+      "ts": "2026-07-03T13:58:57.490Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "turn_lanes": "through"
+      },
+      "seq": 25,
+      "ts": "2026-07-03T13:59:04.356Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 26,
+      "ts": "2026-07-03T14:05:09.560Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 1,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 27,
+      "ts": "2026-07-03T14:05:16.855Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 1,
+        "turn_lanes": "through"
+      },
+      "seq": 28,
+      "ts": "2026-07-03T14:05:56.344Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325301"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "turn_lanes": "through"
+      },
+      "seq": 29,
+      "ts": "2026-07-03T14:14:18.262Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715902"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "turn_lanes": "left|through"
+      },
+      "seq": 68,
+      "ts": "2026-07-08T15:22:05.595Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/267715902"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 0,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "turn_lanes": "left|through|through"
+      },
+      "seq": 69,
+      "ts": "2026-07-08T15:22:12.927Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 6.4,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 70,
+      "ts": "2026-07-10T07:07:59.842Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 4,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 71,
+      "ts": "2026-07-10T07:08:17.828Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 72,
+      "ts": "2026-07-10T07:08:24.023Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 73,
+      "ts": "2026-07-10T07:08:31.904Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "turn_lanes": "through|through"
+      },
+      "seq": 74,
+      "ts": "2026-07-10T07:09:03.996Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "turn_lanes": "through|through"
+      },
+      "seq": 75,
+      "ts": "2026-07-10T07:09:09.417Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 1.6,
+        "turn_lanes": "through|through"
+      },
+      "seq": 76,
+      "ts": "2026-07-10T07:09:22.940Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "turn_lanes": "through|through"
+      },
+      "seq": 77,
+      "ts": "2026-07-10T07:09:28.528Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 78,
+      "ts": "2026-07-10T07:09:40.998Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 79,
+      "ts": "2026-07-10T07:09:53.292Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "turn_lanes": "through|through"
+      },
+      "seq": 80,
+      "ts": "2026-07-10T07:09:59.666Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "turn_lanes": "through|through|through"
+      },
+      "seq": 81,
+      "ts": "2026-07-10T07:10:44.373Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through"
+      },
+      "seq": 82,
+      "ts": "2026-07-10T16:50:59.889Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through"
+      },
+      "seq": 83,
+      "ts": "2026-07-10T16:57:42.357Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through"
+      },
+      "seq": 84,
+      "ts": "2026-07-10T16:57:50.465Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405420"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 1.6,
+        "center_kind": "island",
+        "turn_lanes": "through"
+      },
+      "seq": 85,
+      "ts": "2026-07-10T16:58:09.943Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405420"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 1.6,
+        "center_kind": "hatch",
+        "turn_lanes": "through"
+      },
+      "seq": 86,
+      "ts": "2026-07-10T16:58:18.477Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405420"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 1,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through"
+      },
+      "seq": 87,
+      "ts": "2026-07-10T16:58:40.153Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/24275640"
+      },
+      "fields": {
+        "lanes_forward": 1,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through"
+      },
+      "seq": 88,
+      "ts": "2026-07-10T17:00:58.404Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750703"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "center_m": 0,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 89,
+      "ts": "2026-07-10T17:10:50.180Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through"
+      },
+      "seq": 90,
+      "ts": "2026-07-10T17:10:58.614Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 91,
+      "ts": "2026-07-10T17:11:07.219Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 92,
+      "ts": "2026-07-10T17:11:11.834Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 1.6,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 93,
+      "ts": "2026-07-10T17:11:15.684Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405423"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "center_m": 1.6,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 94,
+      "ts": "2026-07-10T17:11:27.170Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750703"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 1,
+        "moto_backward": 1,
+        "center_m": 1.6,
+        "center_kind": "island",
+        "turn_lanes": "through|through"
+      },
+      "seq": 95,
+      "ts": "2026-07-10T17:11:36.215Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/24275640"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 1,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through"
+      },
+      "seq": 96,
+      "ts": "2026-07-10T17:14:38.028Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/24275640"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 0,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through"
+      },
+      "seq": 97,
+      "ts": "2026-07-10T17:14:41.528Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 98,
+      "ts": "2026-07-13T23:34:10.234Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 99,
+      "ts": "2026-07-13T23:34:29.608Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 100,
+      "ts": "2026-07-13T23:34:37.200Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 101,
+      "ts": "2026-07-13T23:34:42.805Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 102,
+      "ts": "2026-07-13T23:35:43.796Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 103,
+      "ts": "2026-07-13T23:35:48.649Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 104,
+      "ts": "2026-07-13T23:35:54.000Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 105,
+      "ts": "2026-07-13T23:37:28.410Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through;right"
+      },
+      "seq": 106,
+      "ts": "2026-07-13T23:40:20.370Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right"
+      },
+      "seq": 107,
+      "ts": "2026-07-13T23:40:37.389Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 108,
+      "ts": "2026-07-14T00:09:17.938Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 109,
+      "ts": "2026-07-14T00:09:27.494Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|left",
+        "turn_lanes_backward": "right|through"
+      },
+      "seq": 110,
+      "ts": "2026-07-14T00:09:33.620Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "right|through"
+      },
+      "seq": 111,
+      "ts": "2026-07-14T00:09:54.491Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "right|through"
+      },
+      "seq": 112,
+      "ts": "2026-07-14T00:09:57.239Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 113,
+      "ts": "2026-07-14T00:10:09.108Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/259481979"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 114,
+      "ts": "2026-07-14T00:10:29.056Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/259481979"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 3,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right",
+        "turn_lanes_backward": "left|through|through"
+      },
+      "seq": 115,
+      "ts": "2026-07-14T00:10:43.215Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 116,
+      "ts": "2026-07-14T00:10:54.911Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/1080696860"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 117,
+      "ts": "2026-07-14T00:11:05.094Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "left|right"
+      },
+      "seq": 118,
+      "ts": "2026-07-14T00:11:39.475Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/1080696860"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 119,
+      "ts": "2026-07-14T00:12:33.552Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "left;right|right"
+      },
+      "seq": 120,
+      "ts": "2026-07-14T00:21:40.598Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/1080696860"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through;right",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 121,
+      "ts": "2026-07-14T00:22:18.979Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/1080696860"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 122,
+      "ts": "2026-07-14T00:22:46.699Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/259481980"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 123,
+      "ts": "2026-07-14T00:25:02.799Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/259481980"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 124,
+      "ts": "2026-07-14T00:25:08.689Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 125,
+      "ts": "2026-07-14T00:28:25.647Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 126,
+      "ts": "2026-07-14T00:28:33.635Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/1080697129"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through",
+        "turn_lanes_backward": "left|through"
+      },
+      "seq": 127,
+      "ts": "2026-07-14T00:28:49.577Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "left;right|right"
+      },
+      "seq": 128,
+      "ts": "2026-07-14T00:40:13.851Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/23875893@node/588290641"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 129,
+      "ts": "2026-07-14T00:40:13.851Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/23875893@node/7391695984~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 130,
+      "ts": "2026-07-14T00:40:13.851Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/7391695984"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "left;right|right"
+      },
+      "seq": 131,
+      "ts": "2026-07-14T00:40:38.877Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/23875893@b/259481979"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 3,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "left|through|through"
+      },
+      "seq": 132,
+      "ts": "2026-07-14T00:41:48.222Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 133,
+      "ts": "2026-07-14T00:42:29.302Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/343046018"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 134,
+      "ts": "2026-07-14T00:42:29.302Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 135,
+      "ts": "2026-07-14T00:42:42.754Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/343046018"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 136,
+      "ts": "2026-07-14T00:42:42.754Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 137,
+      "ts": "2026-07-14T00:42:50.160Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 138,
+      "ts": "2026-07-14T00:42:50.161Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 139,
+      "ts": "2026-07-14T00:42:54.879Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 140,
+      "ts": "2026-07-14T00:42:54.879Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 141,
+      "ts": "2026-07-14T00:43:14.532Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 142,
+      "ts": "2026-07-14T00:43:19.254Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 143,
+      "ts": "2026-07-14T00:43:19.254Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 144,
+      "ts": "2026-07-14T00:43:22.678Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 145,
+      "ts": "2026-07-14T00:43:22.678Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/12658227961"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 146,
+      "ts": "2026-07-14T00:44:06.836Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/12658227961"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 147,
+      "ts": "2026-07-14T00:44:20.616Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/12658227961"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 148,
+      "ts": "2026-07-14T00:44:26.672Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 149,
+      "ts": "2026-07-14T00:44:43.452Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 150,
+      "ts": "2026-07-14T00:44:43.453Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 151,
+      "ts": "2026-07-14T00:45:21.610Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 152,
+      "ts": "2026-07-14T00:45:27.956Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325309@node/1080697129"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 153,
+      "ts": "2026-07-14T00:45:27.956Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 154,
+      "ts": "2026-07-14T00:45:40.916Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325309@node/291592355~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 155,
+      "ts": "2026-07-14T00:45:40.917Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 156,
+      "ts": "2026-07-14T00:45:45.272Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325309@node/1080697129"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 157,
+      "ts": "2026-07-14T00:45:45.273Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325309@node/291592355~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 158,
+      "ts": "2026-07-14T00:45:45.273Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 159,
+      "ts": "2026-07-14T00:45:59.648Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 160,
+      "ts": "2026-07-14T00:46:04.012Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325309@node/1080697129"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 161,
+      "ts": "2026-07-14T00:46:04.013Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325309@b/291592355"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 162,
+      "ts": "2026-07-14T00:46:11.422Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334@b/262840700"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 163,
+      "ts": "2026-07-14T00:49:26.463Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138334@node/256593792"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 164,
+      "ts": "2026-07-14T00:49:26.464Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334@b/262840700"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 165,
+      "ts": "2026-07-14T00:49:31.948Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138334@node/262840700~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 166,
+      "ts": "2026-07-14T00:49:31.948Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 167,
+      "ts": "2026-07-14T00:58:01.180Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 0
+      },
+      "seq": 168,
+      "ts": "2026-07-14T00:58:01.181Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 169,
+      "ts": "2026-07-14T00:58:10.748Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/343046018"
+      },
+      "fields": {
+        "present": 0
+      },
+      "seq": 170,
+      "ts": "2026-07-14T00:58:10.748Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/262101326~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 171,
+      "ts": "2026-07-14T00:58:10.748Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 172,
+      "ts": "2026-07-14T00:59:44.569Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/343046018"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 173,
+      "ts": "2026-07-14T00:59:44.569Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/339750721@b/262101326"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|right"
+      },
+      "seq": 174,
+      "ts": "2026-07-14T01:04:48.851Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/339750721@node/343046018"
+      },
+      "fields": {
+        "present": 0
+      },
+      "seq": 175,
+      "ts": "2026-07-14T01:04:48.852Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405422@b/343046730"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 176,
+      "ts": "2026-07-14T01:05:58.583Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/1464405422@node/343046730~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 177,
+      "ts": "2026-07-14T01:05:58.583Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/1464405422@b/343046730"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 178,
+      "ts": "2026-07-14T01:06:26.673Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/-1464405421@b/1080697223"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 179,
+      "ts": "2026-07-14T01:08:31.363Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/-1464405421@b/1080697223"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 2.4,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 180,
+      "ts": "2026-07-14T01:09:11.607Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/-1464405421@b/1080697223"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 181,
+      "ts": "2026-07-14T01:09:26.852Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/-1464405421@b/1080697223"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left|through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 182,
+      "ts": "2026-07-14T01:10:35.893Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334@b/262840700"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 183,
+      "ts": "2026-07-14T01:11:24.801Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334@b/262840700"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 184,
+      "ts": "2026-07-14T01:11:37.238Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138334@b/262840700"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 185,
+      "ts": "2026-07-14T01:12:04.461Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/256593792"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 186,
+      "ts": "2026-07-14T01:12:29.518Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/256593792"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 187,
+      "ts": "2026-07-14T01:12:38.739Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138329@node/256593792~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 188,
+      "ts": "2026-07-14T01:12:38.739Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/256593792"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 189,
+      "ts": "2026-07-14T01:13:10.633Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/1080696829"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 190,
+      "ts": "2026-07-14T01:13:36.907Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/1080696829"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 191,
+      "ts": "2026-07-14T01:13:47.991Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/256593792"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 192,
+      "ts": "2026-07-14T01:14:09.785Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/1080697175"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 193,
+      "ts": "2026-07-14T01:14:51.894Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138329@node/260130551"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 194,
+      "ts": "2026-07-14T01:14:51.895Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138329@node/1080697175~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 195,
+      "ts": "2026-07-14T01:14:51.895Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/297138329@b/260130551"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 196,
+      "ts": "2026-07-14T01:15:54.108Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138329@node/258784609"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 197,
+      "ts": "2026-07-14T01:15:54.109Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/297138329@node/260130551~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 198,
+      "ts": "2026-07-14T01:15:54.109Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/260132634"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 199,
+      "ts": "2026-07-14T01:16:36.125Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/260132634"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 3,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "left|through|through"
+      },
+      "seq": 200,
+      "ts": "2026-07-14T01:16:47.042Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/1401138375"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 201,
+      "ts": "2026-07-14T01:19:43.124Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/1401138375"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "through|through"
+      },
+      "seq": 202,
+      "ts": "2026-07-14T01:19:54.998Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "turn_bay",
+        "key": "way/254325308@node/1401138375~b"
+      },
+      "fields": {
+        "present": 1,
+        "turns": "left"
+      },
+      "seq": 203,
+      "ts": "2026-07-14T01:19:54.999Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/1401138375"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 3.2,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through;right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 204,
+      "ts": "2026-07-14T01:20:41.364Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/260132634"
+      },
+      "fields": {
+        "lanes_forward": 2,
+        "lanes_backward": 3,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through",
+        "turn_lanes_backward": "left|through|through;right"
+      },
+      "seq": 205,
+      "ts": "2026-07-14T01:20:49.920Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/1401138517"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "through|through|right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 206,
+      "ts": "2026-07-14T01:22:05.392Z",
+      "author": "rex"
+    },
+    {
+      "op": "set",
+      "target": {
+        "type": "road",
+        "key": "way/254325308@b/1401138517"
+      },
+      "fields": {
+        "lanes_forward": 3,
+        "lanes_backward": 2,
+        "moto_forward": 0,
+        "moto_backward": 0,
+        "center_m": 0,
+        "center_kind": "hatch",
+        "turn_lanes": "left;through|through|right",
+        "turn_lanes_backward": "through|through;right"
+      },
+      "seq": 207,
+      "ts": "2026-07-14T01:22:13.073Z",
+      "author": "rex"
+    }
+  ],
+  "latest": {
+    "way/254325298": {
+      "lanes_forward": 2,
+      "moto_forward": 1,
+      "lanes_backward": 0,
+      "moto_backward": 0,
+      "turn_lanes": "through|through"
+    },
+    "way/385650788": {
+      "lanes_forward": 2,
+      "moto_forward": 1
+    },
+    "way/1464405423": {
+      "lanes_forward": 2,
+      "moto_forward": 1,
+      "lanes_backward": 2,
+      "moto_backward": 1,
+      "center_m": 1.6,
+      "center_kind": "island",
+      "turn_lanes": "through|through"
+    },
+    "way/339750703": {
+      "lanes_forward": 2,
+      "moto_forward": 1,
+      "lanes_backward": 2,
+      "moto_backward": 1,
+      "center_m": 1.6,
+      "center_kind": "island",
+      "turn_lanes": "through|through"
+    },
+    "way/339750709": {
+      "lanes_forward": 2,
+      "moto_forward": 1
+    },
+    "way/93228856": {
+      "lanes_forward": 2,
+      "moto_forward": 1
+    },
+    "way/24275091": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 0,
+      "moto_backward": 0
+    },
+    "way/339750705": {
+      "lanes_forward": 1,
+      "lanes_backward": 1
+    },
+    "way/254325299": {
+      "lanes_forward": 1,
+      "lanes_backward": 1
+    },
+    "way/772722766": {
+      "lanes_forward": 1,
+      "lanes_backward": 1
+    },
+    "way/23674288": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/93228845": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/254325300": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/254325301": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1,
+      "turn_lanes": "through"
+    },
+    "way/267715869": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/267715871": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/267715873": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/267715875": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 1,
+      "moto_backward": 1
+    },
+    "way/267715902": {
+      "lanes_forward": 3,
+      "lanes_backward": 0,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "turn_lanes": "left|through|through"
+    },
+    "way/297138334": {
+      "lanes_forward": 3,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "turn_lanes": "through|through|through"
+    },
+    "way/339750721": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "turn_lanes": "through|through"
+    },
+    "way/254325309": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "turn_lanes": "through|through"
+    },
+    "way/1464405420": {
+      "lanes_forward": 1,
+      "lanes_backward": 1,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "through"
+    },
+    "way/24275640": {
+      "lanes_forward": 2,
+      "lanes_backward": 0,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through"
+    },
+    "way/23875893": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 2.4,
+      "center_kind": "hatch",
+      "turn_lanes": "left;through|through;right"
+    },
+    "way/23875893@b/7391695984": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through",
+      "turn_lanes_backward": "left;right|right"
+    },
+    "way/23875893@b/259481979": {
+      "lanes_forward": 2,
+      "lanes_backward": 3,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "left|through|through"
+    },
+    "way/23875893@b/1080696860": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "left|through"
+    },
+    "way/339750721@b/259481980": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "left|through",
+      "turn_lanes_backward": "left|through"
+    },
+    "way/254325309@b/291592355": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|right",
+      "turn_lanes_backward": "through|right"
+    },
+    "way/254325309@b/1080697129": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "left|through",
+      "turn_lanes_backward": "left|through"
+    },
+    "way/23875893@node/588290641": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/23875893@node/7391695984~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/339750721@b/262101326": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|right",
+      "turn_lanes_backward": "through|right"
+    },
+    "way/339750721@node/343046018": {
+      "present": 0,
+      "turns": "left"
+    },
+    "way/339750721@node/262101326~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/339750721@b/12658227961": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|right",
+      "turn_lanes_backward": "through|through"
+    },
+    "way/254325309@node/1080697129": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/254325309@node/291592355~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138334@b/262840700": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/297138334@node/256593792": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138334@node/262840700~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/1464405422@b/343046730": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "left;through|through",
+      "turn_lanes_backward": "through|through"
+    },
+    "way/1464405422@node/343046730~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/-1464405421@b/1080697223": {
+      "lanes_forward": 3,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "left|through|through",
+      "turn_lanes_backward": "through|through"
+    },
+    "way/297138329@b/256593792": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "left;through|through",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/297138329@node/256593792~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138329@b/1080696829": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/297138329@b/1080697175": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/297138329@node/260130551": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138329@node/1080697175~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138329@b/260130551": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/297138329@node/258784609": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/297138329@node/260130551~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/254325308@b/260132634": {
+      "lanes_forward": 2,
+      "lanes_backward": 3,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through",
+      "turn_lanes_backward": "left|through|through;right"
+    },
+    "way/254325308@b/1401138375": {
+      "lanes_forward": 2,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 3.2,
+      "center_kind": "hatch",
+      "turn_lanes": "through|through;right",
+      "turn_lanes_backward": "through|through;right"
+    },
+    "way/254325308@node/1401138375~b": {
+      "present": 1,
+      "turns": "left"
+    },
+    "way/254325308@b/1401138517": {
+      "lanes_forward": 3,
+      "lanes_backward": 2,
+      "moto_forward": 0,
+      "moto_backward": 0,
+      "center_m": 0,
+      "center_kind": "hatch",
+      "turn_lanes": "left;through|through|right",
+      "turn_lanes_backward": "through|through;right"
+    }
+  },
+  "waiting_zones": [
+    {
+      "id": "zone-lp-2601136103-56",
+      "intersection_osm_node": 2601136103,
+      "approach": {
+        "road": "大學南路",
+        "bearing_deg": 56
+      },
+      "exit": {
+        "road": "大學西路",
+        "bearing_deg": 327
+      },
+      "center": {
+        "lng": 120.27814960671199,
+        "lat": 22.72970933418313
+      },
+      "bearing_deg": 326.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-2601136103-201",
+      "intersection_osm_node": 2601136103,
+      "approach": {
+        "road": "大學南路",
+        "bearing_deg": 201
+      },
+      "exit": {
+        "road": "大學西路",
+        "bearing_deg": 140
+      },
+      "center": {
+        "lng": 120.27802282933132,
+        "lat": 22.729627766633985
+      },
+      "bearing_deg": 140.3,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-302211637-345",
+      "intersection_osm_node": 302211637,
+      "approach": {
+        "road": "高楠公路",
+        "bearing_deg": 345
+      },
+      "exit": {
+        "road": "惠心街",
+        "bearing_deg": 229
+      },
+      "center": {
+        "lng": 120.3213417897503,
+        "lat": 22.728585635498145
+      },
+      "bearing_deg": 229.4,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262101723-161",
+      "intersection_osm_node": 262101723,
+      "approach": {
+        "road": "成功北路",
+        "bearing_deg": 161
+      },
+      "exit": {
+        "road": "橋頭路",
+        "bearing_deg": 83
+      },
+      "center": {
+        "lng": 120.30956951476931,
+        "lat": 22.759770969789507
+      },
+      "bearing_deg": 82.8,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-258772819-153",
+      "intersection_osm_node": 258772819,
+      "approach": {
+        "road": "成功北路",
+        "bearing_deg": 153
+      },
+      "exit": {
+        "road": "站前街",
+        "bearing_deg": 65
+      },
+      "center": {
+        "lng": 120.30936746792547,
+        "lat": 22.760350476272244
+      },
+      "bearing_deg": 64.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1920238318-151",
+      "intersection_osm_node": 1920238318,
+      "approach": {
+        "road": "成功北路",
+        "bearing_deg": 151
+      },
+      "exit": {
+        "road": "德松路",
+        "bearing_deg": 64
+      },
+      "center": {
+        "lng": 120.30881471626641,
+        "lat": 22.761359219320603
+      },
+      "bearing_deg": 63.8,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262841034-348",
+      "intersection_osm_node": 262841034,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 348
+      },
+      "exit": {
+        "road": "德民路",
+        "bearing_deg": 245
+      },
+      "center": {
+        "lng": 120.29105079318948,
+        "lat": 22.721800665185633
+      },
+      "bearing_deg": 245,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697518-7",
+      "intersection_osm_node": 1080697518,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 7
+      },
+      "exit": {
+        "road": "大學十街",
+        "bearing_deg": 277
+      },
+      "center": {
+        "lng": 120.2916894330352,
+        "lat": 22.726311228226955
+      },
+      "bearing_deg": 277.1,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260132631-8",
+      "intersection_osm_node": 260132631,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 8
+      },
+      "exit": {
+        "road": "援中路",
+        "bearing_deg": 259
+      },
+      "center": {
+        "lng": 120.29156992920677,
+        "lat": 22.725407475871787
+      },
+      "bearing_deg": 258.8,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697060-7",
+      "intersection_osm_node": 1080697060,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 7
+      },
+      "exit": {
+        "road": "大學二十六街",
+        "bearing_deg": 280
+      },
+      "center": {
+        "lng": 120.2920529225195,
+        "lat": 22.728893034091872
+      },
+      "bearing_deg": 279.7,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697199-7",
+      "intersection_osm_node": 1080697199,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 7
+      },
+      "exit": {
+        "road": "大學二十八街",
+        "bearing_deg": 279
+      },
+      "center": {
+        "lng": 120.29218161740094,
+        "lat": 22.72983555789301
+      },
+      "bearing_deg": 279.5,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260269170-7",
+      "intersection_osm_node": 260269170,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 7
+      },
+      "exit": {
+        "road": "大學三十二街",
+        "bearing_deg": 276
+      },
+      "center": {
+        "lng": 120.29233851572192,
+        "lat": 22.731038637881575
+      },
+      "bearing_deg": 276.3,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262101284-186",
+      "intersection_osm_node": 262101284,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 186
+      },
+      "exit": {
+        "road": "明德路",
+        "bearing_deg": 96
+      },
+      "center": {
+        "lng": 120.29255602154619,
+        "lat": 22.73382077637138
+      },
+      "bearing_deg": 96.3,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262101291-187",
+      "intersection_osm_node": 262101291,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 187
+      },
+      "exit": {
+        "road": "大學三十八街",
+        "bearing_deg": 102
+      },
+      "center": {
+        "lng": 120.29248342426604,
+        "lat": 22.733304624799818
+      },
+      "bearing_deg": 101.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260132654-7",
+      "intersection_osm_node": 260132654,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 7
+      },
+      "exit": {
+        "road": "藍昌路360巷",
+        "bearing_deg": 302
+      },
+      "center": {
+        "lng": 120.2912530280739,
+        "lat": 22.72313391893338
+      },
+      "bearing_deg": 301.9,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-256455746-167",
+      "intersection_osm_node": 256455746,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 167
+      },
+      "exit": {
+        "road": "德民路",
+        "bearing_deg": 87
+      },
+      "center": {
+        "lng": 120.29095402308509,
+        "lat": 22.721551386941364
+      },
+      "bearing_deg": 87.4,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-256455750-187",
+      "intersection_osm_node": 256455750,
+      "approach": {
+        "road": "藍昌路",
+        "bearing_deg": 187
+      },
+      "exit": {
+        "road": "藍昌路360巷",
+        "bearing_deg": 122
+      },
+      "center": {
+        "lng": 120.2910913335419,
+        "lat": 22.72310106898621
+      },
+      "bearing_deg": 121.9,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262101326-61",
+      "intersection_osm_node": 262101326,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 61
+      },
+      "exit": {
+        "road": "大學二十九路",
+        "bearing_deg": 337
+      },
+      "center": {
+        "lng": 120.27787110742253,
+        "lat": 22.725971642241248
+      },
+      "bearing_deg": 337,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260130548-279",
+      "intersection_osm_node": 260130548,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 279
+      },
+      "exit": {
+        "road": "藍昌路",
+        "bearing_deg": 189
+      },
+      "center": {
+        "lng": 120.29163237818078,
+        "lat": 22.727320782685144
+      },
+      "bearing_deg": 189.2,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080696973-316",
+      "intersection_osm_node": 1080696973,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 316
+      },
+      "exit": {
+        "road": "援中路",
+        "bearing_deg": 237
+      },
+      "center": {
+        "lng": 120.29593823557322,
+        "lat": 22.72639977499578
+      },
+      "bearing_deg": 237,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697129-64",
+      "intersection_osm_node": 1080697129,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 64
+      },
+      "exit": {
+        "road": "大學二十五路",
+        "bearing_deg": 319
+      },
+      "center": {
+        "lng": 120.28057865269616,
+        "lat": 22.727136417126186
+      },
+      "bearing_deg": 319,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080696934-244",
+      "intersection_osm_node": 1080696934,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 244
+      },
+      "exit": {
+        "road": "大學二十九路",
+        "bearing_deg": 157
+      },
+      "center": {
+        "lng": 120.27771747821994,
+        "lat": 22.726049314069567
+      },
+      "bearing_deg": 157,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697457-238",
+      "intersection_osm_node": 1080697457,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 238
+      },
+      "exit": {
+        "road": "德中路",
+        "bearing_deg": 146
+      },
+      "center": {
+        "lng": 120.27572995098635,
+        "lat": 22.724981961303232
+      },
+      "bearing_deg": 145.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697004-245",
+      "intersection_osm_node": 1080697004,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 245
+      },
+      "exit": {
+        "road": "大學二十一路",
+        "bearing_deg": 164
+      },
+      "center": {
+        "lng": 120.28191635577998,
+        "lat": 22.727901619256134
+      },
+      "bearing_deg": 163.9,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262840830-168",
+      "intersection_osm_node": 262840830,
+      "approach": {
+        "road": "高雄大學路",
+        "bearing_deg": 168
+      },
+      "exit": {
+        "road": "藍田路",
+        "bearing_deg": 96
+      },
+      "center": {
+        "lng": 120.2846129210371,
+        "lat": 22.72824985921769
+      },
+      "bearing_deg": 95.7,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697175-104",
+      "intersection_osm_node": 1080697175,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 104
+      },
+      "exit": {
+        "road": "大學七街",
+        "bearing_deg": 6
+      },
+      "center": {
+        "lng": 120.28868162169844,
+        "lat": 22.727693489027146
+      },
+      "bearing_deg": 5.5,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080696758-253",
+      "intersection_osm_node": 1080696758,
+      "approach": {
+        "road": "藍田路",
+        "bearing_deg": 253
+      },
+      "exit": {
+        "road": "大學十七街",
+        "bearing_deg": 150
+      },
+      "center": {
+        "lng": 120.28279830116071,
+        "lat": 22.728251240738867
+      },
+      "bearing_deg": 149.7,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1398635524-245",
+      "intersection_osm_node": 1398635524,
+      "approach": {
+        "road": "德民路",
+        "bearing_deg": 245
+      },
+      "exit": {
+        "road": "東昌街",
+        "bearing_deg": 158
+      },
+      "center": {
+        "lng": 120.289836123171,
+        "lat": 22.721238498886915
+      },
+      "bearing_deg": 157.9,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-256456780-69",
+      "intersection_osm_node": 256456780,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 69
+      },
+      "exit": {
+        "road": "德中路",
+        "bearing_deg": 305
+      },
+      "center": {
+        "lng": 120.28061232061425,
+        "lat": 22.721087584049695
+      },
+      "bearing_deg": 304.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697249-68",
+      "intersection_osm_node": 1080697249,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 68
+      },
+      "exit": {
+        "road": "大學二十七街",
+        "bearing_deg": 340
+      },
+      "center": {
+        "lng": 120.28158100988631,
+        "lat": 22.721436447069713
+      },
+      "bearing_deg": 339.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697160-70",
+      "intersection_osm_node": 1080697160,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 70
+      },
+      "exit": {
+        "road": "大學西路",
+        "bearing_deg": 336
+      },
+      "center": {
+        "lng": 120.28270425395992,
+        "lat": 22.721820680980954
+      },
+      "bearing_deg": 336.3,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-343047165-67",
+      "intersection_osm_node": 343047165,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 67
+      },
+      "exit": {
+        "road": "大學十七街",
+        "bearing_deg": 338
+      },
+      "center": {
+        "lng": 120.28475224120098,
+        "lat": 22.72261047722035
+      },
+      "bearing_deg": 337.6,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-262840698-68",
+      "intersection_osm_node": 262840698,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 68
+      },
+      "exit": {
+        "road": "高雄大學路",
+        "bearing_deg": 342
+      },
+      "center": {
+        "lng": 120.28642006891052,
+        "lat": 22.7232417315051
+      },
+      "bearing_deg": 342,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260856473-67",
+      "intersection_osm_node": 260856473,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 67
+      },
+      "exit": {
+        "road": "大學十一街",
+        "bearing_deg": 348
+      },
+      "center": {
+        "lng": 120.28796882514165,
+        "lat": 22.723840662160264
+      },
+      "bearing_deg": 347.7,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080697224-70",
+      "intersection_osm_node": 1080697224,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 70
+      },
+      "exit": {
+        "road": "大學七街",
+        "bearing_deg": 340
+      },
+      "center": {
+        "lng": 120.28898710897914,
+        "lat": 22.724182877448733
+      },
+      "bearing_deg": 339.8,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-289127265-64",
+      "intersection_osm_node": 289127265,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 64
+      },
+      "exit": {
+        "road": "大學東路",
+        "bearing_deg": 334
+      },
+      "center": {
+        "lng": 120.28985470163235,
+        "lat": 22.72454141062269
+      },
+      "bearing_deg": 334.4,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-260856514-76",
+      "intersection_osm_node": 260856514,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 76
+      },
+      "exit": {
+        "road": "藍昌路",
+        "bearing_deg": 8
+      },
+      "center": {
+        "lng": 120.291595008096,
+        "lat": 22.725277409395105
+      },
+      "bearing_deg": 8,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    },
+    {
+      "id": "zone-lp-1080696766-55",
+      "intersection_osm_node": 1080696766,
+      "approach": {
+        "road": "援中路",
+        "bearing_deg": 55
+      },
+      "exit": {
+        "road": "藍田路",
+        "bearing_deg": 316
+      },
+      "center": {
+        "lng": 120.2960969622897,
+        "lat": 22.726302008801113
+      },
+      "bearing_deg": 316.5,
+      "width_m": 4.2,
+      "depth_m": 2.8,
+      "source": "manual"
+    }
+  ],
+  "vehicles": [],
+  "turn_bays": [
+    {
+      "key": "way/23875893@node/588290641",
+      "way": "way/23875893",
+      "intersection_osm_node": 588290641,
+      "approach_bearing_deg": 59,
+      "bay_len_m": 48.68273162836941,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/23875893@node/7391695984~b",
+      "way": "way/23875893",
+      "intersection_osm_node": 7391695984,
+      "approach_bearing_deg": 241,
+      "bay_len_m": 48.68273162836941,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/23875893@node/262101326",
+      "way": "way/23875893",
+      "intersection_osm_node": 262101326,
+      "approach_bearing_deg": 61,
+      "bay_len_m": 43.03713722392369,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/23875893@node/1080696860~b",
+      "way": "way/23875893",
+      "intersection_osm_node": 1080696860,
+      "approach_bearing_deg": 240,
+      "bay_len_m": 43.03713722392369,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/254325308@node/1401138375~b",
+      "way": "way/254325308",
+      "intersection_osm_node": 1401138375,
+      "approach_bearing_deg": 281,
+      "bay_len_m": 104.15568079338576,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/254325309@node/1080697129",
+      "way": "way/254325309",
+      "intersection_osm_node": 1080697129,
+      "approach_bearing_deg": 64,
+      "bay_len_m": 17.852246965623635,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/254325309@node/291592355~b",
+      "way": "way/254325309",
+      "intersection_osm_node": 291592355,
+      "approach_bearing_deg": 244,
+      "bay_len_m": 17.852246965623635,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/254325309@node/1080696728",
+      "way": "way/254325309",
+      "intersection_osm_node": 1080696728,
+      "approach_bearing_deg": 62,
+      "bay_len_m": 30.989440635505332,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/254325309@node/1080697129~b",
+      "way": "way/254325309",
+      "intersection_osm_node": 1080697129,
+      "approach_bearing_deg": 245,
+      "bay_len_m": 30.989440635505332,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/297138329@node/256593792~b",
+      "way": "way/297138329",
+      "intersection_osm_node": 256593792,
+      "approach_bearing_deg": 281,
+      "bay_len_m": 14,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138329@node/1080697175",
+      "way": "way/297138329",
+      "intersection_osm_node": 1080697175,
+      "approach_bearing_deg": 104,
+      "bay_len_m": 25.624645368355736,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/297138329@node/1080696829~b",
+      "way": "way/297138329",
+      "intersection_osm_node": 1080696829,
+      "approach_bearing_deg": 284,
+      "bay_len_m": 25.624645368355736,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/297138329@node/260130551",
+      "way": "way/297138329",
+      "intersection_osm_node": 260130551,
+      "approach_bearing_deg": 100,
+      "bay_len_m": 32.32310203037724,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138329@node/1080697175~b",
+      "way": "way/297138329",
+      "intersection_osm_node": 1080697175,
+      "approach_bearing_deg": 284,
+      "bay_len_m": 32.32310203037724,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138329@node/258784609",
+      "way": "way/297138329",
+      "intersection_osm_node": 258784609,
+      "approach_bearing_deg": 101,
+      "bay_len_m": 57.15129843653669,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138329@node/260130551~b",
+      "way": "way/297138329",
+      "intersection_osm_node": 260130551,
+      "approach_bearing_deg": 280,
+      "bay_len_m": 57.15129843653669,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138334@node/256593792",
+      "way": "way/297138334",
+      "intersection_osm_node": 256593792,
+      "approach_bearing_deg": 97,
+      "bay_len_m": 83.08749269192096,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/297138334@node/262840700~b",
+      "way": "way/297138334",
+      "intersection_osm_node": 262840700,
+      "approach_bearing_deg": 276,
+      "bay_len_m": 83.08749269192096,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/339750721@node/262101326~b",
+      "way": "way/339750721",
+      "intersection_osm_node": 262101326,
+      "approach_bearing_deg": 244,
+      "bay_len_m": 26.767543267017388,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/339750721@node/291592355",
+      "way": "way/339750721",
+      "intersection_osm_node": 291592355,
+      "approach_bearing_deg": 65,
+      "bay_len_m": 33.0812214786331,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/339750721@node/259481980~b",
+      "way": "way/339750721",
+      "intersection_osm_node": 259481980,
+      "approach_bearing_deg": 246,
+      "bay_len_m": 33.0812214786331,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/1464405421@node/343046787~b",
+      "way": "way/1464405421",
+      "intersection_osm_node": 343046787,
+      "approach_bearing_deg": 253,
+      "bay_len_m": 73.31667009677668,
+      "taper_len_m": 15,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    },
+    {
+      "key": "way/1464405422@node/343046730~b",
+      "way": "way/1464405422",
+      "intersection_osm_node": 343046730,
+      "approach_bearing_deg": 244,
+      "bay_len_m": 14,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left",
+      "source": "manual"
+    },
+    {
+      "key": "way/1464405422@node/343046787",
+      "way": "way/1464405422",
+      "intersection_osm_node": 343046787,
+      "approach_bearing_deg": 73,
+      "bay_len_m": 22.16610036533247,
+      "taper_len_m": 10,
+      "width_m": 3.2,
+      "turns": "left|uturn",
+      "source": "default"
+    }
+  ]
+}

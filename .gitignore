@@ -1,0 +1,23 @@
+# 依賴與建置產物
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+
+# 編輯器 / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# 環境變數
+.env
+.env.*
+!.env.example
+
+# 記錄檔
+*.log
+npm-debug.log*
+.gstack/

@@ -1,0 +1,146 @@
+// LaneDev（開發版）App：模式機 + 點擊分派 + 畫面組裝。
+// 功能實作都在 app/（地圖核心、匯入）、plan/（規劃）、nav/（導航）、browse/（瀏覽）、
+// edit/（編輯，LaneDev 專屬）——除 edit/ 外皆與 LaneNav 共用（npm run sync-lanenav 鏡像）。
+import { useRef, useState } from 'react'
+import { useMapCore, type Mode } from './app/mapCore'
+import { importFiles } from './app/importFlow'
+import { usePlanner } from './plan/usePlanner'
+import { PlanPanel } from './plan/PlanPanel'
+import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
+import { useDrive } from './nav/useDrive'
+import { DriveHUD } from './nav/DriveHUD'
+import { useEditor } from './edit/useEditor'
+import {
+  EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
+} from './edit/EditPanels'
+import './App.css'
+
+export default function App() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [mode, setModeState] = useState<Mode>('browse')
+  const modeRef = useRef<Mode>('browse')
+  const setMode = (m: Mode) => { modeRef.current = m; setModeState(m) }
+
+  const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null) // 匯入地圖的檔案選擇器
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+
+  // ── 點擊分派 ──
+  const { core, loading, zoneCount, zoneTick, vehicleCount, selectedVehicle } =
+    useMapCore(containerRef, (e, map) => {
+      const m = modeRef.current
+      const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
+      if (m === 'browse') setRoadInfo(queryRoadInfoAt(map, e.point))
+      else if (m === 'edit') editor.handleEditClick(map, e, p)
+      else if (m === 'pick') planner.handlePickClick(p)
+    })
+  const planner = usePlanner(core)
+  const editor = useEditor(core, planner.profileRef, modeRef)
+
+  const {
+    drive, multiplier, gpsMsg, decisionOptions,
+    startDrive, startGpsNav, stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+  } = useDrive({
+    mode, setMode,
+    mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
+    profileRef: planner.profileRef, stopsRef: planner.stopsRef,
+    vehicleLayerRef: core.vehicleLayerRef, lastGestureRef: core.lastGestureRef,
+    annotateTwoStage: planner.annotateTwoStage,
+  })
+  planner.stopAllDriversRef.current = stopAllDrivers
+
+  function endDrive() {
+    planner.clearAllRoute() // 內部已呼叫 stopAllDrivers()
+    setMode('browse')
+    core.mapRef.current?.setLayoutProperty('oneway-arrow', 'visibility', 'visible')
+    core.mapRef.current?.setLayoutProperty('road-label', 'visibility', 'visible')
+    core.mapRef.current?.easeTo({ pitch: 0, bearing: 0, padding: { top: 0 } })
+  }
+
+  function switchMode(m: Mode) {
+    if (modeRef.current === 'drive') endDrive()
+    if (m !== 'pick') planner.clearAllRoute()
+    setRoadInfo(null)
+    editor.closeAll()
+    core.refreshZones()
+    core.refreshVehicles()
+    setMode(m)
+  }
+
+  function startPick(demo: boolean) {
+    planner.clearAllRoute()
+    setMode('pick')
+    planner.startPick(demo)
+  }
+
+  function flyToDemoArea() {
+    core.mapRef.current?.flyTo({ center: [120.2790, 22.7300], zoom: 17.5, pitch: 58, bearing: 20 })
+  }
+
+  return (
+    <div className="app" data-zone-tick={zoneTick}>
+      <div ref={containerRef} className="map" />
+
+      {loading && <div className="loading">載入楠梓區路網中…</div>}
+
+      {/* ── 導航 HUD ── */}
+      {mode === 'drive' && (
+        <DriveHUD
+          drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
+          profile={planner.profile} gpsMsg={gpsMsg} multiplier={multiplier}
+          decisionOptions={decisionOptions}
+          onEnd={endDrive} onCycleMultiplier={cycleMultiplier}
+          onTakeAlternative={takeAlternative} onSwitchLane={switchLane}
+        />
+      )}
+
+      {/* ── 工具列 ── */}
+      {mode !== 'drive' && (
+        <div className="toolbar">
+          <button className={mode === 'browse' ? 'on' : ''} onClick={() => switchMode('browse')}>瀏覽</button>
+          <button className={mode === 'edit' ? 'on' : ''} onClick={() => switchMode('edit')}>編輯地圖</button>
+          <button className={mode === 'pick' ? 'on' : ''} onClick={() => startPick(false)}>規劃路線</button>
+          <button onClick={() => startPick(true)}>Demo 路線</button>
+          <button onClick={flyToDemoArea}>大學路口 3D</button>
+          <button onClick={() => importInputRef.current?.click()}>匯入地圖</button>
+          <input ref={importInputRef} type="file" accept=".jsonl,.json,.geojson" multiple
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const fs = e.target.files
+              if (fs?.length) importFiles(core, { switchMode, setImportMsg }, [...fs])
+              e.target.value = '' // 允許重選同一個檔
+            }} />
+          <button className="profile" onClick={() => planner.toggleProfile(modeRef.current)}>
+            {planner.profile === 'car' ? '🚗 汽車' : '🛵 機車'}
+          </button>
+          {importMsg && <span className="import-msg">{importMsg}</span>}
+        </div>
+      )}
+
+      {/* ── 編輯工具提示列與面板（LaneDev 專屬）── */}
+      {mode === 'edit' && (
+        <EditHintBar core={core} editor={editor} profile={planner.profile}
+          zoneCount={zoneCount} vehicleCount={vehicleCount} />
+      )}
+      {mode === 'edit' && <LaneEditPanel editor={editor} />}
+      {mode === 'edit' && editor.editTool === 'lane' && <TwinIslandPanel editor={editor} />}
+      {mode === 'edit' && editor.editTool === 'zone' && <ZonePanel core={core} editor={editor} />}
+      {mode === 'edit' && editor.editTool === 'bay' && <BayPanel core={core} editor={editor} />}
+      {mode === 'edit' && editor.editTool === 'vehicle' && (
+        <VehiclePanel core={core} editor={editor}
+          selectedVehicle={selectedVehicle} vehicleCount={vehicleCount} />
+      )}
+
+      {/* ── 側面板：路線規劃 ── */}
+      {mode === 'pick' && (
+        <PlanPanel planner={planner} onClose={() => switchMode('browse')}
+          startDrive={startDrive} startGpsNav={startGpsNav} />
+      )}
+
+      {/* ── 路段資訊卡（瀏覽模式）── */}
+      {mode === 'browse' && roadInfo && (
+        <RoadInfoCard info={roadInfo} onClose={() => setRoadInfo(null)} />
+      )}
+    </div>
+  )
+}

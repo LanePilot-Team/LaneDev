@@ -12,9 +12,9 @@ import { MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
 
-/** 實驗範圍：只在這些路名上生成（全路網政策見設計文件 §5.3，驗證後再放大）。
- * 援中路 2026-07-14 加入：中央帶為偏心槽化（couplet 合併時 centerKind=hatch） */
-export const BAY_SCOPE_ROADS = new Set(['藍田路', '援中路'])
+// 生成範圍（2026-07-15 起不再限路名）：所有 couplet 合併、中央帶為槽化的路段。
+// 「查不到就假設有」政策跟著放大到全部合併路——實地沒有的 bay 用面板關（present:0）。
+// centerKind 被編輯改成 island 的區塊自動退出（島路段沒有偏心道/槽化線）。
 
 const DEFAULTS = { bay_len_m: 30, taper_len_m: 15, width_m: 3.0, turns: 'left|uturn' }
 /** 儲車段自適應：至少 MIN_BAY；長段讓 bay 伸長、槽化只留 HATCH 目標長；
@@ -67,7 +67,8 @@ function foldBayOverrides(journal: EnhancementRecord[]): Map<string, Record<stri
   return out
 }
 
-const scopeFn = (r: { properties: { name?: string } }) => BAY_SCOPE_ROADS.has(r.properties.name ?? '')
+const scopeFn = (r: { properties: { coupletMerged?: boolean; centerKind?: string } }) =>
+  !!r.properties.coupletMerged && r.properties.centerKind === 'hatch'
 
 const anchorKey = (a: BayAnchor) => `way/${a.wayId}@node/${a.nodeId}${a.back ? '~b' : ''}`
 
@@ -84,7 +85,11 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
   const wantBay = (a: BayAnchor): boolean => {
     const o = over.get(anchorKey(a))
     if (o) return Number(o.present) !== 0 // 人工開/關（帶參數的覆寫視為開）
-    return a.hasLeftPair
+    if (!a.hasLeftPair) return false
+    // 中央帶要放得下預設 3m 寬的 bay 才自動生成——泛用合併段的間距反推帶寬
+    // 常只有 0.6~2m，硬畫會爆出路體；窄帶實地真有偏心道就用面板人工開啟
+    const p = a.road.properties
+    return p.oneway !== 'no' || p.centerM >= 3
   }
 
   const tryMake = (a: BayAnchor, dflt: { bayLen: number; taperLen: number }) => {

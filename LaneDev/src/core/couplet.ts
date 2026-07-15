@@ -39,7 +39,43 @@ function wayBearing(r: RoadFeature): number {
   return bearing(cs[0], cs[cs.length - 1])
 }
 
+function lineLenM(cs: [number, number][]): number {
+  let s = 0
+  for (let i = 0; i < cs.length - 1; i++) {
+    s += Math.hypot((cs[i + 1][0] - cs[i][0]) * KX, (cs[i + 1][1] - cs[i][1]) * KY)
+  }
+  return s
+}
+
 const PAIR_MAX_M = 30 // 對向線間距上限（藍田路實測 ~8-12m）
+
+/** 被合併掉（drop 側）way 的重映射：外部標註（LanePilot）還掛在舊 way id 上，
+ * 匯入時用這張表轉到合併後的 keep way；方向要翻（drop 行向 = 合併後 backward）。
+ * dropReversed = 該 way 載入時是否因 oneway=-1 反轉過（標註方向是 OSM 原始方向）。 */
+export interface DropRemap { keepIds: number[]; dropReversed: boolean }
+
+/** 同組（同向）兩條長 way 平行貼近 = 多線並排道路（高雄大學路型），
+ * couplet 兩線模型不適用——硬併會產生重疊路體，整條路直接放棄合併。 */
+function sameDirParallel(group: RoadFeature[]): [number, number] | null {
+  for (let i = 0; i < group.length; i++) {
+    for (let j = i + 1; j < group.length; j++) {
+      const a = group[i], b = group[j]
+      const ca = a.geometry.coordinates as [number, number][]
+      const cb = b.geometry.coordinates as [number, number][]
+      // 路口附近的短 stub（穿越段/link）貼近是正常現象，只看兩條都夠長的
+      if (Math.min(lineLenM(ca), lineLenM(cb)) < 50) continue
+      const na = new Set(a.properties.nodes)
+      if (b.properties.nodes.some((n) => na.has(n))) continue // 首尾相接的同一條路
+      const [short, long] = ca.length <= cb.length ? [ca, cb] : [cb, ca]
+      let near = 0
+      for (const p of short) if (projectToLine(p, long).d < PAIR_MAX_M) near++
+      if (short.length >= 2 && near / short.length >= 0.6) {
+        return [a.properties.osm_id, b.properties.osm_id]
+      }
+    }
+  }
+  return null
+}
 
 export interface CoupletSection {
   lanesF: number
@@ -67,10 +103,16 @@ export function mergeCouplets(
   scopeNames: Set<string>,
   section: CoupletSection = { lanesF: 2, lanesB: 2, centerM: 3.2 },
   remapOut?: Map<number, number>,
+  wayRemapOut?: Map<number, DropRemap>,
 ): RoadFeature[] {
-  const scope = roads.filter(
-    (r) => scopeNames.has(r.properties.name ?? '') && r.properties.oneway === 'yes'
-      && r.geometry.coordinates.length >= 2)
+  const scope = roads.filter((r) => {
+    const p = r.properties
+    // 圓環弧段常帶著路名（中央路圓環 = 4 條 oneway 弧）：對切合併會把圓環壓扁，
+    // junction=roundabout 與封閉環一律排除
+    if (p.junction === 'roundabout' || p.nodes[0] === p.nodes[p.nodes.length - 1]) return false
+    return scopeNames.has(p.name ?? '') && p.oneway === 'yes'
+      && r.geometry.coordinates.length >= 2
+  })
   if (scope.length < 2) return roads
 
   // 1) 依行進方位角分兩組（相對最長 way 的方向 ±90°）——鏈有缺口也不會混組；
@@ -82,13 +124,83 @@ export function mergeCouplets(
   const g0 = scope.filter((r) => Math.abs(angleDelta(ref, wayBearing(r))) < 90)
   const g1 = scope.filter((r) => Math.abs(angleDelta(ref, wayBearing(r))) >= 90)
   if (g0.length === 0 || g1.length === 0) return roads
+  // 高雄大學路型防呆：同向兩條長 way 平行貼近 = 多線並排（主線＋慢車道/機車道
+  // 各自成線），兩線 couplet 模型硬併會產生重疊路體，整條路放棄合併
+  const par = sameDirParallel(g0) ?? sameDirParallel(g1)
+  if (par) {
+    console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：`
+      + `way/${par[0]} 與 way/${par[1]} 同向並排（多線道路，需顯式配對處理）`)
+    return roads
+  }
   const lengthOf = (rs: RoadFeature[]) =>
     rs.reduce((s, r) => s + (r.geometry.coordinates as [number, number][]).length, 0)
   const keep = lengthOf(g0) >= lengthOf(g1) ? g0 : g1
-  const drop = keep === g0 ? g1 : g0
+  let drop = keep === g0 ? g1 : g0
+
+  // 1.5) 落單保護：drop 側 way 的頂點過半沒貼到 keep 側（同名的獨立支段，
+  // 例：加昌路往南的單行支線——只有路口那端碰到主軸）→ 不是成對單行的一半，
+  // 原樣保留不刪。有配對的才進 wayRemapOut（舊 way id → keep way，匯入標註用）。
+  drop = drop.filter((w) => {
+    const keepHits = new Set<number>()
+    let near = 0
+    const cs = w.geometry.coordinates as [number, number][]
+    for (const p of cs) {
+      let hit = false
+      for (const k of keep) {
+        if (projectToLine(p, k.geometry.coordinates as [number, number][]).d < PAIR_MAX_M) {
+          keepHits.add(k.properties.osm_id)
+          hit = true
+        }
+      }
+      if (hit) near++
+    }
+    if (near / cs.length < 0.6) return false
+    wayRemapOut?.set(w.properties.osm_id,
+      { keepIds: [...keepHits], dropReversed: !!w.properties.reversed })
+    return true
+  })
+  if (drop.length === 0) return roads
   const dropSet = new Set(drop)
 
-  // 2) keep 組頂點移到中點（有對向投影才移），記錄 node 新座標
+  // 1.6) 夾心防呆：合併後的中線若壓在「別條路」上（例：德民新橋機車道成對
+  // 分列汽車橋兩側，中線正好落在汽車橋正中），代表這對線夾著別的路，
+  // 不是一對車道——整條路放棄合併。取最長且有配對的 keep way 抽樣中點檢查。
+  const byLen = [...keep].sort((a, b) =>
+    lineLenM(b.geometry.coordinates as [number, number][])
+    - lineLenM(a.geometry.coordinates as [number, number][]))
+  const scopeSet = new Set<RoadFeature>([...keep, ...drop])
+  for (const w of byLen) {
+    const cs = w.geometry.coordinates as [number, number][]
+    const mids: [number, number][] = []
+    for (const p of cs) {
+      let best: { d: number; pos: [number, number] } | null = null
+      for (const o of drop) {
+        const hit = projectToLine(p, o.geometry.coordinates as [number, number][])
+        if (hit.d < PAIR_MAX_M && (!best || hit.d < best.d)) best = hit
+      }
+      if (best) mids.push([(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2])
+    }
+    if (mids.length < 3) continue // 這條配對不足，換下一條長的
+    const samples = [mids[0], mids[Math.floor(mids.length / 2)], mids[mids.length - 1]]
+    for (const r of roads) {
+      if (scopeSet.has(r)) continue
+      const rc = r.geometry.coordinates as [number, number][]
+      if (rc.length < 2 || lineLenM(rc) < 30) continue
+      // 粗篩：離中點樣本太遠的路直接跳過
+      if (Math.hypot((rc[0][0] - samples[1][0]) * KX, (rc[0][1] - samples[1][1]) * KY) > 2000) continue
+      let near = 0
+      for (const s of samples) if (projectToLine(s, rc).d < 3.5) near++
+      if (near >= 2) {
+        console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：中線壓在 `
+          + `way/${r.properties.osm_id}（${r.properties.name ?? '無名'}）上——成對線夾著別條路`)
+        return roads
+      }
+    }
+    break // 只檢查一條代表 way
+  }
+
+  // 2) keep 組頂點移到中點（有對向投影才移），記錄 node 新座標；
+  //    整條都沒有對向投影的 keep way（落單）不動、維持單行斷面
   const nodeNewPos = new Map<number, [number, number]>()
   for (const w of keep) {
     const cs = w.geometry.coordinates as [number, number][]
@@ -104,6 +216,9 @@ export function mergeCouplets(
       dists.push(best.d)
       return [(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2]
     })
+    // 落單保護（keep 側）：對向投影頂點 < 60%（獨立支段只有路口端碰到對向；
+    // 真正的成對單行幾乎全長貼合）→ 不是成對單行的一半，維持單行原樣
+    if (dists.length / cs.length < 0.6) continue
     w.geometry.coordinates = next
     nodes.forEach((n, i) => nodeNewPos.set(n, next[i]))
     // 斷面改雙向：預設斷面 + （可選）由實際線距反推島寬
@@ -157,7 +272,11 @@ export function mergeCouplets(
       (cs[nearIdx][0] - best.hit.pos[0]) * KX, (cs[nearIdx][1] - best.hit.pos[1]) * KY)
     if (nearD < 4) {
       nodeNewPos.set(j, cs[nearIdx])
-      remapOut?.set(j, nodes[nearIdx])
+      if (remapOut) {
+        // 先鏈舊映射（多條路依序合併時，前一輪的映射可能指到 j——目標消失鏈就斷）
+        for (const [a, b] of remapOut) if (b === j) remapOut.set(a, nodes[nearIdx])
+        remapOut.set(j, nodes[nearIdx])
+      }
       // 其他道路的 j 改指到既有 node，共享路口
       for (const r of roads) {
         if (dropSet.has(r)) continue

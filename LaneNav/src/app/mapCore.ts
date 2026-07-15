@@ -6,9 +6,9 @@ import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { buildStyle, makeIcons } from '../core/mapStyle'
-import {
-  loadRoads, roadsFromGeoJSON, buildDividers, splitAtIntersections, type RoadFeature,
-} from '../core/roads'
+import { loadRoads, roadsFromGeoJSON, buildDividers, type RoadFeature } from '../core/roads'
+import { prepareBaseRoads } from '../core/pipeline'
+import type { DropRemap } from '../core/couplet'
 import { parseImported, mergeMaps } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
 import { loadZones, saveZones, zonesToGeoJSON, type Zone } from '../core/zones'
@@ -18,10 +18,9 @@ import {
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, baysToGeoJSON, type TurnBay,
 } from '../core/turnbays'
-import { mergeCouplets, applyLantianSections } from '../core/couplet'
 import { buildRoadTexts } from '../core/roadtext'
 import {
-  buildMedians, buildCenterIslands, buildTwinIslands, mediansToGeoJSON, MEDIAN_SCOPE_ROADS,
+  buildMedians, buildCenterIslands, buildTwinIslands, mediansToGeoJSON,
 } from '../core/medians'
 import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
 import { VehicleModelLayer } from '../core/models3d'
@@ -72,6 +71,10 @@ export interface MapCore {
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
   selectedVehicleRef: RefObject<string | null>
   lastGestureRef: RefObject<number>
+  /** couplet 合併造成的 node id 重映射（原始 OSM node → 合併後 node） */
+  nodeRemapRef: RefObject<Map<number, number>>
+  /** 被合併（drop 側）way → keep way 對照（LanePilot 標註匯入重映射用） */
+  wayRemapRef: RefObject<Map<number, DropRemap>>
   src: (id: string) => GeoJSONSource
   refreshZones: () => void
   refreshBays: () => void
@@ -107,6 +110,8 @@ export function useMapCore(
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
   const selectedVehicleRef = useRef<string | null>(null)
   const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
+  const nodeRemapRef = useRef<Map<number, number>>(new Map())
+  const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -175,6 +180,7 @@ export function useMapCore(
     coreRef.current = {
       mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, journalRef, baysRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
+      nodeRemapRef, wayRemapRef,
       src, refreshZones, refreshBays, refreshVehicles, redrawRoads, replaceBaseMap,
     }
   }
@@ -214,32 +220,13 @@ export function useMapCore(
         loadDefaultRoads(),
         fetch('/data/nanzi_buildings.geojson').then((r) => r.json()),
       ])
-      // couplet 合併：OSM 成對單行 → 單一雙向路體。
-      // 藍田路 = 2+2+中央偏心帶（槽化）；大學南路 = 2+2+機車道+實體島，
-      // 島寬由 OSM 兩線實際間距反推（「把道路切開放入」，不擠壓車道）。
-      // nodeRemap 收集合併造成的 node id 重映射——journal/zones 的既有標註要跟著遷移
-      const nodeRemap = new Map<number, number>()
-      // 注意：合併 scope ≠ BAY_SCOPE（bay 生成範圍）——couplet 配對一次只能一條路
-      let roads = mergeCouplets(roadsRaw, new Set(['藍田路']), undefined, nodeRemap)
-      roads = mergeCouplets(roads, MEDIAN_SCOPE_ROADS, {
-        lanesF: 2, lanesB: 2, centerM: 2.4, centerKind: 'island',
-        motoF: true, motoB: true,
-        centerFromGap: { roadW: 8.6, min: 1.6, max: 8 }, // roadW = 2車道+機車道斷面寬
-      }, nodeRemap)
-      // 援中路：全長成對單行（一條 oneway=-1，載入已反轉）＋中央「偏心槽化帶」
-      // （2026-07-14 實地確認是標線偏心不是實體島；已加入 BAY_SCOPE 生成偏心道）
-      roads = mergeCouplets(roads, new Set(['援中路']), {
-        lanesF: 2, lanesB: 2, centerM: 3.2, centerKind: 'hatch',
-        motoF: true, motoB: true,
-        centerFromGap: { roadW: 8.6, min: 1.6, max: 8 },
-      }, nodeRemap)
-      // 高雄大學路「不」做 couplet 合併：它是四線並排的林蔭大道
-      // （西側南向主線+慢車道｜大綠帶｜東側北向主線+慢車道），
-      // 各 way 維持 OSM 單行原樣，之間的分隔島由 TWIN_ISLAND_PAIRS 顯式配對生成
-      applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
-      // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
-      roads = splitAtIntersections(roads)
+      // 底圖前處理（人工修正 → couplet 合併 → 切塊）收斂在 core/pipeline.ts，
+      // 與「匯入地圖」及離線 harness 共用。nodeRemap/wayRemap = 合併造成的
+      // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
+      const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
       roadsRef.current = roads
+      nodeRemapRef.current = nodeRemap
+      wayRemapRef.current = wayRemap
       // 除錯開關：?journal=off 完全不套標註（連 seed 都不載），看純 OSM 原始狀態。
       // 同學的 LanePilot annotation（author=lanepilot）實驗期間一律不套。
       const journalOff = location.search.includes('journal=off')

@@ -56,6 +56,8 @@ body {
   background: rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.45);
 }
 .lane-box.on { background: #fff; color: #0f6be0; }
+/* 複合轉向格（↰↑ / ↑↱）：兩個箭頭擠同一格，字縮小、間距收緊 */
+.lane-box.multi { font-size: 15px; letter-spacing: -1.5px; }
 /* 偏心左轉道專用格：虛線框 + 與一般車道拉開間距 */
 .lane-box.bay { border: 1.5px dashed rgba(255, 255, 255, 0.75); margin-right: 6px; }
 
@@ -188,6 +190,10 @@ body {
 .trip { flex: 1; text-align: center; }
 .trip b { font-size: 19px; color: #24303f; margin-right: 10px; }
 .trip span { font-size: 14px; color: #7a8494; }
+.trip .trip-road {
+  display: block; margin-top: 2px;
+  font-size: 13px; font-weight: 700; color: #3d4a5c;
+}
 .end-btn, .mult-btn {
   border: none; border-radius: 10px; padding: 10px 14px;
   font-size: 14px; font-weight: 700; cursor: pointer;

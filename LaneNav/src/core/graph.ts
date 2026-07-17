@@ -2,7 +2,7 @@
 //
 // 起終點吸附：不再 snap 到路口節點，而是吸到「任意路段的最近頂點」，
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
-import { haversine, bearing, angleDelta, cumulative, offsetMeters, LANE_WIDTH_M, COS_LAT } from './geo'
+import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
 import { MOTO_LANE_M, type RoadFeature } from './roads'
 
 const SPEED_KMH: Record<string, number> = {
@@ -15,11 +15,24 @@ const MAX_SPEED_MS = 90 / 3.6
 export type Profile = 'car' | 'moto'
 
 /** 機車可否行駛（國道禁行 + OSM motorcycle=no） */
-function motoAllowed(r: RoadFeature): boolean {
+export function motoAllowed(r: RoadFeature): boolean {
   const p = r.properties
   if (p.highway === 'motorway' || p.highway === 'motorway_link') return false
   if (p.motorcycle === 'no') return false
   return true
+}
+
+/** 汽車可否行駛：OSM motorcar=no（機車專用道路體，如高雄大學路機車道）禁行；
+ * 該方向汽車車道數 = 0（編輯成純機車道的路段）也禁行 */
+export function carAllowed(r: RoadFeature, back: boolean): boolean {
+  const p = r.properties
+  if (p.motorcar === 'no') return false
+  return (back ? p.lanesBackward : p.lanesForward) > 0
+}
+
+/** 車種通行檢查（方向敏感：雙向道可以只有單向被編輯成 0 汽車車道） */
+function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
+  return profile === 'moto' ? motoAllowed(r) : carAllowed(r, back)
 }
 
 interface Edge {
@@ -42,9 +55,10 @@ export interface RouteResult {
   maneuvers: Maneuver[]
   /**
    * 車道偏移區段（coords[?..toIdx]）：
-   * offM = 巡航車道、leftM/rightM = 該路段最左/最右可用車道（路口前變道用）
+   * offM = 巡航車道、leftM/rightM = 該路段最左/最右可用車道（路口前變道用）。
+   * road/back = 該段對應的路與行進方向（禁行審計/除錯用；detour 暫時路線可缺）
    */
-  spans: { toIdx: number; offM: number; leftM: number; rightM: number }[]
+  spans: { toIdx: number; offM: number; leftM: number; rightM: number; road?: RoadFeature; back?: boolean }[]
 }
 
 /** 路口前開始變道的距離（公尺） */
@@ -63,6 +77,11 @@ export interface Maneuver {
   /** 偏心左轉道：路口前變道目標＝bay 中心偏移（way 線右正、左負；由 App 在
    * annotateTwoStage 之後依 turnbays 標記，兩段式左轉不標） */
   bayOffM?: number
+  /** 偏心道進入窗（annotateBays 一併標記）：距路口節點 bayMouthM 處儲車段開始，
+   * 再往前 bayTaperM 是漸變段開口——路線帶的變道 ramp 對齊這個窗，
+   * 從開口進 bay，不壓儲車段白線、更不壓上游槽化線 */
+  bayMouthM?: number
+  bayTaperM?: number
   lanesForward: number
   turnLanes?: string[]
 }
@@ -139,23 +158,22 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   return { cruise: car(1), left: car(1), right: car(f) } // 汽車巡航走內側車道
 }
 
-/**
- * 路線上某距離處「應該在的車道偏移」：
- * 距下一個轉彎 < LANE_CHANGE_M 時切到轉向側車道（右轉→最右、左轉→最左、
- * 兩段式左轉→維持最右準備進待轉格），其餘巡航。
- */
-export function targetOffsetAt(
-  route: RouteResult, d: number,
-  span: { offM: number; leftM: number; rightM: number },
+/** 進彎變道目標（右轉→最右、左轉→bay/最左、兩段式→最右準備進待轉格） */
+function turnTarget(
+  m: Maneuver, span: { offM: number; leftM: number; rightM: number },
 ): number {
-  const next = route.maneuvers.find((m) => m.distM > d + 1 && m.kind !== 'arrive')
-  if (!next || next.distM - d > LANE_CHANGE_M) return span.offM
-  if (next.kind === 'right' || next.kind === 'slight-right') return span.rightM
-  if (next.kind === 'left' || next.kind === 'slight-left' || next.kind === 'uturn') {
-    // 兩段式→維持最右；有偏心左轉道→切進 bay 中心；否則最左車道
-    return next.twoStage ? span.rightM : (next.bayOffM ?? span.leftM)
+  if (m.kind === 'right' || m.kind === 'slight-right') return span.rightM
+  if (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn') {
+    return m.twoStage ? span.rightM : (m.bayOffM ?? span.leftM)
   }
   return span.offM
+}
+
+/** 路線里程 → 所在 span（GPS 導航查目前道路用；模擬側已有座標 index 直接查） */
+export function spanAtDist(route: RouteResult, d: number): RouteResult['spans'][number] | undefined {
+  let i = 1
+  while (i < route.cum.length - 1 && route.cum[i] < d) i++
+  return route.spans.find((s) => s.toIdx >= i)
 }
 
 function makeEdge(
@@ -265,7 +283,9 @@ export class RoadGraph {
     let bestD2 = Infinity
     for (const e of this.edges) {
       if (e.back) continue
-      if (profile === 'moto' && !motoAllowed(e.road)) continue
+      // 兩個行進方向都禁行的路體（如 motorcar=no 機車道之於汽車）不做吸附候選
+      if (!edgeAllowed(e.road, false, profile) &&
+        !(e.twin && edgeAllowed(e.road, true, profile))) continue
       const cs = e.coords
       for (let i = 0; i < cs.length - 1; i++) {
         const dx = (cs[i + 1][0] - cs[i][0]) * kx
@@ -394,7 +414,7 @@ export class RoadGraph {
   alternativesAt(nodeId: number, fromBearing: number, profile: Profile):
     { kind: 'left' | 'straight' | 'right'; coords: [number, number][] }[] {
     const outgoing = (this.adj.get(nodeId) ?? [])
-      .filter((e) => e.coords.length >= 2 && (profile !== 'moto' || motoAllowed(e.road)))
+      .filter((e) => e.coords.length >= 2 && edgeAllowed(e.road, e.back, profile))
     const out: { kind: 'left' | 'straight' | 'right'; coords: [number, number][] }[] = []
     for (const e of outgoing) {
       const tb = bearing(e.coords[0], e.coords[1])
@@ -416,6 +436,7 @@ export class RoadGraph {
     let best: { pos: [number, number]; bearing: number; road?: string } | null = null
     let bestD = Infinity
     for (const { e, seg } of cands) {
+      if (!edgeAllowed(e.road, e.back, type)) continue
       const brg = bearing(e.coords[seg], e.coords[seg + 1])
       const off = laneOffsets(e, type).cruise
       const rad = ((brg + 90) * Math.PI) / 180
@@ -436,11 +457,12 @@ export class RoadGraph {
 
     // 同一條（順向）邊且順序正確 → 直接一段
     if (sA.edge === sB.edge) {
-      const forwardOk = sA.seg < sB.seg || (sA.seg === sB.seg && sA.t <= sB.t)
+      const forwardOk = (sA.seg < sB.seg || (sA.seg === sB.seg && sA.t <= sB.t)) &&
+        edgeAllowed(sA.edge.road, sA.edge.back, profile)
       if (forwardOk) {
         const cs = dedupe([sA.pos, ...sA.edge.coords.slice(sA.seg + 1, sB.seg + 1), sB.pos])
         if (cs.length >= 2) return this.assemble([makeEdge(sA.edge.road, -1, -1, cs, sA.edge.back)], profile)
-      } else if (sA.edge.twin) {
+      } else if (sA.edge.twin && edgeAllowed(sA.edge.road, true, profile)) {
         const t = sA.edge.twin
         const a = twinSeg(sA.edge, sA.seg), b = twinSeg(sA.edge, sB.seg)
         const cs = dedupe([sA.pos, ...t.coords.slice(a + 1, b + 1), sB.pos])
@@ -451,7 +473,7 @@ export class RoadGraph {
     // 起點入口：從投影點沿邊走到邊尾（兩個方向都試）
     const startEntries: { node: number; part: Edge }[] = []
     const addStart = (e: Edge, seg: number) => {
-      if (profile === 'moto' && !motoAllowed(e.road)) return
+      if (!edgeAllowed(e.road, e.back, profile)) return
       const cs = coordsFromSnap(e, seg, sA.pos)
       if (cs.length >= 2) startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, cs, e.back) })
       else startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, [sA.pos, e.coords[e.coords.length - 1]], e.back) })
@@ -462,7 +484,7 @@ export class RoadGraph {
     // 終點出口：從邊頭走到投影點
     const goalEntries: { node: number; part: Edge }[] = []
     const addGoal = (e: Edge, seg: number) => {
-      if (profile === 'moto' && !motoAllowed(e.road)) return
+      if (!edgeAllowed(e.road, e.back, profile)) return
       const cs = coordsToSnap(e, seg, sB.pos)
       if (cs.length >= 2) goalEntries.push({ node: e.from, part: makeEdge(e.road, e.from, -1, cs, e.back) })
     }
@@ -500,7 +522,7 @@ export class RoadGraph {
       }
       for (const e of this.adj.get(cur) ?? []) {
         if (closed.has(e.to)) continue
-        if (profile === 'moto' && !motoAllowed(e.road)) continue
+        if (!edgeAllowed(e.road, e.back, profile)) continue
         const tentative = g.get(cur)! + e.timeS
         if (tentative < (g.get(e.to) ?? Infinity)) {
           g.set(e.to, tentative)
@@ -531,7 +553,7 @@ export class RoadGraph {
     for (const e of edges) {
       coords.push(...e.coords.slice(1))
       const lo = laneOffsets(e, profile)
-      spans.push({ toIdx: coords.length - 1, offM: lo.cruise, leftM: lo.left, rightM: lo.right })
+      spans.push({ toIdx: coords.length - 1, offM: lo.cruise, leftM: lo.left, rightM: lo.right, road: e.road, back: e.back })
     }
     const cum = cumulative(coords)
     return {
@@ -544,43 +566,91 @@ export class RoadGraph {
   }
 }
 
+/** 轉彎後從轉向側車道漸出回巡航車道的過渡距離（公尺） */
+const EXIT_MERGE_M = 25
+/** 路線帶取樣步距（公尺）：變道/出彎軌跡以距離取樣，不受路線頂點疏密影響。
+ * 頂點間距動輒數十公尺，若只在頂點內插，轉彎後「回巡航道」會變成一條
+ * 橫掃對向/中央槽化線的長斜線（車貼帶行駛後這個瑕疵會直接變成行駛軌跡） */
+const BAND_STEP_M = 6
+
+export interface LaneBandResult {
+  coords: [number, number][]
+  /** 每個取樣點的 route 里程——模擬車沿帶行駛時內插回 route 里程（HUD/maneuver 用） */
+  routeD: number[]
+}
+
 /**
- * 車道級路線帶：把路線座標依 spans 偏移到「實際行駛的車道」上。
- * 路線帶畫在車道內、車騎在路線帶上——不偏移的話絲帶壓在道路中心線，
- * 車在旁邊跑，看起來像沒開在路線／車道上。
+ * 車道級路線帶：把路線幾何偏移到「實際行駛的車道」上，含三種過渡：
+ *   進彎：路口前漸進切到轉向車道；偏心左轉道對齊 bay 開口
+ *        （漸變段斜切開始才變道，不壓上游槽化線與儲車段白線）
+ *   出彎：轉彎後從轉向側車道（左轉→最內、右轉→最外）漸出回巡航車道
+ *   巡航：span 的 offM
+ * 路線帶畫在車道內、車貼在路線帶上（drive.ts 直接沿這條帶行駛）。
  */
-export function laneOffsetCoords(route: RouteResult): [number, number][] {
+export function laneBand(route: RouteResult): LaneBandResult {
   const cs = route.coords
-  const out: [number, number][] = []
+  const cum = route.cum
+  const total = cum[cum.length - 1]
+  const mans = route.maneuvers.filter((m) => m.kind !== 'arrive')
+
+  // 取樣里程：原頂點（轉角錨點）＋ 全程步進（頂點附近 1.5m 內的步進點略過）
+  const ds: number[] = [...cum]
+  for (let d = BAND_STEP_M; d < total; d += BAND_STEP_M) ds.push(d)
+  ds.sort((a, b) => a - b)
+  const samples: number[] = []
+  for (const d of ds) {
+    if (samples.length === 0 || d - samples[samples.length - 1] > 1.5) samples.push(d)
+    else if (cum.includes(d)) samples[samples.length - 1] = d // 頂點優先於鄰近步進點
+  }
+
+  const coords: [number, number][] = []
+  const routeD: number[] = []
   let si = 0
-  for (let i = 0; i < cs.length; i++) {
-    while (si < route.spans.length - 1 && route.spans[si].toIdx < i) si++
+  let mi = 0
+  for (const d of samples) {
+    const { pos, brg, idx } = pointAlong(cs, cum, d)
+    while (si < route.spans.length - 1 && route.spans[si].toIdx < idx) si++
     const span = route.spans[si]
     let off = span?.offM ?? 0
     if (span) {
-      // 路口前漸進切到轉向車道（與模擬車同一套規則，絲帶先畫出變道軌跡）
-      // 找「含轉角頂點本身」的下一個轉彎（排除會在轉角處回跳巡航道的尖刺）
-      const d = route.cum[i]
-      const next = route.maneuvers.find((m) => m.distM >= d - 1 && m.kind !== 'arrive')
+      while (mi < mans.length && mans[mi].distM < d - 0.5) mi++
+      const next = mi < mans.length ? mans[mi] : null
+      const prev = mi > 0 ? mans[mi - 1] : null
+      let entering = false
       if (next) {
+        // 進彎 ramp：一般 45m→18m；偏心道對齊 bay 幾何（漸變段起點→儲車段起點）
+        const hasBayWin = next.bayOffM !== undefined && next.bayMouthM !== undefined
+        const rampStart = hasBayWin ? next.bayMouthM! + (next.bayTaperM ?? 15) : LANE_CHANGE_M
+        const rampEnd = hasBayWin ? next.bayMouthM! : LANE_CHANGE_M * 0.4
         const gap = next.distM - d
-        if (gap < LANE_CHANGE_M) {
-          let target = span.offM
-          if (next.kind === 'right' || next.kind === 'slight-right') target = span.rightM
-          else if (next.kind === 'left' || next.kind === 'slight-left' || next.kind === 'uturn') {
-            target = next.twoStage ? span.rightM : (next.bayOffM ?? span.leftM)
-          }
-          const t = Math.min(1, Math.max(0, (LANE_CHANGE_M - gap) / (LANE_CHANGE_M * 0.6)))
-          off = span.offM + (target - span.offM) * t
+        if (gap <= rampStart) {
+          const t = Math.min(1, Math.max(0, (rampStart - gap) / Math.max(1, rampStart - rampEnd)))
+          off = span.offM + (turnTarget(next, span) - span.offM) * t
+          entering = true
+        }
+      }
+      if (!entering && prev) {
+        // 出彎漸出：左轉/迴轉從最內車道、右轉從最外車道，漸回巡航車道
+        const e = d - prev.distM
+        if (e < EXIT_MERGE_M) {
+          const from =
+            prev.kind === 'right' || prev.kind === 'slight-right' || prev.twoStage ? span.rightM
+            : prev.kind === 'left' || prev.kind === 'slight-left' || prev.kind === 'uturn' ? span.leftM
+            : span.offM
+          off = from + (span.offM - from) * Math.max(0, e / EXIT_MERGE_M)
         }
       }
     }
-    const a = cs[Math.max(0, i - 1)]
-    const b = cs[Math.min(cs.length - 1, i + 1)]
-    const rad = ((bearing(a, b) + 90) * Math.PI) / 180
-    out.push(offsetMeters(cs[i], off * Math.sin(rad), off * Math.cos(rad)))
+    const rad = ((brg + 90) * Math.PI) / 180
+    coords.push(offsetMeters(pos, off * Math.sin(rad), off * Math.cos(rad)))
+    routeD.push(d)
   }
-  return out
+  return { coords, routeD }
+}
+
+/** 路線帶幾何（畫圖用）；模擬行駛要拿里程對應表，用 laneBand */
+export function laneOffsetCoords(route: RouteResult): [number, number][] {
+  return laneBand(route).coords
 }
 
 /** 多段路線合併（起點→停靠點…→終點）：中途的 arrive 併掉，只留最後一個 */

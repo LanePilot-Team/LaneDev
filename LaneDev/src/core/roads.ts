@@ -33,6 +33,7 @@ export interface RoadProps {
   oneway: 'yes' | 'no'
   maxspeed?: string
   motorcycle?: string // OSM motorcycle=*（no = 禁行機車）
+  motorcar?: string // OSM motorcar=*（no = 禁行汽車，機車專用道路體）
   /** OSM junction=*（roundabout = 圓環弧段，不進 couplet 合併） */
   junction?: string
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
@@ -124,6 +125,7 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       oneway,
       maxspeed: p.maxspeed ? String(p.maxspeed) : undefined,
       motorcycle: p.motorcycle ? String(p.motorcycle) : undefined,
+      motorcar: p.motorcar ? String(p.motorcar) : undefined,
       junction: p.junction ? String(p.junction) : undefined,
       turnLanes,
       turnLanesB,

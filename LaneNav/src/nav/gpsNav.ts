@@ -4,7 +4,7 @@
 import { nearestPointOnLine, point as turfPoint, lineString } from '@turf/turf'
 import type { Feature, LineString } from 'geojson'
 import { haversine, bearing } from '../core/geo'
-import type { RouteResult } from '../core/graph'
+import { spanAtDist, type RouteResult } from '../core/graph'
 import type { DriveState } from './drive'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
@@ -98,7 +98,12 @@ export class GpsDriver {
     const remainM = this.route.lengthM - this.progressM
     const arrived = remainM < ARRIVE_THRESHOLD_M
     const speedKmh = speed != null && !Number.isNaN(speed) ? speed * 3.6 : 0
+    const span = spanAtDist(this.route, this.progressM)
+    const rp = span?.road?.properties
     this.onTick({
+      roadName: rp?.name,
+      roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,
+      roadTurnLanes: rp ? (span!.back ? rp.turnLanesB : rp.turnLanes) : undefined,
       pos: here,
       bearing: this.lastBearing,
       speedKmh,

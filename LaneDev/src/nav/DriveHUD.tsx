@@ -72,6 +72,11 @@ export function TopBanner({ drive, twoStage, profile }: {
       : `前方 ${roundDistance(dist)} 公尺`
   const tone = twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
   const bay = !twoStage && m.bayOffM !== undefined // 偏心左轉道（兩段式不進 bay）
+  // 車道列跟著「目前所在路段」即時更新（車道數/轉向真值沿路會變，
+  // maneuver 上存的是轉彎口那一段的快照，離路口遠時會過期）
+  const laneM: Maneuver = drive.roadLanes !== undefined
+    ? { ...m, lanesForward: drive.roadLanes, turnLanes: drive.roadTurnLanes }
+    : m
   return (
     <div className={`banner banner-${tone}`}>
       <div className="banner-main">
@@ -85,7 +90,7 @@ export function TopBanner({ drive, twoStage, profile }: {
           )}
         </div>
       </div>
-      <LaneRow m={m} wantOverride={twoStage ? 'right' : undefined} bay={bay} />
+      <LaneRow m={laneM} wantOverride={twoStage ? 'right' : undefined} bay={bay} />
     </div>
   )
 }
@@ -115,6 +120,16 @@ const TURN_GLYPH: Record<string, string> = {
   merge_to_left: '↰', merge_to_right: '↱', reverse: '↩', none: '↑', '': '↑',
 }
 
+/** 一格車道的字形：複合轉向（left;through / through;right…）把所有箭頭併排顯示 */
+function laneGlyph(move: string): string {
+  const parts: string[] = []
+  for (const t of move.split(';')) {
+    const g = TURN_GLYPH[t] ?? '↑'
+    if (!parts.includes(g)) parts.push(g)
+  }
+  return parts.join('') || '↑'
+}
+
 export function LaneRow({ m, wantOverride, bay }: {
   m: Maneuver; wantOverride?: 'left' | 'right' | 'through'; bay?: boolean
 }) {
@@ -131,12 +146,16 @@ export function LaneRow({ m, wantOverride, bay }: {
       const on = wantOverride
         ? (want === 'right' ? i === arr.length - 1 : want === 'left' ? i === 0 : false)
         : moves.some((v) => v.includes(want) || (want !== 'through' && v === ''))
-      lanes.push({ glyph: TURN_GLYPH[moves[0]] ?? '↑', on })
+      lanes.push({ glyph: laneGlyph(arr[i]), on })
     }
   } else {
+    // 推薦值（無 turn:lanes 真值）：與路面箭頭同一套慣例——轉向車道通常兼直行，
+    // 畫複合箭頭（↰↑ / ↑↱）；兩段式覆寫維持單一箭頭（待轉不是共用車道語意）
     for (let i = 0; i < n; i++) {
       const on = want === 'left' ? i === 0 : want === 'right' ? i === n - 1 : i > 0 && i < n - 1
-      lanes.push({ glyph: on && want === 'left' ? '↰' : on && want === 'right' ? '↱' : '↑', on })
+      const glyph = on && want === 'left' ? (wantOverride ? '↰' : '↰↑')
+        : on && want === 'right' ? (wantOverride ? '↱' : '↑↱') : '↑'
+      lanes.push({ glyph, on })
     }
   }
   // 偏心左轉道：最左多一格專用道，轉向由它承擔，直行車道全滅
@@ -149,7 +168,7 @@ export function LaneRow({ m, wantOverride, bay }: {
   return (
     <div className="lane-row">
       {lanes.map((l, i) => (
-        <div key={i} className={`lane-box${l.on ? ' on' : ''}${l.bay ? ' bay' : ''}`}>{l.glyph}</div>
+        <div key={i} className={`lane-box${l.on ? ' on' : ''}${l.bay ? ' bay' : ''}${l.glyph.length > 1 ? ' multi' : ''}`}>{l.glyph}</div>
       ))}
     </div>
   )
@@ -218,6 +237,7 @@ export function DriveHUD({
             {drive.arrived ? '已抵達' :
               new Date(Date.now() + drive.remainS * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + ' 抵達'}
           </span>
+          {drive.roadName && <span className="trip-road">{drive.roadName}</span>}
         </div>
         {isDesktop && (
           <button className="lane-btn" onClick={() => onSwitchLane(1)} title="換到右邊車道">▶</button>

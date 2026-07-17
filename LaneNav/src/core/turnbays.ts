@@ -43,6 +43,8 @@ export interface TurnBay {
   d0M: number
   bayStartM: number
   endM: number
+  /** 停止線回退量（= 路口節點到 bay 前端的距離）——路線帶對齊 bay 開口用 */
+  setbackM: number
   back: boolean
   polygon: [number, number][] | null
   casing: [number, number][] | null
@@ -184,7 +186,7 @@ function makeBay(
     key, wayId: a.wayId, nodeId: a.nodeId, approachBearing: a.approachBearing,
     bayLenM, taperLenM, widthM, turns,
     source: (o ? 'manual' : 'default') as TurnBay['source'],
-    d0M: d0, bayStartM: bayStart, endM: end,
+    d0M: d0, bayStartM: bayStart, endM: end, setbackM: a.setbackM,
     back: a.back,
   }
 
@@ -530,6 +532,12 @@ export function annotateBays(route: RouteResult, bays: TurnBay[]) {
     if (m.nodeId === undefined || m.fromBearing === undefined) continue
     const bay = bays.find((b) =>
       b.nodeId === m.nodeId && Math.abs(angleDelta(b.approachBearing, m.fromBearing!)) < 40)
-    if (bay) m.bayOffM = bay.offM
+    if (bay) {
+      m.bayOffM = bay.offM
+      // bay 進入窗：距路口節點 bayMouthM 處儲車段開始、再往前 bayTaperM 為漸變開口。
+      // 路線帶據此把變道 ramp 對齊開口——從斜切段進 bay，不壓上游槽化線
+      m.bayMouthM = bay.setbackM + bay.bayLenM
+      m.bayTaperM = bay.taperLenM
+    }
   }
 }

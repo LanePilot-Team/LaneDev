@@ -191,15 +191,16 @@ export function buildStyle(): StyleSpecification {
       },
 
       // ── 導航路線帶 ──
+      // 路線帶透明度 70%（不透明度 0.3）：能看到藍線指引，也透得出地面標線/車道虛線
       {
         id: 'route-casing', type: 'line', source: 'route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': C.routeCasing, 'line-width': 11 },
+        paint: { 'line-color': C.routeCasing, 'line-width': 11, 'line-opacity': 0.3 },
       },
       {
         id: 'route-line', type: 'line', source: 'route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': C.route, 'line-width': 8 },
+        paint: { 'line-color': C.route, 'line-width': 8, 'line-opacity': 0.3 },
       },
       {
         id: 'route-chevron', type: 'symbol', source: 'route',

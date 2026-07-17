@@ -107,6 +107,7 @@ export function parseImported(text: string): ImportResult {
         oneway: tags.oneway,
         maxspeed: tags.maxspeed,
         motorcycle: tags.motorcycle,
+        motorcar: tags.motorcar,
         junction: tags.junction,
         lanes: tags.lanes,
         lanes_forward: tags['lanes:forward'],

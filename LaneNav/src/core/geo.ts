@@ -41,6 +41,18 @@ export function angleDelta(from: number, to: number): number {
   return d
 }
 
+/** 停止線斜交補償係數：交叉路走向 cross 對進入行向 approach 的 skew = −tan(α)，
+ * α = cross 與 approach 法線的線夾角（夾 ±45°，極銳角不拉畸形長線）。
+ * 橫向偏移 o（右正）的點沿路軸平移 o×skew，即落在「過錨點、平行交叉路」的線上——
+ * 停止線、地面箭頭列、標線收邊全都用同一係數，斜交路口才對得齊。 */
+export function skewFromCross(approachBearing: number, crossBearing: number): number {
+  let a = angleDelta(approachBearing + 90, crossBearing)
+  if (a > 90) a -= 180
+  if (a <= -90) a += 180
+  a = Math.max(-45, Math.min(45, a))
+  return -Math.tan((a * Math.PI) / 180)
+}
+
 /** 某 zoom 下 1 公尺等於幾像素（512px tile） */
 export function pxPerMeter(zoom: number): number {
   return Math.pow(2, zoom + 9) / (40075016.686 * COS_LAT)

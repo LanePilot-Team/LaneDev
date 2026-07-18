@@ -6,7 +6,9 @@
 //   單行道：way 線 = 斷面中心，全部車道屬順向。
 import { lineOffset } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
-import { LANE_WIDTH_M } from './geo'
+import {
+  angleDelta, bearing, cumulative, haversine, pointAlong, skewFromCross, LANE_WIDTH_M,
+} from './geo'
 
 export const MOTO_LANE_M = 2.2
 
@@ -26,6 +28,9 @@ export interface RoadProps {
   centerKind: 'hatch' | 'island'
   /** couplet 合併產生的路段——中央帶編輯只對這類路段開放 */
   coupletMerged?: boolean
+  /** 路寬微調（公尺，journal extra_width_m）：實際鋪面寬 ≠ lanes×3.2 時的補正，
+   * 對稱加減在斷面兩側（路肩語意），車道線/車道位置不動，只影響路面渲染寬 */
+  extraM: number
   /** 分向偏移（公尺，右正）：way 線 = 斷面幾何中心時，分向線相對 way 線的位置。
    * 非對稱車道（3+2 等）≠ 0，由 computeDerived 推導；渲染與車道偏移都要加上 */
   divOffM: number
@@ -61,14 +66,23 @@ const DEFAULT_LANES: Record<string, number> = {
 /** 由 f/b/moto 重算總車道數與斷面寬（編輯後也要呼叫） */
 export function computeDerived(p: RoadProps) {
   p.lanes = p.lanesForward + p.lanesBackward
-  p.width_m =
+  const laneSpan =
     LANE_WIDTH_M * (p.lanesForward + p.lanesBackward) +
     MOTO_LANE_M * ((p.motoF ? 1 : 0) + (p.motoB ? 1 : 0)) +
     (p.centerM || 0)
-  // 分向線位置 = -W/2 + 逆向側寬 + 中央帶一半（對稱斷面 = 0）
+  // 路寬微調對稱加減在兩側，車道塊維持置中（下限 2m，避免負微調把路面壓沒）
+  p.width_m = Math.max(2, laneSpan + (p.extraM || 0))
+  // 分向線位置 = -車道塊寬/2 + 逆向側寬 + 中央帶一半（對稱斷面 = 0；不含路寬微調）
   p.divOffM = p.oneway === 'yes' ? 0 :
     LANE_WIDTH_M * p.lanesBackward + (p.motoB ? MOTO_LANE_M : 0) +
-    (p.centerM || 0) / 2 - p.width_m / 2
+    (p.centerM || 0) / 2 - laneSpan / 2
+}
+
+/** 該行向的車道塊寬（車道×3.2 + 機車道；不含路寬微調）——地面標線橫向定位用 */
+export function laneSpanM(p: RoadProps, back: boolean): number {
+  const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
+  const moto = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
+  return lanes * LANE_WIDTH_M + (moto ? MOTO_LANE_M : 0)
 }
 
 export async function loadRoads(url: string): Promise<RoadFeature[]> {
@@ -120,6 +134,7 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       motoB: false,
       centerM: 0,
       centerKind: 'hatch',
+      extraM: 0,
       divOffM: 0,
       width_m: 0,
       oneway,
@@ -193,43 +208,138 @@ export function splitAtIntersections(roads: RoadFeature[]): RoadFeature[] {
 // 台灣右駕，順向車道在右側 → 正號。
 const RIGHT = 1
 
+/** 折線依里程裁切 [from, to]（分隔線終止端收邊用）；剩不到 2m 回傳 null */
+function sliceByDist(
+  coords: [number, number][], cum: number[], from: number, to: number,
+): [number, number][] | null {
+  if (to - from < 2) return null
+  const pts: [number, number][] = [pointAlong(coords, cum, from).pos]
+  for (let i = 0; i < coords.length; i++) {
+    if (cum[i] > from && cum[i] < to && haversine(pts[pts.length - 1], coords[i]) > 0.05) {
+      pts.push(coords[i])
+    }
+  }
+  const end = pointAlong(coords, cum, to).pos
+  if (haversine(pts[pts.length - 1], end) > 0.05) pts.push(end)
+  return pts.length >= 2 ? pts : null
+}
+
 /**
  * 生成車道線：
  *   center：雙向道分向線（黃）
  *   lane  ：同向車道分隔（白虛線）
  *   moto  ：機車道分隔（白實線）
+ * 路口收邊：區塊端節點上有「別條路」（不同 way 且不同路名）交會時，分隔線
+ * 收回交叉路最大半寬 + 1.2m——路口框內不殘留黃分向線/白車道線（2026-07-18
+ * 使用者要求「路口中間全清」，含主線通過的十字/丁字路口）。同路純續接節點
+ *（way 換 id 處、度數 2）不收，標線連續。
  */
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
+  // 節點 → 佔用道路（切塊後交叉路在路口節點必有端點/中間點落在這裡）
+  const nodeUse = new Map<number, RoadFeature[]>()
+  for (const r of roads) {
+    for (const n of r.properties.nodes) {
+      if (!nodeUse.has(n)) nodeUse.set(n, [])
+      nodeUse.get(n)!.push(r)
+    }
+  }
+  /** 端節點收邊資訊：trim = 收邊量（停止線位置基準：節點上「任何別的區塊」
+   * 最大寬/2 + 1.2，與 graph.scopeEdges 的 setback 一致——分隔線才不會戳過
+   * 停止線）；sk = 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，
+   * 收邊線平行交叉路＝停止線的延長線）。trim=0 = 不收（節點上沒有不同路名
+   * 的交叉路：純續接或死路）。 */
+  const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
+    let anyCross = false
+    let w = 0
+    let crossBrg: number | null = null
+    let bestPerp = 25 // 交叉路需與自身線夾角 >25°，順向岔路不定義斜線
+    for (const f of nodeUse.get(n) ?? []) {
+      if (f === self) continue
+      const q = f.properties
+      w = Math.max(w, q.width_m)
+      if (q.osm_id === self.properties.osm_id ||
+        (self.properties.name && q.name === self.properties.name)) continue // 同路續行不算交叉
+      anyCross = true
+      const idx = q.nodes.indexOf(n)
+      const cs2 = f.geometry.coordinates as [number, number][]
+      if (idx >= 0 && q.nodes.length === cs2.length && cs2.length >= 2) {
+        const brg = idx < cs2.length - 1
+          ? bearing(cs2[idx], cs2[idx + 1])
+          : bearing(cs2[idx - 1], cs2[idx])
+        let d = Math.abs(angleDelta(fwdBrg, brg))
+        if (d > 90) d = 180 - d
+        if (d > bestPerp) { bestPerp = d; crossBrg = brg }
+      }
+    }
+    if (!anyCross) return { trim: 0, sk: 0 }
+    return { trim: w / 2 + 1.2, sk: crossBrg === null ? 0 : skewFromCross(fwdBrg, crossBrg) }
+  }
+
+  const ZERO = { trim: 0, sk: 0 }
   const features: Feature<LineString>[] = []
-  const push = (road: RoadFeature, off: number, kind: string) => {
+  let cs0: [number, number][] = []
+  let cum: number[] | null = null
+  let L = 0
+  let info0 = ZERO
+  let info1 = ZERO
+  let curId = 0
+  /** 依「該端停止線的延長線」裁切後偏移：裁切點 = 收邊基準 + 橫向偏移×skew ∓ 0.5m */
+  const push = (off: number, kind: string) => {
+    let cs = cs0
+    if (cum) {
+      const from = info0.trim > 0 ? info0.trim + info0.sk * off + 0.5 : 0
+      const to = info1.trim > 0 ? L - info1.trim + info1.sk * off - 0.5 : L
+      const sliced = sliceByDist(cs0, cum, Math.max(0, from), Math.min(L, to))
+      if (!sliced) return // 這條分隔線全在路口框內
+      cs = sliced
+    }
     try {
-      const line = off === 0
-        ? { type: 'Feature' as const, geometry: road.geometry, properties: {} }
-        : lineOffset(road as Feature<LineString>, off, { units: 'meters' })
-      features.push({ type: 'Feature', geometry: line.geometry, properties: { kind } })
+      const feat: Feature<LineString> = {
+        type: 'Feature', properties: {},
+        geometry: { type: 'LineString', coordinates: cs },
+      }
+      const line = off === 0 ? feat : lineOffset(feat, off, { units: 'meters' })
+      features.push({
+        type: 'Feature', geometry: line.geometry,
+        properties: { kind, osm_id: curId }, // osm_id 供除錯/離線稽核，樣式不使用
+      })
     } catch { /* 退化幾何略過 */ }
   }
   for (const road of roads) {
     const p = road.properties
+    curId = p.osm_id
     if (road.geometry.coordinates.length < 2) continue
+    cs0 = road.geometry.coordinates as [number, number][]
+    const ns = p.nodes
+    cum = null
+    info0 = ZERO
+    info1 = ZERO
+    if (ns.length === cs0.length && ns.length >= 2) {
+      info0 = endInfo(ns[0], road, bearing(cs0[0], cs0[1]))
+      info1 = endInfo(ns[ns.length - 1], road, bearing(cs0[cs0.length - 2], cs0[cs0.length - 1]))
+      if (info0.trim > 0 || info1.trim > 0) {
+        cum = cumulative(cs0)
+        L = cum[cum.length - 1]
+      }
+    }
     const f = p.lanesForward // 可為 0（該向純機車道）
     if (p.oneway === 'yes') {
       // 單行道：斷面置中
       const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M : 0)
       const left = -total / 2
-      for (let k = 1; k < f; k++) push(road, RIGHT * (left + k * LANE_WIDTH_M), 'lane')
+      for (let k = 1; k < f; k++) push(RIGHT * (left + k * LANE_WIDTH_M), 'lane')
       // 0 車道時機車道左界 = 斷面左緣，不需分隔線
-      if (p.motoF && f > 0) push(road, RIGHT * (left + f * LANE_WIDTH_M), 'moto')
+      if (p.motoF && f > 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
     } else {
       const b = p.lanesBackward
       const c = (p.centerM || 0) / 2 // 中央帶：兩向車道外移一半
       const dv = p.divOffM || 0 // 非對稱車道時分向線不在 way 線上
       // 中央帶存在時分向線由 turnbays 模組畫（±c 雙黃 + 偏心道/槽化內容）
-      if (c === 0) push(road, RIGHT * dv, 'center')
-      for (let k = 1; k < f; k++) push(road, RIGHT * (dv + c + k * LANE_WIDTH_M), 'lane')
-      if (p.motoF && f > 0) push(road, RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
-      for (let k = 1; k < b; k++) push(road, RIGHT * (dv - c - k * LANE_WIDTH_M), 'lane')
-      if (p.motoB && b > 0) push(road, RIGHT * (dv - c - b * LANE_WIDTH_M), 'moto')
+      if (c === 0) push(RIGHT * dv, 'center')
+      for (let k = 1; k < f; k++) push(RIGHT * (dv + c + k * LANE_WIDTH_M), 'lane')
+      if (p.motoF && f > 0) push(RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
+      for (let k = 1; k < b; k++) push(RIGHT * (dv - c - k * LANE_WIDTH_M), 'lane')
+      if (p.motoB && b > 0) push(RIGHT * (dv - c - b * LANE_WIDTH_M), 'moto')
     }
   }
   return { type: 'FeatureCollection', features }

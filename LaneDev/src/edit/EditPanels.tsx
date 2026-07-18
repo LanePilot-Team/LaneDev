@@ -1,8 +1,8 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
 import type { Profile } from '../core/graph'
 import { exportEnhancements } from '../core/enhancements'
-import { planZone } from '../core/zones'
-import { bayCandidatesAt } from '../core/turnbays'
+import { makeZoneCtx, planZone } from '../core/zones'
+import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore } from '../app/mapCore'
@@ -55,11 +55,11 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
         : editTool === 'zone'
           ? '點選「路口」→ 右側面板選左轉方向（位置自動計算）'
           : editTool === 'bay'
-            ? '點選「路口」→ 開關/調整偏心左轉道（實驗範圍：藍田路）'
+            ? '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道'
             : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
       {!editWarn && (
         <button className="mini"
-          onClick={() => exportEnhancements(core.journalRef.current, core.zonesRef.current, core.vehiclesRef.current, core.baysRef.current)}>
+          onClick={() => exportEnhancements(core.journalRef.current, core.zonesRef.current, core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current)}>
           匯出 ({core.journalRef.current.length + zoneCount + vehicleCount})
         </button>
       )}
@@ -128,6 +128,16 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </button>
         </div>
       )}
+      <div className="edit-row">
+        <span>路寬微調（±路肩）</span>
+        <button className="mini" onClick={() => setEditRoad((er) => er && ({
+          ...er, extraM: Math.max(-3.2, +(er.extraM - 0.4).toFixed(1)),
+        }))}>−</button>
+        <b>{editRoad.extraM >= 0 ? '+' : ''}{editRoad.extraM.toFixed(1)}m</b>
+        <button className="mini" onClick={() => setEditRoad((er) => er && ({
+          ...er, extraM: Math.min(6.4, +(er.extraM + 0.4).toFixed(1)),
+        }))}>＋</button>
+      </div>
       {editRoad.oneway === 'no' && editRoad.canCenter && (
         <div className="edit-row">
           <span>中央帶（偏心/槽化/島）</span>
@@ -281,7 +291,9 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
             {exists
               ? <span className="sp-done">已設</span>
               : <button className="mini go" onClick={() => {
-                core.zonesRef.current = [...core.zonesRef.current, planZone(o)]
+                const g = core.graphRef.current
+                core.zonesRef.current = [...core.zonesRef.current,
+                  planZone(o, g ? makeZoneCtx(g) : undefined)]
                 core.refreshZones()
               }}>新增</button>}
           </div>
@@ -310,17 +322,20 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
   )
 }
 
-/** 側面板：路口偏心左轉道（開/關/參數，journal 覆寫） */
+/** 側面板：路口偏心左轉道 + 右轉附加車道（開/關/參數，journal 覆寫） */
 export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const { bayPanel, setBayPanel } = editor
   if (!bayPanel) return null
   const cands = core.graphRef.current
     ? bayCandidatesAt(core.graphRef.current, core.journalRef.current, core.baysRef.current, bayPanel.nodeId)
     : []
+  const rlCands = core.graphRef.current
+    ? rightLaneCandidatesAt(core.graphRef.current, core.journalRef.current, core.rightLanesRef.current, bayPanel.nodeId)
+    : []
   return (
     <div className="side-panel">
       <div className="sp-head">
-        <b>偏心左轉道</b>
+        <b>偏心左轉道 / 右轉道</b>
         <button className="sp-close" onClick={() => setBayPanel(null)}>✕</button>
       </div>
       <div className="road-src">node/{bayPanel.nodeId} · 覆寫將記入 journal</div>
@@ -355,6 +370,31 @@ export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
                 </button>
               )}
             </>
+          )}
+        </div>
+      ))}
+      <div className="road-src" style={{ marginTop: 10 }}>
+        右轉附加車道（路口前最外車道外側加寬）：
+      </div>
+      {rlCands.length === 0 && (
+        <div className="sp-error">此路口找不到進入行向</div>
+      )}
+      {rlCands.map((c) => (
+        <div key={c.key} className="sp-stop" style={{ flexWrap: 'wrap', gap: 6 }}>
+          <span className="sp-pos">{c.roadName ?? '未命名'}（{compassOf(c.approachBearing)}進入）</span>
+          {c.rl ? (
+            <>
+              <span>儲車 {Math.round(c.rl.lenM)}m</span>
+              <button className="mini" onClick={() =>
+                editor.overrideRightLane(c.key, { present: 1, len_m: Math.max(10, Math.round(c.rl!.lenM) - 5) })}>−5</button>
+              <button className="mini" onClick={() =>
+                editor.overrideRightLane(c.key, { present: 1, len_m: Math.min(60, Math.round(c.rl!.lenM) + 5) })}>＋5</button>
+              <button className="mini warn-btn" onClick={() => editor.overrideRightLane(c.key, { present: 0 })}>關閉</button>
+            </>
+          ) : c.failed ? (
+            <span className="sp-error">路段太短，放不下右轉道</span>
+          ) : (
+            <button className="mini go" onClick={() => editor.overrideRightLane(c.key, { present: 1 })}>新增</button>
           )}
         </div>
       ))}

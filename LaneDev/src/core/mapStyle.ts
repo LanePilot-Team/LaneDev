@@ -91,13 +91,15 @@ export function buildStyle(): StyleSpecification {
         paint: { 'fill-color': C.surface },
       },
       {
-        // bay 邊線與中央槽化線（台灣標線色）：分隔對向 = 黃、分隔同向 = 白
+        // bay 邊線與中央槽化線（台灣標線色）：分隔對向 = 黃、分隔同向 = 白；
+        // stop = 路口停止線（白粗橫線，寬 0.45m 仿實際 30~60cm）
         id: 'bay-edge', type: 'line', source: 'turnbays', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'line'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ['match', ['get', 'color'], 'yellow', C.centerLine, C.laneLine],
-          'line-width': widthMeters(['match', ['get', 'color'], 'yellow', 0.25, 0.15] as ExpressionSpecification),
+          'line-width': widthMeters(['match', ['get', 'color'],
+            'yellow', 0.25, 'stop', 0.45, 0.15] as ExpressionSpecification),
         },
       },
       // ── 分隔島（Case B：成對單行間的實體分隔帶，自動推導）──
@@ -450,6 +452,25 @@ export function makeIcons(): Record<string, ImageData> {
       g.closePath(); g.fill()
       g.beginPath(); g.moveTo(20, 66); g.quadraticCurveTo(38, 62, 40, 50); g.stroke()
       g.beginPath(); g.moveTo(32, 36); g.lineTo(52, 44); g.lineTo(38, 60)
+      g.closePath(); g.fill()
+    }),
+    // 並排式直行+右轉（兩支完整箭頭各自獨立，非合體分岔）
+    'lane-arrow-through-right-dual': canvasImage(72, 96, (g) => {
+      g.strokeStyle = '#ffffff'
+      g.lineWidth = 7
+      g.lineCap = 'butt'
+      g.lineJoin = 'round'
+      // 左：完整直行箭頭
+      g.beginPath(); g.moveTo(18, 92); g.lineTo(18, 30); g.stroke()
+      g.fillStyle = '#ffffff'
+      g.beginPath(); g.moveTo(18, 6); g.lineTo(6, 34); g.lineTo(30, 34)
+      g.closePath(); g.fill()
+      // 右：完整右轉箭頭（同 lane-arrow-right 造型，平移到右半）
+      g.beginPath()
+      g.moveTo(46, 92); g.lineTo(46, 44); g.quadraticCurveTo(46, 30, 56, 30)
+      g.stroke()
+      g.beginPath()
+      g.moveTo(54, 18); g.lineTo(70, 30); g.lineTo(54, 42)
       g.closePath(); g.fill()
     }),
     'lane-arrow-left-through': canvasImage(56, 96, (g) => {

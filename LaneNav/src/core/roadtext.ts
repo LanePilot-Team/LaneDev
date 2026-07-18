@@ -5,6 +5,7 @@
 // 字圖由 mapStyle.makeIcons 生成（rule-<code>），第一字在上、由上往下讀。
 import type { Feature, FeatureCollection } from 'geojson'
 import { cumulative, pointAlong, LANE_WIDTH_M } from './geo'
+import { laneSpanM } from './roads'
 import { offsetAt } from './turnbays'
 import type { RoadGraph } from './graph'
 
@@ -42,9 +43,9 @@ export function buildRoadTexts(graph: RoadGraph): FeatureCollection {
     const n = Math.min(rules.length,
       Math.floor((s1 - s0 - ROAD_TEXT_LEN_M - 4) / STACK_STEP_M) + 1)
     if (n < 1) continue
-    // 車道基準（行進 frame）：單行道 = 斷面左緣；雙向 = 分向線 + 中央帶半寬
+    // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
     const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
-    const base = p.oneway === 'yes' ? -p.width_m / 2 : dv + (p.centerM || 0) / 2
+    const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     // 印字橫向位置：各汽車道中心；0 車道（純機車道）時印在機車道中心
     const offs = lanes >= 1
       ? Array.from({ length: lanes }, (_, k) => base + (k + 0.5) * LANE_WIDTH_M)

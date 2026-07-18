@@ -11,10 +11,11 @@ import type { MapCore, Mode } from '../app/mapCore'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle'
 
-export const TURN_CYCLE = ['through', 'left', 'right', 'left;through', 'through;right', 'left;right', 'reverse']
+export const TURN_CYCLE = ['through', 'left', 'right', 'left;through', 'through;right', 'through+right', 'left;right', 'reverse']
 export const TURN_EDIT_GLYPH: Record<string, string> = {
   through: '↑', left: '↰', right: '↱', 'left;through': '↰↑',
-  'through;right': '↑↱', 'left;right': '↰↱', reverse: '↩',
+  'through;right': '↑↱', 'through+right': '↑+↱', // +：並排式兩支完整箭頭
+  'left;right': '↰↱', reverse: '↩',
 }
 
 /** 中央偏心道的轉向選項（none = 該行向路口前無偏心道） */
@@ -42,6 +43,8 @@ export interface EditRoadState {
   blockNode: number
   f: number; b: number; motoF: boolean; motoB: boolean
   centerM: number; centerKind: 'hatch' | 'island'
+  /** 路寬微調（公尺，可負；對稱加減在斷面兩側，車道線不動） */
+  extraM: number
   canCenter: boolean // 中央帶編輯只對 couplet 合併段開放
   fwdLabel: string; bwdLabel: string
   turnLanes: string[]
@@ -71,6 +74,7 @@ export interface Editor {
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
   overrideBay: (key: string, fields: Record<string, string | number>) => void
+  overrideRightLane: (key: string, fields: Record<string, string | number>) => void
   deleteVehicle: (id: string) => void
   clearVehicles: () => void
   /** 模式切換時關掉所有編輯面板並取消選取 */
@@ -120,9 +124,10 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const brg = geoBearing(cs[0], cs[cs.length - 1])
       // 面板初始值 = 路面圖示（有真值用真值，否則同 buildLaneArrows 的預設推導）
       const g = core.graphRef.current
-      const tl = g ? groundMoves(g, core.baysRef.current, road, false)
+      const tl = g ? groundMoves(g, core.baysRef.current, road, false, core.rightLanesRef.current)
         : Array.from({ length: p2.lanesForward }, () => 'through')
-      const tlB = g && p2.oneway === 'no' ? groundMoves(g, core.baysRef.current, road, true)
+      const tlB = g && p2.oneway === 'no'
+        ? groundMoves(g, core.baysRef.current, road, true, core.rightLanesRef.current)
         : Array.from({ length: Math.max(1, p2.lanesBackward) }, () => 'through')
       const nodeFirst = p2.nodes[0] ?? 0
       const nodeLast = p2.nodes[p2.nodes.length - 1] ?? 0
@@ -142,6 +147,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         f: p2.lanesForward, b: p2.lanesBackward,
         motoF: p2.motoF, motoB: p2.motoB,
         centerM: p2.centerM || 0,
+        extraM: p2.extraM || 0,
         centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
         canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
         fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
@@ -229,6 +235,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         moto_backward: editRoad.oneway === 'yes' ? 0 : (editRoad.motoB ? 1 : 0),
         center_m: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
         center_kind: editRoad.centerKind,
+        extra_width_m: editRoad.extraM,
         turn_lanes: editRoad.turnLanes.join('|'),
         rules_forward: editRoad.rulesF.join('|'),
         ...(editRoad.oneway === 'no'
@@ -275,6 +282,15 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   function overrideBay(key: string, fields: Record<string, string | number>) {
     core.journalRef.current = appendRecord(core.journalRef.current, {
       op: 'set', target: { type: 'turn_bay', key }, fields,
+    })
+    core.refreshBays()
+    setBayTick((t) => t + 1)
+  }
+
+  /** 右轉附加車道覆寫（present 開關 / len_m 儲車長），寫入即重算 */
+  function overrideRightLane(key: string, fields: Record<string, string | number>) {
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set', target: { type: 'right_lane', key }, fields,
     })
     core.refreshBays()
     setBayTick((t) => t + 1)
@@ -331,7 +347,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
-    handleEditClick, saveRoadEdit, overrideBay, overrideTwin,
+    handleEditClick, saveRoadEdit, overrideBay, overrideRightLane, overrideTwin,
     deleteVehicle, clearVehicles, closeAll,
   }
 }

@@ -118,6 +118,7 @@ export function ManeuverArrow({ kind }: { kind: Maneuver['kind'] | 'two-stage' }
 const TURN_GLYPH: Record<string, string> = {
   left: '↰', slight_left: '↖', through: '↑', right: '↱', slight_right: '↗',
   merge_to_left: '↰', merge_to_right: '↱', reverse: '↩', none: '↑', '': '↑',
+  'through+right': '↑↱', // 並排式直行+右轉（HUD 車道格語意同 through;right）
 }
 
 /** 一格車道的字形：複合轉向（left;through / through;right…）把所有箭頭併排顯示 */

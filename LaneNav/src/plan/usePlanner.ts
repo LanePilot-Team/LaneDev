@@ -6,7 +6,7 @@ import {
   mergeRoutes, laneOffsetCoords,
   type RouteResult, type Maneuver, type Profile,
 } from '../core/graph'
-import { annotateBays } from '../core/turnbays'
+import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 
@@ -216,6 +216,7 @@ export function usePlanner(core: MapCore): Planner {
   function annotateTwoStage(route: RouteResult) {
     for (const m of route.maneuvers) m.twoStage = computeTwoStage(m, profileRef.current)
     annotateBays(route, core.baysRef.current)
+    annotateRightLanes(route, core.rightLanesRef.current)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__route = route
   }
 

@@ -15,8 +15,10 @@ import { loadZones, saveZones, zonesToGeoJSON, type Zone } from '../core/zones'
 import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
+import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import {
-  buildTurnBays, buildChannelization, buildLaneArrows, baysToGeoJSON, type TurnBay,
+  buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
+  baysToGeoJSON, type TurnBay, type RightLane,
 } from '../core/turnbays'
 import { buildRoadTexts } from '../core/roadtext'
 import {
@@ -66,6 +68,8 @@ export interface MapCore {
   selectedZoneRef: RefObject<string | null>
   journalRef: RefObject<EnhancementRecord[]>
   baysRef: RefObject<TurnBay[]>
+  /** 右轉附加車道（journal right_lane 折疊生成，refreshBays 重算） */
+  rightLanesRef: RefObject<RightLane[]>
   intersectionsRef: RefObject<{ id: number; pos: [number, number] }[]>
   vehiclesRef: RefObject<PlacedVehicle[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
@@ -75,6 +79,9 @@ export interface MapCore {
   nodeRemapRef: RefObject<Map<number, number>>
   /** 被合併（drop 側）way → keep way 對照（LanePilot 標註匯入重映射用） */
   wayRemapRef: RefObject<Map<number, DropRemap>>
+  /** 前處理「之前」的原始 way 幾何快照（標註匯入的進入方位角後援：
+   * couplet/退化清理清掉的 way 在底圖與 wayRemap 都查不到） */
+  rawWaysRef: RefObject<Map<number, RawWay>>
   src: (id: string) => GeoJSONSource
   refreshZones: () => void
   refreshBays: () => void
@@ -105,6 +112,7 @@ export function useMapCore(
   const selectedZoneRef = useRef<string | null>(null)
   const journalRef = useRef<EnhancementRecord[]>([])
   const baysRef = useRef<TurnBay[]>([])
+  const rightLanesRef = useRef<RightLane[]>([])
   const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
   const vehiclesRef = useRef<PlacedVehicle[]>([])
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
@@ -112,6 +120,7 @@ export function useMapCore(
   const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
+  const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -137,10 +146,13 @@ export function useMapCore(
   const refreshBays = useCallback(() => {
     if (!mapRef.current || !graphRef.current) return
     baysRef.current = buildTurnBays(graphRef.current, journalRef.current)
-    // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口地面車道箭頭
+    rightLanesRef.current = buildRightLanes(graphRef.current, journalRef.current)
+    // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
-    const laneArrows = buildLaneArrows(graphRef.current, baysRef.current)
-    src('turnbays').setData(baysToGeoJSON(baysRef.current, channel, laneArrows) as never)
+    const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
+    const laneArrows = buildLaneArrows(graphRef.current, baysRef.current, rightLanesRef.current)
+    src('turnbays').setData(baysToGeoJSON(
+      baysRef.current, [...channel, ...stopLines], laneArrows, rightLanesRef.current) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
     src('medians').setData(mediansToGeoJSON([
@@ -179,8 +191,9 @@ export function useMapCore(
   if (!coreRef.current) {
     coreRef.current = {
       mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, journalRef, baysRef,
+      rightLanesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
-      nodeRemapRef, wayRemapRef,
+      nodeRemapRef, wayRemapRef, rawWaysRef,
       src, refreshZones, refreshBays, refreshVehicles, redrawRoads, replaceBaseMap,
     }
   }
@@ -223,6 +236,7 @@ export function useMapCore(
       // 底圖前處理（人工修正 → couplet 合併 → 切塊）收斂在 core/pipeline.ts，
       // 與「匯入地圖」及離線 harness 共用。nodeRemap/wayRemap = 合併造成的
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
+      rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
       const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
@@ -264,6 +278,34 @@ export function useMapCore(
         }
         return id === z.intersectionId ? z : { ...z, intersectionId: id }
       })
+      // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
+      // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
+      // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。
+      if (!location.search.includes('lpzones=off')) {
+        try {
+          const r = await fetch('/data/lanepilot/annotations.jsonl')
+          if (r.ok) {
+            const parsed = parseImported(await r.text())
+            if (parsed.kind === 'annotations') {
+              const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
+              const res = zonesFromAnnotations({
+                records: parsed.records,
+                graph: graphRef.current,
+                roads,
+                nodeRemap, wayRemap,
+                rawWays: rawWaysRef.current,
+                existing: manual,
+              })
+              zonesRef.current = [...manual, ...res.zones]
+              if (res.skips.length) {
+                console.warn(`LanePilot 待轉區標註略過 ${res.skips.length} 筆`, res.skips)
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('LanePilot 標註自動載入失敗（沿用 localStorage 既有待轉區）', e)
+        }
+      }
       refreshZones()
       refreshBays()
       // 真 3D 車輛模型圖層（three.js）

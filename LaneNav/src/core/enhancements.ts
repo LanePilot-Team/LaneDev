@@ -8,7 +8,7 @@
 import { computeDerived, type RoadFeature } from './roads'
 import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
-import type { TurnBay } from './turnbays'
+import type { TurnBay, RightLane } from './turnbays'
 
 export interface EnhancementRecord {
   seq: number
@@ -21,9 +21,11 @@ export interface EnhancementRecord {
    *          @b/ 後為區塊第一個 node id；套用時區塊級蓋過 way 級）
    * turn_bay key = "way/W@node/N"（偏心左轉道覆寫，見 路上元件擴充設計.md §1.3）
    * twin_island key = "twin/A-B"（顯式配對分隔島覆寫：w 島寬 / present 開關）
+   * right_lane key = "way/W@node/N[~b]~r"（路口前右轉附加車道：present/len_m/width_m；
+   *          與 turn_bay 同格式加 ~r 尾碼——foldJournal 依 key 折疊，尾碼避免鍵碰撞）
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
-  target: { type: 'road' | 'turn_bay' | 'twin_island'; key: string }
+  target: { type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane'; key: string }
   fields?: Record<string, string | number>
 }
 
@@ -64,7 +66,7 @@ export function remapJournalNodes(
   if (remap.size === 0) return journal
   let changed = 0
   const out = journal.map((rec) => {
-    const m = rec.target.key.match(/^(way\/-?\d+@(?:b|node)\/)(\d+)(~b)?$/)
+    const m = rec.target.key.match(/^(way\/-?\d+@(?:b|node)\/)(\d+)((?:~b)?(?:~r)?)$/)
     if (!m) return rec
     const n = remap.get(Number(m[2]))
     if (n === undefined) return rec
@@ -135,18 +137,22 @@ export function applyToRoads(
     }
     if (fields.center_m !== undefined) p.centerM = Math.max(0, Number(fields.center_m)) // 中央帶（偏心道/槽化/島）
     if (fields.center_kind !== undefined) p.centerKind = fields.center_kind === 'island' ? 'island' : 'hatch'
+    if (fields.extra_width_m !== undefined) {
+      p.extraM = Math.max(-3.2, Math.min(6.4, Number(fields.extra_width_m) || 0)) // 路寬微調（路肩）
+    }
     computeDerived(p)
   }
   return n
 }
 
-/** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型 + 偏心左轉道 */
+/** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型
+ * + 偏心左轉道 + 右轉附加車道 */
 export function exportEnhancements(
   journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
-  bays: TurnBay[] = [],
+  bays: TurnBay[] = [], rightLanes: RightLane[] = [],
 ) {
   const payload = {
-    format: 'navsim-enhancement-v0.4',
+    format: 'navsim-enhancement-v0.5',
     exported_at: new Date().toISOString(),
     author: AUTHOR,
     journal,
@@ -175,6 +181,17 @@ export function exportEnhancements(
       width_m: b.widthM,
       turns: b.turns,
       source: b.source,
+    })),
+    // 右轉附加車道（純人工開啟，折疊後現況）
+    right_lanes: rightLanes.map((r) => ({
+      key: r.key,
+      way: `way/${r.wayId}`,
+      intersection_osm_node: r.nodeId,
+      approach_bearing_deg: Math.round(r.approachBearing),
+      len_m: r.lenM,
+      taper_len_m: r.taperLenM,
+      width_m: r.widthM,
+      source: 'manual',
     })),
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })

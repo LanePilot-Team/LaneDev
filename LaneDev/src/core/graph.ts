@@ -82,6 +82,9 @@ export interface Maneuver {
    * 從開口進 bay，不壓儲車段白線、更不壓上游槽化線 */
   bayMouthM?: number
   bayTaperM?: number
+  /** 右轉附加車道：右轉變道目標＝附加車道中心（annotateRightLanes 標記，
+   * 進入窗共用 bayMouthM/bayTaperM） */
+  rightOffM?: number
   lanesForward: number
   turnLanes?: string[]
 }
@@ -162,7 +165,7 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
 function turnTarget(
   m: Maneuver, span: { offM: number; leftM: number; rightM: number },
 ): number {
-  if (m.kind === 'right' || m.kind === 'slight-right') return span.rightM
+  if (m.kind === 'right' || m.kind === 'slight-right') return m.rightOffM ?? span.rightM
   if (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn') {
     return m.twoStage ? span.rightM : (m.bayOffM ?? span.leftM)
   }
@@ -215,6 +218,7 @@ function twinSeg(e: Edge, seg: number): number {
 export class RoadGraph {
   private nodePos = new Map<number, [number, number]>()
   private adj = new Map<number, Edge[]>()
+  private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
 
   constructor(roads: RoadFeature[]) {
@@ -253,7 +257,36 @@ export class RoadGraph {
   private push(e: Edge) {
     if (!this.adj.has(e.from)) this.adj.set(e.from, [])
     this.adj.get(e.from)!.push(e)
+    if (!this.adjIn.has(e.to)) this.adjIn.set(e.to, [])
+    this.adjIn.get(e.to)!.push(e)
     this.edges.push(e)
+  }
+
+  /**
+   * 路口「交叉路」的線方位（度）：排除自身路（同 way/同名續行）後，取與進入
+   * 行向最接近垂直的一條（線夾角需 >25°，順向岔路不算）。停止線/地面箭頭列
+   * 對齊交會道路用（斜交路口如援中路×藍昌路，垂直於自身會歪）；null = 無交叉路。
+   * 出邊＋入邊都看——單行道交叉路可能只進不出。
+   */
+  crossOrientationAt(nodeId: number, fromBearing: number, selfRoad: RoadFeature): number | null {
+    let best: number | null = null
+    let bestPerp = 25
+    const consider = (b: number, road: RoadFeature) => {
+      const q = road.properties
+      if (q.osm_id === selfRoad.properties.osm_id) return
+      if (selfRoad.properties.name && q.name === selfRoad.properties.name) return
+      let d = Math.abs(angleDelta(fromBearing, b))
+      if (d > 90) d = 180 - d // 折成線夾角（0~90）
+      if (d > bestPerp) { bestPerp = d; best = b }
+    }
+    for (const e of this.adj.get(nodeId) ?? []) {
+      if (e.coords.length >= 2) consider(bearing(e.coords[0], e.coords[1]), e.road)
+    }
+    for (const e of this.adjIn.get(nodeId) ?? []) {
+      const c = e.coords
+      if (c.length >= 2) consider(bearing(c[c.length - 2], c[c.length - 1]), e.road)
+    }
+    return best
   }
 
   /** 路口清單（相鄰節點 ≥3）——待轉區只能放在路口附近 */
@@ -618,8 +651,8 @@ export function laneBand(route: RouteResult): LaneBandResult {
       const prev = mi > 0 ? mans[mi - 1] : null
       let entering = false
       if (next) {
-        // 進彎 ramp：一般 45m→18m；偏心道對齊 bay 幾何（漸變段起點→儲車段起點）
-        const hasBayWin = next.bayOffM !== undefined && next.bayMouthM !== undefined
+        // 進彎 ramp：一般 45m→18m；偏心道/右轉道對齊 bay 幾何（漸變段起點→儲車段起點）
+        const hasBayWin = (next.bayOffM ?? next.rightOffM) !== undefined && next.bayMouthM !== undefined
         const rampStart = hasBayWin ? next.bayMouthM! + (next.bayTaperM ?? 15) : LANE_CHANGE_M
         const rampEnd = hasBayWin ? next.bayMouthM! : LANE_CHANGE_M * 0.4
         const gap = next.distM - d

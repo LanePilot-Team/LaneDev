@@ -9,9 +9,8 @@ import {
 import { roadsFromGeoJSON, type RoadFeature } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
-import { saveZones, planZone } from '../core/zones'
-import { angleDelta, bearing as geoBearing, haversine } from '../core/geo'
-import type { TurnOption } from '../core/graph'
+import { saveZones } from '../core/zones'
+import { buildRawWays, zonesFromAnnotations } from '../core/zoneimport'
 import type { MapCore, Mode } from './mapCore'
 
 export interface ImportUi {
@@ -57,7 +56,9 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
   const total = features.length
   // 與預設底圖同一套前處理（人工修正 → couplet 合併 → 切塊），匯入行為才一致；
   // journal 已存合併後的鍵空間（載入時 remapJournalNodes 回存過），直接疊上
-  const prep = prepareBaseRoads(roadsFromGeoJSON({ type: 'FeatureCollection', features }))
+  const roadsRaw = roadsFromGeoJSON({ type: 'FeatureCollection', features })
+  core.rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
+  const prep = prepareBaseRoads(roadsRaw)
   const roads = prep.roads
   core.nodeRemapRef.current = prep.nodeRemap
   core.wayRemapRef.current = prep.wayRemap
@@ -71,32 +72,6 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
   ui.setImportMsg(withNodes < total
     ? `已匯入 ${name}：${total} 段（⚠ ${total - withNodes} 段缺 node_refs，無法用於路線規劃）`
     : `已匯入 ${name}：${total} 段路網（含拓撲）`)
-}
-
-type Dir = 'forward' | 'backward'
-const flipDir = (d: Dir): Dir => (d === 'forward' ? 'backward' : 'forward')
-
-/** way 上某節點的「進入行向」（forward = 沿座標順向抵達該點）。
- * way 已依路口切塊，node 可能只在其中一塊：逐塊找到有相鄰點的那塊。
- * normalized = dir 已是載入後的幾何方向（couplet wayRemap 換算過），
- * 不再套 road.reversed（預設 false：dir 是 OSM 原始方向，要翻回來） */
-function approachBearingAt(
-  blocks: RoadFeature[], nodeId: number, dir: Dir, normalized = false,
-): number | null {
-  for (const road of blocks) {
-    const nodes = road.properties.nodes
-    const i = nodes.indexOf(nodeId)
-    if (i < 0) continue
-    // oneway=-1 的 way 載入時反轉過幾何；標註的方向是 OSM 原始方向，要翻回來
-    const eff = !normalized && road.properties.reversed ? flipDir(dir) : dir
-    const cs = road.geometry.coordinates as [number, number][]
-    if (eff === 'forward') {
-      if (i > 0) return geoBearing(cs[i - 1], cs[i])
-    } else if (i < cs.length - 1) {
-      return geoBearing(cs[i + 1], cs[i])
-    }
-  }
-  return null
 }
 
 /**
@@ -129,7 +104,7 @@ function importAnnotations(core: MapCore, ui: ImportUi, records: ImportedAnnotat
   const wayRemap = core.wayRemapRef.current
   let laneApplied = 0
   // 略過原因分類計數（訊息要能回答「為什麼掉了」——標註格式檢討的依據）
-  const skip = { seg: 0, node: 0, noLeft: 0, dir: 0 }
+  const skip = { seg: 0 }
   for (const [wayKey, dirs] of profByWay) {
     const segId = Number(wayKey.split('/')[1])
     // 被 couplet 合併掉的 way：標註轉掛到對向 keep way（方向要翻，見下）
@@ -182,87 +157,30 @@ function importAnnotations(core: MapCore, ui: ImportUi, records: ImportedAnnotat
   }
 
   // 2) 待轉區：左轉且（兩段式必須/皆可 或 現場有待轉格）→ 對回路口的左轉配對
-  let zonesAdded = 0
-  const interPos = new Map(core.intersectionsRef.current.map((i) => [i.id, i.pos]))
-  for (const rec of records) {
-    for (const rule of rec.movementRules) {
-      if (rule.movement !== 'left') continue
-      const want = rule.motorcycle_turn_rule === 'two_stage_required'
-        || rule.motorcycle_turn_rule === 'two_stage_optional'
-        || rule.waiting_zone_exists === 'yes'
-      if (!want) continue
-      const rawNode = Number((rule.applies_to_intersection_key ?? '').split('/')[1])
-      if (!rawNode) { skip.node++; continue }
-      // couplet 合併可能把路口 node 併到 keep 側既有 node——先過重映射表
-      let nodeId = nodeRemap.get(rawNode) ?? rawNode
-      const appId = Number((rule.approach_segment_key ?? rec.segmentKey).split('/')[1])
-      let blocks = byId.get(appId)
-      let dir: Dir = rule.approach_direction === 'backward' ? 'backward' : 'forward'
-      let normalized = false
-      if (!blocks) {
-        const dropped = wayRemap.get(appId)
-        if (dropped) {
-          blocks = dropped.keepIds.flatMap((id) => byId.get(id) ?? [])
-          // OSM 原始方向 → drop 載入後行向（dropReversed 翻轉）→ 對向 keep 再翻一次
-          dir = dropped.dropReversed ? dir : flipDir(dir)
-          normalized = true
-        }
-      }
-      /** 在節點 nid 試配：最佳左轉選項＋進入方向誤差（null = 無左轉配對/方向不明） */
-      const evaluate = (nid: number): { opt: TurnOption; err: number } | null => {
-        const options = core.graphRef.current?.leftTurnOptions(nid) ?? []
-        if (!options.length) return null
-        const appBrg = blocks?.length ? approachBearingAt(blocks, nid, dir, normalized) : null
-        if (appBrg === null) return options.length === 1 ? { opt: options[0], err: 0 } : null
-        let best = Infinity
-        let opt = options[0]
-        for (const o of options) {
-          const d = Math.abs(angleDelta(o.fromBearing, appBrg))
-          if (d < best) { best = d; opt = o }
-        }
-        return { opt, err: best }
-      }
-      let m = evaluate(nodeId)
-      if ((!m || m.err > 60) && blocks?.length) {
-        // couplet 合併把成對路口的 2×2 節點收攏：標註釘的 node 可能已不是
-        // 「這個進入向的左轉」所在的節點——沿 approach 區塊 40m 內其他路口重試
-        const p0 = interPos.get(nodeId)
-        if (p0) {
-          const seen = new Set<number>([nodeId])
-          for (const b of blocks) {
-            for (const n of b.properties.nodes) {
-              if (seen.has(n)) continue
-              seen.add(n)
-              const p = interPos.get(n)
-              if (!p || haversine(p0, p) > 40) continue
-              const mm = evaluate(n)
-              if (mm && mm.err <= 60) { m = mm; nodeId = n; break }
-            }
-            if (m && m.err <= 60) break
-          }
-        }
-      }
-      if (!m) { skip.noLeft++; continue }
-      if (m.err > 60) { skip.dir++; continue } // 對不上進入方向，寧缺勿錯
-      const opt = m.opt
-      if (core.zonesRef.current.some((z) =>
-        z.intersectionId === nodeId && Math.abs(angleDelta(z.from.bearing, opt.fromBearing)) < 30)) continue
-      const zone = { ...planZone(opt), id: `zone-lp-${nodeId}-${Math.round(opt.fromBearing)}` }
-      core.zonesRef.current = [...core.zonesRef.current, zone]
-      zonesAdded++
-    }
-  }
-  if (zonesAdded) {
+  //（核心邏輯在 core/zoneimport.ts，與啟動自動吃入/離線稽核共用）
+  const res = core.graphRef.current
+    ? zonesFromAnnotations({
+        records,
+        graph: core.graphRef.current,
+        roads: core.roadsRef.current,
+        nodeRemap, wayRemap,
+        rawWays: core.rawWaysRef.current,
+        existing: core.zonesRef.current,
+      })
+    : { zones: [], skips: [] }
+  if (res.zones.length) {
+    core.zonesRef.current = [...core.zonesRef.current, ...res.zones]
     saveZones(core.zonesRef.current)
     core.refreshZones()
   }
-  const skipped = skip.seg + skip.node + skip.noLeft + skip.dir
+  const count = (r: string) => res.skips.filter((s) => s.reason === r).length
+  const skipped = skip.seg + res.skips.length
   const detail = [
     skip.seg ? `路段不在底圖 ${skip.seg}` : '',
-    skip.node ? `缺路口鍵 ${skip.node}` : '',
-    skip.noLeft ? `路口無左轉配對 ${skip.noLeft}` : '',
-    skip.dir ? `進入方向對不上 ${skip.dir}` : '',
+    count('node') ? `缺路口鍵 ${count('node')}` : '',
+    count('noLeft') ? `路口無左轉配對 ${count('noLeft')}` : '',
+    count('dir') ? `進入方向對不上 ${count('dir')}` : '',
   ].filter(Boolean).join('、')
-  ui.setImportMsg(`已匯入標註 ${fileName}：車道覆寫 ${laneApplied} 路段、待轉區 +${zonesAdded}`
+  ui.setImportMsg(`已匯入標註 ${fileName}：車道覆寫 ${laneApplied} 路段、待轉區 +${res.zones.length}`
     + (skipped ? `（略過 ${skipped}：${detail}）` : ''))
 }

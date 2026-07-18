@@ -238,7 +238,7 @@ function makeBay(
 
   // ── 單行道左緣附加車道（成對單行未合併時的舊分支）──
   const roadHalf = p.oneway === 'yes'
-    ? (Math.max(1, p.lanesForward) * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M : 0)) / 2
+    ? Math.max(LANE_WIDTH_M, laneSpanM(p, false)) / 2
     : p.width_m / 2
   const R0 = -roadHalf
   const offM = R0 - widthM / 2

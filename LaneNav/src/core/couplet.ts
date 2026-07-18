@@ -50,9 +50,11 @@ function lineLenM(cs: [number, number][]): number {
 const PAIR_MAX_M = 30 // 對向線間距上限（藍田路實測 ~8-12m）
 
 /** 被合併掉（drop 側）way 的重映射：外部標註（LanePilot）還掛在舊 way id 上，
- * 匯入時用這張表轉到合併後的 keep way；方向要翻（drop 行向 = 合併後 backward）。
- * dropReversed = 該 way 載入時是否因 oneway=-1 反轉過（標註方向是 OSM 原始方向）。 */
-export interface DropRemap { keepIds: number[]; dropReversed: boolean }
+ * 匯入時用這張表轉到合併後的 keep way。
+ * dropReversed = 該 way 載入時是否因 oneway=-1 反轉過（標註方向是 OSM 原始方向）。
+ * sameDir = drop 載入後行向與 keep 順向同向（absorbSideWays 吸收的同向慢車道）；
+ * undefined/false = 對向（couplet drop 側，drop 行向 = 合併後 backward）。 */
+export interface DropRemap { keepIds: number[]; dropReversed: boolean; sameDir?: boolean }
 
 /** 同組（同向）兩條長 way 平行貼近 = 多線並排道路（高雄大學路型），
  * couplet 兩線模型不適用——硬併會產生重疊路體，整條路直接放棄合併。 */
@@ -84,6 +86,9 @@ export interface CoupletSection {
   centerKind?: 'hatch' | 'island'
   motoF?: boolean
   motoB?: boolean
+  /** 快慢分隔帶寬（motoSepF/B，見 RoadProps）——主慢分離道路合併時給預設值 */
+  motoSepF?: number
+  motoSepB?: number
   /** 島寬由 OSM 兩線實際間距反推：centerM = clamp(平均間距 − roadW, min, max)。
    * 「把道路切開放入」——不擠壓車道，兩向各就各位、中間放實寬的島 */
   centerFromGap?: { roadW: number; min: number; max: number }
@@ -232,6 +237,8 @@ export function mergeCouplets(
     p.lanesBackward = section.lanesB
     p.motoF = section.motoF ?? p.motoF
     p.motoB = section.motoB ?? p.motoB
+    p.motoSepF = section.motoSepF ?? p.motoSepF
+    p.motoSepB = section.motoSepB ?? p.motoSepB
     p.centerKind = section.centerKind ?? 'hatch'
     if (section.centerFromGap && dists.length > 0) {
       const g = section.centerFromGap
@@ -337,6 +344,151 @@ export function mergeCouplets(
     }
     if (remapOut) {
       // 先前的移植映射若指到被去重的 node，跟著鏈到最終保留者
+      for (const [k, v] of remapOut) if (dupRemap.has(v)) remapOut.set(k, dupRemap.get(v)!)
+      for (const [a, b] of dupRemap) remapOut.set(a, remapOut.get(b) ?? b)
+    }
+  }
+  return survivors
+}
+
+/**
+ * 主慢分離道路的側 way（慢車道）吸收：主線 couplet 合併後，慢車道在斷面模型裡
+ * 改由主線的機車道（motoF/B）＋快慢分隔帶（motoSep 島）表達，獨立 way 不再需要。
+ * 全長貼著主線（60% 頂點在 25m 內）的同名 oneway 移除；被其他道路引用的節點
+ * 移植到最近主線（<4m 併用既有 node、否則插點——側街自動接上主線），
+ * wayRemap 記 sameDir 旗標（慢車道與主線同向，標註方向換算異於對向 drop）。
+ */
+export function absorbSideWays(
+  roads: RoadFeature[],
+  name: string,
+  remapOut?: Map<number, number>,
+  wayRemapOut?: Map<number, DropRemap>,
+): RoadFeature[] {
+  const hosts = roads.filter((r) => r.properties.name === name
+    && r.properties.coupletMerged && r.geometry.coordinates.length >= 2)
+  if (!hosts.length) return roads
+  const hostSet = new Set(hosts)
+  const nearHost = (pnt: [number, number], max: number) => {
+    for (const h of hosts) {
+      if (projectToLine(pnt, h.geometry.coordinates as [number, number][]).d < max) return true
+    }
+    return false
+  }
+  const targets = roads.filter((r) => {
+    const p = r.properties
+    if (p.name !== name || p.oneway !== 'yes' || r.geometry.coordinates.length < 2) return false
+    const cs = r.geometry.coordinates as [number, number][]
+    let near = 0
+    for (const pnt of cs) if (nearHost(pnt, 25)) near++
+    return near / cs.length >= 0.6
+  })
+  if (!targets.length) return roads
+  const targetSet = new Set(targets)
+
+  // wayRemap：keepIds = 貼到的主線、sameDir = 與最近主線順向同向
+  for (const t of targets) {
+    const cs = t.geometry.coordinates as [number, number][]
+    const keepHits = new Set<number>()
+    let bestHost: RoadFeature | null = null
+    let bestD = Infinity
+    for (const h of hosts) {
+      const hit = projectToLine(cs[Math.floor(cs.length / 2)], h.geometry.coordinates as [number, number][])
+      if (hit.d < bestD) { bestD = hit.d; bestHost = h }
+      for (const pnt of cs) {
+        if (projectToLine(pnt, h.geometry.coordinates as [number, number][]).d < 25) {
+          keepHits.add(h.properties.osm_id)
+          break
+        }
+      }
+    }
+    const sameDir = bestHost
+      ? Math.abs(angleDelta(wayBearing(t), wayBearing(bestHost))) < 90
+      : true
+    wayRemapOut?.set(t.properties.osm_id,
+      { keepIds: [...keepHits], dropReversed: !!t.properties.reversed, sameDir })
+  }
+
+  // 被其他道路引用的 target 節點 → 移植到最近主線（同 mergeCouplets 步驟 3）
+  const targetNodes = new Set<number>()
+  for (const t of targets) for (const n of t.properties.nodes) targetNodes.add(n)
+  const hostNodes = new Set<number>()
+  for (const h of hosts) for (const n of h.properties.nodes) hostNodes.add(n)
+  const referenced = new Set<number>()
+  for (const r of roads) {
+    if (targetSet.has(r) || hostSet.has(r)) continue
+    for (const n of r.properties.nodes) if (targetNodes.has(n) && !hostNodes.has(n)) referenced.add(n)
+  }
+  const nodePos = new Map<number, [number, number]>()
+  for (const t of targets) {
+    const cs = t.geometry.coordinates as [number, number][]
+    t.properties.nodes.forEach((n, i) => nodePos.set(n, cs[i]))
+  }
+  const nodeNewPos = new Map<number, [number, number]>()
+  for (const j of referenced) {
+    const pnt = nodePos.get(j)
+    if (!pnt) continue
+    let best: { h: RoadFeature; hit: ReturnType<typeof projectToLine> } | null = null
+    for (const h of hosts) {
+      const hit = projectToLine(pnt, h.geometry.coordinates as [number, number][])
+      if (!best || hit.d < best.hit.d) best = { h, hit }
+    }
+    if (!best || best.hit.d > 25) continue
+    const cs = best.h.geometry.coordinates as [number, number][]
+    const nodes = best.h.properties.nodes
+    const nearIdx = best.hit.t < 0.5 ? best.hit.seg : best.hit.seg + 1
+    const nearD = Math.hypot(
+      (cs[nearIdx][0] - best.hit.pos[0]) * KX, (cs[nearIdx][1] - best.hit.pos[1]) * KY)
+    if (nearD < 4) {
+      nodeNewPos.set(j, cs[nearIdx])
+      if (remapOut) {
+        for (const [a, b] of remapOut) if (b === j) remapOut.set(a, nodes[nearIdx])
+        remapOut.set(j, nodes[nearIdx])
+      }
+      for (const r of roads) {
+        if (targetSet.has(r)) continue
+        r.properties.nodes = r.properties.nodes.map((n) => (n === j ? nodes[nearIdx] : n))
+      }
+    } else {
+      cs.splice(best.hit.seg + 1, 0, best.hit.pos)
+      nodes.splice(best.hit.seg + 1, 0, j)
+      nodeNewPos.set(j, best.hit.pos)
+    }
+  }
+
+  // 座標傳播（引用被移動 node 的道路端點跟上）＋ 移除 target ＋ 清退化段
+  const survivors: RoadFeature[] = []
+  const dupRemap = new Map<number, number>()
+  for (const r of roads) {
+    if (targetSet.has(r)) continue
+    const cs = r.geometry.coordinates as [number, number][]
+    r.properties.nodes.forEach((n, i) => {
+      const np = nodeNewPos.get(n)
+      if (np && i < cs.length) cs[i] = np
+    })
+    const ns = r.properties.nodes
+    if (ns.length !== cs.length || cs.length < 2) { survivors.push(r); continue }
+    const outC: [number, number][] = [cs[0]]
+    const outN: number[] = [ns[0]]
+    for (let i = 1; i < cs.length; i++) {
+      const prevC = outC[outC.length - 1]
+      const dx = (cs[i][0] - prevC[0]) * KX, dy = (cs[i][1] - prevC[1]) * KY
+      if (ns[i] === outN[outN.length - 1] || Math.hypot(dx, dy) < 0.05) {
+        if (ns[i] !== outN[outN.length - 1]) dupRemap.set(ns[i], outN[outN.length - 1])
+        continue
+      }
+      outC.push(cs[i])
+      outN.push(ns[i])
+    }
+    if (outC.length < 2) continue
+    r.geometry.coordinates = outC
+    r.properties.nodes = outN
+    survivors.push(r)
+  }
+  if (dupRemap.size > 0) {
+    for (const r of survivors) {
+      r.properties.nodes = r.properties.nodes.map((n) => dupRemap.get(n) ?? n)
+    }
+    if (remapOut) {
       for (const [k, v] of remapOut) if (dupRemap.has(v)) remapOut.set(k, dupRemap.get(v)!)
       for (const [a, b] of dupRemap) remapOut.set(a, remapOut.get(b) ?? b)
     }

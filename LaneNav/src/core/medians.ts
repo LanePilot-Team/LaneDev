@@ -7,8 +7,8 @@
 // 路由不用改：couplet 中段本來就沒有穿越邊。
 // Case A（單一雙向 way 上的島 + 封閉節點轉向限制）待後續。
 import type { Feature, FeatureCollection } from 'geojson'
-import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT } from './geo'
-import type { RoadFeature } from './roads'
+import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT, LANE_WIDTH_M } from './geo'
+import { laneSpanM, type RoadFeature } from './roads'
 import type { RoadGraph } from './graph'
 import type { EnhancementRecord } from './enhancements'
 import { offsetAt, subtract, type TurnBay } from './turnbays'
@@ -16,10 +16,6 @@ import { offsetAt, subtract, type TurnBay } from './turnbays'
 /** 實驗範圍：先在大學南路驗證（Case B 自動推導對所有分離幹道通用，驗證後放大） */
 export const MEDIAN_SCOPE_ROADS = new Set(['大學南路'])
 
-/** 主慢分離道路（每向 tertiary 主線＋residential 慢車道並排）：
- * pipeline 只 couplet 合併主線；快慢之間的分隔島由 buildSlowLaneIslands 自動鋪。
- * 放這裡（而非 pipeline.ts）是因為 pipeline 已 import medians，反向會循環。 */
-export const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
 const KX = 111320 * COS_LAT
 const KY = 110540
@@ -223,22 +219,41 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
 }
 
 /**
- * 主慢分離道路的快慢分隔島（自動推導，Case B 的變體）：couplet 只合併了
- * tertiary 主線（雙向化），residential 慢車道原樣保留在兩側——沿每條慢車道
- * 採樣、投影到合併後主線，鋪滿兩路面邊緣間隙；路口/巷口節點附近自動斷開
- * （慢車道接側街處 = 開口）。間隙塞不下（<0.4m）不畫，不擠壓。
+ * 快慢分隔島（斷面內建，可編輯）：某行向 motoSep > 0 時，汽車車道與機車道之間
+ * 的實體島——島面鋪在 [車道塊內緣＋車道寬, ＋motoSep] 的橫向區間，兩端依交叉路
+ * 半寬收邊（同停止線 setback，路口 = 開口）。寬度/開關走車道編輯面板的
+ * journal 欄位 moto_sep_f/b（=0 回復機車道白線）。
  */
-export function buildSlowLaneIslands(roads: RoadFeature[]): MedianIsland[] {
+export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
   const out: MedianIsland[] = []
-  for (const name of MAINLINE_ONLY_ROADS) {
-    const mains = roads.filter((r) => r.properties.name === name
-      && r.properties.coupletMerged && r.properties.oneway === 'no'
-      && r.geometry.coordinates.length >= 2)
-    const slows = roads.filter((r) => r.properties.name === name
-      && r.properties.oneway === 'yes' && r.geometry.coordinates.length >= 2)
-    if (!mains.length || !slows.length) continue
-    const scopeSet = new Set([...mains, ...slows])
-    out.push(...islandsBetween(slows, mains, junctionGuard(roads, scopeSet), 25))
+  const edges = graph.scopeEdges((r) => {
+    const p = r.properties
+    return (p.motoF && (p.motoSepF || 0) > 0)
+      || (p.oneway === 'no' && p.motoB && (p.motoSepB || 0) > 0)
+  })
+  for (const e of edges) {
+    const p = e.road.properties
+    const lanes = p.oneway === 'yes' || !e.back ? p.lanesForward : p.lanesBackward
+    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
+    const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
+    if (!moto || sep <= 0 || lanes <= 0) continue // 0 車道（純機車道）無快慢界線
+    const cum = cumulative(e.coords)
+    const total = cum[cum.length - 1]
+    const s0 = Math.min(e.startSetbackM, total)
+    const s1 = Math.max(0, total - e.endSetbackM)
+    if (s1 - s0 < 3) continue
+    const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
+    const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
+    const inner = base + lanes * LANE_WIDTH_M
+    const ds: number[] = []
+    for (let d = s0; d < s1; d += 4) ds.push(d)
+    ds.push(s1)
+    const left = ds.map((d) => offsetAt(e.coords, cum, d, inner))
+    const right = ds.map((d) => offsetAt(e.coords, cum, d, inner + sep))
+    out.push({
+      key: `median/way/${p.osm_id}/S${e.back ? 'b' : 'f'}-${e.fromNode}`,
+      polygon: [...left, ...[...right].reverse(), left[0]],
+    })
   }
   return out
 }

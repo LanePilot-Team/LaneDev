@@ -42,6 +42,8 @@ export interface EditRoadState {
   /** 區塊識別（way 依路口切塊）：編輯只影響這個路口到路口的區塊 */
   blockNode: number
   f: number; b: number; motoF: boolean; motoB: boolean
+  /** 快慢分隔帶寬（公尺；0 = 機車道白線、>0 = 實體島） */
+  motoSepF: number; motoSepB: number
   centerM: number; centerKind: 'hatch' | 'island'
   /** 路寬微調（公尺，可負；對稱加減在斷面兩側，車道線不動） */
   extraM: number
@@ -146,6 +148,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         blockNode: p2.blockNode,
         f: p2.lanesForward, b: p2.lanesBackward,
         motoF: p2.motoF, motoB: p2.motoB,
+        motoSepF: p2.motoSepF || 0, motoSepB: p2.motoSepB || 0,
         centerM: p2.centerM || 0,
         extraM: p2.extraM || 0,
         centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
@@ -233,6 +236,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         lanes_backward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
         moto_forward: editRoad.motoF ? 1 : 0,
         moto_backward: editRoad.oneway === 'yes' ? 0 : (editRoad.motoB ? 1 : 0),
+        moto_sep_f: editRoad.motoF ? editRoad.motoSepF : 0,
+        moto_sep_b: editRoad.oneway === 'yes' || !editRoad.motoB ? 0 : editRoad.motoSepB,
         center_m: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
         center_kind: editRoad.centerKind,
         extra_width_m: editRoad.extraM,

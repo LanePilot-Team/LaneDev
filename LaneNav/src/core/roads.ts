@@ -21,6 +21,11 @@ export interface RoadProps {
   lanesBackward: number
   motoF: boolean // 順向機車道
   motoB: boolean // 逆向機車道
+  /** 快慢分隔帶寬（公尺，預設 0）：汽車車道與機車道之間的實體島空間，
+   * 該向有機車道才有意義（journal moto_sep_f/b；主慢分離 couplet 合併預設 1.0）。
+   * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
+  motoSepF: number
+  motoSepB: number
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */
   centerM: number
@@ -69,20 +74,23 @@ export function computeDerived(p: RoadProps) {
   const laneSpan =
     LANE_WIDTH_M * (p.lanesForward + p.lanesBackward) +
     MOTO_LANE_M * ((p.motoF ? 1 : 0) + (p.motoB ? 1 : 0)) +
+    (p.motoF ? p.motoSepF || 0 : 0) + (p.motoB ? p.motoSepB || 0 : 0) +
     (p.centerM || 0)
   // 路寬微調對稱加減在兩側，車道塊維持置中（下限 2m，避免負微調把路面壓沒）
   p.width_m = Math.max(2, laneSpan + (p.extraM || 0))
   // 分向線位置 = -車道塊寬/2 + 逆向側寬 + 中央帶一半（對稱斷面 = 0；不含路寬微調）
   p.divOffM = p.oneway === 'yes' ? 0 :
-    LANE_WIDTH_M * p.lanesBackward + (p.motoB ? MOTO_LANE_M : 0) +
+    LANE_WIDTH_M * p.lanesBackward + (p.motoB ? MOTO_LANE_M + (p.motoSepB || 0) : 0) +
     (p.centerM || 0) / 2 - laneSpan / 2
 }
 
-/** 該行向的車道塊寬（車道×3.2 + 機車道；不含路寬微調）——地面標線橫向定位用 */
+/** 該行向的車道塊寬（車道×3.2 + 快慢分隔帶 + 機車道；不含路寬微調）
+ * ——地面標線橫向定位用 */
 export function laneSpanM(p: RoadProps, back: boolean): number {
   const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
   const moto = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
-  return lanes * LANE_WIDTH_M + (moto ? MOTO_LANE_M : 0)
+  const sep = p.oneway === 'yes' ? p.motoSepF : back ? p.motoSepB : p.motoSepF
+  return lanes * LANE_WIDTH_M + (moto ? MOTO_LANE_M + (sep || 0) : 0)
 }
 
 export async function loadRoads(url: string): Promise<RoadFeature[]> {
@@ -132,6 +140,8 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       lanesBackward,
       motoF: false, // OSM 幾乎不標機車道，靠 Enhancement 補
       motoB: false,
+      motoSepF: 0,
+      motoSepB: 0,
       centerM: 0,
       centerKind: 'hatch',
       extraM: 0,
@@ -243,11 +253,11 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       nodeUse.get(n)!.push(r)
     }
   }
-  /** 端節點收邊資訊：trim = 收邊量（停止線位置基準：節點上「任何別的區塊」
-   * 最大寬/2 + 1.2，與 graph.scopeEdges 的 setback 一致——分隔線才不會戳過
-   * 停止線）；sk = 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，
-   * 收邊線平行交叉路＝停止線的延長線）。trim=0 = 不收（節點上沒有不同路名
-   * 的交叉路：純續接或死路）。 */
+  /** 端節點收邊資訊：trim = 收邊量（停止線位置基準：「夠格交叉路」最大寬/2 + 1.2，
+   * 與 graph.scopeEdges 的 setback 一致——分隔線才不會戳過停止線）；
+   * 夠格 = 不同路（id 與路名都不同）且寬 ≥7m——小巷交會不收（車道線直接越過
+   * 巷口），同路續接不算自寬。sk = 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸
+   * 平移 o×sk，收邊線平行交叉路＝停止線的延長線）。trim=0 = 不收。 */
   const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
     let anyCross = false
     let w = 0
@@ -256,9 +266,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     for (const f of nodeUse.get(n) ?? []) {
       if (f === self) continue
       const q = f.properties
-      w = Math.max(w, q.width_m)
       if (q.osm_id === self.properties.osm_id ||
         (self.properties.name && q.name === self.properties.name)) continue // 同路續行不算交叉
+      if (q.width_m < 7) continue // 小巷不觸發收邊/停止線
+      w = Math.max(w, q.width_m)
       anyCross = true
       const idx = q.nodes.indexOf(n)
       const cs2 = f.geometry.coordinates as [number, number][]
@@ -323,13 +334,16 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       }
     }
     const f = p.lanesForward // 可為 0（該向純機車道）
+    // 快慢分隔帶 >0 時該向不畫機車道白線——島面（buildMotoSepIslands）取代
+    const sepF = p.motoF ? p.motoSepF || 0 : 0
+    const sepB = p.motoB ? p.motoSepB || 0 : 0
     if (p.oneway === 'yes') {
       // 單行道：斷面置中
-      const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M : 0)
+      const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + sepF : 0)
       const left = -total / 2
       for (let k = 1; k < f; k++) push(RIGHT * (left + k * LANE_WIDTH_M), 'lane')
       // 0 車道時機車道左界 = 斷面左緣，不需分隔線
-      if (p.motoF && f > 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
+      if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
     } else {
       const b = p.lanesBackward
       const c = (p.centerM || 0) / 2 // 中央帶：兩向車道外移一半
@@ -337,9 +351,9 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       // 中央帶存在時分向線由 turnbays 模組畫（±c 雙黃 + 偏心道/槽化內容）
       if (c === 0) push(RIGHT * dv, 'center')
       for (let k = 1; k < f; k++) push(RIGHT * (dv + c + k * LANE_WIDTH_M), 'lane')
-      if (p.motoF && f > 0) push(RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
+      if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
       for (let k = 1; k < b; k++) push(RIGHT * (dv - c - k * LANE_WIDTH_M), 'lane')
-      if (p.motoB && b > 0) push(RIGHT * (dv - c - b * LANE_WIDTH_M), 'moto')
+      if (p.motoB && b > 0 && sepB === 0) push(RIGHT * (dv - c - b * LANE_WIDTH_M), 'moto')
     }
   }
   return { type: 'FeatureCollection', features }

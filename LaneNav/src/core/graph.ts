@@ -140,10 +140,11 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   if (p.oneway === 'yes') {
     const L0 = p.lanesForward // 可為 0（純機車道路體）
     const L = Math.max(1, L0)
-    const total = L0 * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M : 0)
+    const sep = p.motoF ? p.motoSepF || 0 : 0 // 快慢分隔帶：機車道再外移
+    const total = L0 * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + sep : 0)
     const base = -total / 2
     const lane = (k: number) => base + (k - 0.5) * LANE_WIDTH_M
-    const moto = p.motoF ? base + L0 * LANE_WIDTH_M + MOTO_LANE_M / 2 : lane(L)
+    const moto = p.motoF ? base + L0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(L)
     const car = (k: number) => (L0 > 0 ? lane(k) : moto) // 0 車道時所有偏移落在機車道
     if (profile === 'moto') return { cruise: moto, left: car(1), right: moto }
     return { cruise: car(Math.ceil(L / 2)), left: car(1), right: car(L) }
@@ -151,11 +152,12 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   const f0 = e.back ? p.lanesBackward : p.lanesForward
   const f = Math.max(1, f0)
   const m = e.back ? p.motoB : p.motoF
+  const sep = m ? (e.back ? p.motoSepB : p.motoSepF) || 0 : 0
   // 分向線位置（行進 frame）＋中央帶：車道整體外移
   const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
   const c = dv + (p.centerM || 0) / 2
   const lane = (k: number) => c + (k - 0.5) * LANE_WIDTH_M
-  const moto = m ? c + f0 * LANE_WIDTH_M + MOTO_LANE_M / 2 : lane(f)
+  const moto = m ? c + f0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(f)
   const car = (k: number) => (f0 > 0 ? lane(k) : moto)
   if (profile === 'moto') return { cruise: moto, left: car(1), right: moto }
   return { cruise: car(1), left: car(1), right: car(f) } // 汽車巡航走內側車道
@@ -415,22 +417,33 @@ export class RoadGraph {
    * 標線不畫進路口框。turnbays.ts 的 buildChannelization 使用。
    */
   scopeEdges(scope: (r: RoadFeature) => boolean): ScopeEdge[] {
+    // 收邊只看「夠格的交叉路」：不同路（id 與路名都不同）且寬 ≥7m（≥2 車道）。
+    // 小巷（residential 6.4m）交會不清標線也不生停止線——實際道路的車道線
+    // 會直接越過巷口；同路續接區塊也不算（自寬會把收邊撐到半個路寬）。
     const crossW = (nodeId: number, self: Edge) => {
       let w = 0
+      const sp = self.road.properties
       for (const o of this.adj.get(nodeId) ?? []) {
         if (o === self || o === self.twin) continue
-        w = Math.max(w, o.road.properties.width_m)
+        const q = o.road.properties
+        if (q.osm_id === sp.osm_id || (sp.name && q.name === sp.name)) continue
+        if (q.width_m < 7) continue
+        w = Math.max(w, q.width_m)
       }
       return w
     }
     return this.edges
       .filter((e) => e.coords.length >= 2 && scope(e.road))
-      .map((e) => ({
-        coords: e.coords, road: e.road, back: e.back,
-        fromNode: e.from, toNode: e.to,
-        startSetbackM: crossW(e.from, e) / 2 + 1.2,
-        endSetbackM: crossW(e.to, e) / 2 + 1.2,
-      }))
+      .map((e) => {
+        const w0 = crossW(e.from, e)
+        const w1 = crossW(e.to, e)
+        return {
+          coords: e.coords, road: e.road, back: e.back,
+          fromNode: e.from, toNode: e.to,
+          startSetbackM: w0 > 0 ? w0 / 2 + 1.2 : 0,
+          endSetbackM: w1 > 0 ? w1 / 2 + 1.2 : 0,
+        }
+      })
   }
 
   /** 路口出口方向查詢（地面車道箭頭用）：該行向在節點可直行/左轉/右轉？ */

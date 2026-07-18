@@ -120,6 +120,11 @@ export function applyToRoads(
     }
     if (fields.moto_forward !== undefined) p.motoF = Number(fields.moto_forward) > 0
     if (fields.moto_backward !== undefined) p.motoB = p.oneway === 'yes' ? false : Number(fields.moto_backward) > 0
+    // 快慢分隔帶寬（=0 回復機車道白線）
+    if (fields.moto_sep_f !== undefined) p.motoSepF = Math.max(0, Number(fields.moto_sep_f))
+    if (fields.moto_sep_b !== undefined) {
+      p.motoSepB = p.oneway === 'yes' ? 0 : Math.max(0, Number(fields.moto_sep_b))
+    }
     if (fields.turn_lanes !== undefined) {
       p.turnLanes = String(fields.turn_lanes).split('|')
     }

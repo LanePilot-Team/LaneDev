@@ -128,9 +128,11 @@ function importAnnotations(core: MapCore, ui: ImportUi, records: ImportedAnnotat
     if (!Object.keys(fields).length) continue
     let keys = [wayKey]
     if (dropped) {
-      // drop 側標註（OSM 原始方向）換到 keep way：drop 行進方向 = 合併後 backward。
-      // dropReversed（oneway=-1，載入已反轉）時兩次翻轉抵銷，欄位方向不對調
-      if (!dropped.dropReversed) {
+      // drop 側標註（OSM 原始方向）換到 keep way：對向 drop（couplet）行進方向
+      // = 合併後 backward、同向吸收（sameDir，慢車道）= forward；
+      // dropReversed（oneway=-1，載入已反轉）再翻轉一次，兩者 XOR 決定是否對調
+      const aligned = dropped.dropReversed ? !(dropped.sameDir ?? false) : (dropped.sameDir ?? false)
+      if (!aligned) {
         const swap = (a: string, b: string) => {
           const va = fields[a], vb = fields[b]
           delete fields[a]; delete fields[b]

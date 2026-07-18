@@ -1,13 +1,21 @@
 // 底圖前處理管線（預設 shard 載入與「匯入地圖」共用；離線 harness 也 import 這裡，
 // 確保驗證跑的是同一套邏輯）：
 //   人工修正（改名/車道） → couplet 成對單行合併（逐路） → 藍田路分段斷面 → 依路口切塊
-import { mergeCouplets, applyLantianSections, type DropRemap, type CoupletSection } from './couplet'
+import {
+  mergeCouplets, absorbSideWays, applyLantianSections,
+  type DropRemap, type CoupletSection,
+} from './couplet'
 import { applyFixups } from './fixups'
 import { splitAtIntersections, type RoadFeature } from './roads'
-import { MEDIAN_SCOPE_ROADS, MAINLINE_ONLY_ROADS } from './medians'
+import { MEDIAN_SCOPE_ROADS } from './medians'
 
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過 */
 const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路'])
+
+/** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
+ * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
+ * 斷面（機車道＋快慢分隔島），獨立慢車道 way 移除、側街節點移植接上主線 */
+const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
  * 是推薦值非真值——實地車道數/機車道/分隔島用編輯模式逐區塊修。 */
@@ -62,10 +70,25 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     motoF: true, motoB: true,
     centerFromGap: { roadW: 8.6, min: 1.6, max: 8 },
   }, nodeRemap, wayRemap)
-  // 外環西路/德民路：主慢分離，只合併 tertiary 主線（見 MAINLINE_ONLY_ROADS）
+  // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——
+  // 主線合併成 2+2＋機車道＋快慢分隔島（寬度可編輯），再吸收慢車道 way
   for (const name of MAINLINE_ONLY_ROADS) {
-    roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap,
-      (r) => r.properties.highway === 'tertiary')
+    roads = mergeCouplets(roads, new Set([name]), {
+      ...SIMPLE_SECTION,
+      motoF: true, motoB: true, motoSepF: 1.0, motoSepB: 1.0,
+    }, nodeRemap, wayRemap, (r) => r.properties.highway === 'tertiary')
+    roads = absorbSideWays(roads, name, nodeRemap, wayRemap)
+    // 主線 OSM 常帶 motorcycle=no（原語意：快車道禁行，騎士走慢車道）。
+    // 慢車道已吸收進斷面（機車道），整段禁行要解除，否則機車在此無路可走；
+    // 改成「快車道地面印禁行機車」（印字只落在汽車車道，機車道不印）
+    for (const r of roads) {
+      const p = r.properties
+      if (p.name === name && p.coupletMerged && p.motorcycle === 'no') {
+        p.motorcycle = undefined
+        p.rulesF = p.rulesF ?? ['no_moto']
+        p.rulesB = p.rulesB ?? ['no_moto']
+      }
+    }
   }
   for (const name of coupletCandidates(roads)) {
     roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap)

@@ -136,8 +136,10 @@ export function zonesFromAnnotations(args: {
         const dropped = wayRemap.get(appId)
         if (dropped) {
           blocks = dropped.keepIds.flatMap((id) => byId.get(id) ?? [])
-          // OSM 原始方向 → drop 載入後行向（dropReversed 翻轉）→ 對向 keep 再翻一次
-          dir = dropped.dropReversed ? dir : flipDir(dir)
+          // OSM 原始方向 → drop 載入後行向（dropReversed 翻轉）→ 對 keep 順向：
+          // 對向 drop（couplet）再翻一次；同向吸收（sameDir，慢車道）不翻
+          const eff = dropped.dropReversed ? flipDir(dir) : dir
+          dir = dropped.sameDir ? eff : flipDir(eff)
           normalized = true
         }
       }

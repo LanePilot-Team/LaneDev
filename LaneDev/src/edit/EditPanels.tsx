@@ -104,6 +104,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           機車道
         </button>
       </div>
+      {editRoad.motoF && (
+        <div className="edit-row">
+          <span>{editRoad.fwdLabel}快慢分隔島</span>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoSepF: Math.max(0, +(er.motoSepF - 0.2).toFixed(1)),
+          }))}>−</button>
+          <b>{editRoad.motoSepF > 0 ? `${editRoad.motoSepF.toFixed(1)}m` : '無(白線)'}</b>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoSepF: Math.min(3.2, +(er.motoSepF + 0.2).toFixed(1)),
+          }))}>＋</button>
+        </div>
+      )}
       {editRoad.oneway === 'no' && (
         <div className="edit-row">
           <span>{editRoad.bwdLabel} 車道</span>
@@ -126,6 +138,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             })}>
             機車道
           </button>
+        </div>
+      )}
+      {editRoad.oneway === 'no' && editRoad.motoB && (
+        <div className="edit-row">
+          <span>{editRoad.bwdLabel}快慢分隔島</span>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoSepB: Math.max(0, +(er.motoSepB - 0.2).toFixed(1)),
+          }))}>−</button>
+          <b>{editRoad.motoSepB > 0 ? `${editRoad.motoSepB.toFixed(1)}m` : '無(白線)'}</b>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoSepB: Math.min(3.2, +(er.motoSepB + 0.2).toFixed(1)),
+          }))}>＋</button>
         </div>
       )}
       <div className="edit-row">

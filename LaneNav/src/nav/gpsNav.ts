@@ -5,6 +5,7 @@ import { nearestPointOnLine, point as turfPoint, lineString } from '@turf/turf'
 import type { Feature, LineString } from 'geojson'
 import { haversine, bearing } from '../core/geo'
 import { spanAtDist, type RouteResult } from '../core/graph'
+import { activeElevation } from '../core/elevation'
 import type { DriveState } from './drive'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
@@ -100,10 +101,13 @@ export class GpsDriver {
     const speedKmh = speed != null && !Number.isNaN(speed) ? speed * 3.6 : 0
     const span = spanAtDist(this.route, this.progressM)
     const rp = span?.road?.properties
+    // 高架高度：與模擬駕駛同一套（span 路段身分 + elevation 剖面）
+    const elevM = span?.road ? activeElevation()?.heightAtPos(span.road, here) ?? 0 : 0
     this.onTick({
       roadName: rp?.name,
       roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,
       roadTurnLanes: rp ? (span!.back ? rp.turnLanesB : rp.turnLanes) : undefined,
+      elevM,
       pos: here,
       bearing: this.lastBearing,
       speedKmh,

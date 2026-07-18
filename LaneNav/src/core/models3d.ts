@@ -174,9 +174,9 @@ export class VehicleModelLayer {
     this.renderer.render(this.scene, this.camera)
   }
 
-  private place(g: THREE.Group, pos: [number, number], bearing: number) {
+  private place(g: THREE.Group, pos: [number, number], bearing: number, elevM = 0) {
     const [e, n] = this.toScene(pos[0], pos[1])
-    g.position.set(e, 0, -n)
+    g.position.set(e, elevM, -n)
     g.rotation.y = (-bearing * Math.PI) / 180
   }
 
@@ -191,8 +191,9 @@ export class VehicleModelLayer {
     this.map?.triggerRepaint()
   }
 
-  /** 導航自車（每幀更新）；type=null 隱藏 */
-  setNav(pos: [number, number] | null, bearing = 0, type: 'car' | 'moto' | null = null) {
+  /** 導航自車（每幀更新）；type=null 隱藏。elevM = 高架高度（elevation.ts 剖面，
+   * 上橋時車輛 z 跟著橋面抬） */
+  setNav(pos: [number, number] | null, bearing = 0, type: 'car' | 'moto' | null = null, elevM = 0) {
     if (!pos || !type) {
       if (this.nav) { this.scene.remove(this.nav); this.nav = null; this.navType = null }
       this.map?.triggerRepaint()
@@ -204,6 +205,6 @@ export class VehicleModelLayer {
       this.navType = type
       this.scene.add(this.nav)
     }
-    this.place(this.nav, pos, bearing)
+    this.place(this.nav, pos, bearing, elevM)
   }
 }

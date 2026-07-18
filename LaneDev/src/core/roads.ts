@@ -46,6 +46,13 @@ export interface RoadProps {
   motorcar?: string // OSM motorcar=*（no = 禁行汽車，機車專用道路體）
   /** OSM junction=*（roundabout = 圓環弧段，不進 couplet 合併） */
   junction?: string
+  /** OSM bridge=*（yes/viaduct…）。注意 bridge=yes ≠ 高架——跨河橋與路面同高；
+   * 是否為「真立體交叉」由 elevation.ts 的手動清單/判準決定 */
+  bridge?: string
+  /** OSM layer=*（疊序整數，可負；缺省 0 = 平面）。高度合成見 elevation.ts */
+  layer: number
+  /** OSM tunnel=*（隧道/地下道）。視覺下沉本版不做（TODO），僅傳遞資料 */
+  tunnel?: string
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
    * undefined = 無人工設定（motorcycle=no 時 fallback 印禁行機車）；[] = 明確無 */
   rulesF?: string[]
@@ -152,6 +159,11 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       motorcycle: p.motorcycle ? String(p.motorcycle) : undefined,
       motorcar: p.motorcar ? String(p.motorcar) : undefined,
       junction: p.junction ? String(p.junction) : undefined,
+      bridge: p.bridge ? String(p.bridge) : undefined,
+      // layer 可為負（地下道），不能用 intOr（>0 限定）；Overpass 快照無此欄位 → 0 平面
+      layer: Number.isFinite(parseInt(String(p.layer ?? ''), 10))
+        ? parseInt(String(p.layer ?? ''), 10) : 0,
+      tunnel: p.tunnel ? String(p.tunnel) : undefined,
       turnLanes,
       turnLanesB,
       blockNode: nodes[0] ?? 0,

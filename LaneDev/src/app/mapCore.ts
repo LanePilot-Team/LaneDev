@@ -26,6 +26,8 @@ import {
 } from '../core/medians'
 import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
 import { VehicleModelLayer } from '../core/models3d'
+import { buildElevation, setActiveElevation } from '../core/elevation'
+import { ElevatedLayer } from '../core/elevated3d'
 import { NANZI_CENTER, haversine } from '../core/geo'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
@@ -116,6 +118,7 @@ export function useMapCore(
   const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
   const vehiclesRef = useRef<PlacedVehicle[]>([])
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
+  const elevatedLayerRef = useRef<ElevatedLayer | null>(null)
   const selectedVehicleRef = useRef<string | null>(null)
   const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
@@ -179,14 +182,22 @@ export function useMapCore(
     src('dividers').setData(buildDividers(roadsRef.current) as never)
   }, [src])
 
+  /** 高架高度模型重建（底圖就緒/更換時）：渲染（橋面）與車輛 z 共用同一份 */
+  const rebuildElevation = useCallback((roads: RoadFeature[]) => {
+    const model = buildElevation(roads)
+    setActiveElevation(model)
+    elevatedLayerRef.current?.setModel(model)
+  }, [])
+
   const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
     roadsRef.current = roads
     redrawRoads()
     graphRef.current = new RoadGraph(roads)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
+    rebuildElevation(roads)
     refreshBays()
-  }, [redrawRoads, refreshBays])
+  }, [redrawRoads, refreshBays, rebuildElevation])
 
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
@@ -309,6 +320,12 @@ export function useMapCore(
       }
       refreshZones()
       refreshBays()
+      // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
+      const eLayer = new ElevatedLayer()
+      elevatedLayerRef.current = eLayer
+      rebuildElevation(roads)
+      map.addLayer(eLayer.asLayer())
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer
       // 真 3D 車輛模型圖層（three.js）
       const vLayer = new VehicleModelLayer()
       vehicleLayerRef.current = vLayer

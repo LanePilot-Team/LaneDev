@@ -3,6 +3,7 @@
 // 用同一份幾何，變道/轉彎過程都精確貼在藍線上，不再另做一套偏移平滑。
 import { pointAlong, angleDelta, offsetMeters, cumulative, LANE_WIDTH_M } from '../core/geo'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult, type Maneuver } from '../core/graph'
+import { activeElevation } from '../core/elevation'
 
 export interface DriveState {
   pos: [number, number]
@@ -21,6 +22,8 @@ export interface DriveState {
   /** 目前行向的車道數/轉向真值——HUD 車道列隨所在路段即時更新 */
   roadLanes?: number
   roadTurnLanes?: string[]
+  /** 高架高度（公尺）：所在路段屬高架清單時 >0，車模 z 用（core/elevation.ts） */
+  elevM?: number
 }
 
 const BASE_SPEED_KMH = 40
@@ -95,10 +98,13 @@ export class Driver {
       const arrived = remainM < 5 || this.traveled >= bandLen
       // 目前所在道路（HUD 路名/車道列即時更新用）
       const rp = span?.road?.properties
+      // 高架高度：用 span 的路段身分查（不做「找最近高架」——平面路從高架下穿過會誤抬）
+      const elevM = span?.road ? activeElevation()?.heightAtPos(span.road, center) ?? 0 : 0
       this.onTick({
         roadName: rp?.name,
         roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,
         roadTurnLanes: rp ? (span!.back ? rp.turnLanesB : rp.turnLanes) : undefined,
+        elevM,
         pos,
         bearing: (this.smoothBrg + 360) % 360,
         speedKmh: arrived ? 0 : BASE_SPEED_KMH * this.multiplier,

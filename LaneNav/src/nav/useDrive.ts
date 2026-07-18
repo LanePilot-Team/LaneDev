@@ -89,7 +89,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       // 鏡頭/車模 30Hz 就夠順——jumpTo 觸發整張地圖重繪，是導航中最大的固定成本
       frame++
       if (frame % 2 === 0 || s.arrived) {
-        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current)
+        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
         // 不帶 zoom/pitch → 導航中可自由縮放（mvp 行為）；
         // 手勢後 250ms 內暫停跟隨，讓 scrollZoom 的平滑動畫跑完（車模照常更新）
         if (performance.now() - p.lastGestureRef.current > 250) {
@@ -136,7 +136,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       (s) => {
         lastDriveRef.current = s
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
-        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current)
+        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
         if (performance.now() - p.lastGestureRef.current > 250) {
           map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding })
         }

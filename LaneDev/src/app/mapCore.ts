@@ -22,7 +22,7 @@ import {
 } from '../core/turnbays'
 import { buildRoadTexts } from '../core/roadtext'
 import {
-  buildMedians, buildCenterIslands, buildTwinIslands, mediansToGeoJSON,
+  buildMedians, buildCenterIslands, buildSlowLaneIslands, buildTwinIslands, mediansToGeoJSON,
 } from '../core/medians'
 import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
 import { VehicleModelLayer } from '../core/models3d'
@@ -158,6 +158,7 @@ export function useMapCore(
     src('medians').setData(mediansToGeoJSON([
       ...buildMedians(roadsRef.current),
       ...buildTwinIslands(roadsRef.current, journalRef.current),
+      ...buildSlowLaneIslands(roadsRef.current),
       ...buildCenterIslands(graphRef.current, baysRef.current),
     ]) as never)
     // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走

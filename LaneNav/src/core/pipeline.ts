@@ -4,14 +4,10 @@
 import { mergeCouplets, applyLantianSections, type DropRemap, type CoupletSection } from './couplet'
 import { applyFixups } from './fixups'
 import { splitAtIntersections, type RoadFeature } from './roads'
-import { MEDIAN_SCOPE_ROADS } from './medians'
+import { MEDIAN_SCOPE_ROADS, MAINLINE_ONLY_ROADS } from './medians'
 
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過 */
 const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路'])
-
-/** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
- * 「同向並排」防呆整條擋下——顯式只合併主線（慢車道原樣保留為側邊小路） */
-const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
  * 是推薦值非真值——實地車道數/機車道/分隔島用編輯模式逐區塊修。 */

@@ -16,6 +16,11 @@ import { offsetAt, subtract, type TurnBay } from './turnbays'
 /** 實驗範圍：先在大學南路驗證（Case B 自動推導對所有分離幹道通用，驗證後放大） */
 export const MEDIAN_SCOPE_ROADS = new Set(['大學南路'])
 
+/** 主慢分離道路（每向 tertiary 主線＋residential 慢車道並排）：
+ * pipeline 只 couplet 合併主線；快慢之間的分隔島由 buildSlowLaneIslands 自動鋪。
+ * 放這裡（而非 pipeline.ts）是因為 pipeline 已 import medians，反向會循環。 */
+export const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
+
 const KX = 111320 * COS_LAT
 const KY = 110540
 const PAIR_MAX_M = 35 // 綠帶較寬的分離幹道，間隙上限放寬
@@ -213,6 +218,27 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
     const islands = islandsBetween(byId.get(a) ?? [], byId.get(b) ?? [], nearJunction, 40, wEff)
     for (const m of islands) { m.pairKey = key; m.wEff = wEff }
     out.push(...islands)
+  }
+  return out
+}
+
+/**
+ * 主慢分離道路的快慢分隔島（自動推導，Case B 的變體）：couplet 只合併了
+ * tertiary 主線（雙向化），residential 慢車道原樣保留在兩側——沿每條慢車道
+ * 採樣、投影到合併後主線，鋪滿兩路面邊緣間隙；路口/巷口節點附近自動斷開
+ * （慢車道接側街處 = 開口）。間隙塞不下（<0.4m）不畫，不擠壓。
+ */
+export function buildSlowLaneIslands(roads: RoadFeature[]): MedianIsland[] {
+  const out: MedianIsland[] = []
+  for (const name of MAINLINE_ONLY_ROADS) {
+    const mains = roads.filter((r) => r.properties.name === name
+      && r.properties.coupletMerged && r.properties.oneway === 'no'
+      && r.geometry.coordinates.length >= 2)
+    const slows = roads.filter((r) => r.properties.name === name
+      && r.properties.oneway === 'yes' && r.geometry.coordinates.length >= 2)
+    if (!mains.length || !slows.length) continue
+    const scopeSet = new Set([...mains, ...slows])
+    out.push(...islandsBetween(slows, mains, junctionGuard(roads, scopeSet), 25))
   }
   return out
 }

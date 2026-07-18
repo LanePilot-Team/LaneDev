@@ -9,6 +9,10 @@ import { MEDIAN_SCOPE_ROADS } from './medians'
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過 */
 const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路'])
 
+/** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
+ * 「同向並排」防呆整條擋下——顯式只合併主線（慢車道原樣保留為側邊小路） */
+const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
+
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
  * 是推薦值非真值——實地車道數/機車道/分隔島用編輯模式逐區塊修。 */
 const SIMPLE_SECTION: CoupletSection = {
@@ -24,7 +28,8 @@ function coupletCandidates(roads: RoadFeature[]): string[] {
   const count = new Map<string, number>()
   for (const r of roads) {
     const p = r.properties
-    if (p.oneway !== 'yes' || !p.name || CUSTOM_SECTION_ROADS.has(p.name)) continue
+    if (p.oneway !== 'yes' || !p.name) continue
+    if (CUSTOM_SECTION_ROADS.has(p.name) || MAINLINE_ONLY_ROADS.has(p.name)) continue
     // 高快速公路的分向是實體事實（機車也禁行），雙向化會讓汽車可逆向繞行
     if (/^(motorway|trunk)/.test(p.highway)) continue
     if (p.junction === 'roundabout' || p.nodes[0] === p.nodes[p.nodes.length - 1]) continue
@@ -61,6 +66,11 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     motoF: true, motoB: true,
     centerFromGap: { roadW: 8.6, min: 1.6, max: 8 },
   }, nodeRemap, wayRemap)
+  // 外環西路/德民路：主慢分離，只合併 tertiary 主線（見 MAINLINE_ONLY_ROADS）
+  for (const name of MAINLINE_ONLY_ROADS) {
+    roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap,
+      (r) => r.properties.highway === 'tertiary')
+  }
   for (const name of coupletCandidates(roads)) {
     roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap)
   }

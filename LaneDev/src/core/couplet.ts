@@ -104,12 +104,16 @@ export function mergeCouplets(
   section: CoupletSection = { lanesF: 2, lanesB: 2, centerM: 3.2 },
   remapOut?: Map<number, number>,
   wayRemapOut?: Map<number, DropRemap>,
+  include?: (r: RoadFeature) => boolean,
 ): RoadFeature[] {
   const scope = roads.filter((r) => {
     const p = r.properties
     // 圓環弧段常帶著路名（中央路圓環 = 4 條 oneway 弧）：對切合併會把圓環壓扁，
     // junction=roundabout 與封閉環一律排除
     if (p.junction === 'roundabout' || p.nodes[0] === p.nodes[p.nodes.length - 1]) return false
+    // include：主慢分離道路（外環西路/德民路型）只挑主線等級進 scope，
+    // 慢車道原樣保留——否則同向並排防呆會讓整條路放棄合併
+    if (include && !include(r)) return false
     return scopeNames.has(p.name ?? '') && p.oneway === 'yes'
       && r.geometry.coordinates.length >= 2
   })

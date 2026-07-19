@@ -53,6 +53,9 @@ export interface RoadProps {
   layer: number
   /** OSM tunnel=*（隧道/地下道）。視覺下沉本版不做（TODO），僅傳遞資料 */
   tunnel?: string
+  /** 高架路段（elevation.isElevated，pipeline 切塊後標記）：地面車道級渲染
+   * （路面/分隔線/印字/單行箭頭）全部略過，由 elevated3d 的 3D 橋面取代 */
+  elevated?: boolean
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
    * undefined = 無人工設定（motorcycle=no 時 fallback 印禁行機車）；[] = 明確無 */
   rulesF?: string[]
@@ -331,6 +334,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   for (const road of roads) {
     const p = road.properties
     curId = p.osm_id
+    if (p.elevated) continue // 高架：標線由 elevated3d 畫在橋面，地面不畫
     if (road.geometry.coordinates.length < 2) continue
     cs0 = road.geometry.coordinates as [number, number][]
     const ns = p.nodes

@@ -8,7 +8,8 @@ import * as THREE from 'three'
 import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplibre-gl'
 import { NANZI_CENTER, pointAlong, cumulative, LANE_WIDTH_M } from './geo'
 import { MOTO_LANE_M } from './roads'
-import type { ElevationModel } from './elevation'
+import { activeElevation, type ElevationModel } from './elevation'
+import { spanAtDist, type RouteResult, type LaneBandResult } from './graph'
 
 /** 取樣間距（公尺）：橋面/護欄沿中心線的斷面密度（爬升段的平滑度來源） */
 const STEP_M = 8
@@ -19,11 +20,11 @@ const RAIL_H = 0.9
 /** 橋墩間距 / 最低出現高度（爬升近地段不畫墩） */
 const PIER_EVERY_M = 30
 const PIER_MIN_H = 3
-/** 低於這個高度的斷面不建橋面（近地段讓 MapLibre 平面路面自然接手） */
-const MIN_DECK_H = 0.3
 /** 車道虛線：4m 線段 + 6m 間隔（國道標線節奏） */
 const DASH_ON = 4
 const DASH_CYCLE = 10
+/** 路線絲帶：高於這個高度視為「在高架上」（以下交給 MapLibre 平面路線帶） */
+const ROUTE_ELEV_EPS = 0.05
 
 type V3 = [number, number, number]
 
@@ -56,6 +57,8 @@ export class ElevatedLayer {
   private scene = new THREE.Scene()
   private camera = new THREE.Camera()
   private group = new THREE.Group()
+  /** 路線絲帶（高架段的藍色路線帶＋chevron，畫在橋面上；平面段仍走 MapLibre） */
+  private routeGroup = new THREE.Group()
   private originMatrix: THREE.Matrix4
   private originMerc: { x: number; y: number }
   private mercScale: number
@@ -76,6 +79,7 @@ export class ElevatedLayer {
     sun.position.set(120, 300, -180)
     this.scene.add(sun)
     this.scene.add(this.group)
+    this.scene.add(this.routeGroup)
   }
 
   private toScene(lng: number, lat: number): [number, number] {
@@ -101,6 +105,7 @@ export class ElevatedLayer {
 
   onRemove() {
     this.disposeMeshes()
+    this.disposeRoute()
     this.renderer?.dispose()
   }
 
@@ -109,9 +114,15 @@ export class ElevatedLayer {
     this.group.clear()
   }
 
+  private disposeRoute() {
+    for (const m of this.routeGroup.children) (m as THREE.Mesh).geometry?.dispose()
+    this.routeGroup.clear()
+  }
+
   private tmpMatrix = new THREE.Matrix4()
   render(_gl: WebGL2RenderingContext, arg: unknown) {
-    if (!this.renderer || this.group.children.length === 0) return
+    if (!this.renderer) return
+    if (this.group.children.length === 0 && this.routeGroup.children.length === 0) return
     const m: number[] = Array.isArray(arg)
       ? arg as number[]
       : ((arg as { defaultProjectionData?: { mainMatrix: number[] } })
@@ -154,19 +165,12 @@ export class ElevatedLayer {
       const at = (s: Section, off: number, y: number): V3 =>
         [s.x + s.rx * off, s.h + y, s.z + s.rz * off]
 
-      // 高度足夠的取樣段落（近地段不建，切成多段 run）
+      // 全長取樣：高架區塊的地面路體已隱藏（RoadProps.elevated 過濾），
+      // 橋面連近地爬升段一起建，銜接處與平面路自然對齊
       const ds: number[] = []
       for (let d = 0; d <= lenM; d += STEP_M) ds.push(d)
       if (ds[ds.length - 1] < lenM) ds.push(lenM)
-      const runs: Section[][] = []
-      let cur: Section[] | null = null
-      for (const d of ds) {
-        const s = section(d)
-        if (s.h >= MIN_DECK_H) {
-          if (!cur) runs.push(cur = [])
-          cur.push(s)
-        } else cur = null
-      }
+      const runs: Section[][] = [ds.map(section)]
 
       for (const run of runs) {
         for (let i = 1; i < run.length; i++) {
@@ -215,7 +219,6 @@ export class ElevatedLayer {
         const w = mk.color === 'yellow' ? 0.13 : 0.08 // 半寬
         const seg = (d0: number, d1: number) => {
           const a = section(d0), b2 = section(d1)
-          if (a.h < MIN_DECK_H || b2.h < MIN_DECK_H) return
           buf.quad(at(a, mk.off - w, 0.03), at(a, mk.off + w, 0.03),
             at(b2, mk.off - w, 0.03), at(b2, mk.off + w, 0.03))
         }
@@ -260,4 +263,120 @@ export class ElevatedLayer {
     add(yellowBuf.build(new THREE.MeshBasicMaterial({ color: 0xf5c542, side: THREE.DoubleSide })))
     this.map?.triggerRepaint()
   }
+
+  /**
+   * 路線帶上橋：把車道偏移路線帶（laneBand）依高度切成「平面段/高架段」——
+   * 高架段在這裡建 3D 絲帶（casing＋藍帶＋白 chevron，貼橋面）；回傳平面段
+   * 折線陣列，呼叫端拿去餵 MapLibre route source（平面路線帶與 chevron 照舊）。
+   * route=null 清空絲帶。高度以 span 的路段身分查（與車輛 z 同一條路）。
+   */
+  setRoute(route: RouteResult | null, band?: LaneBandResult): [number, number][][] {
+    this.disposeRoute()
+    if (!route || !band || band.coords.length < 2) {
+      this.map?.triggerRepaint()
+      return band ? [band.coords] : []
+    }
+    const model = activeElevation()
+    // 每個取樣點的高度：detour 暫時路線（span 無 road）與非高架段 = 0
+    const hs = band.coords.map((c, i) => {
+      if (!model) return 0
+      const span = spanAtDist(route, band.routeD[i])
+      return span?.road?.properties.elevated ? model.heightAtPos(span.road, c) : 0
+    })
+
+    // 切段：地面（h≤eps）給 MapLibre、高架給 3D 絲帶；邊界各多含一點，接縫不斷
+    const ground: [number, number][][] = []
+    const rides: { pts: [number, number][]; h: number[] }[] = []
+    let g: [number, number][] | null = null
+    let r: { pts: [number, number][]; h: number[] } | null = null
+    for (let i = 0; i < band.coords.length; i++) {
+      const onDeck = hs[i] > ROUTE_ELEV_EPS
+      if (!onDeck) {
+        if (!g) {
+          g = []
+          ground.push(g)
+          if (r) { r.pts.push(band.coords[i]); r.h.push(hs[i]); r = null } // 高架段收尾接地
+        }
+        g.push(band.coords[i])
+      } else {
+        if (!r) {
+          r = { pts: [], h: [] }
+          rides.push(r)
+          if (i > 0) { r.pts.push(band.coords[i - 1]); r.h.push(hs[i - 1]) } // 從地面點起帶
+          g = null
+        }
+        r.pts.push(band.coords[i])
+        r.h.push(hs[i])
+      }
+    }
+
+    const casing = new TriBuf()
+    const line = new TriBuf()
+    const chev = new TriBuf()
+    for (const run of rides) {
+      if (run.pts.length < 2) continue
+      const cum = cumulative(run.pts)
+      // 斷面（帶右向）＋沿線內插高度
+      const secAt = (d: number): Section => {
+        const { pos, brg, idx } = pointAlong(run.pts, cum, d)
+        const segLen = cum[idx] - cum[idx - 1]
+        const t = segLen > 0 ? (d - cum[idx - 1]) / segLen : 0
+        const h = run.h[idx - 1] + (run.h[idx] - run.h[idx - 1]) * t
+        const [e, n] = this.toScene(pos[0], pos[1])
+        const rad = (brg * Math.PI) / 180
+        return { x: e, z: -n, rx: Math.cos(rad), rz: Math.sin(rad), h }
+      }
+      const at = (s: Section, off: number, y: number): V3 =>
+        [s.x + s.rx * off, s.h + y, s.z + s.rz * off]
+      const total = cum[cum.length - 1]
+      const ds: number[] = []
+      for (let d = 0; d <= total; d += 6) ds.push(d)
+      if (ds[ds.length - 1] < total) ds.push(total)
+      for (let i = 1; i < ds.length; i++) {
+        const a = secAt(ds[i - 1]), b = secAt(ds[i])
+        casing.quad(at(a, -1.5, 0.06), at(a, 1.5, 0.06), at(b, -1.5, 0.06), at(b, 1.5, 0.06))
+        line.quad(at(a, -1.0, 0.1), at(a, 1.0, 0.1), at(b, -1.0, 0.1), at(b, 1.0, 0.1))
+      }
+      // chevron：每 25m 一枚白色 V（兩翼各一片薄矩形，尖端朝行進方向）
+      for (let d = 12; d < total - 2; d += 25) {
+        const s = secAt(d)
+        // 行進方向（場景水平面）：right=(cos b, sin b) → dir=(sin b, −cos b)
+        const fx = s.rz, fz = -s.rx
+        const tip: V3 = [s.x + fx * 0.9, s.h + 0.14, s.z + fz * 0.9]
+        for (const side of [-1, 1] as const) {
+          // 翼向 = 後退 1.5m + 側向 0.9m
+          const wx = -fx * 1.5 + s.rx * side * 0.9
+          const wz = -fz * 1.5 + s.rz * side * 0.9
+          const wl = Math.hypot(wx, wz)
+          const nx = -wz / wl, nz = wx / wl // 翼的法向（寬度方向）
+          const hw = 0.19
+          chev.quad(
+            [tip[0] + nx * hw, tip[1], tip[2] + nz * hw],
+            [tip[0] - nx * hw, tip[1], tip[2] - nz * hw],
+            [tip[0] + wx + nx * hw, tip[1], tip[2] + wz + nz * hw],
+            [tip[0] + wx - nx * hw, tip[1], tip[2] + wz - nz * hw],
+          )
+        }
+      }
+    }
+    // 半透明貼面：depthWrite 關（彼此不互擋）、renderOrder 固定疊序 casing→帶→chevron
+    const push = (buf: TriBuf, color: number, opacity: number, order: number) => {
+      const mesh = buf.build(new THREE.MeshBasicMaterial({
+        color, side: THREE.DoubleSide, transparent: true, opacity, depthWrite: false,
+      }))
+      if (mesh) { mesh.renderOrder = order; this.routeGroup.add(mesh) }
+    }
+    push(casing, 0x1d4ed8, 0.35, 1) // 同 mapStyle C.routeCasing
+    push(line, 0x3b82f6, 0.55, 2) // 同 C.route
+    push(chev, 0xffffff, 0.9, 3)
+    this.map?.triggerRepaint()
+    return ground
+  }
 }
+
+// 目前生效的圖層實例（模組單例）：mapCore 建圖層時設定，
+// usePlanner/useDrive 畫路線帶時直接取用——不用把 ref 穿過 App.tsx 接線
+let activeLayer: ElevatedLayer | null = null
+
+export function setActiveElevatedLayer(l: ElevatedLayer | null) { activeLayer = l }
+export function activeElevatedLayer(): ElevatedLayer | null { return activeLayer }

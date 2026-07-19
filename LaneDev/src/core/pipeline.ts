@@ -8,6 +8,7 @@ import {
 import { applyFixups } from './fixups'
 import { splitAtIntersections, type RoadFeature } from './roads'
 import { MEDIAN_SCOPE_ROADS } from './medians'
+import { isElevated } from './elevation'
 
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過 */
 const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路'])
@@ -97,5 +98,11 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 分隔島由 medians.ts TWIN_ISLAND_PAIRS 顯式配對生成
   applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
   // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
-  return { roads: splitAtIntersections(roads), nodeRemap, wayRemap }
+  const blocks = splitAtIntersections(roads)
+  // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，
+  // 改由 elevated3d 的 3D 橋面全長取代（含近地爬升段）
+  for (const r of blocks) {
+    if (isElevated(r.properties)) r.properties.elevated = true
+  }
+  return { roads: blocks, nodeRemap, wayRemap }
 }

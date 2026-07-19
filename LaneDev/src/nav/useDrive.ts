@@ -3,7 +3,8 @@
 // 持有，透過參數傳進來（這裡不重複定義 ref，避免兩邊各存一份不同步）。
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Map as MLMap, GeoJSONSource } from 'maplibre-gl'
-import { RoadGraph, laneOffsetCoords, type RouteResult, type Profile } from '../core/graph'
+import { RoadGraph, laneBand, type RouteResult, type Profile } from '../core/graph'
+import { activeElevatedLayer } from '../core/elevated3d'
 import { Driver, type DriveState } from './drive'
 import { GpsDriver } from './gpsNav'
 import { VehicleModelLayer } from '../core/models3d'
@@ -62,6 +63,19 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   useEffect(() => { if (driverRef.current) driverRef.current.multiplier = multiplier }, [multiplier])
 
   const src = (id: string) => p.mapRef.current!.getSource(id) as GeoJSONSource
+
+  /** 重畫路線帶：高架段交給 elevated3d 3D 絲帶，MapLibre 只畫平面段（與 usePlanner 同規則） */
+  function drawRouteLine(route: RouteResult) {
+    const band = laneBand(route)
+    const ground = activeElevatedLayer()?.setRoute(route, band) ?? [band.coords]
+    src('route').setData({
+      type: 'FeatureCollection',
+      features: ground.filter((cs) => cs.length >= 2).map((cs) => ({
+        type: 'Feature', properties: {},
+        geometry: { type: 'LineString', coordinates: cs },
+      })),
+    } as never)
+  }
 
   function stopAllDrivers() {
     driverRef.current?.stop()
@@ -159,13 +173,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (!route) return
     p.annotateTwoStage(route)
     p.routeRef.current = route
-    src('route').setData({
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature', properties: {},
-        geometry: { type: 'LineString', coordinates: laneOffsetCoords(route) },
-      }],
-    } as never)
+    drawRouteLine(route)
     // 目前是 GPS 導航中就繼續用 GPS 接續，否則走模擬（鍵盤橫移/路口決策都是模擬觸發）
     if (gpsDriverRef.current) startGpsNav()
     else runDriver(route)
@@ -197,13 +205,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       spans: [{ toIdx: coords.length - 1, offM: 0, leftM: 0, rightM: 0 }],
     }
     p.routeRef.current = detourRoute
-    src('route').setData({
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature', properties: {},
-        geometry: { type: 'LineString', coordinates: laneOffsetCoords(detourRoute) },
-      }],
-    } as never)
+    drawRouteLine(detourRoute)
     runDriver(detourRoute, { autoRerouteAfterM: DETOUR_REROUTE_M })
   }
 

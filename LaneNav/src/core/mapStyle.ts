@@ -68,8 +68,11 @@ export function buildStyle(): StyleSpecification {
       },
 
       // ── 車道級路面 ──
+      // 高架路段（elevated）不畫地面路體——3D 橋面（elevated3d）全長取代，
+      // 平面「影子」會造成雙重路體（2026-07-18 使用者回饋移除）
       {
         id: 'road-casing', type: 'line', source: 'roads', minzoom: LANE_ZOOM,
+        filter: ['!=', ['get', 'elevated'], true],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': C.casing, 'line-width': widthMeters(casingWidthM) },
       },
@@ -82,6 +85,7 @@ export function buildStyle(): StyleSpecification {
       },
       {
         id: 'road-surface', type: 'line', source: 'roads', minzoom: LANE_ZOOM,
+        filter: ['!=', ['get', 'elevated'], true],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': C.surface, 'line-width': widthMeters(surfaceWidthM) },
       },
@@ -167,7 +171,7 @@ export function buildStyle(): StyleSpecification {
       // ── 單行道方向箭頭 ──
       {
         id: 'oneway-arrow', type: 'symbol', source: 'roads', minzoom: 16,
-        filter: ['==', ['get', 'oneway'], 'yes'],
+        filter: ['all', ['==', ['get', 'oneway'], 'yes'], ['!=', ['get', 'elevated'], true]],
         layout: {
           'symbol-placement': 'line',
           'symbol-spacing': 140,

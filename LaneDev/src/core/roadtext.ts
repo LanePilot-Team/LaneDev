@@ -26,7 +26,9 @@ const STACK_STEP_M = ROAD_TEXT_LEN_M + 4 // 多規則堆疊間距
 
 export function buildRoadTexts(graph: RoadGraph): FeatureCollection {
   const features: Feature[] = []
-  const scope = (r: { properties: { rulesF?: string[]; rulesB?: string[]; motorcycle?: string } }) =>
+  const scope = (r: { properties: {
+    rulesF?: string[]; rulesB?: string[]; motorcycle?: string; elevated?: boolean } }) =>
+    !r.properties.elevated && // 高架：地面路體不畫，印字也不印（會浮在橋下）
     !!(r.properties.rulesF?.length || r.properties.rulesB?.length || r.properties.motorcycle === 'no')
   for (const e of graph.scopeEdges(scope)) {
     const p = e.road.properties

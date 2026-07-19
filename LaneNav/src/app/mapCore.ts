@@ -27,7 +27,7 @@ import {
 import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
 import { VehicleModelLayer } from '../core/models3d'
 import { buildElevation, setActiveElevation } from '../core/elevation'
-import { ElevatedLayer } from '../core/elevated3d'
+import { ElevatedLayer, setActiveElevatedLayer } from '../core/elevated3d'
 import { NANZI_CENTER, haversine } from '../core/geo'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
@@ -323,6 +323,7 @@ export function useMapCore(
       // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer
+      setActiveElevatedLayer(eLayer) // usePlanner/useDrive 畫路線絲帶用（模組單例）
       rebuildElevation(roads)
       map.addLayer(eLayer.asLayer())
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer

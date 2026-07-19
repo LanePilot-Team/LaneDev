@@ -3,9 +3,10 @@
 import { useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 import {
-  mergeRoutes, laneOffsetCoords,
+  mergeRoutes, laneBand,
   type RouteResult, type Maneuver, type Profile,
 } from '../core/graph'
+import { activeElevatedLayer } from '../core/elevated3d'
 import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
@@ -102,13 +103,16 @@ export function usePlanner(core: MapCore): Planner {
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
     annotateTwoStage(route)
     routeRef.current = route
-    // 路線帶偏移到實際行駛車道（車道級導航的視覺核心）
+    // 路線帶偏移到實際行駛車道（車道級導航的視覺核心）。
+    // 高架段交給 elevated3d 畫 3D 絲帶（貼橋面），MapLibre 只畫平面段
+    const band = laneBand(route)
+    const ground = activeElevatedLayer()?.setRoute(route, band) ?? [band.coords]
     core.src('route').setData({
       type: 'FeatureCollection',
-      features: [{
+      features: ground.filter((cs) => cs.length >= 2).map((cs) => ({
         type: 'Feature', properties: {},
-        geometry: { type: 'LineString', coordinates: laneOffsetCoords(route) },
-      }],
+        geometry: { type: 'LineString', coordinates: cs },
+      })),
     } as never)
     const b = route.coords.reduce(
       (acc, c) => acc.extend(c as [number, number]),
@@ -120,6 +124,7 @@ export function usePlanner(core: MapCore): Planner {
   function clearRouteLine() {
     routeRef.current = null
     setRouteSummary(null)
+    activeElevatedLayer()?.setRoute(null)
     if (core.mapRef.current) core.src('route').setData(EMPTY_FC as never)
   }
 

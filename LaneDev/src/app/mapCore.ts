@@ -6,7 +6,9 @@ import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { buildStyle, makeIcons } from '../core/mapStyle'
-import { loadRoads, roadsFromGeoJSON, buildDividers, type RoadFeature } from '../core/roads'
+import {
+  buildDividers, buildRoadSurfaces, loadRoads, roadsFromGeoJSON, type RoadFeature,
+} from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
 import { parseImported, mergeMaps } from '../core/importmap'
@@ -179,6 +181,7 @@ export function useMapCore(
 
   const redrawRoads = useCallback(() => {
     src('roads').setData({ type: 'FeatureCollection', features: roadsRef.current } as never)
+    src('roadSurfaces').setData(buildRoadSurfaces(roadsRef.current) as never)
     src('dividers').setData(buildDividers(roadsRef.current) as never)
   }, [src])
 

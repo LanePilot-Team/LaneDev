@@ -11,20 +11,23 @@
 //   - 連續高架（匝道銜接國道、layer 1 接 layer 2）中間不下地：接地距離用
 //     整個高架子網路的沿線最短路（多源 Dijkstra）算，不是逐區塊各自爬升。
 import type { RoadFeature } from './roads'
-import { COS_LAT, cumulative } from './geo'
+import { COS_LAT, cumulative, bearing, angleDelta } from './geo'
 
 /** OSM layer → 公尺（1≈6m、2≈12m；缺省/0 視同 1 層） */
 export const LAYER_HEIGHT_M = 6
-/** 接地端爬升距離：沿線這個距離內從 0 平滑升到全高 */
-const RAMP_M = 100
+/** 接地端爬升距離：沿線這個距離內從 0 平滑升到全高
+ * （2026-07-19 100→70：降得太慢會長距離懸在旁邊的地面機車道上方） */
+const RAMP_M = 70
+/** 層級銜接（layer 1↔2 節點）的高度過渡距離——與接地爬升分開調 */
+const NODE_BLEND_M = 100
 
 /** 真立體交叉手動清單（中山高本線＋楠梓交流道匝道改用 highway+bridge/layer 判準，
  * 見 isElevated）。couplet 合併 keep 側保留原 osm_id，清單不受合併影響；
  * drop 側整條併入 keep 幾何，掉出清單也無妨。 */
 const ELEVATED_WAY_IDS = new Set([
-  // 高楠公路陸橋（primary，layer=1，跨越平面路口）
-  23939182, 103678994, 103679015, 271982159,
-  294647549, 294647551, 294647554, 294647556,
+  // 高楠公路北側獨立陸橋（primary，layer=1）
+  // 跨後勁溪段 23939182/271982159 僅作平面道路呈現，不列為 3D 高架。
+  103678994, 103679015,
   // 楠陽高架橋（tertiary，layer=1/2；「楠楊高架橋」為 OSM 同橋異名，交流道疊層）
   271982150, 103678963, 103678964,
   // 陸橋/高架橋銜接匝道（primary_link，bridge=yes layer=1）：高楠陸橋↔楠陽高架的
@@ -53,6 +56,10 @@ interface BlockElev {
   hM: number
   n0: number
   n1: number
+  /** 接地端的「地面延續路寬」（公尺）：橋面在該端從此寬度漸變到全寬
+   * （橋比地面路寬時，端點不收窄會懸空蓋到旁邊的平面路上） */
+  gw0?: number
+  gw1?: number
 }
 
 const smoothstep = (t: number) => t * t * (3 - 2 * t)
@@ -86,12 +93,17 @@ export class ElevationModel {
     }
     if (this.blocks.size === 0) return
 
-    // 2) 接地節點：端節點被任何「平面路段」共用（匝道口、陸橋兩端接回平面路）。
+    // 2) 接地節點：端節點被平面路段共用，且是高架鏈的「終端」（該節點只有
+    //    一個高架區塊相接）。高架續行中的節點就算有地面路共用（橋下岔路口、
+    //    couplet 合併後被移植上來的岔口——高楠陸橋×縱貫公路、楠梓交流道
+    //    node 4425325537 實例）也不落地，否則高架中途壓到 0 再爬回來變雲霄飛車。
     //    資料邊界的斷頭節點沒有平面路 → 不接地，高架維持全高直接結束。
     const groundNodes = new Set<number>()
     for (const r of roads) {
       if (this.blocks.has(r)) continue
-      for (const n of r.properties.nodes) if (adj.has(n)) groundNodes.add(n)
+      for (const n of r.properties.nodes) {
+        if (adj.has(n) && adj.get(n)!.length === 1) groundNodes.add(n)
+      }
     }
 
     // 3) 節點高度 = 鄰接高架最大全高（layer 1 塊靠近 layer 2 節點時往上爬）
@@ -120,6 +132,39 @@ export class ElevationModel {
         }
       }
     }
+
+    // 5) 接地端的地面延續路寬：與端節點共用、走向為「延續」（夾角 >130°，排除
+    //    橫向街）的平面路寬總和。橋面收窄錨定用（elevated3d），拿不到就不收窄
+    for (const b of this.blocks.values()) {
+      for (const [n, atStart] of [[b.n0, true], [b.n1, false]] as const) {
+        if ((this.dGround.get(n) ?? Infinity) !== 0) continue
+        const endIdx = atStart ? 0 : b.coords.length - 1
+        const inIdx = atStart ? 1 : b.coords.length - 2
+        const bridgeAway = bearing(b.coords[endIdx], b.coords[inIdx])
+        let sum = 0
+        let allOneway = true
+        for (const r of roads) {
+          if (this.blocks.has(r)) continue
+          const gi = r.properties.nodes.indexOf(n)
+          if (gi < 0) continue
+          const gc = r.geometry.coordinates as [number, number][]
+          if (gc.length < 2 || gi >= gc.length) continue
+          const groundAway = bearing(gc[gi], gc[gi === 0 ? 1 : gi - 1])
+          if (Math.abs(angleDelta(bridgeAway, groundAway)) > 130) {
+            sum += r.properties.width_m
+            if (r.properties.oneway !== 'yes') allOneway = false
+          }
+        }
+        // couplet 合併的雙向橋若只接到「單向半邊」的地面路（合併尾段常見：
+        // 對向在別的節點接地），只用單邊寬會把整座橋掐細——單向延續 ×2 視為全廊寬
+        if (sum > 0 && b.road.properties.coupletMerged && allOneway) sum *= 2
+        if (sum > 0) {
+          const gw = Math.min(b.road.properties.width_m, Math.max(6, sum))
+          if (atStart) b.gw0 = gw
+          else b.gw1 = gw
+        }
+      }
+    }
   }
 
   /** 有任何高架區塊才需要建 3D 圖層/查高度 */
@@ -130,17 +175,23 @@ export class ElevationModel {
     return [...this.blocks.values()].map((b) => ({ road: b.road, lenM: b.lenM, hM: b.hM }))
   }
 
+  /** 接地端的地面延續路寬（該端沒接地/查無延續 = undefined，不收窄） */
+  groundTaper(road: RoadFeature): { gw0?: number; gw1?: number } {
+    const b = this.blocks.get(road)
+    return b ? { gw0: b.gw0, gw1: b.gw1 } : {}
+  }
+
   /** 該路段沿線 d 公尺處的高度；非高架路段回傳 0 */
   heightAt(road: RoadFeature, d: number): number {
     const b = this.blocks.get(road)
     if (!b) return 0
     const x = Math.max(0, Math.min(d, b.lenM))
-    // 層級銜接：端節點高度（鄰接最大）在 RAMP_M 內線性趨回本塊全高
+    // 層級銜接：端節點高度（鄰接最大）在 NODE_BLEND_M 內線性趨回本塊全高
     const h0 = this.nodeH.get(b.n0) ?? b.hM
     const h1 = this.nodeH.get(b.n1) ?? b.hM
     const base = b.hM +
-      (h0 - b.hM) * Math.max(0, 1 - x / RAMP_M) +
-      (h1 - b.hM) * Math.max(0, 1 - (b.lenM - x) / RAMP_M)
+      (h0 - b.hM) * Math.max(0, 1 - x / NODE_BLEND_M) +
+      (h1 - b.hM) * Math.max(0, 1 - (b.lenM - x) / NODE_BLEND_M)
     // 接地爬升：距最近接地點的「沿高架網」距離 → smoothstep 升到全高
     const dg = Math.min(
       (this.dGround.get(b.n0) ?? Infinity) + x,

@@ -18,11 +18,6 @@ export const C = {
   labelHalo: '#ffffff',
 }
 
-/** 路面總寬（公尺）：由 roads.ts computeDerived 算好放在 width_m */
-const wExpr: ExpressionSpecification = ['coalesce', ['to-number', ['get', 'width_m']], 6.4]
-const surfaceWidthM: ExpressionSpecification = ['+', wExpr, 0.8]
-const casingWidthM: ExpressionSpecification = ['+', wExpr, 2.4]
-
 /** icon 尺寸表達式：讓圖片呈現為實際 meters 高（imgPx = 圖片像素高） */
 function iconMeters(meters: number, imgPx: number): ExpressionSpecification {
   const s = (z: number) => (meters * pxPerMeter(z)) / imgPx
@@ -39,6 +34,7 @@ export function buildStyle(): StyleSpecification {
     glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
     sources: {
       roads: { type: 'geojson', data: emptyFC as never },
+      roadSurfaces: { type: 'geojson', data: emptyFC as never },
       dividers: { type: 'geojson', data: emptyFC as never },
       turnbays: { type: 'geojson', data: emptyFC as never },
       roadtext: { type: 'geojson', data: emptyFC as never },
@@ -71,10 +67,9 @@ export function buildStyle(): StyleSpecification {
       // 高架路段（elevated）不畫地面路體——3D 橋面（elevated3d）全長取代，
       // 平面「影子」會造成雙重路體（2026-07-18 使用者回饋移除）
       {
-        id: 'road-casing', type: 'line', source: 'roads', minzoom: LANE_ZOOM,
-        filter: ['!=', ['get', 'elevated'], true],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': C.casing, 'line-width': widthMeters(casingWidthM) },
+        id: 'road-casing', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
+        filter: ['==', ['get', 'surfaceKind'], 'casing'],
+        paint: { 'fill-color': C.casing },
       },
       // ── 偏心左轉道（Enhancement Layer）──
       // casing 墊在 road-surface 之前：bay 與路面的接縫由 surface 蓋掉，只露出外緣描邊
@@ -84,10 +79,9 @@ export function buildStyle(): StyleSpecification {
         paint: { 'fill-color': C.casing },
       },
       {
-        id: 'road-surface', type: 'line', source: 'roads', minzoom: LANE_ZOOM,
-        filter: ['!=', ['get', 'elevated'], true],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': C.surface, 'line-width': widthMeters(surfaceWidthM) },
+        id: 'road-surface', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
+        filter: ['==', ['get', 'surfaceKind'], 'surface'],
+        paint: { 'fill-color': C.surface },
       },
       {
         id: 'bay-fill', type: 'fill', source: 'turnbays', minzoom: LANE_ZOOM,

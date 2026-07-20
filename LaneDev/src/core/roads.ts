@@ -4,8 +4,8 @@
 //   雙向道：way 線 = 分向中心。順向（畫線方向）車道在右側、逆向在左側，
 //           各方向最外側可有一條機車道（2.2m，白實線分隔）。
 //   單行道：way 線 = 斷面中心，全部車道屬順向。
-import { lineOffset } from '@turf/turf'
-import type { Feature, FeatureCollection, LineString } from 'geojson'
+import { buffer, lineOffset } from '@turf/turf'
+import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
 import {
   angleDelta, bearing, cumulative, haversine, pointAlong, skewFromCross, LANE_WIDTH_M,
 } from './geo'
@@ -40,6 +40,8 @@ export interface RoadProps {
    * 非對稱車道（3+2 等）≠ 0，由 computeDerived 推導；渲染與車道偏移都要加上 */
   divOffM: number
   width_m: number // 斷面總寬（渲染用，由 computeDerived 計算）
+  /** 短死巷共用單車道：仍為雙向通行，但兩向共用同一條 3.2m 車道且不畫中央線 */
+  sharedLane?: boolean
   oneway: 'yes' | 'no'
   maxspeed?: string
   motorcycle?: string // OSM motorcycle=*（no = 禁行機車）
@@ -73,6 +75,8 @@ export interface RoadProps {
 
 export type RoadFeature = Feature<LineString> & { properties: RoadProps }
 
+type RoadSurfaceProps = RoadProps & { surfaceKind: 'casing' | 'surface' }
+
 const DEFAULT_LANES: Record<string, number> = {
   motorway: 4, trunk: 4, primary: 4, secondary: 3, tertiary: 2,
   motorway_link: 1, trunk_link: 1, primary_link: 1, secondary_link: 1, tertiary_link: 1,
@@ -80,6 +84,13 @@ const DEFAULT_LANES: Record<string, number> = {
 
 /** 由 f/b/moto 重算總車道數與斷面寬（編輯後也要呼叫） */
 export function computeDerived(p: RoadProps) {
+  if (p.sharedLane && p.oneway === 'no') {
+    // lanesForward/Backward 保留為 1，讓 A* 兩個方向都可通行；幾何只算一條共用車道。
+    p.lanes = 1
+    p.width_m = Math.max(2, LANE_WIDTH_M + (p.extraM || 0))
+    p.divOffM = 0
+    return
+  }
   p.lanes = p.lanesForward + p.lanesBackward
   const laneSpan =
     LANE_WIDTH_M * (p.lanesForward + p.lanesBackward) +
@@ -97,6 +108,7 @@ export function computeDerived(p: RoadProps) {
 /** 該行向的車道塊寬（車道×3.2 + 快慢分隔帶 + 機車道；不含路寬微調）
  * ——地面標線橫向定位用 */
 export function laneSpanM(p: RoadProps, back: boolean): number {
+  if (p.sharedLane && p.oneway === 'no') return LANE_WIDTH_M
   const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
   const moto = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
   const sep = p.oneway === 'yes' ? p.motoSepF : back ? p.motoSepB : p.motoSepF
@@ -184,6 +196,34 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
 }
 
 /**
+ * 產生真正貼在地面的道路面。MapLibre line-width 是螢幕像素寬度，鏡頭傾斜時
+ * 近端不會按地面透視縮放，因此車道級路面改用實際公尺 buffer 的 polygon。
+ */
+export function buildRoadSurfaces(
+  roads: RoadFeature[],
+): FeatureCollection<Polygon | MultiPolygon, RoadSurfaceProps> {
+  const features: Feature<Polygon | MultiPolygon, RoadSurfaceProps>[] = []
+  for (const road of roads) {
+    if (road.properties.elevated || road.geometry.coordinates.length < 2) continue
+    for (const [surfaceKind, extraWidth] of [
+      ['casing', 2.4],
+      ['surface', 0.8],
+    ] as const) {
+      const polygon = buffer(road, (road.properties.width_m + extraWidth) / 2, {
+        units: 'meters',
+        steps: 4,
+      })
+      if (!polygon) continue
+      features.push({
+        ...polygon,
+        properties: { ...road.properties, surfaceKind },
+      })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}
+
+/**
  * 把 way 依「路口節點」切成區塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口。
  * 切點規則與 graph.ts 建邊一致（node 被引用 ≥2 次），所以區塊 = 路網邊。
  * 每個區塊繼承原 way 的 osm_id（bay key、way 級 journal 覆寫不變），
@@ -229,6 +269,101 @@ export function splitAtIntersections(roads: RoadFeature[]): RoadFeature[] {
   return out
 }
 
+/**
+ * 短死巷自動改為雙向共用單車道。只處理普通 1+1 的低等級道路；較長道路、
+ * 兩端都接路網的區塊、單行道、已有機車道或中央帶的人工斷面都不動。
+ */
+export function collapseShortDeadEnds(roads: RoadFeature[], maxLengthM = 60): number {
+  const endUse = new Map<number, number>()
+  for (const r of roads) {
+    const ns = r.properties.nodes
+    if (ns.length < 2) continue
+    for (const n of [ns[0], ns[ns.length - 1]]) endUse.set(n, (endUse.get(n) ?? 0) + 1)
+  }
+  const eligibleHighways = new Set(['residential', 'living_street', 'service', 'unclassified'])
+  let changed = 0
+  for (const r of roads) {
+    const p = r.properties
+    const ns = p.nodes
+    const cs = r.geometry.coordinates as [number, number][]
+    if (p.oneway !== 'no' || p.lanesForward !== 1 || p.lanesBackward !== 1 ||
+      p.motoF || p.motoB || p.centerM > 0 || !eligibleHighways.has(p.highway) ||
+      ns.length < 2 || cs.length < 2) continue
+    const use0 = endUse.get(ns[0]) ?? 0
+    const use1 = endUse.get(ns[ns.length - 1]) ?? 0
+    if (!((use0 === 1 && use1 > 1) || (use1 === 1 && use0 > 1))) continue
+    const cum = cumulative(cs)
+    if (cum[cum.length - 1] > maxLengthM) continue
+    p.sharedLane = true
+    computeDerived(p)
+    changed++
+  }
+  return changed
+}
+
+/**
+ * 移除未命名的短死端殘段。從度數 1 的死端起，沿未命名低等級道路追蹤到正式
+ * 路網；只有整條支線鏈的總長不超過上限才移除，避免逐段剝掉長距離無名道路。
+ */
+export function removeUnnamedShortSpurs(
+  roads: RoadFeature[], maxLengthM = 60,
+): { roads: RoadFeature[]; removed: number } {
+  const eligibleHighways = new Set(['residential', 'living_street', 'service', 'unclassified'])
+  const eligible = (r: RoadFeature) => {
+    const p = r.properties
+    return !p.name?.trim() && p.nodes.length >= 2 && r.geometry.coordinates.length >= 2 &&
+      eligibleHighways.has(p.highway)
+  }
+  const ends = (r: RoadFeature): [number, number] => {
+    const ns = r.properties.nodes
+    return [ns[0], ns[ns.length - 1]]
+  }
+  const lengthM = (r: RoadFeature) => {
+    const cum = cumulative(r.geometry.coordinates as [number, number][])
+    return cum[cum.length - 1]
+  }
+  const byNode = new Map<number, RoadFeature[]>()
+  for (const r of roads) {
+    for (const n of ends(r)) {
+      if (!byNode.has(n)) byNode.set(n, [])
+      byNode.get(n)!.push(r)
+    }
+  }
+  const remove = new Set<RoadFeature>()
+  for (const [deadNode, refs] of byNode) {
+    if (refs.length !== 1 || !eligible(refs[0]) || remove.has(refs[0])) continue
+    const chain: RoadFeature[] = []
+    const seen = new Set<RoadFeature>()
+    let road = refs[0]
+    let node = deadNode
+    let total = 0
+    let connected = false
+    while (!seen.has(road)) {
+      seen.add(road)
+      chain.push(road)
+      total += lengthM(road)
+      if (total > maxLengthM) break
+      const [a, b] = ends(road)
+      const nextNode = node === a ? b : a
+      const next = (byNode.get(nextNode) ?? []).filter((r) => r !== road)
+      if (next.length === 1 && eligible(next[0]) && !seen.has(next[0])) {
+        // 下一段會讓整條鏈超過上限：它屬於長道路主體，當作連接邊界，只裁短尾巴。
+        if (total + lengthM(next[0]) > maxLengthM) {
+          connected = true
+          break
+        }
+        road = next[0]
+        node = nextNode
+        continue
+      }
+      connected = next.length > 0 // 接到命名道路、較高等級道路或真正路口
+      break
+    }
+    if (connected && total <= maxLengthM) for (const r of chain) remove.add(r)
+  }
+  return { roads: roads.filter((r) => !remove.has(r)), removed: remove.size }
+}
+
 // turf lineOffset 正值 = 線行進方向的「右側」（實測：東向線 +100m 偏到南邊）。
 // 台灣右駕，順向車道在右側 → 正號。
 const RIGHT = 1
@@ -254,10 +389,9 @@ function sliceByDist(
  *   center：雙向道分向線（黃）
  *   lane  ：同向車道分隔（白虛線）
  *   moto  ：機車道分隔（白實線）
- * 路口收邊：區塊端節點上有「別條路」（不同 way 且不同路名）交會時，分隔線
- * 收回交叉路最大半寬 + 1.2m——路口框內不殘留黃分向線/白車道線（2026-07-18
- * 使用者要求「路口中間全清」，含主線通過的十字/丁字路口）。同路純續接節點
- *（way 換 id 處、度數 2）不收，標線連續。
+ * 路口收邊：區塊端節點上有另一道路以足夠角度交會時，分隔線收回交叉路最大
+ * 半寬 + 1.2m——路口框與楔形內不殘留黃分向線/白車道線。所有道路等級都適用，
+ * 小巷也不能讓標線穿過路口；同一路純續接（幾何近乎平行）則保持標線連續。
  */
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
   // 節點 → 佔用道路（切塊後交叉路在路口節點必有端點/中間點落在這裡）
@@ -268,11 +402,11 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       nodeUse.get(n)!.push(r)
     }
   }
-  /** 端節點收邊資訊：trim = 收邊量（停止線位置基準：「夠格交叉路」最大寬/2 + 1.2，
+  /** 端節點收邊資訊：trim = 收邊量（停止線位置基準：交叉路最大寬/2 + 1.2，
    * 與 graph.scopeEdges 的 setback 一致——分隔線才不會戳過停止線）；
-   * 夠格 = 不同路（id 與路名都不同）且寬 ≥7m——小巷交會不收（車道線直接越過
-   * 巷口），同路續接不算自寬。sk = 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸
-   * 平移 o×sk，收邊線平行交叉路＝停止線的延長線）。trim=0 = 不收。 */
+   * 交叉路 = 與自身走向夾角 >25° 的其他路段，不以名稱或道路寬度排除。sk =
+   * 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，收邊線平行交叉路
+   * ＝停止線的延長線）。trim=0 = 不收。 */
   const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
     let anyCross = false
     let w = 0
@@ -281,11 +415,6 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     for (const f of nodeUse.get(n) ?? []) {
       if (f === self) continue
       const q = f.properties
-      if (q.osm_id === self.properties.osm_id ||
-        (self.properties.name && q.name === self.properties.name)) continue // 同路續行不算交叉
-      if (q.width_m < 7) continue // 小巷不觸發收邊/停止線
-      w = Math.max(w, q.width_m)
-      anyCross = true
       const idx = q.nodes.indexOf(n)
       const cs2 = f.geometry.coordinates as [number, number][]
       if (idx >= 0 && q.nodes.length === cs2.length && cs2.length >= 2) {
@@ -294,6 +423,9 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
           : bearing(cs2[idx - 1], cs2[idx])
         let d = Math.abs(angleDelta(fwdBrg, brg))
         if (d > 90) d = 180 - d
+        if (d <= 25) continue // 同一路續接或近乎平行的分岔，不形成需清空的路口楔形
+        w = Math.max(w, q.width_m)
+        anyCross = true
         if (d > bestPerp) { bestPerp = d; crossBrg = brg }
       }
     }
@@ -336,6 +468,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     curId = p.osm_id
     if (p.elevated) continue // 高架：標線由 elevated3d 畫在橋面，地面不畫
     if (road.geometry.coordinates.length < 2) continue
+    if (p.sharedLane) continue // 雙向共用單車道沒有分向線或車道分隔線
     cs0 = road.geometry.coordinates as [number, number][]
     const ns = p.nodes
     cum = null

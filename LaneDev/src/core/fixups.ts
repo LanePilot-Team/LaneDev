@@ -7,6 +7,9 @@ import { computeDerived, type RoadFeature } from './roads'
 const RENAMES: Record<string, string> = {
   右昌大橋: '藍昌路',
   援中港大橋: '楠海路',
+  // OSM 同橋異名（同一座橋兩個方向的 way 被標成不同字）：不歸一名字，couplet
+  // 合併的 name 分組會把兩個方向當成落單的獨立道路，永遠配不成對（見 elevation.ts）
+  楠楊高架橋: '楠陽高架橋',
 }
 
 /** 車道數修正（way 級，單行 way 的 lanes = 該向車道數）。
@@ -19,10 +22,30 @@ const LANES_FIX: Record<number, number> = {
   1464614123: 3, // 土庫一路 東向（德民新橋東端）
 }
 
+/** 已確認為 OSM 幾何殘段，不應進入顯示或路由。 */
+export const REMOVED_WAY_IDS = new Set([
+  287447934,
+  287447935,
+])
+
+/** way 起點錯位殘尾：裁到指定 OSM node，保留後續主體。 */
+const TRIM_WAY_START_NODE: Record<number, number> = {
+  287673498: 2912433399, // 援中路往益群橋下來，移除路口左側約 55m 多餘尾巴
+}
+
 /** 載入後、couplet 合併前呼叫（預設底圖與「匯入地圖」同一套） */
 export function applyFixups(roads: RoadFeature[]) {
   for (const r of roads) {
     const p = r.properties
+    const trimNode = TRIM_WAY_START_NODE[p.osm_id]
+    if (trimNode !== undefined) {
+      const i = p.nodes.indexOf(trimNode)
+      if (i > 0 && i < r.geometry.coordinates.length - 1) {
+        p.nodes = p.nodes.slice(i)
+        r.geometry.coordinates = r.geometry.coordinates.slice(i)
+        p.blockNode = trimNode
+      }
+    }
     const rename = p.name && RENAMES[p.name]
     if (rename) p.name = rename
     const lanes = LANES_FIX[p.osm_id]

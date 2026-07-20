@@ -107,6 +107,8 @@ export function applyToRoads(
     const fields = { ...wayFields, ...blockFields }
     n++
     const p = r.properties
+    if (fields.lanes !== undefined || fields.lanes_forward !== undefined ||
+      fields.lanes_backward !== undefined) p.sharedLane = false
     // 0 = 該向純機車道（無汽車車道），編輯面板保證 0 時必有機車道
     if (fields.lanes_forward !== undefined) p.lanesForward = Math.max(0, Number(fields.lanes_forward))
     if (fields.lanes_backward !== undefined) {

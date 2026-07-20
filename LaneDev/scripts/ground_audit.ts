@@ -36,6 +36,13 @@ const journal: EnhancementRecord[] = JSON.parse(readFileSync(join(DATA, 'seed_jo
 applyToRoads(roads, foldJournal(journal))
 const graph = new RoadGraph(roads)
 console.log(`底圖：${roads.length} 區塊, journal ${journal.length} 筆, nodeRemap ${nodeRemap.size}`)
+const targetSpurs = roads.filter((r) =>
+  [287447934, 287447935, 289555544].includes(r.properties.osm_id))
+check('明確排除 way/287447934、way/287447935，並清除附近短殘段', targetSpurs.length === 0,
+  targetSpurs.map((r) => `way/${r.properties.osm_id}@${r.properties.blockNode}`).join(', '))
+const trimmedBridgeWay = roads.find((r) => r.properties.osm_id === 287673498)
+check('way/287673498 已裁掉益群橋路口左側多餘尾巴',
+  !!trimmedBridgeWay && trimmedBridgeWay.properties.nodes[0] === 2912433399)
 
 // ── 1. 停止線 ──
 const bays = buildTurnBays(graph, journal)
@@ -105,7 +112,16 @@ if (daxue.length && yuanzhong.length) {
   }
 }
 
-// ── 3. 路寬微調 ──
+// ── 3. 短死巷共用單車道 ──
+const shared = roads.filter((r) => r.properties.sharedLane)
+check('短死巷有套用共用單車道', shared.length > 0, `${shared.length} 個區塊`)
+check('共用單車道路寬為一道且仍保留雙向通行', shared.every((r) =>
+  Math.abs(r.properties.width_m - 3.2) < 1e-6 &&
+  r.properties.oneway === 'no' && r.properties.lanesForward === 1 && r.properties.lanesBackward === 1))
+check('共用單車道不生成中央線或車道線',
+  buildDividers(shared).features.length === 0)
+
+// ── 4. 路寬微調 ──
 const target = roads.find((r) => r.properties.oneway === 'no' && r.properties.lanesForward >= 2)!
 const p0 = { w: target.properties.width_m, dv: target.properties.divOffM }
 const key = `way/${target.properties.osm_id}@b/${target.properties.blockNode}`
@@ -119,7 +135,7 @@ check('extra_width_m=1.6 → width_m +1.6',
   `${p0.w.toFixed(1)} → ${target.properties.width_m.toFixed(1)}`)
 check('divOffM（車道位置）不動', Math.abs(target.properties.divOffM - p0.dv) < 1e-6)
 
-// ── 4. 右轉附加車道 ──
+// ── 5. 右轉附加車道 ──
 const anchor = graph.bayAnchors(() => true).find((a) => {
   const cs = a.coords
   let len = 0

@@ -137,6 +137,7 @@ export interface TurnOption {
  */
 function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number; right: number } {
   const p = e.road.properties
+  if (p.sharedLane && p.oneway === 'no') return { cruise: 0, left: 0, right: 0 }
   if (p.oneway === 'yes') {
     const L0 = p.lanesForward // 可為 0（純機車道路體）
     const L = Math.max(1, L0)

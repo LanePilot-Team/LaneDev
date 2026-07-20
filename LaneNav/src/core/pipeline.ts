@@ -5,13 +5,22 @@ import {
   mergeCouplets, absorbSideWays, applyLantianSections,
   type DropRemap, type CoupletSection,
 } from './couplet'
-import { applyFixups } from './fixups'
-import { splitAtIntersections, type RoadFeature } from './roads'
+import { applyFixups, REMOVED_WAY_IDS } from './fixups'
+import {
+  collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
+} from './roads'
 import { MEDIAN_SCOPE_ROADS } from './medians'
 import { isElevated } from './elevation'
 
-/** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過 */
-const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路'])
+/** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過。
+ * 高楠公路：只顯式併陸橋本體兩 way（見 GAONAN_BRIDGE_IDS）——地面段有
+ * 主慢分離/同向並排，泛用掃描本來就會被防呆整條擋下，列這裡免做白工 */
+const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路', '楠陽高架橋', '高楠公路'])
+
+/** 高楠公路陸橋本體（跨楠梓路口的成對單行，間距 ~12m）。北段短橋對
+ * （103678994/103679015，間距 26m+）是實體分離雙橋、南段（294647549 等）是
+ * 同向並排雙 way——都不是 couplet 對切模型，維持原樣 */
+const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
 
 /** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
  * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
@@ -58,7 +67,10 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   const wayRemap = new Map<number, DropRemap>()
   // 藍田路 = 2+2+中央 3.2m 偏心帶（槽化）；大學南路 = 2+2+機車道+實體島，
   // 島寬由 OSM 兩線實際間距反推（「把道路切開放入」，不擠壓車道）
-  let roads = mergeCouplets(raw, new Set(['藍田路']), undefined, nodeRemap, wayRemap)
+  let roads = mergeCouplets(
+    raw.filter((r) => !REMOVED_WAY_IDS.has(r.properties.osm_id)),
+    new Set(['藍田路']), undefined, nodeRemap, wayRemap,
+  )
   roads = mergeCouplets(roads, MEDIAN_SCOPE_ROADS, {
     lanesF: 2, lanesB: 2, centerM: 2.4, centerKind: 'island',
     motoF: true, motoB: true,
@@ -71,6 +83,16 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     motoF: true, motoB: true,
     centerFromGap: { roadW: 8.6, min: 1.6, max: 8 },
   }, nodeRemap, wayRemap)
+  // 楠陽高架橋：實地三線道＋低矮中央護欄（2026-07-19 街景比對），不是泛用預設
+  // 的 2+2——OSM 兩方向 way 同橋異名（見 fixups RENAMES），改名後才會被抓進來
+  roads = mergeCouplets(roads, new Set(['楠陽高架橋']), {
+    lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'island',
+  }, nodeRemap, wayRemap)
+  // 高楠公路陸橋：同楠陽模式（成對單行 → 單一橋體＋中央護欄）。OSM 無 lanes
+  // 真值（primary 預設 4 是猜的），陸橋給 2+2 推薦值，實地確認後用編輯模式修
+  roads = mergeCouplets(roads, new Set(['高楠公路']), {
+    lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'island',
+  }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
   // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——
   // 主線合併成 2+2＋機車道＋快慢分隔島（寬度可編輯），再吸收慢車道 way
   for (const name of MAINLINE_ONLY_ROADS) {
@@ -98,7 +120,9 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 分隔島由 medians.ts TWIN_ISLAND_PAIRS 顯式配對生成
   applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
   // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
-  const blocks = splitAtIntersections(roads)
+  let blocks = splitAtIntersections(roads)
+  blocks = removeUnnamedShortSpurs(blocks).roads
+  collapseShortDeadEnds(blocks)
   // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，
   // 改由 elevated3d 的 3D 橋面全長取代（含近地爬升段）
   for (const r of blocks) {

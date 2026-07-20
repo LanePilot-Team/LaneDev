@@ -142,6 +142,11 @@ export function buildStyle(): StyleSpecification {
         paint: { 'line-color': C.centerLine, 'line-width': widthMeters(0.3) },
       },
       {
+        id: 'center-divider-double', type: 'line', source: 'dividers', minzoom: 15.5,
+        filter: ['==', ['get', 'kind'], 'center-double'],
+        paint: { 'line-color': C.centerLine, 'line-width': widthMeters(0.15) },
+      },
+      {
         // 機車道分隔：白實線
         id: 'moto-divider', type: 'line', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'moto'],
@@ -288,17 +293,17 @@ export function buildStyle(): StyleSpecification {
 
 // ── 程式繪製 icon（避開 CJK glyph 伺服器依賴：中文全用 canvas 畫成圖）──
 
-/** 路面標線字（直書）：第一字在圖頂端，地圖閱讀由上往下（keep-upright 由
- * roadtext.ts 的 iconBrg 保證不倒立）。字體瘦長（scale 1.5 倍高）仿標線比例。
- * 注意：這是「地圖可讀性優先」，與實際路面「第一字靠近駕駛」的漆法相反。 */
-function roadTextImage(text: string) {
-  const chars = [...text]
+/** 路面標線字（直書）：圖頂端由 roadtext.ts 對準行進方向；實際道路標字需讓
+ * 駕駛由近到遠讀，因此圖片由頂到底反向排列（底端第一字、頂端最後一字）。
+ * 字體瘦長（scale 1.5 倍高）仿標線比例。 */
+function roadTextImage(text: string, color = '#ffffff') {
+  const chars = [...text].reverse()
   const W = 56, CELL = 80
   return canvasImage(W, CELL * chars.length, (g) => {
     g.font = 'bold 44px "Microsoft JhengHei", sans-serif'
     g.textAlign = 'center'
     g.textBaseline = 'middle'
-    g.fillStyle = '#ffffff'
+    g.fillStyle = color
     chars.forEach((ch, i) => {
       g.save()
       g.translate(W / 2, i * CELL + CELL / 2)
@@ -440,16 +445,21 @@ export function makeIcons(): Record<string, ImageData> {
       g.moveTo(28, 12); g.lineTo(46, 26); g.lineTo(28, 40)
       g.closePath(); g.fill()
     }),
-    'lane-arrow-through-right': canvasImage(56, 96, (g) => {
+    // 合體式直行＋右轉：直行主幹保持完整，右轉支線由主幹分岔後水平指向右側。
+    // 造型參照台灣路面箭頭，刻意拉開兩個箭頭頭部，縮小後仍可辨識兩種動作。
+    'lane-arrow-through-right': canvasImage(68, 96, (g) => {
       g.strokeStyle = '#ffffff'
-      g.lineWidth = 7
+      g.lineWidth = 8
+      g.lineCap = 'butt'
       g.lineJoin = 'round'
-      g.beginPath(); g.moveTo(20, 92); g.lineTo(20, 26); g.stroke()
+      // 完整直行箭頭
+      g.beginPath(); g.moveTo(30, 92); g.lineTo(30, 30); g.stroke()
       g.fillStyle = '#ffffff'
-      g.beginPath(); g.moveTo(20, 2); g.lineTo(8, 28); g.lineTo(32, 28)
+      g.beginPath(); g.moveTo(30, 3); g.lineTo(15, 34); g.lineTo(45, 34)
       g.closePath(); g.fill()
-      g.beginPath(); g.moveTo(20, 66); g.quadraticCurveTo(38, 62, 40, 50); g.stroke()
-      g.beginPath(); g.moveTo(32, 36); g.lineTo(52, 44); g.lineTo(38, 60)
+      // 從主幹分出的右轉箭頭：先彎、再保留一小段水平箭桿
+      g.beginPath(); g.moveTo(30, 70); g.quadraticCurveTo(30, 50, 52, 50); g.lineTo(57, 50); g.stroke()
+      g.beginPath(); g.moveTo(67, 50); g.lineTo(49, 35); g.lineTo(49, 65)
       g.closePath(); g.fill()
     }),
     // 並排式直行+右轉（兩支完整箭頭各自獨立，非合體分岔）
@@ -471,16 +481,18 @@ export function makeIcons(): Record<string, ImageData> {
       g.moveTo(54, 18); g.lineTo(70, 30); g.lineTo(54, 42)
       g.closePath(); g.fill()
     }),
-    'lane-arrow-left-through': canvasImage(56, 96, (g) => {
+    // 合體式左轉＋直行：與上式鏡像，兩個箭頭頭部清楚分離。
+    'lane-arrow-left-through': canvasImage(68, 96, (g) => {
       g.strokeStyle = '#ffffff'
-      g.lineWidth = 7
+      g.lineWidth = 8
+      g.lineCap = 'butt'
       g.lineJoin = 'round'
-      g.beginPath(); g.moveTo(36, 92); g.lineTo(36, 26); g.stroke()
+      g.beginPath(); g.moveTo(38, 92); g.lineTo(38, 30); g.stroke()
       g.fillStyle = '#ffffff'
-      g.beginPath(); g.moveTo(36, 2); g.lineTo(24, 28); g.lineTo(48, 28)
+      g.beginPath(); g.moveTo(38, 3); g.lineTo(23, 34); g.lineTo(53, 34)
       g.closePath(); g.fill()
-      g.beginPath(); g.moveTo(36, 66); g.quadraticCurveTo(18, 62, 16, 50); g.stroke()
-      g.beginPath(); g.moveTo(24, 36); g.lineTo(4, 44); g.lineTo(18, 60)
+      g.beginPath(); g.moveTo(38, 70); g.quadraticCurveTo(38, 50, 16, 50); g.lineTo(11, 50); g.stroke()
+      g.beginPath(); g.moveTo(1, 50); g.lineTo(19, 35); g.lineTo(19, 65)
       g.closePath(); g.fill()
     }),
     'lane-arrow-left-right': canvasImage(64, 96, (g) => {
@@ -499,7 +511,10 @@ export function makeIcons(): Record<string, ImageData> {
       g.closePath(); g.fill()
     }),
     // 地面規則印字（roadtext.ts GROUND_RULES 決定點位與順序）
-    ...Object.fromEntries(GROUND_RULES.map((r) => [`rule-${r.code}`, roadTextImage(r.label)])),
+    ...Object.fromEntries(GROUND_RULES.map((r) => [
+      `rule-${r.code}`,
+      roadTextImage(r.label, r.code === 'no_moto' ? '#facc15' : '#ffffff'),
+    ])),
     // 「待轉區」文字用 canvas 畫，不依賴字型伺服器
     'zone-text': canvasImage(160, 48, (g) => {
       g.font = 'bold 30px "Microsoft JhengHei", sans-serif'

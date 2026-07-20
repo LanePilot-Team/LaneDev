@@ -292,6 +292,31 @@ export class RoadGraph {
     return best
   }
 
+  /** 指定道路在節點上真正交叉（線夾角 >25°）的最大路寬。
+   * 車道箭頭用它補足小巷路口退界，不改動 bay／停止線原本較嚴格的 scope setback。 */
+  crossWidthAt(nodeId: number, fromBearing: number, selfRoad: RoadFeature): number {
+    let width = 0
+    const seen = new Set<RoadFeature>()
+    const consider = (e: Edge, awayBearing: number) => {
+      if (seen.has(e.road)) return
+      seen.add(e.road)
+      const p = e.road.properties
+      const self = selfRoad.properties
+      if (p.osm_id === self.osm_id || (self.name && p.name === self.name)) return
+      let d = Math.abs(angleDelta(fromBearing, awayBearing))
+      if (d > 90) d = 180 - d
+      if (d > 25) width = Math.max(width, p.width_m)
+    }
+    for (const e of this.adj.get(nodeId) ?? []) {
+      if (e.coords.length >= 2) consider(e, bearing(e.coords[0], e.coords[1]))
+    }
+    for (const e of this.adjIn.get(nodeId) ?? []) {
+      const c = e.coords
+      if (c.length >= 2) consider(e, bearing(c[c.length - 1], c[c.length - 2]))
+    }
+    return width
+  }
+
   /** 路口清單（相鄰節點 ≥3）——待轉區只能放在路口附近 */
   intersections(): { id: number; pos: [number, number] }[] {
     const neighbors = new Map<number, Set<number>>()

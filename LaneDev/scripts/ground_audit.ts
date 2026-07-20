@@ -17,6 +17,8 @@ import { foldJournal, applyToRoads, type EnhancementRecord } from '../src/core/e
 import {
   buildTurnBays, buildStopLines, buildRightLanes, buildLaneArrows,
 } from '../src/core/turnbays'
+import { buildRoadTexts } from '../src/core/roadtext'
+import { buildCenterIslands, buildMotoSepIslands } from '../src/core/medians'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DATA = join(HERE, '../public/data')
@@ -36,6 +38,71 @@ const journal: EnhancementRecord[] = JSON.parse(readFileSync(join(DATA, 'seed_jo
 applyToRoads(roads, foldJournal(journal))
 const graph = new RoadGraph(roads)
 console.log(`底圖：${roads.length} 區塊, journal ${journal.length} 筆, nodeRemap ${nodeRemap.size}`)
+
+// ── 路面規則：必須從各自行向的入口開始，且圖頂端朝行進方向 ──
+const textProbe: RoadFeature = {
+  ...roads[0],
+  geometry: { type: 'LineString', coordinates: [[120, 22], [120, 22.001]] },
+  properties: {
+    ...roads[0].properties,
+    osm_id: 999_000_001,
+    blockNode: 999_000_001,
+    nodes: [999_000_001, 999_000_002],
+    oneway: 'no', lanesForward: 1, lanesBackward: 1,
+    width_m: 6.4, centerM: 0, divOffM: 0,
+    rulesF: ['no_moto'], rulesB: ['no_moto'], motorcycle: undefined,
+    elevated: false,
+  },
+}
+const textFeatures = buildRoadTexts(new RoadGraph([textProbe])).features
+const textBearings = textFeatures.map((f) => Number(f.properties?.brg)).sort((a, b) => a - b)
+const probeEnds = textProbe.geometry.coordinates as [number, number][]
+const entryDistances = textFeatures.map((f) => Math.min(
+  haversine(f.geometry.coordinates as [number, number], probeEnds[0]),
+  haversine(f.geometry.coordinates as [number, number], probeEnds[1]),
+))
+check('禁行機車在雙向道路的兩個車道入口各生成一次',
+  textFeatures.length === 2 && textFeatures.every((f) => f.properties?.rule === 'no_moto'))
+check('路面規則位於剛進入車道處（入口後約 7m）',
+  entryDistances.every((d) => d >= 6.5 && d <= 8), entryDistances.map((d) => d.toFixed(1)).join('m / ') + 'm')
+check('路面規則方向與雙向行徑方向一致',
+  textBearings.length === 2 && textBearings[0] === 0 && textBearings[1] === 180,
+  textBearings.join('° / ') + '°')
+const atSouthEntry = textFeatures.find((f) =>
+  haversine(f.geometry.coordinates as [number, number], probeEnds[0]) < 20)
+const atNorthEntry = textFeatures.find((f) =>
+  haversine(f.geometry.coordinates as [number, number], probeEnds[1]) < 20)
+check('道路兩端只標離開路口方向，不標朝向路口的出口車道',
+  textFeatures.length === 2 && atSouthEntry?.properties?.brg === 0 &&
+  atNorthEntry?.properties?.brg === 180)
+
+// ── 小路口箭頭：窄巷也必須形成路口退界，箭頭不可插在中心節點 ──
+const smallJunctionNode = 999_000_012
+const arrowProbe = (id: number, nodes: number[], coordinates: [number, number][],
+  width: number, explicit = false): RoadFeature => ({
+  ...textProbe,
+  geometry: { type: 'LineString', coordinates },
+  properties: {
+    ...textProbe.properties,
+    osm_id: id, blockNode: nodes[0], nodes, width_m: width,
+    name: `測試道路${id}`,
+    oneway: explicit ? 'yes' : 'no', lanesForward: 1, lanesBackward: explicit ? 0 : 1,
+    turnLanes: explicit ? ['through'] : undefined,
+    rulesF: [], rulesB: [], motorcycle: undefined,
+  },
+})
+const smallJunctionPos: [number, number] = [120, 22.001]
+const smallGraph = new RoadGraph([
+  arrowProbe(999_000_021, [999_000_021, smallJunctionNode], [[120, 22], smallJunctionPos], 6.4, true),
+  arrowProbe(999_000_022, [999_000_022, smallJunctionNode], [[119.999, 22.001], smallJunctionPos], 3.2),
+  arrowProbe(999_000_023, [smallJunctionNode, 999_000_023], [smallJunctionPos, [120.001, 22.001]], 3.2),
+])
+const smallArrows = buildLaneArrows(smallGraph, [])
+const smallArrowDist = smallArrows[0] ? haversine(smallArrows[0].pos, smallJunctionPos) : 0
+check('窄巷交叉的小路口箭頭完整退到路口前',
+  smallArrows.length === 1 && smallArrowDist >= 6.5,
+  `${smallArrows.length} 個箭頭，距中心 ${smallArrowDist.toFixed(1)}m`)
+
 const targetSpurs = roads.filter((r) =>
   [287447934, 287447935, 289555544].includes(r.properties.osm_id))
 check('明確排除 way/287447934、way/287447935，並清除附近短殘段', targetSpurs.length === 0,
@@ -43,9 +110,22 @@ check('明確排除 way/287447934、way/287447935，並清除附近短殘段', t
 const trimmedBridgeWay = roads.find((r) => r.properties.osm_id === 287673498)
 check('way/287673498 已裁掉益群橋路口左側多餘尾巴',
   !!trimmedBridgeWay && trimmedBridgeWay.properties.nodes[0] === 2912433399)
+const trimmedXiugun = roads.filter((r) => r.properties.osm_id === 126247903)
+check('秀群路539巷已截在外環西路口，不再露出北側圓頭',
+  trimmedXiugun.length > 0 && trimmedXiugun.some((r) =>
+    [2206232306, 2206232308].includes(r.properties.nodes[0])) &&
+  trimmedXiugun.every((r) => !r.properties.nodes.some((n) =>
+    [2206232311, 2206232309].includes(n))),
+  trimmedXiugun.map((r) => r.properties.nodes.join('>')).join(' | '))
 
 // ── 1. 停止線 ──
 const bays = buildTurnBays(graph, journal)
+const allIslands = [...buildMotoSepIslands(graph), ...buildCenterIslands(graph, bays)]
+const waihuanJunction: [number, number] = [120.3000115, 22.7183436]
+const nearestIslandAtWaihuan = Math.min(...allIslands.flatMap((m) =>
+  m.polygon.map((p) => haversine(p, waihuanJunction))))
+check('外環西路 × 秀群路539巷的綠化帶已留出轉彎口',
+  nearestIslandAtWaihuan >= 3.5, `最近 ${nearestIslandAtWaihuan.toFixed(1)}m`)
 const stops = buildStopLines(graph, bays, [])
 check('停止線有生成', stops.length > 0, `${stops.length} 條（bay ${bays.length} 個）`)
 check('停止線皆為兩點橫線', stops.every((s) => s.coords.length === 2 && s.color === 'stop'))
@@ -120,6 +200,17 @@ check('共用單車道路寬為一道且仍保留雙向通行', shared.every((r)
   r.properties.oneway === 'no' && r.properties.lanesForward === 1 && r.properties.lanesBackward === 1))
 check('共用單車道不生成中央線或車道線',
   buildDividers(shared).features.length === 0)
+
+const wideNoCenter = roads.filter((r) => r.properties.oneway === 'no' &&
+  !r.properties.sharedLane && r.properties.centerM === 0 &&
+  r.properties.lanesForward + r.properties.lanesBackward >= 4)
+const wideDividers = buildDividers(wideNoCenter).features
+check('無偏心左轉帶的四線道以上道路使用雙黃線',
+  wideNoCenter.length > 0 &&
+  wideDividers.filter((f) => f.properties?.kind === 'center-double').length > 0 &&
+  wideDividers.filter((f) => f.properties?.kind === 'center-double').length % 2 === 0 &&
+  wideDividers.every((f) => f.properties?.kind !== 'center'),
+  `${wideNoCenter.length} 區塊 / ${wideDividers.filter((f) => f.properties?.kind === 'center-double').length} 條黃線`)
 
 // ── 4. 路寬微調 ──
 const target = roads.find((r) => r.properties.oneway === 'no' && r.properties.lanesForward >= 2)!

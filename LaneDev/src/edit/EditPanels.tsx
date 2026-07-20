@@ -12,7 +12,7 @@ import {
   BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
 } from './useEditor'
 
-/** 地面規則選取列（點選加入/移除；選取順序 = 印字由上往下的順序） */
+/** 地面規則選取列（點選加入/移除；選取順序 = 從路口入口沿行進方向排列） */
 function RuleRow({ label, rules, onToggle }: {
   label: string; rules: string[]; onToggle: (code: string) => void
 }) {
@@ -22,7 +22,7 @@ function RuleRow({ label, rules, onToggle }: {
   return (
     <>
       <div className="edit-row">
-        <span>{label}地面規則{order.length > 0 ? `（${order.join('→')}）` : ''}</span>
+        <span><b className="row-title">{label}</b>{order.length > 0 ? `已選：${order.join(' → ')}` : '未設定地面規則'}</span>
       </div>
       <div className="edit-lanes">
         {GROUND_RULES.map((r) => (
@@ -72,17 +72,22 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
   const { editRoad, setEditRoad } = editor
   if (!editRoad) return null
   return (
-    <div className="side-panel">
+    <div className="side-panel lane-editor">
       <div className="sp-head">
-        <b>{editRoad.name ?? '（未命名道路）'}</b>
+        <div><span className="sp-kicker">路段斷面編輯</span><b>{editRoad.name ?? '（未命名道路）'}</b></div>
         <button className="sp-close" onClick={() => setEditRoad(null)}>✕</button>
       </div>
       <div className="road-src">
         way/{editRoad.osmId}@b/{editRoad.blockNode} · {editRoad.oneway === 'yes' ? '單行' : '雙向'}
-        {' '}· 只影響此路口間區塊 · 記入 journal
+        {' '}· 僅影響目前兩個路口之間的區塊
       </div>
+      <div className="edit-notice">先調整下列設定；按「儲存並套用」後才會寫入 journal 並重繪道路。</div>
+
+      <section className="edit-section">
+      <h3>1. 行車空間</h3>
+      <p>汽車道數不包含機車道；開啟機車道會在該方向最外側另外增加一條。</p>
       <div className="edit-row">
-        <span>{editRoad.oneway === 'yes' ? `${editRoad.fwdLabel}（單行）` : editRoad.fwdLabel} 車道</span>
+        <span>{editRoad.oneway === 'yes' ? `${editRoad.fwdLabel}（單行）` : editRoad.fwdLabel}汽車道</span>
         <button className="mini" onClick={() => setEditRoad((er) => {
           if (!er) return er
           const min = er.motoF ? 0 : 1 // 有機車道可減到 0 = 該向純機車道
@@ -101,12 +106,12 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             const f = er.motoF && er.f === 0 ? 1 : er.f
             return { ...er, motoF: !er.motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f) }
           })}>
-          機車道
+          {editRoad.motoF ? '已設機車道' : '＋機車道'}
         </button>
       </div>
       {editRoad.motoF && (
         <div className="edit-row">
-          <span>{editRoad.fwdLabel}快慢分隔島</span>
+          <span>{editRoad.fwdLabel}快慢分隔</span>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, motoSepF: Math.max(0, +(er.motoSepF - 0.2).toFixed(1)),
           }))}>−</button>
@@ -118,7 +123,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       )}
       {editRoad.oneway === 'no' && (
         <div className="edit-row">
-          <span>{editRoad.bwdLabel} 車道</span>
+        <span>{editRoad.bwdLabel}汽車道</span>
           <button className="mini" onClick={() => setEditRoad((er) => {
             if (!er) return er
             const min = er.motoB ? 0 : 1
@@ -136,13 +141,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const b = er.motoB && er.b === 0 ? 1 : er.b
               return { ...er, motoB: !er.motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b) }
             })}>
-            機車道
+            {editRoad.motoB ? '已設機車道' : '＋機車道'}
           </button>
         </div>
       )}
       {editRoad.oneway === 'no' && editRoad.motoB && (
         <div className="edit-row">
-          <span>{editRoad.bwdLabel}快慢分隔島</span>
+          <span>{editRoad.bwdLabel}快慢分隔</span>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, motoSepB: Math.max(0, +(er.motoSepB - 0.2).toFixed(1)),
           }))}>−</button>
@@ -152,8 +157,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           }))}>＋</button>
         </div>
       )}
+      <div className="edit-help">快慢分隔為 0 時繪製白實線；調高後改為同寬度的實體分隔島。</div>
+      </section>
+
+      <section className="edit-section">
+      <h3>2. 道路斷面</h3>
       <div className="edit-row">
-        <span>路寬微調（±路肩）</span>
+        <span>外側路肩增減</span>
         <button className="mini" onClick={() => setEditRoad((er) => er && ({
           ...er, extraM: Math.max(-3.2, +(er.extraM - 0.4).toFixed(1)),
         }))}>−</button>
@@ -162,9 +172,10 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           ...er, extraM: Math.min(6.4, +(er.extraM + 0.4).toFixed(1)),
         }))}>＋</button>
       </div>
+      <div className="edit-help">只改變路面外緣總寬，既有車道與標線位置不會平移。</div>
       {editRoad.oneway === 'no' && editRoad.canCenter && (
         <div className="edit-row">
-          <span>中央帶（偏心/槽化/島）</span>
+          <span>中央帶寬度</span>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, centerM: Math.max(0, +(er.centerM - 0.8).toFixed(1)),
           }))}>−</button>
@@ -174,6 +185,11 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           }))}>＋</button>
         </div>
       )}
+      </section>
+
+      <section className="edit-section">
+      <h3>3. 路口前配置</h3>
+      <p>以下設定套用在此區塊末端接近路口的位置，並依各方向分別處理。</p>
       {editRoad.oneway === 'no' && editRoad.canCenter && (
         <div className="edit-row">
           <span>中央帶類型</span>
@@ -192,7 +208,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       )}
       {editRoad.oneway === 'no' && editRoad.centerKind !== 'island' && editRoad.centerM > 0 && (
         <div className="edit-row">
-          <span>偏心道轉向（路口前）</span>
+          <span>中央偏心道用途</span>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, bayF: BAY_TURN_CYCLE[(BAY_TURN_CYCLE.indexOf(er.bayF) + 1) % BAY_TURN_CYCLE.length],
           }))}>{editRoad.fwdLabel} {BAY_TURN_GLYPH[editRoad.bayF] ?? '無'}</button>
@@ -201,7 +217,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           }))}>{editRoad.bwdLabel} {BAY_TURN_GLYPH[editRoad.bayB] ?? '無'}</button>
         </div>
       )}
-      <div className="edit-row"><span>{editRoad.fwdLabel}轉向（左→右，點擊切換）</span></div>
+      <div className="edit-row"><span><b className="row-title">{editRoad.fwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span></div>
       <div className="edit-lanes">
         {editRoad.turnLanes.map((v, i) => (
           <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
@@ -214,7 +230,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       </div>
       {editRoad.oneway === 'no' && (
         <>
-          <div className="edit-row"><span>{editRoad.bwdLabel}轉向（該向駕駛視角左→右）</span></div>
+          <div className="edit-row"><span><b className="row-title">{editRoad.bwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span></div>
           <div className="edit-lanes">
             {editRoad.turnLanesB.map((v, i) => (
               <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
@@ -227,6 +243,11 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </div>
         </>
       )}
+      </section>
+
+      <section className="edit-section">
+      <h3>4. 剛進入路段的地面標字</h3>
+      <p>只畫在離開路口、剛進入此路段的方向；按鈕的選取順序就是沿行進方向的排列順序。</p>
       <RuleRow label={editRoad.fwdLabel} rules={editRoad.rulesF}
         onToggle={(code) => setEditRoad((er) => er && ({
           ...er,
@@ -243,8 +264,9 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               : [...er.rulesB, code],
           }))} />
       )}
-      <div className="edit-row">
-        <button className="mini go" onClick={editor.saveRoadEdit}>儲存</button>
+      </section>
+      <div className="edit-actions">
+        <button className="mini go" onClick={editor.saveRoadEdit}>儲存並套用</button>
         <button className="mini" onClick={() => setEditRoad(null)}>取消</button>
       </div>
     </div>

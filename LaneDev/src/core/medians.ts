@@ -21,6 +21,7 @@ const KX = 111320 * COS_LAT
 const KY = 110540
 const PAIR_MAX_M = 35 // 綠帶較寬的分離幹道，間隙上限放寬
 const SAMPLE_M = 4
+const MIN_ISLAND_M = 8
 const JUNCTION_CLEAR_M = 8 // 路口節點前後淨空（島在路口斷開 = 開口）
 
 export interface MedianIsland {
@@ -62,20 +63,25 @@ const wayBearing = (r: RoadFeature) => {
 
 /** scope way 上被「其他道路」引用的節點 → 「靠近路口」判定（島在路口斷開） */
 function junctionGuard(roads: RoadFeature[], scopeSet: Set<RoadFeature>) {
-  const otherRef = new Set<number>()
+  const otherRef = new Map<number, number>()
   for (const r of roads) {
     if (scopeSet.has(r)) continue
-    for (const n of r.properties.nodes) otherRef.add(n)
+    for (const n of r.properties.nodes) {
+      otherRef.set(n, Math.max(otherRef.get(n) ?? 0, r.properties.width_m))
+    }
   }
-  const junctions: [number, number][] = []
+  const junctions: { pos: [number, number]; clearM: number }[] = []
   for (const w of scopeSet) {
     const cs = w.geometry.coordinates as [number, number][]
     w.properties.nodes.forEach((n, i) => {
-      if (otherRef.has(n) && i < cs.length) junctions.push(cs[i])
+      const crossW = otherRef.get(n) ?? 0
+      if (crossW > 0 && i < cs.length) {
+        junctions.push({ pos: cs[i], clearM: Math.max(JUNCTION_CLEAR_M, crossW / 2 + 2) })
+      }
     })
   }
   return (p: [number, number]) => junctions.some((j) =>
-    Math.hypot((p[0] - j[0]) * KX, (p[1] - j[1]) * KY) < JUNCTION_CLEAR_M)
+    Math.hypot((p[0] - j.pos[0]) * KX, (p[1] - j.pos[1]) * KY) < j.clearM)
 }
 
 /**
@@ -97,9 +103,11 @@ function islandsBetween(
     const halfA = A.properties.width_m / 2
     let edgeA: [number, number][] = []
     let edgeB: [number, number][] = []
+    let runStart = 0
+    let runEnd = 0
     let runIdx = 0
     const flush = () => {
-      if (edgeA.length >= 2) {
+      if (edgeA.length >= 2 && runEnd - runStart >= MIN_ISLAND_M) {
         out.push({
           key: `median/way/${A.properties.osm_id}/${runIdx++}`,
           polygon: [...edgeA, ...[...edgeB].reverse(), edgeA[0]],
@@ -108,7 +116,10 @@ function islandsBetween(
       edgeA = []
       edgeB = []
     }
-    for (let d = 0; d <= total; d += SAMPLE_M) {
+    const samples: number[] = []
+    for (let d = 0; d < total; d += SAMPLE_M) samples.push(d)
+    samples.push(total)
+    for (const d of samples) {
       const { pos: p } = pointAlong(csA, cum, d)
       let best: { d: number; pos: [number, number]; halfB: number } | null = null
       for (const B of Bs) {
@@ -124,6 +135,8 @@ function islandsBetween(
         flush()
         continue
       }
+      if (edgeA.length === 0) runStart = d
+      runEnd = d
       const ux = (best.pos[0] - p[0]) * KX / best.d
       const uy = (best.pos[1] - p[1]) * KY / best.d
       if (fixedW !== undefined && gapW > fixedW) {
@@ -218,6 +231,22 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
   return out
 }
 
+/** 綠化帶專用路口退縮：只有該行向確實可左／右轉時，才為較窄的支路額外留口。 */
+function islandSetbacks(graph: RoadGraph, e: ReturnType<RoadGraph['scopeEdges']>[number], total: number) {
+  const startBrg = bearing(e.coords[1], e.coords[0])
+  const endBrg = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
+  const extra = (node: number, brg: number) => {
+    const turns = graph.exitKindsAt(node, brg)
+    if (!turns.has('left') && !turns.has('right')) return 0
+    const w = graph.crossWidthAt(node, brg, e.road)
+    return w > 0 ? w / 2 + 2 : 0
+  }
+  return {
+    s0: Math.min(Math.max(e.startSetbackM, extra(e.fromNode, startBrg)), total),
+    s1: Math.max(0, total - Math.max(e.endSetbackM, extra(e.toNode, endBrg))),
+  }
+}
+
 /**
  * 快慢分隔島（斷面內建，可編輯）：某行向 motoSep > 0 時，汽車車道與機車道之間
  * 的實體島——島面鋪在 [車道塊內緣＋車道寬, ＋motoSep] 的橫向區間，兩端依交叉路
@@ -239,9 +268,8 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
     if (!moto || sep <= 0 || lanes <= 0) continue // 0 車道（純機車道）無快慢界線
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const s0 = Math.min(e.startSetbackM, total)
-    const s1 = Math.max(0, total - e.endSetbackM)
-    if (s1 - s0 < 3) continue
+    const { s0, s1 } = islandSetbacks(graph, e, total)
+    if (s1 - s0 < MIN_ISLAND_M) continue
     const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     const inner = base + lanes * LANE_WIDTH_M
@@ -275,9 +303,8 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
     const p = e.road.properties
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const s0 = Math.min(e.startSetbackM, total)
-    const s1 = Math.max(0, total - e.endSetbackM)
-    if (s1 - s0 < 3) continue
+    const { s0, s1 } = islandSetbacks(graph, e, total)
+    if (s1 - s0 < MIN_ISLAND_M) continue
     const dv = p.divOffM || 0
     const c = p.centerM / 2
     const fwdBay = bayMap.get(`${p.osm_id}@${e.toNode}`)
@@ -287,7 +314,7 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
     if (bwdBay) ivs = ivs.flatMap((iv) => subtract(iv, [total - bwdBay.endM, total - bwdBay.d0M]))
     let k = 0
     for (const [a, b] of ivs) {
-      if (b - a < 3) continue
+      if (b - a < MIN_ISLAND_M) continue
       const ds: number[] = []
       for (let d = a; d < b; d += 4) ds.push(d)
       ds.push(b)

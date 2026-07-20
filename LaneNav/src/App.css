@@ -104,15 +104,18 @@ body {
 /* ── 右側面板（路線規劃 / 車道編輯 / 車輛）── */
 .side-panel {
   position: absolute; top: 12px; right: 12px; z-index: 25;
-  width: 280px; max-height: calc(100% - 24px); overflow-y: auto;
+  width: 360px; max-width: calc(100vw - 56px); max-height: calc(100% - 24px); overflow-y: auto;
   background: #fff; border-radius: 14px; padding: 14px 16px;
   box-shadow: 0 6px 26px rgba(0, 0, 0, 0.22);
 }
+.side-panel.lane-editor { width: 430px; padding: 16px 18px 18px; }
 .sp-head {
   display: flex; align-items: center; gap: 8px;
   font-size: 16px; color: #24303f; margin-bottom: 8px;
 }
-.sp-head b { flex: 1; }
+.sp-head > div { flex: 1; min-width: 0; }
+.sp-head b { display: block; }
+.sp-kicker { display: block; color: #7a8494; font-size: 11px; font-weight: 700; letter-spacing: .08em; margin-bottom: 2px; }
 .sp-profile { font-size: 18px; }
 .sp-close {
   border: none; background: #eef1f5; color: #3d4a5c;
@@ -151,9 +154,19 @@ body {
   display: flex; align-items: center; gap: 10px; margin-top: 10px;
   font-size: 13.5px; color: #3d4a5c;
 }
+.side-panel .edit-row > span:first-child { flex: 1; min-width: 150px; }
+.side-panel .edit-row > button, .side-panel .edit-row > b { flex: none; }
 .side-panel .edit-row b { font-size: 18px; min-width: 20px; text-align: center; }
+.side-panel .edit-row .row-title { display: block; min-width: 0; text-align: left; font-size: 13.5px; margin-bottom: 2px; }
 .side-panel .road-src { margin-bottom: 4px; }
-.edit-lanes { display: flex; gap: 6px; margin-top: 8px; }
+.edit-lanes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.edit-notice { margin: 10px 0 2px; padding: 9px 11px; border-radius: 9px; background: #eef4ff; color: #31557f; font-size: 12.5px; line-height: 1.45; }
+.edit-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e7ebf0; }
+.edit-section h3 { margin: 0 0 3px; color: #24303f; font-size: 14px; }
+.edit-section p, .edit-help { margin: 0; color: #7a8494; font-size: 12px; line-height: 1.45; }
+.edit-help { margin-top: 8px; }
+.edit-actions { position: sticky; bottom: -18px; display: flex; justify-content: flex-end; gap: 8px; margin: 16px -18px -18px; padding: 12px 18px; background: rgba(255,255,255,.96); border-top: 1px solid #e7ebf0; }
+.edit-actions .mini.go { padding-inline: 18px; }
 .lane-pick {
   width: 40px; height: 44px; border-radius: 8px;
   border: 1.5px solid #c8d2df; background: #f7f9fc;

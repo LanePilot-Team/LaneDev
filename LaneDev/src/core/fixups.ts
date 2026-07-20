@@ -30,6 +30,8 @@ export const REMOVED_WAY_IDS = new Set([
 
 /** way 起點錯位殘尾：裁到指定 OSM node，保留後續主體。 */
 const TRIM_WAY_START_NODE: Record<number, number> = {
+  // Remove the tiny continuation across 外環西路; its round cap protrudes past the main road.
+  126247903: 2206232306,
   287673498: 2912433399, // 援中路往益群橋下來，移除路口左側約 55m 多餘尾巴
 }
 

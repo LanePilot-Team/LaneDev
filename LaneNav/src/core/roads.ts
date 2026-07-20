@@ -497,8 +497,16 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       const b = p.lanesBackward
       const c = (p.centerM || 0) / 2 // 中央帶：兩向車道外移一半
       const dv = p.divOffM || 0 // 非對稱車道時分向線不在 way 線上
-      // 中央帶存在時分向線由 turnbays 模組畫（±c 雙黃 + 偏心道/槽化內容）
-      if (c === 0) push(RIGHT * dv, 'center')
+      // 中央帶存在時分向線由 turnbays 模組畫（±c 雙黃 + 偏心道/槽化內容）。
+      // 無偏心中央帶的寬道路（正反合計 ≥4 車道）改畫雙黃線；窄路維持單黃線。
+      if (c === 0) {
+        if (f + b >= 4) {
+          push(RIGHT * (dv - 0.18), 'center-double')
+          push(RIGHT * (dv + 0.18), 'center-double')
+        } else {
+          push(RIGHT * dv, 'center')
+        }
+      }
       for (let k = 1; k < f; k++) push(RIGHT * (dv + c + k * LANE_WIDTH_M), 'lane')
       if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
       for (let k = 1; k < b; k++) push(RIGHT * (dv - c - k * LANE_WIDTH_M), 'lane')

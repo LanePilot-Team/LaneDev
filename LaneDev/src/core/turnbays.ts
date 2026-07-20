@@ -397,13 +397,16 @@ export function buildLaneArrows(
     if (!scopeFn(e.road) && !hasExplicit) continue // 非實驗範圍只畫有真值的行向
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const d = total - e.endSetbackM - 2.5
+    const endBrg = pointAlong(e.coords, cum, Math.max(0, total - 2)).brg
+    const smallCrossW = graph.crossWidthAt(e.toNode, endBrg, e.road)
+    const arrowSetback = Math.max(e.endSetbackM, smallCrossW > 0 ? smallCrossW / 2 + 1.2 : 0)
+    // 箭頭長約 4.5m；中心退到停止線前 4m，讓整個圖示都留在路口框外。
+    const d = total - arrowSetback - 4
     if (d < e.startSetbackM + 6) continue // 短段不畫，避免疊在上一路口
     let moves: string[]
     if (hasExplicit) {
       moves = Array.from({ length: lanes }, (_, k) => explicit![k] ?? '')
     } else {
-      const endBrg = pointAlong(e.coords, cum, Math.max(0, total - 2)).brg
       const kinds = graph.exitKindsAt(e.toNode, endBrg)
       if (kinds.size === 0) continue
       const hasBay = bayKeys.has(`${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)

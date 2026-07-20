@@ -442,7 +442,7 @@ export class RoadGraph {
    * 中央槽化線渲染用：scope 內所有方向邊 + 兩端路口的收邊量（交叉路半寬），
    * 標線不畫進路口框。turnbays.ts 的 buildChannelization 使用。
    */
-  scopeEdges(scope: (r: RoadFeature) => boolean): ScopeEdge[] {
+  scopeEdges(scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2): ScopeEdge[] {
     // 收邊只看「夠格的交叉路」：不同路（id 與路名都不同）且寬 ≥7m（≥2 車道）。
     // 小巷（residential 6.4m）交會不清標線也不生停止線——實際道路的車道線
     // 會直接越過巷口；同路續接區塊也不算（自寬會把收邊撐到半個路寬）。
@@ -453,7 +453,7 @@ export class RoadGraph {
         if (o === self || o === self.twin) continue
         const q = o.road.properties
         if (q.osm_id === sp.osm_id || (sp.name && q.name === sp.name)) continue
-        if (q.width_m < 7) continue
+        if (q.width_m < minCrossWidthM) continue
         w = Math.max(w, q.width_m)
       }
       return w
@@ -466,8 +466,8 @@ export class RoadGraph {
         return {
           coords: e.coords, road: e.road, back: e.back,
           fromNode: e.from, toNode: e.to,
-          startSetbackM: w0 > 0 ? w0 / 2 + 1.2 : 0,
-          endSetbackM: w1 > 0 ? w1 / 2 + 1.2 : 0,
+          startSetbackM: w0 > 0 ? w0 / 2 + clearanceM : 0,
+          endSetbackM: w1 > 0 ? w1 / 2 + clearanceM : 0,
         }
       })
   }

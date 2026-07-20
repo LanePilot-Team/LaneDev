@@ -6,31 +6,58 @@ import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore } from '../app/mapCore'
-import { GROUND_RULES } from '../core/roadtext'
+import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext'
+import type { LaneMark } from '../core/roads'
 import {
-  compassOf, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
+  compassOf, resizeLaneMarks, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
   BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
 } from './useEditor'
 
+const resizeDirectionMarks = (marks: (LaneMark | null)[], oldCars: number, newCars: number, moto: boolean) => {
+  const motoMark = moto ? marks[oldCars] ?? null : null
+  return [...resizeLaneMarks(marks.slice(0, oldCars), newCars), ...(moto ? [motoMark] : [])]
+}
+
 /** 地面規則選取列（點選加入/移除；選取順序 = 從路口入口沿行進方向排列） */
-function RuleRow({ label, rules, onToggle }: {
-  label: string; rules: string[]; onToggle: (code: string) => void
+function LaneMarkEditor({ label, marks, carLanes, hasMoto, onChange }: {
+  label: string; marks: (LaneMark | null)[]; carLanes: number; hasMoto: boolean
+  onChange: (marks: (LaneMark | null)[]) => void
 }) {
-  const order = rules
-    .map((c) => GROUND_RULES.find((r) => r.code === c)?.label)
-    .filter(Boolean)
+  const set = (i: number, mark: LaneMark | null) => {
+    const next = [...marks]; next[i] = mark; onChange(next)
+  }
   return (
-    <>
-      <div className="edit-row">
-        <span><b className="row-title">{label}</b>{order.length > 0 ? `已選：${order.join(' → ')}` : '未設定地面規則'}</span>
-      </div>
-      <div className="edit-lanes">
-        {GROUND_RULES.map((r) => (
-          <button key={r.code} className={`mini${rules.includes(r.code) ? ' on' : ''}`}
-            onClick={() => onToggle(r.code)}>{r.label}</button>
-        ))}
-      </div>
-    </>
+    <div className="lane-mark-group">
+      <div className="edit-row"><span><b className="row-title">{label}</b>每條車道只能設定一種資訊，也可以保持空白。</span></div>
+      {marks.map((mark, i) => {
+        const moto = hasMoto && i === carLanes
+        const presets = moto ? MOTO_LANE_MARKS : CAR_LANE_MARKS
+        const preset = presets.find((p) => p.text === mark?.text && p.color === mark?.color)
+        const value = !mark ? '' : preset?.text ?? '__custom__'
+        return <div className="lane-mark-row" key={i}>
+          <b>{moto ? '機車道' : `汽車道 ${i + 1}`}</b>
+          <select value={value} onChange={(e) => {
+            const v = e.target.value
+            if (!v) set(i, null)
+            else if (v === '__custom__') set(i, mark ?? { text: '', color: '#ffffff' })
+            else {
+              const p = presets.find((x) => x.text === v)
+              set(i, p ? { ...p } : null)
+            }
+          }}>
+            <option value="">不印文字</option>
+            {presets.map((p) => <option key={p.text} value={p.text}>{p.text}</option>)}
+            <option value="__custom__">自訂文字與顏色</option>
+          </select>
+          {value === '__custom__' && <>
+            <input className="lane-mark-text" value={mark?.text ?? ''} maxLength={12}
+              placeholder="輸入路面文字" onChange={(e) => set(i, { text: e.target.value, color: mark?.color ?? '#ffffff' })} />
+            <input type="color" value={mark?.color ?? '#ffffff'}
+              onChange={(e) => set(i, { text: mark?.text ?? '', color: e.target.value })} />
+          </>}
+        </div>
+      })}
+    </div>
   )
 }
 
@@ -92,19 +119,24 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           if (!er) return er
           const min = er.motoF ? 0 : 1 // 有機車道可減到 0 = 該向純機車道
           const f = Math.max(min, er.f - 1)
-          return { ...er, f, turnLanes: resizeTurnLanes(er.turnLanes, f) }
+          return { ...er, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
+            laneMarksF: resizeDirectionMarks(er.laneMarksF, er.f, f, er.motoF) }
         })}>−</button>
         <b>{editRoad.f}</b>
         <button className="mini" onClick={() => setEditRoad((er) => er && ({
           ...er, f: Math.min(6, er.f + 1),
           turnLanes: resizeTurnLanes(er.turnLanes, Math.min(6, er.f + 1)),
+          laneMarksF: resizeDirectionMarks(er.laneMarksF, er.f, Math.min(6, er.f + 1), er.motoF),
         }))}>＋</button>
         <button className={`mini${editRoad.motoF ? ' on' : ''}`}
           onClick={() => setEditRoad((er) => {
             if (!er) return er
             // 關機車道時若車道 0，自動補回 1（斷面不能空）
             const f = er.motoF && er.f === 0 ? 1 : er.f
-            return { ...er, motoF: !er.motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f) }
+            return { ...er, motoF: !er.motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
+              laneMarksF: er.motoF
+                ? resizeLaneMarks(er.laneMarksF.slice(0, er.f), f)
+                : [...resizeLaneMarks(er.laneMarksF, f), null] }
           })}>
           {editRoad.motoF ? '已設機車道' : '＋機車道'}
         </button>
@@ -128,18 +160,23 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             if (!er) return er
             const min = er.motoB ? 0 : 1
             const b = Math.max(min, er.b - 1)
-            return { ...er, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b) }
+            return { ...er, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
+              laneMarksB: resizeDirectionMarks(er.laneMarksB, er.b, b, er.motoB) }
           })}>−</button>
           <b>{editRoad.b}</b>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, b: Math.min(6, er.b + 1),
             turnLanesB: resizeTurnLanes(er.turnLanesB, Math.min(6, er.b + 1)),
+            laneMarksB: resizeDirectionMarks(er.laneMarksB, er.b, Math.min(6, er.b + 1), er.motoB),
           }))}>＋</button>
           <button className={`mini${editRoad.motoB ? ' on' : ''}`}
             onClick={() => setEditRoad((er) => {
               if (!er) return er
               const b = er.motoB && er.b === 0 ? 1 : er.b
-              return { ...er, motoB: !er.motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b) }
+              return { ...er, motoB: !er.motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
+                laneMarksB: er.motoB
+                  ? resizeLaneMarks(er.laneMarksB.slice(0, er.b), b)
+                  : [...resizeLaneMarks(er.laneMarksB, b), null] }
             })}>
             {editRoad.motoB ? '已設機車道' : '＋機車道'}
           </button>
@@ -246,23 +283,15 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       </section>
 
       <section className="edit-section">
-      <h3>4. 剛進入路段的地面標字</h3>
-      <p>只畫在離開路口、剛進入此路段的方向；按鈕的選取順序就是沿行進方向的排列順序。</p>
-      <RuleRow label={editRoad.fwdLabel} rules={editRoad.rulesF}
-        onToggle={(code) => setEditRoad((er) => er && ({
-          ...er,
-          rulesF: er.rulesF.includes(code)
-            ? er.rulesF.filter((c) => c !== code)
-            : [...er.rulesF, code],
-        }))} />
+      <h3>4. 各車道的地面資訊</h3>
+      <p>只畫在離開路口、剛進入此路段的位置。汽車道提供「禁行機車」；已定義的機車道另提供專用與優先標字。每條車道只能選一種，也可留空或自訂文字顏色。</p>
+      <LaneMarkEditor label={editRoad.fwdLabel} marks={editRoad.laneMarksF}
+        carLanes={editRoad.f} hasMoto={editRoad.motoF}
+        onChange={(laneMarksF) => setEditRoad((er) => er && ({ ...er, laneMarksF }))} />
       {editRoad.oneway === 'no' && (
-        <RuleRow label={editRoad.bwdLabel} rules={editRoad.rulesB}
-          onToggle={(code) => setEditRoad((er) => er && ({
-            ...er,
-            rulesB: er.rulesB.includes(code)
-              ? er.rulesB.filter((c) => c !== code)
-              : [...er.rulesB, code],
-          }))} />
+        <LaneMarkEditor label={editRoad.bwdLabel} marks={editRoad.laneMarksB}
+          carLanes={editRoad.b} hasMoto={editRoad.motoB}
+          onChange={(laneMarksB) => setEditRoad((er) => er && ({ ...er, laneMarksB }))} />
       )}
       </section>
       <div className="edit-actions">

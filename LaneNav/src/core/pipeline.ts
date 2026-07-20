@@ -5,7 +5,7 @@ import {
   mergeCouplets, absorbSideWays, applyLantianSections,
   type DropRemap, type CoupletSection,
 } from './couplet'
-import { applyFixups, REMOVED_WAY_IDS } from './fixups'
+import { applyFixups, collapseKnownIntersections, REMOVED_WAY_IDS } from './fixups'
 import {
   collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
 } from './roads'
@@ -116,6 +116,8 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   for (const name of coupletCandidates(roads)) {
     roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap)
   }
+  // 分隔道路合併後，將人工確認的雙節點路口收斂成單一十字中心。
+  collapseKnownIntersections(roads, nodeRemap)
   // 高雄大學路「不」做 couplet 合併：四線並排林蔭大道（主慢分離），
   // 分隔島由 medians.ts TWIN_ISLAND_PAIRS 顯式配對生成
   applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶

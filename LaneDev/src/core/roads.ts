@@ -12,6 +12,11 @@ import {
 
 export const MOTO_LANE_M = 2.2
 
+export interface LaneMark {
+  text: string
+  color: string
+}
+
 export interface RoadProps {
   osm_id: number
   name?: string
@@ -58,10 +63,15 @@ export interface RoadProps {
   /** 高架路段（elevation.isElevated，pipeline 切塊後標記）：地面車道級渲染
    * （路面/分隔線/印字/單行箭頭）全部略過，由 elevated3d 的 3D 橋面取代 */
   elevated?: boolean
+  /** 顯示端不在人工確認的複合寬路口區塊上放道路名稱／線上箭頭。 */
+  hideIntersectionInfo?: boolean
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
    * undefined = 無人工設定（motorcycle=no 時 fallback 印禁行機車）；[] = 明確無 */
   rulesF?: string[]
   rulesB?: string[]
+  /** 各方向依駕駛視角左→右、逐車道的單一路面資訊；最後一格為已定義的機車道。 */
+  laneMarksF?: (LaneMark | null)[]
+  laneMarksB?: (LaneMark | null)[]
   turnLanes?: string[] // 順向每車道轉向（左→右）
   turnLanesB?: string[] // 逆向每車道轉向（逆向駕駛視角左→右）
   /** 區塊識別：way 依路口切塊後，區塊第一個 node id（journal 區塊鍵 way/W@b/N 用）。
@@ -394,6 +404,10 @@ function sliceByDist(
  * 小巷也不能讓標線穿過路口；同一路純續接（幾何近乎平行）則保持標線連續。
  */
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
+  // 複合／分離式主路在 OSM 可能只以單側窄 way 與支路共點，通用半寬會低估路口範圍。
+  // 僅增加標線退界，不裁道路面，也不改變導航拓樸。
+  const specialEndTrim = (wayId: number, nodeId: number) =>
+    wayId === 676539849 && nodeId === 1400036263 ? 14 : 0
   // 節點 → 佔用道路（切塊後交叉路在路口節點必有端點/中間點落在這裡）
   const nodeUse = new Map<number, RoadFeature[]>()
   for (const r of roads) {
@@ -430,7 +444,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       }
     }
     if (!anyCross) return { trim: 0, sk: 0 }
-    return { trim: w / 2 + 1.2, sk: crossBrg === null ? 0 : skewFromCross(fwdBrg, crossBrg) }
+    return { trim: w / 2 + 2, sk: crossBrg === null ? 0 : skewFromCross(fwdBrg, crossBrg) }
   }
 
   const ZERO = { trim: 0, sk: 0 }
@@ -477,6 +491,8 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     if (ns.length === cs0.length && ns.length >= 2) {
       info0 = endInfo(ns[0], road, bearing(cs0[0], cs0[1]))
       info1 = endInfo(ns[ns.length - 1], road, bearing(cs0[cs0.length - 2], cs0[cs0.length - 1]))
+      info0 = { ...info0, trim: Math.max(info0.trim, specialEndTrim(p.osm_id, ns[0])) }
+      info1 = { ...info1, trim: Math.max(info1.trim, specialEndTrim(p.osm_id, ns[ns.length - 1])) }
       if (info0.trim > 0 || info1.trim > 0) {
         cum = cumulative(cs0)
         L = cum[cum.length - 1]

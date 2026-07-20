@@ -97,7 +97,7 @@ export function buildStyle(): StyleSpecification {
         paint: {
           'line-color': ['match', ['get', 'color'], 'yellow', C.centerLine, C.laneLine],
           'line-width': widthMeters(['match', ['get', 'color'],
-            'yellow', 0.25, 'stop', 0.45, 0.15] as ExpressionSpecification),
+            'yellow', 0.15, 'stop', 0.45, 0.15] as ExpressionSpecification),
         },
       },
       // ── 分隔島（Case B：成對單行間的實體分隔帶，自動推導）──
@@ -158,19 +158,23 @@ export function buildStyle(): StyleSpecification {
         // 尺寸與 makeIcons 的 roadTextImage 約定：4 字 × 80px/字 ↔ 10m 長
         id: 'road-text', type: 'symbol', source: 'roadtext', minzoom: 16,
         layout: {
-          'icon-image': ['get', 'icon'],
-          'icon-size': iconMeters(10, 320),
-          'icon-rotate': ['get', 'brg'],
-          'icon-rotation-alignment': 'map',
-          'icon-allow-overlap': true,
+          'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans CJK TC Regular'],
+          'text-size': widthMeters(1.15),
+          'text-writing-mode': ['vertical'],
+          'text-letter-spacing': 0.12,
+          'text-rotate': ['get', 'brg'],
+          'text-rotation-alignment': 'map',
+          'text-allow-overlap': true,
         },
-        paint: { 'icon-opacity': 0.9 },
+        paint: { 'text-color': ['get', 'color'], 'text-opacity': 0.92 },
       },
 
       // ── 單行道方向箭頭 ──
       {
         id: 'oneway-arrow', type: 'symbol', source: 'roads', minzoom: 16,
-        filter: ['all', ['==', ['get', 'oneway'], 'yes'], ['!=', ['get', 'elevated'], true]],
+        filter: ['all', ['==', ['get', 'oneway'], 'yes'], ['!=', ['get', 'elevated'], true],
+          ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {
           'symbol-placement': 'line',
           'symbol-spacing': 140,
@@ -271,7 +275,7 @@ export function buildStyle(): StyleSpecification {
       // ── 路名 ──
       {
         id: 'road-label', type: 'symbol', source: 'roads', minzoom: 14.5,
-        filter: ['has', 'name'],
+        filter: ['all', ['has', 'name'], ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {
           'symbol-placement': 'line',
           'text-field': ['get', 'name'],

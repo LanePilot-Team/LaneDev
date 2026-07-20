@@ -26,7 +26,73 @@ const LANES_FIX: Record<number, number> = {
 export const REMOVED_WAY_IDS = new Set([
   287447934,
   287447935,
+  799551653, // 德民路 × 惠都街旁的無名平行重複道路
+  126247810,
+  126247864,
+  126247798,
 ])
+
+/**
+ * OSM 將分隔道路兩側各自接成相鄰路口；道路合併後若仍保留兩個中心點，
+ * 會形成數公尺長、同時被主路與支路共用的粗短結。這些已人工確認的路口
+ * 應正規化為單一十字路口中心。
+ */
+const COLLAPSED_INTERSECTION_NODES: [number, number][] = [
+  [1398634938, 1398634137], // 德民路 × 中昌街
+]
+
+/** 已有共用 node，但支路仍停在合併前車道座標的路口；以最寬主路座標為準吸附。 */
+const SNAPPED_INTERSECTION_NODES = [
+  7477787914, // 德民路 × 惠都街
+]
+
+export function collapseKnownIntersections(
+  roads: RoadFeature[], nodeRemap: Map<number, number>,
+) {
+  for (const [keep, drop] of COLLAPSED_INTERSECTION_NODES) {
+    const points: [number, number][] = []
+    for (const r of roads) {
+      r.properties.nodes.forEach((n, i) => {
+        if (n === keep || n === drop) points.push(r.geometry.coordinates[i] as [number, number])
+      })
+    }
+    if (!points.length) continue
+    const center: [number, number] = [
+      points.reduce((s, p) => s + p[0], 0) / points.length,
+      points.reduce((s, p) => s + p[1], 0) / points.length,
+    ]
+    for (const r of roads) {
+      const nodes: number[] = []
+      const coords: [number, number][] = []
+      r.properties.nodes.forEach((n, i) => {
+        const normalized = n === drop ? keep : n
+        const coord = normalized === keep ? center : r.geometry.coordinates[i] as [number, number]
+        if (nodes[nodes.length - 1] === normalized) return
+        nodes.push(normalized)
+        coords.push(coord)
+      })
+      r.properties.nodes = nodes
+      r.geometry.coordinates = coords
+    }
+    nodeRemap.set(drop, keep)
+  }
+  for (const node of SNAPPED_INTERSECTION_NODES) {
+    let anchor: [number, number] | null = null
+    let anchorWidth = -Infinity
+    for (const r of roads) {
+      const i = r.properties.nodes.indexOf(node)
+      if (i < 0 || r.properties.width_m <= anchorWidth) continue
+      anchor = r.geometry.coordinates[i] as [number, number]
+      anchorWidth = r.properties.width_m
+    }
+    if (!anchor) continue
+    for (const r of roads) {
+      r.properties.nodes.forEach((n, i) => {
+        if (n === node) r.geometry.coordinates[i] = [...anchor!] as [number, number]
+      })
+    }
+  }
+}
 
 /** way 起點錯位殘尾：裁到指定 OSM node，保留後續主體。 */
 const TRIM_WAY_START_NODE: Record<number, number> = {

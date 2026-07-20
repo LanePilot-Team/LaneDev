@@ -142,6 +142,19 @@ export function applyToRoads(
       const v = String(fields.rules_backward)
       p.rulesB = p.oneway === 'yes' ? undefined : (v ? v.split('|').filter(Boolean) : [])
     }
+    const readLaneMarks = (value: string | number) => {
+      try {
+        const parsed = JSON.parse(String(value))
+        if (!Array.isArray(parsed)) return undefined
+        return parsed.map((x) => x && typeof x.text === 'string'
+          ? { text: x.text.slice(0, 12), color: typeof x.color === 'string' ? x.color : '#ffffff' }
+          : null)
+      } catch { return undefined }
+    }
+    if (fields.lane_marks_forward !== undefined) p.laneMarksF = readLaneMarks(fields.lane_marks_forward)
+    if (fields.lane_marks_backward !== undefined) {
+      p.laneMarksB = p.oneway === 'yes' ? undefined : readLaneMarks(fields.lane_marks_backward)
+    }
     if (fields.center_m !== undefined) p.centerM = Math.max(0, Number(fields.center_m)) // 中央帶（偏心道/槽化/島）
     if (fields.center_kind !== undefined) p.centerKind = fields.center_kind === 'island' ? 'island' : 'hatch'
     if (fields.extra_width_m !== undefined) {

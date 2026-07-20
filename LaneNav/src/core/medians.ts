@@ -7,6 +7,7 @@
 // 路由不用改：couplet 中段本來就沒有穿越邊。
 // Case A（單一雙向 way 上的島 + 封閉節點轉向限制）待後續。
 import type { Feature, FeatureCollection } from 'geojson'
+import { buffer, difference, featureCollection, lineString, polygon } from '@turf/turf'
 import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT, LANE_WIDTH_M } from './geo'
 import { laneSpanM, type RoadFeature } from './roads'
 import type { RoadGraph } from './graph'
@@ -154,6 +155,48 @@ function islandsBetween(
   return out
 }
 
+/**
+ * 以真實道路面裁切完整綠化帶。相較用 junctionGuard 整段挖空，差集只移除
+ * 橫向道路實際佔用的多邊形，路口四角與不規則空隙仍由綠化帶填滿。
+ */
+function subtractRoadSurfaces(
+  islands: MedianIsland[], roads: RoadFeature[], scopeSet: Set<RoadFeature>,
+): MedianIsland[] {
+  const out: MedianIsland[] = []
+  for (const island of islands) {
+    const xs = island.polygon.map((p) => p[0]), ys = island.polygon.map((p) => p[1])
+    const padX = 4 / KX, padY = 4 / KY
+    const box = {
+      minX: Math.min(...xs) - padX, maxX: Math.max(...xs) + padX,
+      minY: Math.min(...ys) - padY, maxY: Math.max(...ys) + padY,
+    }
+    let pieces = [polygon([island.polygon])]
+    for (const road of roads) {
+      if (scopeSet.has(road) || pieces.length === 0) continue
+      const cs = road.geometry.coordinates as [number, number][]
+      if (cs.length < 2) continue
+      const rxs = cs.map((p) => p[0]), rys = cs.map((p) => p[1])
+      if (Math.max(...rxs) < box.minX || Math.min(...rxs) > box.maxX ||
+          Math.max(...rys) < box.minY || Math.min(...rys) > box.maxY) continue
+      const surface = buffer(lineString(cs), road.properties.width_m / 2 + 0.2, { units: 'meters' })
+      if (!surface) continue
+      const next: typeof pieces = []
+      for (const piece of pieces) {
+        const cut = difference(featureCollection([piece, surface]))
+        if (!cut) continue
+        if (cut.geometry.type === 'Polygon') next.push(polygon(cut.geometry.coordinates))
+        else for (const coords of cut.geometry.coordinates) next.push(polygon(coords))
+      }
+      pieces = next
+    }
+    pieces.forEach((piece, i) => {
+      const ring = piece.geometry.coordinates[0] as [number, number][]
+      if (ring.length >= 4) out.push({ ...island, key: `${island.key}/clip${i}`, polygon: ring })
+    })
+  }
+  return out
+}
+
 export function buildMedians(roads: RoadFeature[]): MedianIsland[] {
   const scope = roads.filter((r) =>
     MEDIAN_SCOPE_ROADS.has(r.properties.name ?? '') &&
@@ -215,7 +258,6 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
   }
   if (scopeSet.size === 0) return []
   const over = foldTwinOverrides(journal)
-  const nearJunction = junctionGuard(roads, scopeSet)
   const out: MedianIsland[] = []
   for (const { a, b, w } of TWIN_ISLAND_PAIRS) {
     const key = twinKey(a, b)
@@ -224,7 +266,8 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
     // 覆寫島寬：w > 0 = 固定寬；w <= 0 = 回復「自動鋪滿」
     const ow = o?.w !== undefined ? Number(o.w) : undefined
     const wEff = ow !== undefined ? (ow > 0 ? ow : undefined) : w
-    const islands = islandsBetween(byId.get(a) ?? [], byId.get(b) ?? [], nearJunction, 40, wEff)
+    const full = islandsBetween(byId.get(a) ?? [], byId.get(b) ?? [], () => false, 40, wEff)
+    const islands = subtractRoadSurfaces(full, roads, scopeSet)
     for (const m of islands) { m.pairKey = key; m.wEff = wEff }
     out.push(...islands)
   }

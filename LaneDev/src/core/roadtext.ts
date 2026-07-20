@@ -1,16 +1,11 @@
-// 路面印字（地面規則）：每個方向邊的起點（路段開頭/剛出路口處）各車道印一次。
-// 規則來源：人工設定（rulesF/rulesB，車道編輯「地面規則」）優先；
-// 無人工設定時 fallback：OSM motorcycle=no → 禁行機車。
-// 多條規則依「選取順序」從車道入口往前堆疊。
-// 字圖由 mapStyle.makeIcons 生成（rule-<code>），圖頂端一律朝實際行進方向。
 import type { Feature, FeatureCollection } from 'geojson'
-import { cumulative, pointAlong, LANE_WIDTH_M } from './geo'
-import { laneSpanM } from './roads'
-import { offsetAt } from './turnbays'
+import { angleDelta, cumulative, haversine, pointAlong, LANE_WIDTH_M } from './geo'
+import { laneSpanM, type LaneMark } from './roads'
+import { offsetAt, type TurnBay } from './turnbays'
 import type { RoadGraph } from './graph'
 
-/** 可標註的地面規則（順序 = 編輯面板按鈕順序）。label 均為 4 字（印字尺寸共用） */
-export const GROUND_RULES: { code: string; label: string }[] = [
+/** 舊 journal 使用的代碼仍保留，讓既有 rules_forward/backward 可向後相容。 */
+export const GROUND_RULES = [
   { code: 'no_moto', label: '禁行機車' },
   { code: 'no_car', label: '禁行汽車' },
   { code: 'no_left', label: '禁止左轉' },
@@ -18,60 +13,90 @@ export const GROUND_RULES: { code: string; label: string }[] = [
   { code: 'two_stage', label: '兩段左轉' },
 ]
 
-const RULE_CODES = new Set(GROUND_RULES.map((r) => r.code))
+export const CAR_LANE_MARKS: LaneMark[] = [
+  { text: '禁行機車', color: '#facc15' },
+]
 
-/** 與 mapStyle 的 road-text 圖層約定：4 字 × 2.5m */
+export const MOTO_LANE_MARKS: LaneMark[] = [
+  { text: '機車專用', color: '#ffffff' },
+  { text: '機慢車專用', color: '#ffffff' },
+  { text: '機車優先', color: '#ffffff' },
+  { text: '機慢車優先', color: '#ffffff' },
+  { text: '自行車優先', color: '#ffffff' },
+]
+
 export const ROAD_TEXT_LEN_M = 10
-const STACK_STEP_M = ROAD_TEXT_LEN_M + 4 // 多規則堆疊間距
 
-export function buildRoadTexts(graph: RoadGraph): FeatureCollection {
+/** 每個方向剛離開路口處，依駕駛視角左→右逐車道繪製至多一種路面資訊。 */
+export function buildRoadTexts(graph: RoadGraph, bays: TurnBay[] = []): FeatureCollection {
   const features: Feature[] = []
   const scope = (r: { properties: {
-    rulesF?: string[]; rulesB?: string[]; motorcycle?: string; elevated?: boolean } }) =>
-    !r.properties.elevated && // 高架：地面路體不畫，印字也不印（會浮在橋下）
-    !!(r.properties.rulesF?.length || r.properties.rulesB?.length || r.properties.motorcycle === 'no')
+    rulesF?: string[]; rulesB?: string[]; laneMarksF?: (LaneMark | null)[]
+    laneMarksB?: (LaneMark | null)[]; motorcycle?: string; elevated?: boolean
+  } }) => !r.properties.elevated && !!(
+    r.properties.laneMarksF?.some(Boolean) || r.properties.laneMarksB?.some(Boolean) ||
+    r.properties.rulesF?.length || r.properties.rulesB?.length || r.properties.motorcycle === 'no')
+
   for (const e of graph.scopeEdges(scope)) {
     const p = e.road.properties
-    const explicit = p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB
-    const rules = (explicit ?? (p.motorcycle === 'no' ? ['no_moto'] : []))
-      .filter((c) => RULE_CODES.has(c))
-    if (rules.length === 0) continue
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
+    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
+    const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
+    const legacyRules = p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB
+    const legacyNoMoto = (legacyRules ?? (p.motorcycle === 'no' ? ['no_moto'] : [])).includes('no_moto')
+    const marks = explicitMarks ?? [
+      ...Array.from({ length: lanes }, () => legacyNoMoto ? CAR_LANE_MARKS[0] : null),
+      ...(moto ? [null] : []),
+    ]
+    if (!marks.some((m) => m?.text.trim())) continue
+
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
     const s0 = e.startSetbackM
     const s1 = total - e.endSetbackM
-    // 放得下幾條印幾條（第 k 條佔 [2+k*step, 2+k*step+字長]，尾端留 2m）
-    const n = Math.min(rules.length,
-      Math.floor((s1 - s0 - ROAD_TEXT_LEN_M - 4) / STACK_STEP_M) + 1)
-    if (n < 1) continue
-    // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
-    const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+    if (s1 - s0 < ROAD_TEXT_LEN_M + 4) continue
+    const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
-    // 印字橫向位置：各汽車道中心；0 車道（純機車道）時印在機車道中心
-    const offs = lanes >= 1
-      ? Array.from({ length: lanes }, (_, k) => base + (k + 0.5) * LANE_WIDTH_M)
-      : [base + 1.1]
-    for (let k = 0; k < n; k++) {
-      // 圖示後緣距路口出口 2m；後續規則沿行進方向依序往前放。
-      const d = s0 + 2 + ROAD_TEXT_LEN_M / 2 + k * STACK_STEP_M
-      const { brg } = pointAlong(e.coords, cum, d)
-      const iconBrg = ((brg % 360) + 360) % 360
-      for (const off of offs) {
-        features.push({
-          type: 'Feature',
-          properties: {
-            icon: `rule-${rules[k]}`,
-            rule: rules[k],
-            brg: Math.round(iconBrg * 10) / 10,
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: offsetAt(e.coords, cum, d, off),
-          },
-        })
+    const sep = p.oneway === 'yes' ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
+    const offs = Array.from({ length: lanes }, (_, k) => base + (k + 0.5) * LANE_WIDTH_M)
+    if (moto) offs.push(base + lanes * LANE_WIDTH_M + sep + 1.1)
+
+    const d = s0 + 2 + ROAD_TEXT_LEN_M / 2
+    const { brg } = pointAlong(e.coords, cum, d)
+    const iconBrg = ((brg % 360) + 360) % 360
+    marks.slice(0, offs.length).forEach((mark, i) => {
+      if (!mark?.text.trim()) return
+      const pos = offsetAt(e.coords, cum, d, offs[i])
+      const roadKey = p.name?.trim() || `way/${p.osm_id}`
+      const duplicate = features.findIndex((f) =>
+        f.properties?.roadKey === roadKey && f.properties?.lane === i &&
+        f.properties?.label === mark.text.trim() && f.properties?.color === (mark.color || '#ffffff') &&
+        Math.abs(angleDelta(Number(f.properties?.brg), iconBrg)) < 20 &&
+        haversine((f.geometry as unknown as { coordinates: [number, number] }).coordinates, pos) < 25)
+      const feature: Feature = {
+        type: 'Feature',
+        properties: {
+          label: mark.text.trim(), color: mark.color || '#ffffff', lane: i,
+          laneType: moto && i === lanes ? 'moto' : 'car',
+          brg: Math.round(iconBrg * 10) / 10,
+          roadKey, spanM: s1 - s0,
+        },
+        geometry: { type: 'Point', coordinates: pos },
       }
-    }
+      if (duplicate < 0) features.push(feature)
+      else if (Number(features[duplicate].properties?.spanM) < s1 - s0) features[duplicate] = feature
+    })
+  }
+  for (const bay of bays) {
+    const brg = ((bay.roadText.brg % 360) + 360) % 360
+    features.push({
+      type: 'Feature',
+      properties: {
+        label: '禁行機車', color: '#facc15', lane: -1, laneType: 'turn_bay',
+        brg: Math.round(brg * 10) / 10, roadKey: bay.key, spanM: bay.bayLenM,
+      },
+      geometry: { type: 'Point', coordinates: bay.roadText.pos },
+    })
   }
   return { type: 'FeatureCollection', features }
 }

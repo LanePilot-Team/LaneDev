@@ -23,6 +23,8 @@ const DEFAULTS = { bay_len_m: 30, taper_len_m: 15, width_m: 3.0, turns: 'left|ut
 const MIN_BAY = 30
 const MIN_DEFORM = 14
 const HATCH_TARGET = 20
+/** 與 centerM=0 的純雙黃線一致：中心線左右各 0.18m。 */
+const DOUBLE_YELLOW_HALF_GAP_M = 0.18
 
 export interface TurnBay {
   key: string // way/W@node/N（反向行進加 ~b 尾碼），journal target key
@@ -46,15 +48,24 @@ export interface TurnBay {
   /** 停止線回退量（= 路口節點到 bay 前端的距離）——路線帶對齊 bay 開口用 */
   setbackM: number
   back: boolean
+  /** 同一路段另一端也有偏心左轉道。 */
+  paired: boolean
   polygon: [number, number][] | null
   casing: [number, number][] | null
-  arrows: { pos: [number, number]; brg: number }[]
+  arrows: { pos: [number, number]; brg: number; dM: number }[]
+  /** 偏心道專屬路面印字錨點；位於儲車段內並朝向路口。 */
+  roadText: { pos: [number, number]; brg: number; dM: number }
   /** 邊線：黃 = 分隔對向（左緣/斜切），白 = 分隔同向（右緣） */
   lines: PaintLine[]
 }
 
 /** 標線線段（黃 = 分隔對向/槽化，白 = 分隔同向，stop = 停止線白粗橫線） */
-export interface PaintLine { color: 'yellow' | 'white' | 'stop'; coords: [number, number][] }
+export interface PaintLine {
+  color: 'yellow' | 'white' | 'stop'
+  coords: [number, number][]
+  style?: 'paired-center' | 'channel-hatch' | 'channel-cap'
+  ownerKey?: string
+}
 
 /** 地面箭頭（車道走向/偏心道），icon 對應 mapStyle makeIcons */
 export interface GroundArrow { pos: [number, number]; brg: number; icon: string }
@@ -98,7 +109,7 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
     return p.oneway !== 'no' || p.centerM >= 3
   }
 
-  const tryMake = (a: BayAnchor, dflt: { bayLen: number; taperLen: number }) => {
+  const tryMake = (a: BayAnchor, dflt: { bayLen: number; taperLen: number }, paired = false) => {
     const key = anchorKey(a)
     handled.add(key)
     if (!wantBay(a)) return
@@ -109,7 +120,7 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
     const bayLen = forced ? Math.max(dflt.bayLen, MIN_DEFORM) : dflt.bayLen
     if (bayLen < MIN_DEFORM && !o?.bay_len_m) return // 放不下且無人工指定
     const sk = crossSkew(graph, a.road, a.nodeId, a.approachBearing)
-    const bay = makeBay(a, key, o, { bayLen, taperLen: dflt.taperLen }, sk)
+    const bay = makeBay(a, key, o, { bayLen, taperLen: dflt.taperLen }, sk, paired)
     if (bay) out.push(bay)
   }
 
@@ -131,8 +142,8 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
     if (bayLen < MIN_BAY) { taper = 10; bayLen = (L - n * taper - hatch) / n }
     // 還是不夠：整段不留槽化，斜切直接畫在區塊中間（兩向各佔一半，中點相接）
     if (bayLen < MIN_BAY) { hatch = 0; bayLen = (L - n * taper) / n }
-    if (fa) tryMake(fa, { bayLen, taperLen: taper })
-    if (ba) tryMake(ba, { bayLen, taperLen: taper })
+    if (fa) tryMake(fa, { bayLen, taperLen: taper }, n === 2)
+    if (ba) tryMake(ba, { bayLen, taperLen: taper }, n === 2)
   }
 
   // 其餘錨點（單行道左緣分支）：固定預設
@@ -176,9 +187,25 @@ function sampleDs(from: number, to: number, step: number, extra: number[] = []):
   return [...new Set(ds)].sort((x, y) => x - y)
 }
 
+// 偏心道內的縱向排版：文字在上游、箭頭集中在路口端。
+// 文字約長 10m、箭頭約長 4.5m，中心至少相隔 9.25m（兩者半長 + 2m 留白）。
+export const BAY_TEXT_ARROW_CLEARANCE_M = 9.25
+function bayMarkLayout(d0: number, bayStart: number, end: number, shift: number) {
+  const clamp = (d: number) => Math.max(d0 + 2, Math.min(end - 2, d))
+  const frontArrow = clamp(end - 4 + shift)
+  const textD = clamp(Math.min(bayStart + 5 + shift, frontArrow - BAY_TEXT_ARROW_CLEARANCE_M))
+  const arrows = [frontArrow]
+  const second = clamp(end - 11 + shift)
+  // 第二個箭頭只有在不碰文字、也不碰前方箭頭時才保留；短 bay 自動只畫一個。
+  if (second - textD >= BAY_TEXT_ARROW_CLEARANCE_M && frontArrow - second >= 6.5) {
+    arrows.push(second)
+  }
+  return { textD, arrowDs: arrows }
+}
+
 function makeBay(
   a: BayAnchor, key: string, o: Record<string, string | number> | undefined,
-  dflt: { bayLen: number; taperLen: number }, sk = 0,
+  dflt: { bayLen: number; taperLen: number }, sk = 0, paired = false,
 ): TurnBay | null {
   const cum = cumulative(a.coords)
   const total = cum[cum.length - 1]
@@ -203,7 +230,7 @@ function makeBay(
     bayLenM, taperLenM, widthM, turns,
     source: (o ? 'manual' : 'default') as TurnBay['source'],
     d0M: d0, bayStartM: bayStart, endM: end, setbackM: a.setbackM,
-    back: a.back,
+    back: a.back, paired,
   }
 
   if (isCenter) {
@@ -212,15 +239,15 @@ function makeBay(
     const c = p.centerM / 2
     // 漸變段：雙黃線從自己車道側（dv+c）斜切到對向側（dv−c）——「慢慢雙黃線斜對切」
     const taperDs = sampleDs(d0, bayStart, 3)
-    const diagonal = taperDs.map((d) =>
-      offsetAt(a.coords, cum, d, dv + c - ((d - d0) / Math.max(1e-6, bayStart - d0)) * 2 * c))
+    const diagonal = (gap: number) => taperDs.map((d) =>
+      offsetAt(a.coords, cum, d,
+        dv + c - ((d - d0) / Math.max(1e-6, bayStart - d0)) * 2 * c + gap))
     // 儲車段右界（與同向直行道分隔）＝白線；末端裁到停止線斜線
     const endW = Math.min(total, Math.max(bayStart + 2, end + sk * (dv + c)))
     const whiteDs = sampleDs(bayStart, endW, 4)
     const white = whiteDs.map((d) => offsetAt(a.coords, cum, d, dv + c))
     // 箭頭跟著停止線的交叉路對齊平移（skew×橫向偏移），夾在儲車段內
-    const arrowDs = (bayLenM >= 20 ? [end - 7, bayStart + 6] : [end - bayLenM / 2])
-      .map((d) => Math.max(d0 + 2, Math.min(end - 2, d + sk * dv)))
+    const { arrowDs, textD } = bayMarkLayout(d0, bayStart, end, sk * dv)
     return {
       ...base,
       kind: 'center', offM: dv,
@@ -228,9 +255,18 @@ function makeBay(
       arrows: arrowDs.map((d) => ({
         pos: offsetAt(a.coords, cum, d, dv),
         brg: pointAlong(a.coords, cum, d).brg,
+        dM: d,
       })),
+      roadText: {
+        pos: offsetAt(a.coords, cum, textD, dv),
+        brg: pointAlong(a.coords, cum, textD).brg,
+        dM: textD,
+      },
       lines: [
-        { color: 'yellow', coords: diagonal },
+        ...(!paired ? [
+          { color: 'yellow' as const, coords: diagonal(-DOUBLE_YELLOW_HALF_GAP_M) },
+          { color: 'yellow' as const, coords: diagonal(DOUBLE_YELLOW_HALF_GAP_M) },
+        ] : []),
         { color: 'white', coords: white },
       ],
     }
@@ -253,8 +289,7 @@ function makeBay(
   const leftYellow = ds.map((d) => offsetAt(a.coords, cum, d, R0 - wAt(d)))
   leftYellow.push(offsetAt(a.coords, cum, end, R0))
   const rightWhite = ds.filter((d) => d >= bayStart).map((d) => offsetAt(a.coords, cum, d, R0))
-  const arrowDs = (bayLenM >= 20 ? [end - 7, bayStart + 6] : [end - bayLenM / 2])
-    .map((d) => Math.max(d0 + 2, Math.min(end - 2, d + sk * offM)))
+  const { arrowDs, textD } = bayMarkLayout(d0, bayStart, end, sk * offM)
   return {
     ...base,
     kind: 'side', offM,
@@ -262,7 +297,13 @@ function makeBay(
     arrows: arrowDs.map((d) => ({
       pos: offsetAt(a.coords, cum, d, offM),
       brg: pointAlong(a.coords, cum, d).brg,
+      dM: d,
     })),
+    roadText: {
+      pos: offsetAt(a.coords, cum, textD, offM),
+      brg: pointAlong(a.coords, cum, textD).brg,
+      dM: textD,
+    },
     lines: [
       { color: 'yellow', coords: leftYellow },
       { color: 'white', coords: rightWhite },
@@ -278,8 +319,11 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
   const bayMap = new Map<string, TurnBay>()
   for (const b of bays) bayMap.set(`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b)
   const out: PaintLine[] = []
+  const cappedBayKeys = new Set<string>()
 
-  for (const e of graph.scopeEdges(scopeFn)) {
+  // 繪圖線需對所有真交叉道路淨空（含 6.4m 小路），並多留 2m 路口邊界。
+  // 偏心道、停止線仍沿用原本 ≥7m 的判定，避免改變交通語意。
+  for (const e of graph.scopeEdges(scopeFn, 0, 2)) {
     const p = e.road.properties
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
@@ -311,6 +355,37 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     const bwdBay = bayMap.get(`${p.osm_id}@${e.fromNode}~b`)
     const fwdOpen = fwdBay ? [fwdBay.d0M, fwdBay.endM] : null // 順向側開口
     const bwdOpen = bwdBay ? [total - bwdBay.endM, total - bwdBay.d0M] : null // 對向側開口
+    const paired = !!(fwdBay?.paired && bwdBay?.paired && fwdOpen && bwdOpen)
+
+    if (paired) {
+      // 雙端偏心左轉道：中央預留區改作雙黃線的平順換位，不畫槽化斜紋。
+      let bendFrom = Math.max(s0, bwdOpen![1])
+      let bendTo = Math.min(s1, fwdOpen![0])
+      // 短區塊或不對稱退界可能讓兩個 bay 的開口重疊。不可退化為中央直線，
+      // 改以兩開口交界的中點建立至少 24m（受可用長度限制）的換位區。
+      if (bendTo - bendFrom < 12) {
+        const mid = Math.max(s0, Math.min(s1, (bwdOpen![1] + fwdOpen![0]) / 2))
+        const half = Math.min(18, Math.max(6, (s1 - s0) * 0.22))
+        bendFrom = Math.max(s0, mid - half)
+        bendTo = Math.min(s1, mid + half)
+      }
+      const smooth = (t: number) => t * t * (3 - 2 * t)
+      const centerOff = (d: number) => {
+        if (bendTo <= bendFrom + 0.5) return dv + c
+        if (d <= bendFrom) return dv + c
+        if (d >= bendTo) return dv - c
+        return dv + c - 2 * c * smooth((d - bendFrom) / (bendTo - bendFrom))
+      }
+      const ds = sampleDs(s0, s1, 2.5, [bendFrom, bendTo])
+      for (const gap of [-DOUBLE_YELLOW_HALF_GAP_M, DOUBLE_YELLOW_HALF_GAP_M]) {
+        out.push({
+          color: 'yellow',
+          style: 'paired-center',
+          coords: ds.map((d) => offsetAt(e.coords, cum, d, centerOff(d) + gap)),
+        })
+      }
+      continue
+    }
 
     // 觸到 s0/s1 的段端點改裁到停止線斜線（bay 開口側的內部端點不動）
     const clip = (segs: [number, number][], o: number): [number, number][] =>
@@ -318,22 +393,53 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
         a <= s0 + 1e-6 ? Math.max(0, s0 + sk0 * o + 0.5) : a,
         b >= s1 - 1e-6 ? Math.min(total, s1 + sk1 * o - 0.5) : b,
       ] as [number, number])
-    // 順向側邊界黃線：避開順向 bay 開口
-    pushSegs(out, e, cum, dv + c, clip(subtract([s0, s1], fwdOpen), dv + c))
-    // 對向側邊界黃線：避開對向 bay 開口
-    pushSegs(out, e, cum, dv - c, clip(subtract([s0, s1], bwdOpen), dv - c))
-
     // 斜紋槽化：兩向 bay 都沒佔用的中段（兩端依斜線取保守界，斜紋不戳出停止線）
     const hs = Math.max(s0 + Math.max(sk0 * (dv - c), sk0 * (dv + c)) + 0.5, bwdOpen ? bwdOpen[1] : 0)
     const he = Math.min(s1 + Math.min(sk1 * (dv - c), sk1 * (dv + c)) - 0.5, fwdOpen ? fwdOpen[0] : total)
+    const paintBoundary = (off: number, segs: [number, number][]) => {
+      for (const seg of segs) {
+        const hatchPart: [number, number] = [Math.max(seg[0], hs), Math.min(seg[1], he)]
+        if (hatchPart[1] - hatchPart[0] >= 2) {
+          // 包覆槽化斜紋的區段維持單黃線。
+          pushSegs(out, e, cum, off, [hatchPart])
+        }
+        // 離開槽化區後，單獨延伸的分向線恢復為純雙黃線樣式。
+        for (const plainPart of subtract(seg, he > hs ? [hs, he] : null)) {
+          pushDoubleSegs(out, e, cum, off, [plainPart])
+        }
+      }
+    }
+    // 順向／對向側邊界：避開各自行向的 bay 開口。
+    paintBoundary(dv + c, clip(subtract([s0, s1], fwdOpen), dv + c))
+    paintBoundary(dv - c, clip(subtract([s0, s1], bwdOpen), dv - c))
+
     for (let d = hs + 1.5; d + 2.2 < he; d += 4) {
       out.push({
         color: 'yellow',
+        style: 'channel-hatch',
+        ownerKey: (fwdBay ?? bwdBay)?.key,
         coords: [
           offsetAt(e.coords, cum, d, dv - c + 0.25),
           offsetAt(e.coords, cum, d + 2.2, dv + c - 0.25),
         ],
       })
+    }
+    // 單端偏心道的槽化區只在 bay 端收尖，另一端必須以橫向黃線封口。
+    if (!!fwdOpen !== !!bwdOpen && he - hs >= 3) {
+      const capKey = (fwdBay ?? bwdBay)!.key
+      if (!cappedBayKeys.has(capKey)) {
+        cappedBayKeys.add(capKey)
+        const capD = fwdOpen ? hs : he
+        out.push({
+          color: 'yellow',
+          style: 'channel-cap',
+          ownerKey: capKey,
+          coords: [
+            offsetAt(e.coords, cum, capD, dv - c),
+            offsetAt(e.coords, cum, capD, dv + c),
+          ],
+        })
+      }
     }
   }
   return out
@@ -346,7 +452,20 @@ function lineAt(e: ScopeEdge, cum: number[], from: number, to: number, off: numb
 function pushSegs(out: PaintLine[], e: ScopeEdge, cum: number[], off: number, segs: [number, number][]) {
   for (const [a, b] of segs) {
     if (b - a < 2) continue
+    // 槽化區左右外框採單黃線；偏心道漸變段的雙黃線由 makeBay 另外生成。
     out.push({ color: 'yellow', coords: lineAt(e, cum, a, b, off) })
+  }
+}
+
+function pushDoubleSegs(
+  out: PaintLine[], e: ScopeEdge, cum: number[], off: number, segs: [number, number][],
+) {
+  for (const [a, b] of segs) {
+    if (b - a < 2) continue
+    out.push(
+      { color: 'yellow', coords: lineAt(e, cum, a, b, off - DOUBLE_YELLOW_HALF_GAP_M) },
+      { color: 'yellow', coords: lineAt(e, cum, a, b, off + DOUBLE_YELLOW_HALF_GAP_M) },
+    )
   }
 }
 
@@ -690,7 +809,7 @@ export function baysToGeoJSON(
   const features: Feature[] = []
   const pushLine = (line: PaintLine, key?: string) => features.push({
     type: 'Feature',
-    properties: { kind: 'line', color: line.color, key },
+    properties: { kind: 'line', color: line.color, style: line.style, key },
     geometry: { type: 'LineString', coordinates: line.coords },
   })
   const pushArrow = (ar: GroundArrow, key?: string) => features.push({

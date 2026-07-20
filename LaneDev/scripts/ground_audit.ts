@@ -12,13 +12,17 @@ import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON, buildDividers, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
 import { RoadGraph } from '../src/core/graph'
-import { haversine } from '../src/core/geo'
+import { angleDelta, haversine } from '../src/core/geo'
 import { foldJournal, applyToRoads, type EnhancementRecord } from '../src/core/enhancements'
 import {
-  buildTurnBays, buildStopLines, buildRightLanes, buildLaneArrows,
+  buildTurnBays, buildChannelization, buildStopLines, buildRightLanes, buildLaneArrows,
+  BAY_TEXT_ARROW_CLEARANCE_M,
 } from '../src/core/turnbays'
 import { buildRoadTexts } from '../src/core/roadtext'
-import { buildCenterIslands, buildMotoSepIslands } from '../src/core/medians'
+import { buildCenterIslands, buildMotoSepIslands, buildTwinIslands } from '../src/core/medians'
+import {
+  cleanIntersectionFeatures, inIntersectionCleanup, roadsWithCleanupFlags,
+} from '../src/core/intersectionCleanup'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DATA = join(HERE, '../public/data')
@@ -37,6 +41,15 @@ const journal: EnhancementRecord[] = JSON.parse(readFileSync(join(DATA, 'seed_jo
   .filter((r: EnhancementRecord) => r.author !== 'lanepilot')
 applyToRoads(roads, foldJournal(journal))
 const graph = new RoadGraph(roads)
+const allRoadTexts = buildRoadTexts(graph).features
+const closeDuplicate = allRoadTexts.some((a, i) => allRoadTexts.slice(i + 1).some((b) =>
+  a.properties?.roadKey === b.properties?.roadKey && a.properties?.lane === b.properties?.lane &&
+  a.properties?.label === b.properties?.label &&
+  Math.abs(angleDelta(Number(a.properties?.brg), Number(b.properties?.brg))) < 20 &&
+  haversine((a.geometry as unknown as { coordinates: [number, number] }).coordinates,
+    (b.geometry as unknown as { coordinates: [number, number] }).coordinates) < 25))
+check('連續短區塊不會在同道路、同方向、同車道重複印字', !closeDuplicate,
+  `${allRoadTexts.length} 個路面資訊`)
 console.log(`底圖：${roads.length} 區塊, journal ${journal.length} 筆, nodeRemap ${nodeRemap.size}`)
 
 // ── 路面規則：必須從各自行向的入口開始，且圖頂端朝行進方向 ──
@@ -62,7 +75,9 @@ const entryDistances = textFeatures.map((f) => Math.min(
   haversine(f.geometry.coordinates as [number, number], probeEnds[1]),
 ))
 check('禁行機車在雙向道路的兩個車道入口各生成一次',
-  textFeatures.length === 2 && textFeatures.every((f) => f.properties?.rule === 'no_moto'))
+  textFeatures.length === 2 && textFeatures.every((f) =>
+    f.properties?.label === '禁行機車' && f.properties?.color === '#facc15' &&
+    f.properties?.laneType === 'car'))
 check('路面規則位於剛進入車道處（入口後約 7m）',
   entryDistances.every((d) => d >= 6.5 && d <= 8), entryDistances.map((d) => d.toFixed(1)).join('m / ') + 'm')
 check('路面規則方向與雙向行徑方向一致',
@@ -75,6 +90,28 @@ const atNorthEntry = textFeatures.find((f) =>
 check('道路兩端只標離開路口方向，不標朝向路口的出口車道',
   textFeatures.length === 2 && atSouthEntry?.properties?.brg === 0 &&
   atNorthEntry?.properties?.brg === 180)
+
+const laneMarkProbe: RoadFeature = {
+  ...textProbe,
+  properties: {
+    ...textProbe.properties,
+    osm_id: 999_000_003, oneway: 'yes', lanesForward: 2, lanesBackward: 0,
+    motoF: true, motoB: false, motoSepF: 1, width_m: 9.6,
+    rulesF: [], rulesB: [],
+    laneMarksF: [
+      { text: '禁行機車', color: '#facc15' },
+      null,
+      { text: '機慢車優先', color: '#34d399' },
+    ],
+  },
+}
+const laneMarkFeatures = buildRoadTexts(new RoadGraph([laneMarkProbe])).features
+check('逐車道只能各自生成一種資訊，未選車道保持空白',
+  laneMarkFeatures.length === 2 && laneMarkFeatures.some((f) => f.properties?.lane === 0) &&
+  !laneMarkFeatures.some((f) => f.properties?.lane === 1))
+check('已定義機車道可使用專用／優先或自訂文字與顏色',
+  laneMarkFeatures.some((f) => f.properties?.laneType === 'moto' &&
+    f.properties?.label === '機慢車優先' && f.properties?.color === '#34d399'))
 
 // ── 小路口箭頭：窄巷也必須形成路口退界，箭頭不可插在中心節點 ──
 const smallJunctionNode = 999_000_012
@@ -107,6 +144,27 @@ const targetSpurs = roads.filter((r) =>
   [287447934, 287447935, 289555544].includes(r.properties.osm_id))
 check('明確排除 way/287447934、way/287447935，並清除附近短殘段', targetSpurs.length === 0,
   targetSpurs.map((r) => `way/${r.properties.osm_id}@${r.properties.blockNode}`).join(', '))
+check('明確排除 way/126247810、way/126247864',
+  roads.every((r) => ![126247810, 126247864].includes(r.properties.osm_id)))
+check('明確排除 way/126247798',
+  roads.every((r) => r.properties.osm_id !== 126247798))
+const alley676 = roads.find((r) => r.properties.osm_id === 676539849)
+const alley676End = alley676?.geometry.coordinates.at(-1) as [number, number] | undefined
+const alley676Lines = buildDividers(roads).features.filter((f) => f.properties?.osm_id === 676539849)
+const alley676Nearest = alley676End ? Math.min(...alley676Lines.flatMap((f) => {
+  const cs = f.geometry.coordinates as [number, number][]
+  return [haversine(cs[0], alley676End), haversine(cs[cs.length - 1], alley676End)]
+})) : 0
+check('way/676539849 道路繪圖線停在德民路口前',
+  !!alley676 && alley676Lines.length > 0 && alley676Nearest >= 13.5,
+  `退界 ${alley676Nearest.toFixed(1)}m`)
+check('way/912306400 已恢復為德民新橋下方連接道',
+  roads.some((r) => r.properties.osm_id === 912306400))
+const deminBridge = roads.filter((r) =>
+  [126247872, 126247885, 126247846, 126247898].includes(r.properties.osm_id))
+check('德民新橋主橋與機車道已納入高架樣式',
+  deminBridge.length > 0 && deminBridge.every((r) => r.properties.elevated === true),
+  `${deminBridge.length} 個橋面區塊`)
 const trimmedBridgeWay = roads.find((r) => r.properties.osm_id === 287673498)
 check('way/287673498 已裁掉益群橋路口左側多餘尾巴',
   !!trimmedBridgeWay && trimmedBridgeWay.properties.nodes[0] === 2912433399)
@@ -120,7 +178,92 @@ check('秀群路539巷已截在外環西路口，不再露出北側圓頭',
 
 // ── 1. 停止線 ──
 const bays = buildTurnBays(graph, journal)
+const pairedBays = bays.filter((b) => b.paired)
+const singleBays = bays.filter((b) => b.kind === 'center' && !b.paired)
+const channelization = buildChannelization(graph, bays)
+check('雙端偏心左轉道採成對生成', pairedBays.length > 0 && pairedBays.length % 2 === 0,
+  `${pairedBays.length} 條偏心道`)
+check('雙端偏心道不再各自繪製槽化斜線',
+  pairedBays.every((b) => b.lines.every((line) => line.color !== 'yellow')))
+check('單端偏心道仍保留黃色槽化起始邊線',
+  singleBays.length === 0 || singleBays.every((b) => b.lines.some((line) => line.color === 'yellow')),
+  `${singleBays.length} 條單端偏心道`)
+check('偏心道路中央標線有正常生成', channelization.length > 0,
+  `${channelization.length} 條中央標線`)
+const pairedCenterLines = channelization.filter((line) => line.style === 'paired-center')
+const channelCaps = channelization.filter((line) => line.style === 'channel-cap')
+const hatchOwners = new Set(channelization
+  .filter((line) => line.style === 'channel-hatch' && line.ownerKey)
+  .map((line) => line.ownerKey))
+const capOwners = new Set(channelCaps.map((line) => line.ownerKey))
+check('每組雙端偏心道都生成兩條 S 型黃線',
+  pairedCenterLines.length === pairedBays.length,
+  `${pairedCenterLines.length} 條 S 型線 / ${pairedBays.length / 2} 組偏心道`)
+check('所有實際生成的單端槽化區都有且只有一個封口',
+  channelCaps.length === capOwners.size &&
+  [...hatchOwners].every((key) => capOwners.has(key)),
+  `${channelCaps.length} 個封口 / ${hatchOwners.size} 個槽化區`)
+const deminJhongchang = 1398634938
+const deminJhongchangBlocks = roads.filter((r) =>
+  r.properties.nodes.includes(deminJhongchang) &&
+  (r.properties.name === '德民路' || r.properties.name === '中昌街'))
+const deminJhongchangNames = new Set(deminJhongchangBlocks.map((r) => r.properties.name))
+check('德民路 × 中昌街已收旂為單一十字路口中心',
+  nodeRemap.get(1398634137) === deminJhongchang && deminJhongchangNames.size === 2 &&
+  roads.every((r) => !r.properties.nodes.includes(1398634137)),
+  `${deminJhongchangBlocks.length} 個相接區塊`)
+check('德民中昌路口沒有殘留零長度或重複節點區塊',
+  roads.every((r) => r.properties.nodes.length >= 2 &&
+    r.properties.nodes.every((n, i, ns) => i === 0 || n !== ns[i - 1])))
+const hueiduNode = 7477787914
+const hueiduTouches = roads.filter((r) => r.properties.nodes.includes(hueiduNode))
+const hueiduPoints = hueiduTouches.flatMap((r) => r.properties.nodes.flatMap((n, i) =>
+  n === hueiduNode ? [r.geometry.coordinates[i] as [number, number]] : []))
+check('德民路 × 惠都街只保留有名支路，無名平行重複路已移除',
+  roads.every((r) => r.properties.osm_id !== 799551653) &&
+  hueiduTouches.some((r) => r.properties.name === '惠都街'))
+check('惠都街端點已吸附到德民路主線中心',
+  hueiduPoints.length >= 2 && hueiduPoints.every((p) => haversine(p, hueiduPoints[0]) < 0.1),
+  `${hueiduPoints.length} 個共用座標`)
+const bayRoadTexts = buildRoadTexts(graph, bays).features.filter((f) =>
+  f.properties?.laneType === 'turn_bay')
+check('每條偏心左轉道都有黃色禁行機車標示',
+  bayRoadTexts.length === bays.length && bayRoadTexts.every((f) =>
+    f.properties?.label === '禁行機車' && f.properties?.color === '#facc15'),
+  `${bayRoadTexts.length}/${bays.length} 條`)
+check('偏心道禁行機車方向與該車道行進方向一致',
+  bayRoadTexts.every((f) => {
+    const bay = bays.find((b) => b.key === f.properties?.roadKey)
+    return !!bay && Math.abs(angleDelta(Number(f.properties?.brg), bay.roadText.brg)) < 0.2
+  }))
+check('偏心左轉箭頭全部位於文字前方、靠近路口端',
+  bays.every((b) => b.arrows.length >= 1 && b.arrows.every((a) =>
+    a.dM > b.roadText.dM && b.endM - a.dM <= 15)))
+check('偏心道箭頭與禁行機車文字保留安全間距',
+  bays.every((b) => b.arrows.every((a) =>
+    a.dM - b.roadText.dM >= BAY_TEXT_ARROW_CLEARANCE_M - 0.01)),
+  `至少 ${BAY_TEXT_ARROW_CLEARANCE_M}m`)
 const allIslands = [...buildMotoSepIslands(graph), ...buildCenterIslands(graph, bays)]
+const universityGreen = buildTwinIslands(roads, journal)
+check('高雄大學路綠化帶使用道路面差集後的多邊形填滿空隙',
+  universityGreen.length > 0 && universityGreen.every((m) =>
+    m.polygon.length >= 4 && m.polygon[0][0] === m.polygon[m.polygon.length - 1][0] &&
+    m.polygon[0][1] === m.polygon[m.polygon.length - 1][1]),
+  `${universityGreen.length} 塊多邊形`)
+const cleanedWideJunctionDividers = cleanIntersectionFeatures(buildDividers(roads))
+const cleanedWideJunctionTexts = cleanIntersectionFeatures(buildRoadTexts(graph, bays))
+const wideJunctionDisplayRoads = roadsWithCleanupFlags(roads)
+check('高雄大學路 × 援中路寬路口中央沒有分隔線或路面文字',
+  cleanedWideJunctionDividers.features.every((f) =>
+    f.geometry.type !== 'LineString' || f.geometry.coordinates.every((p) =>
+      !inIntersectionCleanup(p as [number, number]))) &&
+  cleanedWideJunctionTexts.features.every((f) =>
+    f.geometry.type !== 'Point' || !inIntersectionCleanup(f.geometry.coordinates as [number, number])))
+check('寬路口相交區塊不繪製道路名稱與連續方向箭頭',
+  wideJunctionDisplayRoads.some((r) => r.properties.name === '高雄大學路' &&
+    r.properties.hideIntersectionInfo === true) &&
+  wideJunctionDisplayRoads.some((r) => r.properties.name === '援中路' &&
+    r.properties.hideIntersectionInfo === true))
 const waihuanJunction: [number, number] = [120.3000115, 22.7183436]
 const nearestIslandAtWaihuan = Math.min(...allIslands.flatMap((m) =>
   m.polygon.map((p) => haversine(p, waihuanJunction))))

@@ -8,6 +8,7 @@ import { groundMoves } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore, Mode } from '../app/mapCore'
+import type { LaneMark } from '../core/roads'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle'
 
@@ -28,6 +29,12 @@ export const BAY_TURN_GLYPH: Record<string, string> = {
 export function resizeTurnLanes(tl: string[], n: number): string[] {
   const out = tl.slice(0, n)
   while (out.length < n) out.push('through')
+  return out
+}
+
+export function resizeLaneMarks(marks: (LaneMark | null)[], n: number): (LaneMark | null)[] {
+  const out = marks.slice(0, n)
+  while (out.length < n) out.push(null)
   return out
 }
 
@@ -57,7 +64,7 @@ export interface EditRoadState {
   bayF: string; bayB: string
   bayF0: string; bayB0: string
   /** 兩向地面規則（GROUND_RULES code，順序 = 選取順序 = 印字由上往下） */
-  rulesF: string[]; rulesB: string[]
+  laneMarksF: (LaneMark | null)[]; laneMarksB: (LaneMark | null)[]
 }
 
 export interface Editor {
@@ -143,6 +150,14 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const rulesB = p2.oneway === 'no'
         ? (p2.rulesB ?? (p2.motorcycle === 'no' ? ['no_moto'] : []))
         : []
+      const legacyMarks = (rules: string[], lanes: number, moto: boolean) => {
+        const mark = rules.includes('no_moto') ? { text: '禁行機車', color: '#facc15' } : null
+        return [...Array.from({ length: lanes }, () => mark), ...(moto ? [null] : [])]
+      }
+      const laneMarksF = resizeLaneMarks(p2.laneMarksF ?? legacyMarks(rulesF, p2.lanesForward, p2.motoF),
+        p2.lanesForward + (p2.motoF ? 1 : 0))
+      const laneMarksB = resizeLaneMarks(p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoB),
+        p2.lanesBackward + (p2.motoB ? 1 : 0))
       setEditRoad({
         osmId: p2.osm_id, name: p2.name, oneway: p2.oneway,
         blockNode: p2.blockNode,
@@ -158,7 +173,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
         nodeFirst, nodeLast,
         bayF, bayB, bayF0: bayF, bayB0: bayB,
-        rulesF: [...rulesF], rulesB: [...rulesB],
+        laneMarksF, laneMarksB,
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -242,11 +257,11 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         center_kind: editRoad.centerKind,
         extra_width_m: editRoad.extraM,
         turn_lanes: editRoad.turnLanes.join('|'),
-        rules_forward: editRoad.rulesF.join('|'),
+        lane_marks_forward: JSON.stringify(editRoad.laneMarksF),
         ...(editRoad.oneway === 'no'
           ? {
             turn_lanes_backward: editRoad.turnLanesB.join('|'),
-            rules_backward: editRoad.rulesB.join('|'),
+            lane_marks_backward: JSON.stringify(editRoad.laneMarksB),
           }
           : {}),
       },

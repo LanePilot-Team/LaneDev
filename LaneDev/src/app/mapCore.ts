@@ -31,6 +31,7 @@ import { VehicleModelLayer } from '../core/models3d'
 import { buildElevation, setActiveElevation } from '../core/elevation'
 import { ElevatedLayer, setActiveElevatedLayer } from '../core/elevated3d'
 import { NANZI_CENTER, haversine } from '../core/geo'
+import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -156,8 +157,8 @@ export function useMapCore(
     const channel = buildChannelization(graphRef.current, baysRef.current)
     const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
     const laneArrows = buildLaneArrows(graphRef.current, baysRef.current, rightLanesRef.current)
-    src('turnbays').setData(baysToGeoJSON(
-      baysRef.current, [...channel, ...stopLines], laneArrows, rightLanesRef.current) as never)
+    src('turnbays').setData(cleanIntersectionFeatures(baysToGeoJSON(
+      baysRef.current, [...channel, ...stopLines], laneArrows, rightLanesRef.current)) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
     src('medians').setData(mediansToGeoJSON([
@@ -167,7 +168,8 @@ export function useMapCore(
       ...buildCenterIslands(graphRef.current, baysRef.current),
     ]) as never)
     // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走
-    src('roadtext').setData(buildRoadTexts(graphRef.current) as never)
+    src('roadtext').setData(cleanIntersectionFeatures(
+      buildRoadTexts(graphRef.current, baysRef.current)) as never)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
   }, [src])
 
@@ -180,9 +182,9 @@ export function useMapCore(
   }, [])
 
   const redrawRoads = useCallback(() => {
-    src('roads').setData({ type: 'FeatureCollection', features: roadsRef.current } as never)
+    src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(roadsRef.current) } as never)
     src('roadSurfaces').setData(buildRoadSurfaces(roadsRef.current) as never)
-    src('dividers').setData(buildDividers(roadsRef.current) as never)
+    src('dividers').setData(cleanIntersectionFeatures(buildDividers(roadsRef.current)) as never)
   }, [src])
 
   /** 高架高度模型重建（底圖就緒/更換時）：渲染（橋面）與車輛 z 共用同一份 */

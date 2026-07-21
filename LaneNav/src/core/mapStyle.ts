@@ -10,6 +10,7 @@ export const C = {
   buildingLine: '#c8d2df',
   casing: '#39445e',
   surface: '#4d5a74',
+  motoBox: '#61708f', // 機車停等格框內：比路面淺一階（不透明，蓋掉車道線且清楚可辨）
   laneLine: 'rgba(255,255,255,0.85)',
   centerLine: '#f5c542',
   routeCasing: '#1d4ed8',
@@ -19,8 +20,10 @@ export const C = {
 }
 
 /** icon 尺寸表達式：讓圖片呈現為實際 meters 高（imgPx = 圖片像素高） */
-function iconMeters(meters: number, imgPx: number): ExpressionSpecification {
-  const s = (z: number) => (meters * pxPerMeter(z)) / imgPx
+function iconMeters(meters: number | ExpressionSpecification, imgPx: number): ExpressionSpecification {
+  const s = (z: number): number | ExpressionSpecification => typeof meters === 'number'
+    ? (meters * pxPerMeter(z)) / imgPx
+    : ['*', meters, pxPerMeter(z) / imgPx]
   return ['interpolate', ['exponential', 2], ['zoom'], 10, s(10), 24, s(24)]
 }
 
@@ -151,6 +154,34 @@ export function buildStyle(): StyleSpecification {
         id: 'moto-divider', type: 'line', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'moto'],
         paint: { 'line-color': C.laneLine, 'line-width': widthMeters(0.15) },
+      },
+
+      // ── 機車停等格（排在車道線之後：不透明 fill 蓋掉框內車道線＝「線在格前截止」，
+      // 填色比路面淺一階讓框本體清楚可辨；白框加粗 0.22m）──
+      {
+        id: 'motobox-fill', type: 'fill', source: 'turnbays', minzoom: 15.5,
+        filter: ['==', ['get', 'kind'], 'motobox'],
+        paint: { 'fill-color': C.motoBox },
+      },
+      {
+        id: 'motobox-edge', type: 'line', source: 'turnbays', minzoom: 15.5,
+        filter: ['==', ['get', 'kind'], 'motobox'],
+        layout: { 'line-join': 'round' },
+        paint: { 'line-color': C.laneLine, 'line-width': widthMeters(0.22) },
+      },
+      {
+        id: 'motobox-icon', type: 'symbol', source: 'turnbays', minzoom: 16,
+        filter: ['==', ['get', 'kind'], 'motobox-icon'],
+        layout: {
+          'icon-image': ['get', 'icon'],
+          // SVG 高度皆為 809px；每枚圖示依停等格分配寬度自動縮放。
+          'icon-size': iconMeters(['get', 'iconHeightM'], 809),
+          'icon-rotate': ['get', 'brg'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+        paint: { 'icon-opacity': 0.95 },
       },
 
       {

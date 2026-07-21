@@ -23,9 +23,11 @@ export interface EnhancementRecord {
    * twin_island key = "twin/A-B"（顯式配對分隔島覆寫：w 島寬 / present 開關）
    * right_lane key = "way/W@node/N[~b]~r"（路口前右轉附加車道：present/len_m/width_m；
    *          與 turn_bay 同格式加 ~r 尾碼——foldJournal 依 key 折疊，尾碼避免鍵碰撞）
+   * moto_box key = "way/W@node/N[~b]~m"（機車停等格：present 開關 / lanes 涵蓋車道數，
+   *          自最外側往內算；不可越過禁行機車車道，超出自動夾回）
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
-  target: { type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane'; key: string }
+  target: { type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box'; key: string }
   fields?: Record<string, string | number>
 }
 
@@ -66,7 +68,7 @@ export function remapJournalNodes(
   if (remap.size === 0) return journal
   let changed = 0
   const out = journal.map((rec) => {
-    const m = rec.target.key.match(/^(way\/-?\d+@(?:b|node)\/)(\d+)((?:~b)?(?:~r)?)$/)
+    const m = rec.target.key.match(/^(way\/-?\d+@(?:b|node)\/)(\d+)((?:~b)?(?:~r|~m)?)$/)
     if (!m) return rec
     const n = remap.get(Number(m[2]))
     if (n === undefined) return rec

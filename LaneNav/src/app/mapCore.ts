@@ -20,7 +20,7 @@ import {
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
-  baysToGeoJSON, type TurnBay, type RightLane,
+  buildMotoBoxes, baysToGeoJSON, type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
 import { buildRoadTexts } from '../core/roadtext'
 import {
@@ -75,6 +75,8 @@ export interface MapCore {
   baysRef: RefObject<TurnBay[]>
   /** 右轉附加車道（journal right_lane 折疊生成，refreshBays 重算） */
   rightLanesRef: RefObject<RightLane[]>
+  /** 機車停等格（refreshBays 重算）——編輯面板讀 maxLanes/coveredLanes */
+  motoBoxesRef: RefObject<MotoBox[]>
   intersectionsRef: RefObject<{ id: number; pos: [number, number] }[]>
   vehiclesRef: RefObject<PlacedVehicle[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
@@ -118,6 +120,7 @@ export function useMapCore(
   const journalRef = useRef<EnhancementRecord[]>([])
   const baysRef = useRef<TurnBay[]>([])
   const rightLanesRef = useRef<RightLane[]>([])
+  const motoBoxesRef = useRef<MotoBox[]>([])
   const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
   const vehiclesRef = useRef<PlacedVehicle[]>([])
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
@@ -156,9 +159,15 @@ export function useMapCore(
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
     const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
-    const laneArrows = buildLaneArrows(graphRef.current, baysRef.current, rightLanesRef.current)
+    // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
+    const motoBoxes = buildMotoBoxes(
+      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
+    motoBoxesRef.current = motoBoxes.boxes
+    const laneArrows = buildLaneArrows(
+      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs)
     src('turnbays').setData(cleanIntersectionFeatures(baysToGeoJSON(
-      baysRef.current, [...channel, ...stopLines], laneArrows, rightLanesRef.current)) as never)
+      baysRef.current, [...channel, ...stopLines],
+      laneArrows, rightLanesRef.current, motoBoxes.boxes)) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
     src('medians').setData(mediansToGeoJSON([
@@ -208,7 +217,7 @@ export function useMapCore(
   if (!coreRef.current) {
     coreRef.current = {
       mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, journalRef, baysRef,
-      rightLanesRef,
+      rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
       src, refreshZones, refreshBays, refreshVehicles, redrawRoads, replaceBaseMap,
@@ -245,6 +254,18 @@ export function useMapCore(
     map.on('load', async () => {
       const icons = makeIcons()
       for (const [name, img] of Object.entries(icons)) map.addImage(name, img)
+      const loadSvg = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error(`無法載入路面標誌：${url}`))
+        img.src = url
+      })
+      const [motorcycleIcon, bicycleIcon] = await Promise.all([
+        loadSvg('/assets/road-markings/motorcycle.svg'),
+        loadSvg('/assets/road-markings/bicycle.svg'),
+      ])
+      map.addImage('moto-box-motorcycle', motorcycleIcon)
+      map.addImage('moto-box-bicycle', bicycleIcon)
 
       const [roadsRaw, buildings] = await Promise.all([
         loadDefaultRoads(),

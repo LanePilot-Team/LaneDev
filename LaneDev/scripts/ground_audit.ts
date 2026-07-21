@@ -16,6 +16,7 @@ import { angleDelta, haversine } from '../src/core/geo'
 import { foldJournal, applyToRoads, type EnhancementRecord } from '../src/core/enhancements'
 import {
   buildTurnBays, buildChannelization, buildStopLines, buildRightLanes, buildLaneArrows,
+  buildMotoBoxes,
   BAY_TEXT_ARROW_CLEARANCE_M,
 } from '../src/core/turnbays'
 import { buildRoadTexts } from '../src/core/roadtext'
@@ -178,6 +179,28 @@ check('秀群路539巷已截在外環西路口，不再露出北側圓頭',
 
 // ── 1. 停止線 ──
 const bays = buildTurnBays(graph, journal)
+const auditedMotoBoxes = buildMotoBoxes(graph, bays, [], journal).boxes.filter((b) => b.ring)
+const singleMotoIcons = auditedMotoBoxes.filter((b) => b.coveredLanes === 1)
+const splitMotoIcons = auditedMotoBoxes.filter((b) => b.coveredLanes >= 2)
+check('單一道只放機車；兩道以上分開放置左機車、右自行車',
+  auditedMotoBoxes.length > 0 &&
+  auditedMotoBoxes.every((b) => b.coveredLanes >= 2
+    ? b.icons?.length === 2 &&
+      b.icons[0].image === 'moto-box-motorcycle' &&
+      b.icons[1].image === 'moto-box-bicycle'
+    : b.coveredLanes === 1 && b.icons?.length === 1 &&
+      b.icons[0].image === 'moto-box-motorcycle'),
+  `${singleMotoIcons.length} 個單道 / ${splitMotoIcons.length} 個兩道以上`)
+check('停等格圖示具備框內位置、道路方向與自適應尺寸', auditedMotoBoxes.every((b) =>
+  b.icons?.every((icon) => !!icon.pos && Number.isFinite(icon.brg) && icon.heightM > 0)))
+check('各圖示依分配寬度縮放，不超出 3m 深停等格或橫向半區', auditedMotoBoxes.every((b) => {
+  const width = haversine(b.ring![0], b.ring![1])
+  return b.icons?.every((icon) => {
+    const aspect = icon.image === 'moto-box-bicycle' ? 450 / 809 : 292 / 809
+    const allocatedWidth = b.coveredLanes >= 2 ? width / 2 : width
+    return icon.heightM < 3.0 && icon.heightM * aspect <= allocatedWidth - 0.59
+  })
+}))
 const pairedBays = bays.filter((b) => b.paired)
 const singleBays = bays.filter((b) => b.kind === 'center' && !b.paired)
 const channelization = buildChannelization(graph, bays)

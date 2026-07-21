@@ -7,7 +7,7 @@
 // 「查不到就假設每個左轉點都有」：預設生成（source=default），journal 只記覆寫
 // （present:0 = 實地確認沒有）。標線顏色規則：分隔對向 = 黃、分隔同向 = 白。
 import type { Feature, FeatureCollection } from 'geojson'
-import { angleDelta, cumulative, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
+import { angleDelta, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
 import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
@@ -501,6 +501,7 @@ function canonTurn(v: string): string {
  */
 export function buildLaneArrows(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[] = [],
+  motoBoxDirs: Set<string> = new Set(),
 ): GroundArrow[] {
   const bayKeys = new Set(bays.map((b) => `${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`))
   const rlKeys = new Set(rightLanes.map((r) => `${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`))
@@ -520,7 +521,10 @@ export function buildLaneArrows(
     const smallCrossW = graph.crossWidthAt(e.toNode, endBrg, e.road)
     const arrowSetback = Math.max(e.endSetbackM, smallCrossW > 0 ? smallCrossW / 2 + 1.2 : 0)
     // 箭頭長約 4.5m；中心退到停止線前 4m，讓整個圖示都留在路口框外。
-    const d = total - arrowSetback - 4
+    // 有機車停等格的行向再退 MOTO_BOX_ARROW_PUSH_M，讓格子夾在箭頭與停止線之間
+    const boxPush = motoBoxDirs.has(`${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)
+      ? MOTO_BOX_ARROW_PUSH_M : 0
+    const d = total - arrowSetback - 4 - boxPush
     if (d < e.startSetbackM + 6) continue // 短段不畫，避免疊在上一路口
     let moves: string[]
     if (hasExplicit) {
@@ -802,11 +806,206 @@ export function buildStopLines(
   return out
 }
 
+// ── 機車停等區 ──
+// 停止線之前、車道箭頭之後的白框方格（暫為空白框；機慢車標誌 icon 之後補）。
+// 不畫的行向：
+//   1) 機車專用道以快慢分隔島隔開（騎士在專用道停等，不進車道）
+//   2) 全部車道禁行機車且無機車道（無合法停等空間）
+// 左界 = 自最外側車道往內連續「非禁行機車」車道的左緣（禁行車道不可涵蓋，
+// 全禁行時退到線隔機車道）；右界 = 車道塊外緣（含線隔機車道與右轉附加車道）。
+export const MOTO_BOX_DEPTH_M = 3.0
+/** 前緣與停止線中心的縱向間隔（停止線寬 0.45m，留 ~0.5m 淨空） */
+const MOTO_BOX_GAP_M = 0.7
+/** 有停等格的行向，車道箭頭中心再往後退讓的量（buildLaneArrows 用） */
+export const MOTO_BOX_ARROW_PUSH_M = 2.5
+/** 內緣（貼中央側）避讓量：kL=0 緊鄰雙黃/中央帶時多留淨空，不碰雙黃線 */
+const MOTO_BOX_INNER_CLEAR_M = 0.45
+/** 內緣位於車道分隔線時的避讓量 */
+const MOTO_BOX_LANE_CLEAR_M = 0.15
+
+export interface MotoBox {
+  /** journal 覆寫鍵：way/W@node/N[~b]~m */
+  key: string
+  /** 行向鍵（`${wayId}@${toNode}[~b]`）——箭頭退讓/面板比對 */
+  dir: string
+  /** 封閉 5 點框（前緣→外→後→內→前）；null = 關閉或幾何放不下（不渲染） */
+  ring: [number, number][] | null
+  /** 目前涵蓋的合法車道數（0 = 關閉） */
+  coveredLanes: number
+  /** 合法可涵蓋的最大車道數（禁行機車不計）——面板 stepper 上限 */
+  maxLanes: number
+  /** 停等格內路面標誌；單道一枚機車，兩道以上為左機車、右自行車。 */
+  icons?: Array<{
+    image: 'moto-box-motorcycle' | 'moto-box-bicycle'
+    pos: [number, number]
+    brg: number
+    /** 依分配到的橫向空間自動縮放後的實際高度（公尺）。 */
+    heightM: number
+  }>
+}
+
+export interface MotoBoxes {
+  boxes: MotoBox[]
+  /** 已畫格的行向鍵（`${wayId}@${toNode}[~b]`）——箭頭退讓比對用 */
+  dirs: Set<string>
+}
+
+function foldMotoBoxOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
+  const out = new Map<string, Record<string, string | number>>()
+  for (const rec of journal) {
+    if (rec.target.type !== 'moto_box') continue
+    if (rec.op === 'delete') out.delete(rec.target.key)
+    else out.set(rec.target.key, { ...out.get(rec.target.key), ...rec.fields })
+  }
+  return out
+}
+
+export function buildMotoBoxes(
+  graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[], journal: EnhancementRecord[] = [],
+): MotoBoxes {
+  const over = foldMotoBoxOverrides(journal)
+  const rlMap = new Map(rightLanes.map((r) => [`${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`, r]))
+  const rlWays = new Set(rightLanes.map((r) => r.wayId))
+  const inter = new Set(graph.intersections().map((i) => i.id))
+  const boxes: MotoBox[] = []
+  const dirs = new Set<string>()
+  const seen = new Set<string>()
+  for (const e of graph.scopeEdges((r) =>
+    scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id))) {
+    const p = e.road.properties
+    const dir = `${p.osm_id}${'@'}${e.toNode}${e.back ? '~b' : ''}`
+    if (seen.has(dir)) continue
+    seen.add(dir)
+    const rl = rlMap.get(dir)
+    // 與停止線同一批行向（格子必須依附停止線存在）
+    if (!scopeFn(e.road) && !hasTl(e.road) && !rl) continue
+    if (!inter.has(e.toNode)) continue
+    if (e.endSetbackM <= 2) continue
+    const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
+    if (lanes < 1) continue
+    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
+    const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
+    if (moto && sep > 0) continue // 1) 快慢分隔島隔開的機車專用道
+    const span = laneSpanM(p, e.back)
+    if (span <= 0) continue
+    // 每車道「禁行機車」判定：顯式車道標記優先，否則舊制 rules/motorcycle=no
+    // 展開為全車道禁行（同 buildRoadTexts 的相容規則）
+    const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
+    const legacyRules = p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB
+    const legacyNoMoto = (legacyRules ?? (p.motorcycle === 'no' ? ['no_moto'] : []))
+      .includes('no_moto')
+    const noMotoAt = (k: number): boolean => explicitMarks
+      ? explicitMarks[k]?.text.trim() === '禁行機車'
+      : legacyNoMoto
+    // 合法左界（自最外側車道往內掃，遇禁行即停）→ 合法可涵蓋車道數
+    let autoKL = lanes
+    for (let k = lanes - 1; k >= 0; k--) {
+      if (noMotoAt(k)) break
+      autoKL = k
+    }
+    const maxLanes = lanes - autoKL
+    if (maxLanes < 1 && !moto) continue // 2) 無合法停等空間
+    const key = `way/${p.osm_id}@node/${e.toNode}${e.back ? '~b' : ''}~m`
+    // journal 覆寫：lanes 涵蓋車道數（0 = 關閉；夾在 [0, maxLanes]，不可越禁行）
+    const ov = over.get(key)
+    const coveredLanes = ov?.lanes !== undefined
+      ? Math.max(0, Math.min(maxLanes, Number(ov.lanes)))
+      : maxLanes
+    // 關閉：仍記錄候選（ring=null）供面板顯示 stepper 與上限
+    if (coveredLanes === 0) { boxes.push({ key, dir, ring: null, coveredLanes: 0, maxLanes }); continue }
+    const kL = lanes - coveredLanes
+    const cum = cumulative(e.coords)
+    const total = cum[cum.length - 1]
+    const d1 = total - e.endSetbackM - MOTO_BOX_GAP_M
+    const d0 = d1 - MOTO_BOX_DEPTH_M
+    const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+    const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
+    // 內緣淨空：緊鄰中央（kL=0）多留避雙黃線；否則位於車道分隔線上，小淨空
+    const innerClear = kL === 0 ? MOTO_BOX_INNER_CLEAR_M : MOTO_BOX_LANE_CLEAR_M
+    const inner = base + kL * LANE_WIDTH_M + innerClear
+    const outer = base + span + (rl ? rl.widthM : 0) - 0.15
+    // 短段/太窄：記錄候選但不渲染（ring=null）
+    if (d0 < e.startSetbackM + 4 || outer - inner < 1.2) {
+      boxes.push({ key, dir, ring: null, coveredLanes, maxLanes }); continue
+    }
+    // 前緣與交會路平行（同停止線的斜交補償）。格子為剛體：後緣 = 前緣沿
+    // 行向直線退 MOTO_BOX_DEPTH_M（不沿折線走——急彎內側沿線退會讓外側塌陷；
+    // 斜交大時前角被端點夾住也不影響格深）
+    const brg1 = pointAlong(e.coords, cum, d1).brg
+    const sk = crossSkew(graph, e.road, e.toNode, brg1)
+    const rad1 = (brg1 * Math.PI) / 180
+    const backE = -Math.sin(rad1) * MOTO_BOX_DEPTH_M
+    const backN = -Math.cos(rad1) * MOTO_BOX_DEPTH_M
+    const corner = (o: number) => {
+      const front = offsetAt(e.coords, cum, Math.min(total, Math.max(0, d1 + sk * o)), o)
+      return { front, rear: offsetMeters(front, backE, backN) }
+    }
+    const ci = corner(inner)
+    const co = corner(outer)
+    const boxWidthM = haversine(ci.front, co.front)
+    const iconAt = (
+      image: 'moto-box-motorcycle' | 'moto-box-bicycle',
+      across: number, allocatedWidthM: number, aspect: number,
+    ) => {
+      const front: [number, number] = [
+        ci.front[0] + (co.front[0] - ci.front[0]) * across,
+        ci.front[1] + (co.front[1] - ci.front[1]) * across,
+      ]
+      const rear: [number, number] = [
+        ci.rear[0] + (co.rear[0] - ci.rear[0]) * across,
+        ci.rear[1] + (co.rear[1] - ci.rear[1]) * across,
+      ]
+      return {
+        image,
+        pos: [(front[0] + rear[0]) / 2, (front[1] + rear[1]) / 2] as [number, number],
+        brg: brg1,
+        // 前後受 3m 格深限制，左右則保留至少 0.3m 邊距；寬度改變時自動縮小。
+        heightM: Math.min(2.1, Math.max(0.1, allocatedWidthM - 0.6) / aspect),
+      }
+    }
+    const icons = coveredLanes >= 2
+      ? [
+          iconAt('moto-box-motorcycle', 0.25, boxWidthM / 2, 292 / 809),
+          iconAt('moto-box-bicycle', 0.75, boxWidthM / 2, 450 / 809),
+        ]
+      : [iconAt('moto-box-motorcycle', 0.5, boxWidthM, 292 / 809)]
+    boxes.push({
+      key, dir,
+      ring: [ci.front, co.front, co.rear, ci.rear, ci.front],
+      coveredLanes,
+      maxLanes,
+      icons,
+    })
+    dirs.add(dir)
+  }
+  return { boxes, dirs }
+}
+
 export function baysToGeoJSON(
   bays: TurnBay[], extraLines: PaintLine[] = [], extraArrows: GroundArrow[] = [],
-  rightLanes: RightLane[] = [],
+  rightLanes: RightLane[] = [], motoBoxes: MotoBox[] = [],
 ): FeatureCollection {
   const features: Feature[] = []
+  // 機車停等格：Polygon（kind='motobox'）——樣式用 fill（路面色蓋掉框內車道線，
+  // 即「車道線在格前截止」）＋ line（白框）兩層渲染。ring=null 為關閉/放不下，不渲染
+  for (const mb of motoBoxes) {
+    if (!mb.ring) continue
+    features.push({
+      type: 'Feature', properties: { kind: 'motobox', key: mb.key },
+      geometry: { type: 'Polygon', coordinates: [mb.ring] },
+    })
+    for (const icon of mb.icons ?? []) {
+      features.push({
+        type: 'Feature',
+        properties: {
+          kind: 'motobox-icon', key: mb.key, icon: icon.image,
+          brg: Math.round(icon.brg * 10) / 10,
+          iconHeightM: icon.heightM,
+        },
+        geometry: { type: 'Point', coordinates: icon.pos },
+      })
+    }
+  }
   const pushLine = (line: PaintLine, key?: string) => features.push({
     type: 'Feature',
     properties: { kind: 'line', color: line.color, style: line.style, key },

@@ -22,6 +22,7 @@ const WHITELIST = [
   'src/browse',
   'src/App.css',
   'public/data',
+  'public/assets/road-markings',
 ]
 
 if (!existsSync(navRoot)) {

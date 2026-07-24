@@ -107,7 +107,8 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const sourceCount = Math.floor(countValue)
   const count = Math.min(sourceCount, MAX_LANES)
   const truncated = sourceCount > MAX_LANES
-  const realMovements = Array.isArray(input.turnLanes) && input.turnLanes.length >= count
+  const turnLanes = input.turnLanes
+  const realMovements = Array.isArray(turnLanes) && turnLanes.length >= count
 
   if (!realMovements) {
     return {
@@ -120,7 +121,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     }
   }
 
-  const parsed = input.turnLanes.slice(0, count).map(parseMoves)
+  const parsed = turnLanes.slice(0, count).map(parseMoves)
   const hasKnownMovement = parsed.some((moves) => moves.size > 0)
   if (!hasKnownMovement) {
     return {

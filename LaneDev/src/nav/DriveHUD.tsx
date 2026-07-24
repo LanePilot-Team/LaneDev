@@ -3,6 +3,8 @@
 import type { Maneuver, Profile } from '../core/graph'
 import type { DriveState } from './drive'
 import type { DecisionKind } from './useDrive'
+import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
+import { buildLanePreview } from './lanePreview'
 
 // ── 距離分階段提醒（照 mvp）：250m 預備切車道(藍) → 60m 動作(橘紅) → 25m 內顯示「現在」──
 const FAR_THRESHOLD = 250
@@ -72,11 +74,13 @@ export function TopBanner({ drive, twoStage, profile }: {
       : `前方 ${roundDistance(dist)} 公尺`
   const tone = twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
   const bay = !twoStage && m.bayOffM !== undefined // 偏心左轉道（兩段式不進 bay）
-  // 車道列跟著「目前所在路段」即時更新（車道數/轉向真值沿路會變，
-  // maneuver 上存的是轉彎口那一段的快照，離路口遠時會過期）
-  const laneM: Maneuver = drive.roadLanes !== undefined
-    ? { ...m, lanesForward: drive.roadLanes, turnLanes: drive.roadTurnLanes }
-    : m
+  const lanePreview = buildLanePreview({
+    laneCount: drive.roadLanes,
+    turnLanes: drive.roadTurnLanes,
+    maneuverKind: m.kind,
+    distanceM: dist,
+    twoStage,
+  })
   return (
     <div className={`banner banner-${tone}`}>
       <div className="banner-main">
@@ -89,8 +93,9 @@ export function TopBanner({ drive, twoStage, profile }: {
             <span className="banner-then">隨後{THEN_VERB[drive.next2.kind]}</span>
           )}
         </div>
+        {lanePreview.showTwoStageSign && <TwoStageWaitSign />}
       </div>
-      <LaneRow m={laneM} wantOverride={twoStage ? 'right' : undefined} bay={bay} />
+      {m.kind !== 'arrive' && <LanePreviewPanel model={lanePreview} />}
     </div>
   )
 }
@@ -112,66 +117,6 @@ export function ManeuverArrow({ kind }: { kind: Maneuver['kind'] | 'two-stage' }
       <path d={d[kind]} fill="none" stroke="currentColor" strokeWidth="5.5"
         strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  )
-}
-
-const TURN_GLYPH: Record<string, string> = {
-  left: '↰', slight_left: '↖', through: '↑', right: '↱', slight_right: '↗',
-  merge_to_left: '↰', merge_to_right: '↱', reverse: '↩', none: '↑', '': '↑',
-  'through+right': '↑↱', // 並排式直行+右轉（HUD 車道格語意同 through;right）
-}
-
-/** 一格車道的字形：複合轉向（left;through / through;right…）把所有箭頭併排顯示 */
-function laneGlyph(move: string): string {
-  const parts: string[] = []
-  for (const t of move.split(';')) {
-    const g = TURN_GLYPH[t] ?? '↑'
-    if (!parts.includes(g)) parts.push(g)
-  }
-  return parts.join('') || '↑'
-}
-
-export function LaneRow({ m, wantOverride, bay }: {
-  m: Maneuver; wantOverride?: 'left' | 'right' | 'through'; bay?: boolean
-}) {
-  if (m.kind === 'arrive') return null
-  const n = Math.min(m.lanesForward, 6)
-  const lanes: { glyph: string; on: boolean; bay?: boolean }[] = []
-  const want = wantOverride ?? (m.kind.includes('left') || m.kind === 'uturn' ? 'left'
-    : m.kind.includes('right') ? 'right' : 'through')
-  if (m.turnLanes && m.turnLanes.length > 0) {
-    const arr = m.turnLanes.slice(0, 6)
-    for (let i = 0; i < arr.length; i++) {
-      const moves = arr[i].split(';')
-      // 兩段式覆寫：無條件亮轉向側最外車道（待轉 = 靠右直行進格子）
-      const on = wantOverride
-        ? (want === 'right' ? i === arr.length - 1 : want === 'left' ? i === 0 : false)
-        : moves.some((v) => v.includes(want) || (want !== 'through' && v === ''))
-      lanes.push({ glyph: laneGlyph(arr[i]), on })
-    }
-  } else {
-    // 推薦值（無 turn:lanes 真值）：與路面箭頭同一套慣例——轉向車道通常兼直行，
-    // 畫複合箭頭（↰↑ / ↑↱）；兩段式覆寫維持單一箭頭（待轉不是共用車道語意）
-    for (let i = 0; i < n; i++) {
-      const on = want === 'left' ? i === 0 : want === 'right' ? i === n - 1 : i > 0 && i < n - 1
-      const glyph = on && want === 'left' ? (wantOverride ? '↰' : '↰↑')
-        : on && want === 'right' ? (wantOverride ? '↱' : '↑↱') : '↑'
-      lanes.push({ glyph, on })
-    }
-  }
-  // 偏心左轉道：最左多一格專用道，轉向由它承擔，直行車道全滅
-  if (bay) {
-    for (const l of lanes) l.on = false
-    // 推薦值車道（無 turn:lanes 真值）跟著還原成直行字形，左轉字形只留在 bay 格
-    if (!m.turnLanes?.length) for (const l of lanes) l.glyph = '↑'
-    lanes.unshift({ glyph: m.kind === 'uturn' ? '↩' : '↰', on: true, bay: true })
-  }
-  return (
-    <div className="lane-row">
-      {lanes.map((l, i) => (
-        <div key={i} className={`lane-box${l.on ? ' on' : ''}${l.bay ? ' bay' : ''}${l.glyph.length > 1 ? ' multi' : ''}`}>{l.glyph}</div>
-      ))}
-    </div>
   )
 }
 

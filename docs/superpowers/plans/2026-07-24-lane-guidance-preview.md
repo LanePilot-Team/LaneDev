@@ -4,7 +4,7 @@
 
 **Goal:** Replace the navigation HUD's glyph lane row with a responsive, image-based preview that highlights every lane compatible with the driver's immediate route action.
 
-**Architecture:** A React-independent `buildLanePreview` function converts live navigation inputs into a normalized display model. `LanePreview.tsx` renders that model with bundled PNG assets, while `DriveHUD.tsx` retains composition and passes current route state into the model. Shared files are authored in `LaneDev` and mirrored to `LaneNav`.
+**Architecture:** A React-independent `buildLanePreview` function converts live navigation inputs into a normalized display model. `LanePreviewView.tsx` renders that model with bundled PNG assets, while `DriveHUD.tsx` retains composition and passes current route state into the model. Shared files are authored in `LaneDev` and mirrored to `LaneNav`.
 
 **Tech Stack:** React 19, TypeScript 6, Vite 8, Node 24 built-in test runner, CSS.
 
@@ -333,14 +333,14 @@ git commit -m "feat: model route-aware lane guidance"
 
 **Files:**
 - Create: `LaneDev/src/nav/assets/lane-guidance/*.png`
-- Create: `LaneDev/src/nav/LanePreview.tsx`
+- Create: `LaneDev/src/nav/LanePreviewView.tsx`
 - Modify: `LaneDev/src/nav/DriveHUD.tsx`
 - Modify: `LaneDev/src/App.css`
 
 **Interfaces:**
 - Consumes: `LanePreviewModel` from Task 1.
 - Produces:
-  - `LanePreview({ model }: { model: LanePreviewModel })`
+  - `LanePreviewPanel({ model }: { model: LanePreviewModel })`
   - `TwoStageWaitSign()`
 
 - [ ] **Step 1: Copy only the required PNG runtime assets**
@@ -376,7 +376,7 @@ Do not copy SVG files or stage the source-artwork directory.
 
 - [ ] **Step 2: Create the presentational component**
 
-Create `LaneDev/src/nav/LanePreview.tsx`:
+Create `LaneDev/src/nav/LanePreviewView.tsx`:
 
 ```tsx
 import type { CSSProperties } from 'react'
@@ -431,7 +431,7 @@ export function TwoStageWaitSign() {
   return <img className="two-stage-sign" src={twoStageWaitSign} alt="機車兩段式左轉待轉標誌" />
 }
 
-export function LanePreview({ model }: { model: LanePreviewModel }) {
+export function LanePreviewPanel({ model }: { model: LanePreviewModel }) {
   if (model.status === 'no-data') {
     return (
       <div className="lane-preview lane-preview-empty" aria-label={previewLabel(model)}>
@@ -562,7 +562,7 @@ Expected: lane-preview tests pass and Vite build exits 0.
 Stage only:
 
 ```powershell
-git add -- LaneDev/src/nav/lanePreview.ts LaneDev/src/nav/LanePreview.tsx LaneDev/src/nav/DriveHUD.tsx LaneDev/src/nav/assets/lane-guidance LaneDev/src/App.css
+git add -- LaneDev/src/nav/lanePreview.ts LaneDev/src/nav/LanePreviewView.tsx LaneDev/src/nav/DriveHUD.tsx LaneDev/src/nav/assets/lane-guidance LaneDev/src/App.css
 git commit -m "feat: render responsive lane guidance preview"
 ```
 
@@ -571,7 +571,7 @@ git commit -m "feat: render responsive lane guidance preview"
 **Files:**
 - Modify: `LaneNav/src/nav/lanePreview.ts`
 - Create: `LaneNav/src/nav/lanePreview.test.mjs`
-- Create: `LaneNav/src/nav/LanePreview.tsx`
+- Create: `LaneNav/src/nav/LanePreviewView.tsx`
 - Create: `LaneNav/src/nav/assets/lane-guidance/*.png`
 - Modify: `LaneNav/src/nav/DriveHUD.tsx`
 - Modify: `LaneNav/src/App.css`
@@ -695,14 +695,14 @@ docs/superpowers/plans/2026-07-24-lane-guidance-preview.md
 LaneDev/package.json
 LaneDev/src/App.css
 LaneDev/src/nav/DriveHUD.tsx
-LaneDev/src/nav/LanePreview.tsx
+LaneDev/src/nav/LanePreviewView.tsx
 LaneDev/src/nav/lanePreview.ts
 LaneDev/src/nav/lanePreview.test.mjs
 LaneDev/src/nav/assets/lane-guidance/*.png
 LaneNav/package.json
 LaneNav/src/App.css
 LaneNav/src/nav/DriveHUD.tsx
-LaneNav/src/nav/LanePreview.tsx
+LaneNav/src/nav/LanePreviewView.tsx
 LaneNav/src/nav/lanePreview.ts
 LaneNav/src/nav/lanePreview.test.mjs
 LaneNav/src/nav/assets/lane-guidance/*.png

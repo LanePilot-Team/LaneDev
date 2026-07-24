@@ -141,7 +141,7 @@ It produces:
 
 No DOM, browser, image, map, or React dependency is allowed in this module.
 
-### `src/nav/LanePreview.tsx`
+### `src/nav/LanePreviewView.tsx`
 
 The presentational component renders the model:
 

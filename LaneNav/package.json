@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:lane-preview": "node --test src/nav/lanePreview.test.mjs"
   },
   "dependencies": {
     "@turf/turf": "^7.3.5",

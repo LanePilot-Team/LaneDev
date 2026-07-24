@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:lane-preview": "node --test src/nav/lanePreview.test.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "fetch-data": "python scripts/fetch_nanzi.py",

@@ -94,6 +94,8 @@ approachByKey: Map<`${wayId}@${nodeId}/${direction}`, LaneGuidanceRecord>
 segmentByKey: Map<`${wayId}/${direction}`, LaneGuidanceRecord>
 ```
 
+建立索引前，標註資料必須套用道路準備流程產生的同一份 `nodeRemap` 與 `wayRemap`。如果原始道路已被 couplet 合併移除，該標註會複製到保留下來的一個或多個道路 ID。若既有 couplet 資訊指出被吸收道路與保留道路的方向相反，則交換 `forward` 與 `backward`。路口進場標註的節點 ID 也會在此階段一併轉換。
+
 只有在道路圖與車道資料索引都符合下列其中一種狀態後，地圖載入才算完成：
 
 - 成功載入；或
@@ -157,6 +159,7 @@ HUD 根據距離選擇資料：
 - 人工已知值逐車道覆蓋 OSM。
 - 人工 `unknown` 逐車道使用 OSM 補值。
 - 反向行駛不得誤用正向資料。
+- couplet 道路與節點轉換後仍能找到標註，並在需要時正確交換行駛方向。
 - 同一條道路的其他路口不得誤用特定進場標註。
 - 部分方向陣列仍保留已知資料，不得整組改成系統推測。
 

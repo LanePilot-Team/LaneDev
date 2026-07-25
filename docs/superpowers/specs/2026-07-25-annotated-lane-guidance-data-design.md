@@ -94,6 +94,8 @@ approachByKey: Map<`${wayId}@${nodeId}/${direction}`, LaneGuidanceRecord>
 segmentByKey: Map<`${wayId}/${direction}`, LaneGuidanceRecord>
 ```
 
+Before building the maps, records pass through the same `nodeRemap` and `wayRemap` produced by the road-preparation pipeline. A record for a dropped way is cloned onto its surviving way ID or IDs. When the existing couplet metadata says the absorbed road direction is reversed relative to the surviving road, `forward` and `backward` are exchanged. Approach intersection node IDs are remapped at the same boundary.
+
 The map-loading state is not considered ready until both the road graph and lane-guidance index have either:
 
 - loaded successfully; or
@@ -157,6 +159,7 @@ The preview displays `車道建議（系統推測）` only when `source === 'inf
 - Manual known lanes override OSM lane-by-lane.
 - Manual `unknown` lanes use the corresponding OSM value.
 - Reverse-direction lookup does not reuse forward data.
+- Couplet way/node remapping preserves a matching annotation and reverses its direction when required.
 - A different intersection on the same way does not reuse an approach annotation.
 - Partial arrays retain known data rather than forcing full inference.
 

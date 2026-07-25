@@ -149,19 +149,35 @@ export function zonePolygon(z: Zone): [number, number][] {
   return [...c, c[0]]
 }
 
-/** 待轉區 GeoJSON：每個 zone 一個 Polygon（框）+ 一個 Point（文字標籤） */
-export function zonesToGeoJSON(zones: Zone[], selectedId: string | null): FeatureCollection {
+/** 待轉區 GeoJSON：面、兩層實際公尺寬外框，以及貼地文字錨點。 */
+export function zonesToGeoJSON(
+  zones: Zone[],
+  selectedId: string | null,
+  highlightedId: string | null = null,
+): FeatureCollection {
   const features: Feature[] = []
   for (const z of zones) {
     const selected = z.id === selectedId
+    const highlighted = z.id === highlightedId
+    const polygon = zonePolygon(z)
     features.push({
       type: 'Feature',
-      properties: { id: z.id, selected },
-      geometry: { type: 'Polygon', coordinates: [zonePolygon(z)] },
+      properties: { id: z.id, selected, highlighted, kind: 'fill' },
+      geometry: { type: 'Polygon', coordinates: [polygon] },
     })
     features.push({
       type: 'Feature',
-      properties: { id: z.id, selected, bearing: z.bearing },
+      properties: { id: z.id, selected, highlighted, kind: 'outline-casing' },
+      geometry: { type: 'LineString', coordinates: polygon },
+    })
+    features.push({
+      type: 'Feature',
+      properties: { id: z.id, selected, highlighted, kind: 'outline' },
+      geometry: { type: 'LineString', coordinates: polygon },
+    })
+    features.push({
+      type: 'Feature',
+      properties: { id: z.id, selected, highlighted, kind: 'label', bearing: z.bearing },
       geometry: { type: 'Point', coordinates: z.center },
     })
   }

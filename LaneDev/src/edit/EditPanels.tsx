@@ -319,6 +319,70 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           onChange={(laneMarksB) => setEditRoad((er) => er && ({ ...er, laneMarksB }))} />
       )}
       </section>
+
+      <section className="edit-section">
+      <h3>5. 道路繪圖開關</h3>
+      <p>各路段可單獨覆寫。關閉「本路段繪圖」會隱藏車道線、箭頭、文字、停止線及圖示，但保留道路面與中央實體島。</p>
+      <div className="edit-row">
+        <span>本路段道路繪圖</span>
+        {([
+          ['all', '全部資訊顯示'],
+          ['center', '只保留中線格式'],
+          ['none', '全部資訊不顯示'],
+        ] as const).map(([mode, label]) => (
+          <button key={mode} className={`mini${editRoad.roadMarkingMode === mode ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({ ...er, roadMarkingMode: mode }))}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="edit-row">
+        <span>{editRoad.fwdLabel}停止線</span>
+        <button className={`mini${editRoad.stopLineF ? ' on' : ''}`}
+          onClick={() => setEditRoad((er) => er && ({ ...er, stopLineF: !er.stopLineF }))}>
+          {editRoad.stopLineF ? '需要' : '不需要'}
+        </button>
+      </div>
+      {editRoad.oneway === 'no' && <div className="edit-row">
+        <span>{editRoad.bwdLabel}停止線</span>
+        <button className={`mini${editRoad.stopLineB ? ' on' : ''}`}
+          onClick={() => setEditRoad((er) => er && ({ ...er, stopLineB: !er.stopLineB }))}>
+          {editRoad.stopLineB ? '需要' : '不需要'}
+        </button>
+      </div>}
+      {editRoad.motoF && <>
+        <div className="edit-row">
+          <span>{editRoad.fwdLabel}機車道入口圖示</span>
+          <button className={`mini${editRoad.motoEntryIconF ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({ ...er, motoEntryIconF: !er.motoEntryIconF }))}>
+            {editRoad.motoEntryIconF ? '繪製' : '不繪製'}
+          </button>
+        </div>
+        <div className="edit-row">
+          <span>{editRoad.fwdLabel}機車道文字菱形</span>
+          <button className={`mini${editRoad.motoTextDiamondF ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({ ...er, motoTextDiamondF: !er.motoTextDiamondF }))}>
+            {editRoad.motoTextDiamondF ? '上下加菱形' : '不加菱形'}
+          </button>
+        </div>
+      </>}
+      {editRoad.oneway === 'no' && editRoad.motoB && <>
+        <div className="edit-row">
+          <span>{editRoad.bwdLabel}機車道入口圖示</span>
+          <button className={`mini${editRoad.motoEntryIconB ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({ ...er, motoEntryIconB: !er.motoEntryIconB }))}>
+            {editRoad.motoEntryIconB ? '繪製' : '不繪製'}
+          </button>
+        </div>
+        <div className="edit-row">
+          <span>{editRoad.bwdLabel}機車道文字菱形</span>
+          <button className={`mini${editRoad.motoTextDiamondB ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({ ...er, motoTextDiamondB: !er.motoTextDiamondB }))}>
+            {editRoad.motoTextDiamondB ? '上下加菱形' : '不加菱形'}
+          </button>
+        </div>
+      </>}
+      </section>
       <div className="edit-actions">
         <button className="mini go" onClick={editor.saveRoadEdit}>儲存並套用</button>
         <button className="mini" onClick={() => setEditRoad(null)}>取消</button>

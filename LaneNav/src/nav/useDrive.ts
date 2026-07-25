@@ -8,10 +8,11 @@ import { activeElevatedLayer } from '../core/elevated3d'
 import { Driver, type DriveState } from './drive'
 import { GpsDriver } from './gpsNav'
 import { VehicleModelLayer } from '../core/models3d'
-import { cumulative } from '../core/geo'
+import { angleDelta, cumulative } from '../core/geo'
 import type { Mode } from '../app/mapCore'
 import type { Stop } from '../plan/usePlanner'
 import { activeNavigationOcclusion } from '../core/occlusion'
+import type { Zone } from '../core/zones'
 
 /** 路口決策：接近下個轉彎多近（公尺）才顯示「不照指引走」按鈕 */
 const DECISION_BUTTON_RANGE_M = 30
@@ -19,6 +20,7 @@ const DECISION_BUTTON_RANGE_M = 30
 const DETOUR_LOOKAHEAD_M = 150
 /** 路口決策：沿替代道路走了多遠（公尺）後才觸發 reroute */
 const DETOUR_REROUTE_M = 40
+const ZONE_HIGHLIGHT_RANGE_M = 160
 
 export type DecisionKind = 'left' | 'straight' | 'right'
 
@@ -28,12 +30,14 @@ export interface UseDriveParams {
   mapRef: RefObject<MLMap | null>
   routeRef: RefObject<RouteResult | null>
   graphRef: RefObject<RoadGraph | null>
+  zonesRef: RefObject<Zone[]>
   profileRef: RefObject<Profile>
   stopsRef: RefObject<Stop[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
   lastGestureRef: RefObject<number>
   /** 路線建好/重建後標記兩段式左轉旗標（journal 待轉區判斷邏輯在 App.tsx，這裡直接借用） */
   annotateTwoStage: (route: RouteResult) => void
+  setZoneHighlight: (id: string | null) => void
 }
 
 export interface UseDriveResult {
@@ -56,6 +60,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const driverRef = useRef<Driver | null>(null)
   const gpsDriverRef = useRef<GpsDriver | null>(null)
   const lastDriveRef = useRef<DriveState | null>(null)
+  const activeZoneIdRef = useRef<string | null>(null)
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [multiplier, setMultiplier] = useState(3)
   const [gpsMsg, setGpsMsg] = useState<string | null>(null)
@@ -78,6 +83,26 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     } as never)
   }
 
+  function updateZoneHighlight(state: DriveState | null) {
+    const maneuver = state?.next
+    let nextId: string | null = null
+    if (
+      p.profileRef.current === 'moto'
+      && maneuver?.twoStage
+      && maneuver.nodeId !== undefined
+      && maneuver.fromBearing !== undefined
+      && (state?.nextDistM ?? Number.POSITIVE_INFINITY) <= ZONE_HIGHLIGHT_RANGE_M
+    ) {
+      nextId = p.zonesRef.current.find((zone) =>
+        zone.intersectionId === maneuver.nodeId
+        && Math.abs(angleDelta(zone.from.bearing, maneuver.fromBearing!)) < 50
+      )?.id ?? null
+    }
+    if (activeZoneIdRef.current === nextId) return
+    activeZoneIdRef.current = nextId
+    p.setZoneHighlight(nextId)
+  }
+
   function stopAllDrivers() {
     driverRef.current?.stop()
     driverRef.current = null
@@ -87,6 +112,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     setDrive(null)
     p.vehicleLayerRef.current?.setNav(null)
     activeNavigationOcclusion()?.clear()
+    updateZoneHighlight(null)
   }
 
   function runDriver(route: RouteResult, opts?: { autoRerouteAfterM?: number }) {
@@ -101,6 +127,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       // 不能讓死路直接顯示「已抵達目的地」
       if (opts?.autoRerouteAfterM && (s.arrived || s.traveledM > opts.autoRerouteAfterM)) { rerouteFrom(s.pos); return }
       lastDriveRef.current = s
+      updateZoneHighlight(s)
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
       // 鏡頭/車模 30Hz 就夠順——jumpTo 觸發整張地圖重繪，是導航中最大的固定成本
       frame++
@@ -152,6 +179,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       route,
       (s) => {
         lastDriveRef.current = s
+        updateZoneHighlight(s)
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
         p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
         activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)

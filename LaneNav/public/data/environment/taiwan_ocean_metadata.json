@@ -1,0 +1,26 @@
+{
+  "source": "Natural Earth",
+  "dataset": "1:10m Admin 0 Countries",
+  "source_url": "https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-0-countries/",
+  "license": "Public domain",
+  "generated_at": "2026-07-25T07:55:08.999Z",
+  "local_coastline_updated_at": "2026-07-25",
+  "simplification_tolerance_degrees": 0.002,
+  "included_geometry": [
+    "Taiwan main island coastline",
+    "surrounding ocean mask"
+  ],
+  "excluded_geometry": [
+    "offshore islands"
+  ],
+  "coordinate_count": 419,
+  "local_detail": {
+    "source": "OpenStreetMap official API",
+    "license": "ODbL",
+    "area": "Nanzih coastal edge, Kaohsiung",
+    "osm_coastline_way_count": 12,
+    "coordinate_count": 136,
+    "latitude_range": [22.7188358, 22.8031412],
+    "purpose": "Preserve local estuary openings while retaining a lightweight Taiwan-wide ocean mask"
+  }
+}

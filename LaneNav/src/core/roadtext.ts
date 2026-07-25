@@ -39,6 +39,7 @@ export function buildRoadTexts(graph: RoadGraph, bays: TurnBay[] = []): FeatureC
 
   for (const e of graph.scopeEdges(scope)) {
     const p = e.road.properties
+    if (p.roadMarkingMode !== 'all') continue
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
     const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
     const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
@@ -73,10 +74,13 @@ export function buildRoadTexts(graph: RoadGraph, bays: TurnBay[] = []): FeatureC
         f.properties?.label === mark.text.trim() && f.properties?.color === (mark.color || '#ffffff') &&
         Math.abs(angleDelta(Number(f.properties?.brg), iconBrg)) < 20 &&
         haversine((f.geometry as unknown as { coordinates: [number, number] }).coordinates, pos) < 25)
+      const addDiamond = moto && i === lanes &&
+        (p.oneway === 'yes' || !e.back ? p.motoTextDiamondF : p.motoTextDiamondB)
       const feature: Feature = {
         type: 'Feature',
         properties: {
-          label: mark.text.trim(), color: mark.color || '#ffffff', lane: i,
+          label: addDiamond ? `◇${mark.text.trim()}◇` : mark.text.trim(),
+          color: mark.color || '#ffffff', lane: i,
           laneType: moto && i === lanes ? 'moto' : 'car',
           brg: Math.round(iconBrg * 10) / 10,
           roadKey, spanM: s1 - s0,

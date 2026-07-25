@@ -31,6 +31,14 @@ export interface RoadProps {
    * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
   motoSepF: number
   motoSepB: number
+  /** 人工繪圖選項（預設開啟）。 */
+  motoEntryIconF: boolean
+  motoEntryIconB: boolean
+  motoTextDiamondF: boolean
+  motoTextDiamondB: boolean
+  stopLineF: boolean
+  stopLineB: boolean
+  roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */
   centerM: number
@@ -174,6 +182,13 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       motoB: false,
       motoSepF: 0,
       motoSepB: 0,
+      motoEntryIconF: true,
+      motoEntryIconB: true,
+      motoTextDiamondF: false,
+      motoTextDiamondB: false,
+      stopLineF: true,
+      stopLineB: true,
+      roadMarkingMode: 'all',
       centerM: 0,
       centerKind: 'hatch',
       extraM: 0,
@@ -455,8 +470,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   let info0 = ZERO
   let info1 = ZERO
   let curId = 0
+  let roadMarkingMode: RoadProps['roadMarkingMode'] = 'all'
   /** 依「該端停止線的延長線」裁切後偏移：裁切點 = 收邊基準 + 橫向偏移×skew ∓ 0.5m */
   const push = (off: number, kind: string) => {
+    if (roadMarkingMode === 'center' && (kind === 'lane' || kind === 'moto')) return
     let cs = cs0
     if (cum) {
       const from = info0.trim > 0 ? info0.trim + info0.sk * off + 0.5 : 0
@@ -480,6 +497,8 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   for (const road of roads) {
     const p = road.properties
     curId = p.osm_id
+    roadMarkingMode = p.roadMarkingMode
+    if (roadMarkingMode === 'none') continue
     if (p.elevated) continue // 高架：標線由 elevated3d 畫在橋面，地面不畫
     if (road.geometry.coordinates.length < 2) continue
     if (p.sharedLane) continue // 雙向共用單車道沒有分向線或車道分隔線

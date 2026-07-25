@@ -6,8 +6,8 @@
 //   - 其餘：黃色槽化線（兩側雙黃邊界 + 內部斜紋）
 // 「查不到就假設每個左轉點都有」：預設生成（source=default），journal 只記覆寫
 // （present:0 = 實地確認沒有）。標線顏色規則：分隔對向 = 黃、分隔同向 = 白。
-import { buffer, featureCollection, lineString, polygon } from '@turf/turf'
-import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
+import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
+import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
 import { angleDelta, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
 import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
@@ -314,13 +314,9 @@ function makeBay(
         brg: pointAlong(a.coords, cum, textD).brg,
         dM: textD,
       },
-      lines: [
-        ...(!paired ? [
-          { color: 'yellow' as const, coords: diagonal(-DOUBLE_YELLOW_HALF_GAP_M) },
-          { color: 'yellow' as const, coords: diagonal(DOUBLE_YELLOW_HALF_GAP_M) },
-        ] : []),
-        { color: 'white', coords: white },
-      ],
+      // 中央雙黃線一律由 buildChannelization 統一繪製，避免單向偏心道
+      // 同時由 bay 與 channelization 各畫一次而產生重疊。
+      lines: [{ color: 'white', coords: white }],
     }
   }
 
@@ -371,13 +367,11 @@ const GORE_STRIPE_SPACING_M = 1.25
 export type UnusedLaneGoreParams = {
   roadId: string
   centerline: Feature<LineString>
-  roadSurface?: Feature<Polygon | MultiPolygon>
   sStart: number
   sEnd: number
-  baseOffsetM: number
-  laneWidthM: number
-  side: 'left' | 'right'
-  cleanupMask?: Feature<Polygon | MultiPolygon>
+  doubleYellowOffsetM: number
+  centerTurnLaneOuterOffsetM: number
+  unusedDirection: 'forward' | 'backward'
 }
 
 /** 以道路里程與公尺 offset 建立尖端漸寬的未使用車道槽化面。 */
@@ -387,27 +381,29 @@ export function buildUnusedLaneGorePolygon(
   const coords = params.centerline.geometry.coordinates as [number, number][]
   const cum = cumulative(coords)
   const available = params.sEnd - params.sStart
-  if (coords.length < 2 || available < 4 || params.laneWidthM < 0.4) return null
+  const laneWidthM = Math.abs(params.centerTurnLaneOuterOffsetM - params.doubleYellowOffsetM)
+  if (coords.length < 2 || available < 4 || laneWidthM < 0.4) return null
   const fullWidthStartT = available < 12 ? 0.82 : 0.72
-  const sideSign = params.side === 'left' ? 1 : -1
   const stations = sampleDs(params.sStart, params.sEnd, 0.75)
-  const inner = stations.map((s) => offsetAt(coords, cum, s, params.baseOffsetM))
-  const outer = stations.map((s) => {
+  const doubleYellowEdge = stations.map((s) => offsetAt(coords, cum, s, params.doubleYellowOffsetM))
+  const outerTaperEdge = stations.map((s) => {
     const t = Math.max(0, Math.min(1, (s - params.sStart) / available))
     const x = Math.max(0, Math.min(1, (t - 0.03) / Math.max(0.01, fullWidthStartT - 0.03)))
     const eased = x * x * (3 - 2 * x)
-    return offsetAt(coords, cum, s, params.baseOffsetM + sideSign * params.laneWidthM * eased)
+    const offset = params.doubleYellowOffsetM +
+      (params.centerTurnLaneOuterOffsetM - params.doubleYellowOffsetM) * eased
+    return offsetAt(coords, cum, s, offset)
   })
-  const ring = [...inner, ...outer.reverse(), inner[0]]
+  const ring = [...doubleYellowEdge, ...outerTaperEdge.reverse(), doubleYellowEdge[0]]
   return polygon([ring], {
     featureType: 'unused_lane_gore',
     color: GORE_YELLOW,
     roadId: params.roadId,
-    side: params.side,
+    unusedDirection: params.unusedDirection,
     sStart: params.sStart,
     sEnd: params.sEnd,
-    laneWidthM: params.laneWidthM,
-    geometryMode: 'smooth-taper',
+    laneWidthM,
+    geometryMode: 'center-turn-lane-smooth-taper',
   }) as Feature<Polygon>
 }
 
@@ -425,7 +421,7 @@ export function buildGoreOutlinePolygons(
     const p = buffer(lineString(coords), GORE_OUTLINE_M / 2, { units: 'meters', steps: 2 })
     return p ? [{ ...p, properties: {
       featureType: 'unused_lane_gore_outline', color: GORE_YELLOW,
-      roadId: props.roadId, side: props.side,
+      roadId: props.roadId, unusedDirection: props.unusedDirection,
     } } as Feature<Polygon>] : []
   })
 }
@@ -436,25 +432,34 @@ export function buildGoreHatchPolygons(
 ): Feature<Polygon>[] {
   const ring = gore.geometry.coordinates[0] as [number, number][]
   const n = (ring.length - 1) / 2
-  const inner = ring.slice(0, n)
-  const outer = ring.slice(n, n * 2).reverse()
+  const doubleYellowEdge = ring.slice(0, n)
+  const outerEdge = ring.slice(n, n * 2).reverse()
   const props = gore.properties ?? {}
   const out: Feature<Polygon>[] = []
-  let last = -Infinity
-  for (let i = 1; i < Math.min(inner.length, outer.length) - 1; i++) {
-    const s = Number(props.sStart) +
-      (Number(props.sEnd) - Number(props.sStart)) * i / Math.max(1, inner.length - 1)
-    if (s - last < GORE_STRIPE_SPACING_M) continue
-    if (haversine(inner[i], outer[i]) < 0.55) continue
-    last = s
-    const j = Math.min(inner.length - 1, i + 1)
-    const stripe = buffer(lineString([inner[i], outer[j]]), GORE_STRIPE_M / 2, {
+  const sampleStepM = Number(props.sEnd) > Number(props.sStart)
+    ? (Number(props.sEnd) - Number(props.sStart)) / Math.max(1, doubleYellowEdge.length - 1)
+    : 0.75
+  const advance = Math.max(
+    1,
+    Math.round(Number(props.laneWidthM || 3) / Math.max(0.25, sampleStepM)),
+  )
+  let lastStation = -Infinity
+  for (let i = 1; i < Math.min(doubleYellowEdge.length, outerEdge.length) - 1; i++) {
+    const station = Number(props.sStart) + sampleStepM * i
+    if (station - lastStation < GORE_STRIPE_SPACING_M) continue
+    if (haversine(doubleYellowEdge[i], outerEdge[i]) < 0.55) continue
+    const j = Math.min(doubleYellowEdge.length - 1, i + advance)
+    const stripe = buffer(lineString([outerEdge[i], doubleYellowEdge[j]]), GORE_STRIPE_M / 2, {
       units: 'meters', steps: 2,
     })
-    if (stripe) out.push({ ...stripe, properties: {
+    if (!stripe) continue
+    const clipped = intersect(featureCollection([stripe, gore]))
+    if (!clipped || clipped.geometry.type !== 'Polygon') continue
+    lastStation = station
+    out.push({ ...clipped, properties: {
       featureType: 'unused_lane_gore_hatch', color: GORE_YELLOW,
-      roadId: props.roadId, side: props.side,
-      stripeAngleDeg: props.side === 'left' ? 45 : -45,
+      roadId: props.roadId, unusedDirection: props.unusedDirection,
+      stripeAngleDeg: props.unusedDirection === 'forward' ? 45 : -45,
     } } as Feature<Polygon>)
   }
   return out
@@ -469,51 +474,10 @@ export function renderUnusedLaneGore(
 }
 
 export function buildUnusedLaneGores(
-  graph: RoadGraph, bays: TurnBay[],
+  _graph: RoadGraph, _bays: TurnBay[],
 ): FeatureCollection<Polygon> {
-  const bayMap = new Map(bays.map((b) => [
-    `${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b,
-  ]))
-  const features: Feature<Polygon>[] = []
-  for (const e of graph.scopeEdges(scopeFn, 0, 2)) {
-    const p = e.road.properties
-    if (e.back || p.oneway === 'yes' || p.centerKind === 'island' || p.centerM <= 0) continue
-    const cum = cumulative(e.coords)
-    const total = cum[cum.length - 1]
-    const fwd = bayMap.get(`${p.osm_id}@${e.toNode}`)
-    const bwd = bayMap.get(`${p.osm_id}@${e.fromNode}~b`)
-    if (!!fwd === !!bwd) continue
-    const s0 = Math.min(e.startSetbackM, total)
-    const s1 = Math.max(0, total - e.endSetbackM)
-    const c = p.centerM / 2
-    const dv = p.divOffM || 0
-    if (fwd) {
-      const tip = Math.min(s1, fwd.d0M)
-      const end = s0
-      const reversed = [...e.coords].reverse()
-      features.push(...renderUnusedLaneGore({
-        roadId: String(p.osm_id),
-        centerline: lineString(reversed),
-        sStart: total - tip,
-        sEnd: total - end,
-        baseOffsetM: -(dv + c),
-        laneWidthM: 2 * c,
-        side: 'left',
-      }).features)
-    } else if (bwd) {
-      const tip = Math.max(s0, total - bwd.d0M)
-      features.push(...renderUnusedLaneGore({
-        roadId: String(p.osm_id),
-        centerline: lineString(e.coords),
-        sStart: tip,
-        sEnd: s1,
-        baseOffsetM: dv - c,
-        laneWidthM: 2 * c,
-        side: 'left',
-      }).features)
-    }
-  }
-  return featureCollection(features)
+  // 單向與雙向偏心道已統一採 S 型雙黃線；不再另外生成未使用方向槽化面。
+  return featureCollection([])
 }
 
 /**
@@ -530,6 +494,7 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
   // 偏心道、停止線仍沿用原本 ≥7m 的判定，避免改變交通語意。
   for (const e of graph.scopeEdges(scopeFn, 0, 2)) {
     const p = e.road.properties
+    if (p.roadMarkingMode === 'none') continue
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
     const s0 = Math.min(e.startSetbackM, total)
@@ -562,14 +527,28 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     const bwdOpen = bwdBay ? [total - bwdBay.endM, total - bwdBay.d0M] : null // 對向側開口
     const paired = !!(fwdBay?.paired && bwdBay?.paired && fwdOpen && bwdOpen)
 
-    if (paired) {
-      // 雙端偏心左轉道：中央預留區改作雙黃線的平順換位，不畫槽化斜紋。
-      let bendFrom = Math.max(s0, bwdOpen![1])
-      let bendTo = Math.min(s1, fwdOpen![0])
+    const onlyFwdBay = !!fwdOpen && !bwdOpen
+    const onlyBwdBay = !!bwdOpen && !fwdOpen
+    if (paired || onlyFwdBay || onlyBwdBay) {
+      // 所有偏心左轉道共用同一套平順 S 型雙黃線。
+      // 單向使用時，未使用方向維持原車道配置較久，到接近偏心道口才換位。
+      let bendFrom: number
+      let bendTo: number
+      if (paired) {
+        bendFrom = Math.max(s0, bwdOpen![1])
+        bendTo = Math.min(s1, fwdOpen![0])
+      } else if (onlyFwdBay) {
+        const delayed = fwdBay!.d0M + fwdBay!.taperLenM * 0.45
+        bendFrom = Math.max(s0, delayed)
+        bendTo = Math.min(s1, fwdBay!.bayStartM)
+      } else {
+        bendFrom = Math.max(s0, total - bwdBay!.bayStartM)
+        bendTo = Math.min(s1, total - (bwdBay!.d0M + bwdBay!.taperLenM * 0.45))
+      }
       // 短區塊或不對稱退界可能讓兩個 bay 的開口重疊。不可退化為中央直線，
       // 改以兩開口交界的中點建立至少 24m（受可用長度限制）的換位區。
       if (bendTo - bendFrom < 12) {
-        const mid = Math.max(s0, Math.min(s1, (bwdOpen![1] + fwdOpen![0]) / 2))
+        const mid = Math.max(s0, Math.min(s1, (bendFrom + bendTo) / 2))
         const half = Math.min(18, Math.max(6, (s1 - s0) * 0.22))
         bendFrom = Math.max(s0, mid - half)
         bendTo = Math.min(s1, mid + half)
@@ -585,7 +564,8 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       for (const gap of [-DOUBLE_YELLOW_HALF_GAP_M, DOUBLE_YELLOW_HALF_GAP_M]) {
         out.push({
           color: 'yellow',
-          style: 'paired-center',
+          style: paired ? 'paired-center' : 'single-bay-used',
+          ownerKey: paired ? undefined : (fwdBay ?? bwdBay)?.key,
           coords: ds.map((d) => offsetAt(e.coords, cum, d, centerOff(d) + gap)),
         })
       }
@@ -614,8 +594,6 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
         }
       }
     }
-    const onlyFwdBay = !!fwdOpen && !bwdOpen
-    const onlyBwdBay = !!bwdOpen && !fwdOpen
     const activeBayKey = (fwdBay ?? bwdBay)?.key
     if (onlyFwdBay || onlyBwdBay) {
       if (onlyFwdBay) {
@@ -925,6 +903,7 @@ export function buildLaneArrows(
   for (const e of graph.scopeEdges((r) =>
     scopeFn(r) || hasTl(r) || isMajorStopRoad(r), 7, 1.2, isMajorStopRoad)) {
     const p = e.road.properties
+    if (p.roadMarkingMode !== 'all') continue
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
     if (lanes < 1) continue
     // 該行向的轉向真值（行向駕駛視角左→右）
@@ -962,12 +941,22 @@ export function buildLaneArrows(
     // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
     const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
+    const currentBayKey = `${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`
+    const oppositeBayKey = `${p.osm_id}@${e.fromNode}${e.back ? '' : '~b'}`
+    // 單方向偏心道的使用方向：把相鄰正常車道原有箭頭移到
+    // 「偏心車道中心（dv）」與「最內側正常車道中心」的中點。
+    // 只調整位置，不改寫原本由 turn:lanes／拓撲推導出的箭頭種類。
+    const isSingleBayUsedDirection =
+      p.oneway === 'no' && bayKeys.has(currentBayKey) && !bayKeys.has(oppositeBayKey)
     const { brg } = pointAlong(e.coords, cum, d)
     // 箭頭列對齊交會道路：每車道依橫向位置縱向平移，整排與停止線平行
     const sk = crossSkew(graph, e.road, e.toNode, brg)
     for (let k = 0; k < lanes; k++) {
       if (!moves[k]) continue
-      const off = base + (k + 0.5) * LANE_WIDTH_M
+      const normalLaneOff = base + (k + 0.5) * LANE_WIDTH_M
+      const off = isSingleBayUsedDirection && k === 0
+        ? (dv + normalLaneOff) / 2
+        : normalLaneOff
       const dk = Math.max(e.startSetbackM + 4, Math.min(total - 1, d + sk * off))
       out.push({
         pos: offsetAt(e.coords, cum, dk, off),
@@ -1195,6 +1184,8 @@ export function buildStopLines(
     scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id) || isStopLineRoad(r),
     7, 1.2, isStopLineRoad)) {
     const p = e.road.properties
+    if (p.roadMarkingMode !== 'all') continue
+    if ((e.back ? p.stopLineB : p.stopLineF) === false) continue
     const dirKey = `${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`
     if (seen.has(dirKey)) continue
     const rl = rlMap.get(dirKey)
@@ -1276,6 +1267,100 @@ export interface MotoBoxes {
   dirs: Set<string>
 }
 
+/** 新增機車專用道入口的路面圖示；數量由 journal 的 moto_forward/backward 保存。 */
+export function buildMotoLaneEntryIcons(
+  graph: RoadGraph,
+  journal: EnhancementRecord[] = [],
+): FeatureCollection<Point> {
+  const laneCounts = new Map<string, { forward?: number; backward?: number }>()
+  for (const record of journal) {
+    if (record.target.type !== 'road' || record.op === 'delete') continue
+    const match = record.target.key.match(/^way\/(\d+)/)
+    if (!match) continue
+    const fields = record.fields ?? {}
+    const current = laneCounts.get(match[1]) ?? {}
+    if (fields.moto_forward !== undefined) {
+      current.forward = Math.max(0, Number(fields.moto_forward) || 0)
+    }
+    if (fields.moto_backward !== undefined) {
+      current.backward = Math.max(0, Number(fields.moto_backward) || 0)
+    }
+    laneCounts.set(match[1], current)
+  }
+
+  const features: Feature<Point>[] = []
+  const seen = new Set<string>()
+  for (const edge of graph.scopeEdges(scopeFn, 0, 2)) {
+    const properties = edge.road.properties
+    const hasMotoLane = properties.oneway === 'yes'
+      ? properties.motoF
+      : edge.back ? properties.motoB : properties.motoF
+    const showEntryIcon = properties.oneway === 'yes' || !edge.back
+      ? properties.motoEntryIconF
+      : properties.motoEntryIconB
+    if (!hasMotoLane || !showEntryIcon || properties.roadMarkingMode !== 'all') continue
+
+    const key = `${properties.osm_id}@${edge.fromNode}${edge.back ? '~b' : ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const cum = cumulative(edge.coords)
+    const total = cum[cum.length - 1]
+    const distance = edge.startSetbackM + 6
+    if (distance >= total - edge.endSetbackM - 2) continue
+
+    const directionLaneCount = properties.oneway === 'yes' || !edge.back
+      ? laneCounts.get(String(properties.osm_id))?.forward
+      : laneCounts.get(String(properties.osm_id))?.backward
+    const motorcycleLaneCount = Math.max(1, directionLaneCount ?? 1)
+    const laneWidthM = MOTO_LANE_M * motorcycleLaneCount
+    const carLaneCount = properties.oneway === 'yes'
+      ? properties.lanesForward
+      : edge.back ? properties.lanesBackward : properties.lanesForward
+    const separatorWidth = properties.oneway === 'yes'
+      ? properties.motoSepF || 0
+      : edge.back ? properties.motoSepB || 0 : properties.motoSepF || 0
+    const dividerOffset = edge.back
+      ? -(properties.divOffM || 0)
+      : properties.divOffM || 0
+    const innerEdge = properties.oneway === 'yes'
+      ? -properties.width_m / 2 + carLaneCount * LANE_WIDTH_M + separatorWidth
+      : dividerOffset + (properties.centerM || 0) / 2 +
+        carLaneCount * LANE_WIDTH_M + separatorWidth
+    const iconSpecs = motorcycleLaneCount >= 2
+      ? [
+          { icon: 'moto-box-motorcycle', fraction: 0.25, aspect: 292 / 809 },
+          { icon: 'moto-box-bicycle', fraction: 0.75, aspect: 450 / 809 },
+        ] as const
+      : [{ icon: 'moto-box-motorcycle', fraction: 0.5, aspect: 292 / 809 }] as const
+
+    const { brg } = pointAlong(edge.coords, cum, distance)
+    for (const spec of iconSpecs) {
+      const allocatedWidth = motorcycleLaneCount >= 2 ? laneWidthM / 2 : laneWidthM
+      const iconHeightM = Math.min(3.2, allocatedWidth * 0.78 / spec.aspect)
+      features.push({
+        type: 'Feature',
+        properties: {
+          kind: 'moto-lane-entry-icon',
+          key,
+          icon: spec.icon,
+          brg: Math.round(brg * 10) / 10,
+          iconHeightM,
+          motorcycleLaneCount,
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: offsetAt(
+            edge.coords, cum, distance,
+            innerEdge + laneWidthM * spec.fraction,
+          ),
+        },
+      })
+    }
+  }
+  return featureCollection(features)
+}
+
 function foldMotoBoxOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
   const out = new Map<string, Record<string, string | number>>()
   for (const rec of journal) {
@@ -1300,6 +1385,7 @@ export function buildMotoBoxes(
     scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id) || isMajorStopRoad(r),
     7, 1.2, isMajorStopRoad)) {
     const p = e.road.properties
+    if (p.roadMarkingMode !== 'all') continue
     const dir = `${p.osm_id}${'@'}${e.toNode}${e.back ? '~b' : ''}`
     if (seen.has(dir)) continue
     seen.add(dir)

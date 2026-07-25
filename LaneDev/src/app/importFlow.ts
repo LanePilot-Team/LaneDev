@@ -121,8 +121,12 @@ function importAnnotations(core: MapCore, ui: ImportUi, records: ImportedAnnotat
     if (bwd?.lane_movements?.some((x) => x && x !== 'unknown')) {
       fields.turn_lanes_backward = bwd.lane_movements.map((x) => (x === 'unknown' ? '' : x)).join('|')
     }
-    if (f?.motorcycle_access_by_lane?.includes('designated')) fields.moto_forward = 1
-    if (bwd?.motorcycle_access_by_lane?.includes('designated')) fields.moto_backward = 1
+    const motoForwardLanes = f?.motorcycle_access_by_lane
+      ?.filter((access) => access === 'designated').length ?? 0
+    const motoBackwardLanes = bwd?.motorcycle_access_by_lane
+      ?.filter((access) => access === 'designated').length ?? 0
+    if (motoForwardLanes > 0) fields.moto_forward = motoForwardLanes
+    if (motoBackwardLanes > 0) fields.moto_backward = motoBackwardLanes
     const access = [...(f?.motorcycle_access_by_lane ?? []), ...(bwd?.motorcycle_access_by_lane ?? [])]
     if (access.length && access.every((x) => x === 'no')) fields.motorcycle = 'no' // 全車道禁行 = 整段禁行機車
     if (!Object.keys(fields).length) continue

@@ -124,6 +124,16 @@ export function applyToRoads(
     }
     if (fields.moto_forward !== undefined) p.motoF = Number(fields.moto_forward) > 0
     if (fields.moto_backward !== undefined) p.motoB = p.oneway === 'yes' ? false : Number(fields.moto_backward) > 0
+    if (fields.moto_entry_icon_f !== undefined) p.motoEntryIconF = Number(fields.moto_entry_icon_f) > 0
+    if (fields.moto_entry_icon_b !== undefined) p.motoEntryIconB = Number(fields.moto_entry_icon_b) > 0
+    if (fields.moto_text_diamond_f !== undefined) p.motoTextDiamondF = Number(fields.moto_text_diamond_f) > 0
+    if (fields.moto_text_diamond_b !== undefined) p.motoTextDiamondB = Number(fields.moto_text_diamond_b) > 0
+    if (fields.stop_line_f !== undefined) p.stopLineF = Number(fields.stop_line_f) > 0
+    if (fields.stop_line_b !== undefined) p.stopLineB = Number(fields.stop_line_b) > 0
+    if (fields.road_marking_mode !== undefined) {
+      const mode = String(fields.road_marking_mode)
+      p.roadMarkingMode = mode === 'none' ? 'none' : mode === 'center' ? 'center' : 'all'
+    }
     // 快慢分隔帶寬（=0 回復機車道白線）
     if (fields.moto_sep_f !== undefined) p.motoSepF = Math.max(0, Number(fields.moto_sep_f))
     if (fields.moto_sep_b !== undefined) {

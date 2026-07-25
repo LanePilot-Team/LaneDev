@@ -23,6 +23,18 @@ const CENTER_RAIL_H = 0.8
 const RAIL_RAMP_H = 2
 /** 接地端寬度收窄的作用範圍（距接地端沿線公尺） */
 const TAPER_RANGE_M = 150
+/** 對向並排合體（中山高型）：搜尋對向中心線的最大距離 */
+const MEDIAN_SEARCH_M = 34
+/** 同上：橋面往中線最多再延伸多少的上限（保險用；兩向真的分道揚鑣就各自成橋）。
+ * 「中間有沒有匝道穿過」才是主判準——寬度門檻分不出「中央帶較寬」與
+ * 「兩向繞開匝道」（本區資料兩者都落在 5~6m）。 */
+const MEDIAN_EXTRA_MAX_M = 9
+/** 合體→分離的漸變帶：接近上限時延伸量線性收回，橋面寬度不會在中途跳一階 */
+const MEDIAN_FADE_M = 2
+/** 中央帶裡有別的高架（匝道從兩向之間穿過）就不合體——橋面鋪過去會蓋掉匝道 */
+const MEDIAN_CLEAR_M = 1.5
+/** 中央分隔護欄的半寬（兩向各畫一半，於中線接合） */
+const MEDIAN_RAIL_HALF = 0.15
 
 const KX = 111320 * COS_LAT
 const KY = 110540
@@ -298,8 +310,95 @@ export class ElevatedLayer {
     /** 寬度融接：through 兩側寬度不同（岔口一分為二、車道數變化）時，
      * 窄側在節點端放寬到寬側的半寬、沿 ~30m 收回自身寬——不做會是寬度階梯硬接 */
     const widens = new Map<RoadFeature, { atStart: boolean; fromHalf: number }[]>()
+    /** True Y junction endpoints stay open so their three deck strips form one continuous deck. */
+    const openYEnds = new Map<RoadFeature, Set<boolean>>()
+    /** Align each Y arm to the left/right half of the common stem at the fork. */
+    const yArmAlign = new Map<RoadFeature, {
+      atStart: boolean
+      shiftE: number
+      shiftN: number
+      tipE: number
+      tipN: number
+    }[]>()
+    const outwardDir = (r: EndRef): [number, number] => {
+      const cs = r.atStart ? r.cs : [...r.cs].reverse()
+      const probe = cs[Math.min(cs.length - 1, 1)]
+      const e = (probe[0] - cs[0][0]) * KX
+      const n = (probe[1] - cs[0][1]) * KY
+      const l = Math.hypot(e, n) || 1
+      return [e / l, n / l]
+    }
+    const angleDeg = (a: [number, number], b: [number, number]) =>
+      (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1]))) * 180) / Math.PI
     for (const refs of byNode.values()) {
       if (refs.length < 2) continue
+      // A genuine elevated Y has one stem opposing two arms.  Treating it as a
+      // through road plus a side joiner creates the asymmetric sliver seen at
+      // motorway forks.  Split the stem width equally between both arms instead.
+      if (refs.length >= 3) {
+        const dirs = refs.map(outwardDir)
+        let stem = -1
+        let armA = -1, armB = -1
+        let best = Infinity
+        for (let i = 0; i < refs.length; i++) {
+          for (let j = 0; j < refs.length; j++) {
+            if (j === i) continue
+            for (let k = j + 1; k < refs.length; k++) {
+              if (k === i) continue
+              const armAngle = angleDeg(dirs[j], dirs[k])
+              const stemA = angleDeg(dirs[i], dirs[j])
+              const stemB = angleDeg(dirs[i], dirs[k])
+              const rightE = dirs[i][1], rightN = -dirs[i][0]
+              const sideA = dirs[j][0] * rightE + dirs[j][1] * rightN
+              const sideB = dirs[k][0] * rightE + dirs[k][1] * rightN
+              const stemW = refs[i].w
+              const armsW = refs[j].w + refs[k].w
+              // Width conservation distinguishes a real one-deck-to-two-arms
+              // fork from ordinary equal-width motorway segment seams.
+              const widthCompatible = refs[j].w <= stemW * 0.78
+                && refs[k].w <= stemW * 0.78
+                && armsW >= stemW * 0.72
+                && armsW <= stemW * 1.38
+              // Narrow motorway splits can be only a few degrees apart.
+              if (armAngle > 1.5 && armAngle < 125 && stemA > 95 && stemB > 95
+                && sideA * sideB < -0.0001 && widthCompatible) {
+                const score = armAngle + Math.abs(stemA - stemB) * 0.35
+                if (score < best) { best = score; stem = i; armA = j; armB = k }
+              }
+            }
+          }
+        }
+        if (stem >= 0) {
+          const stemRef = refs[stem]
+          const stemDir = dirs[stem]
+          // Right-hand normal of the stem's outward direction.
+          const rightE = stemDir[1], rightN = -stemDir[0]
+          const armHalf = stemRef.w / 4
+          for (const i of [stem, armA, armB]) {
+            const r = refs[i]
+            if (!openYEnds.has(r.road)) openYEnds.set(r.road, new Set())
+            openYEnds.get(r.road)!.add(r.atStart)
+            if (i === stem) continue
+            // Put the arm centre on the corresponding half of the stem instead
+            // of leaving both arm centres on the same OSM node.
+            const side = dirs[i][0] * rightE + dirs[i][1] * rightN >= 0 ? 1 : -1
+            if (!yArmAlign.has(r.road)) yArmAlign.set(r.road, [])
+            yArmAlign.get(r.road)!.push({
+              atStart: r.atStart,
+              shiftE: rightE * side * armHalf,
+              shiftN: rightN * side * armHalf,
+              // At the tip both arms initially follow into/out of the common stem.
+              tipE: -stemDir[0],
+              tipN: -stemDir[1],
+            })
+            if (Math.abs(r.w / 2 - armHalf) >= 0.02) {
+              if (!widens.has(r.road)) widens.set(r.road, [])
+              widens.get(r.road)!.push({ atStart: r.atStart, fromHalf: armHalf })
+            }
+          }
+          continue
+        }
+      }
       let thr: [EndRef, EndRef] | null = null
       for (const nm of new Set(refs.map((r) => r.name))) {
         const ins = refs.filter((r) => r.name === nm && !r.atStart)
@@ -363,6 +462,113 @@ export class ElevatedLayer {
       }
     }
 
+    // ── 對向並排合體（中山高型）──
+    // 中山高在 OSM 是兩條對向 oneway，各自成橋的話中間會開一道天窗、還立兩排護欄。
+    // 幾何/拓撲不動（合併成雙向 way 會讓 A* 允許逆向行駛，見 pipeline coupletCandidates），
+    // 只在「畫」的時候把兩向橋面各自延伸到兩線中點接成一座，中線立紐澤西護欄。
+    // 只吃 motorway 本線：匝道（motorway_link）維持原本的貼邊/裁切樣式。
+    const allDecks = [...model.entries()].map((e) => e.road)
+    const carriages = allDecks.filter((r) =>
+      r.properties.highway === 'motorway' && r.properties.oneway === 'yes')
+    /**
+     * Lock every motorway carriageway to one opposing partner for its whole
+     * segment.  Choosing the nearest road independently at every section lets
+     * nearby ramps steal the match and makes the centre barrier jump sideways.
+     */
+    const medianPairs = new Map<RoadFeature, RoadFeature[]>()
+    for (const self of carriages) {
+      const sc = self.geometry.coordinates as [number, number][]
+      const sCum = cumulative(sc), sLen = sCum[sCum.length - 1]
+      let chosen: RoadFeature | null = null
+      let chosenScore = Infinity
+      for (const other of carriages) {
+        if (other === self) continue
+        const sameName = (self.properties.name ?? '') === (other.properties.name ?? '')
+        if (!sameName) continue
+        const oc = other.geometry.coordinates as [number, number][]
+        let total = 0
+        let valid = true
+        for (const f of [0.2, 0.5, 0.8]) {
+          const sample = pointAlong(sc, sCum, sLen * f)
+          const pr = projToPolyArc(sample.pos, oc)
+          const rad = (sample.brg * Math.PI) / 180
+          const fE = Math.sin(rad), fN = Math.cos(rad)
+          if (pr.lat > MEDIAN_SEARCH_M || fE * pr.dE + fN * pr.dN > -0.5) {
+            valid = false
+            break
+          }
+          total += pr.lat
+        }
+        if (!valid) continue
+        const score = total / 3
+        if (score < chosenScore) { chosen = other; chosenScore = score }
+      }
+      if (chosen) {
+        // Follow only directly connected continuations of the chosen opposing
+        // way. This bridges OSM way boundaries without allowing an unrelated
+        // parallel mainline or ramp to take over halfway through the segment.
+        const chain = new Set<RoadFeature>([chosen])
+        const queue = [chosen]
+        while (queue.length) {
+          const cur = queue.shift()!
+          const curNodes = new Set(cur.properties.nodes)
+          for (const next of carriages) {
+            if (chain.has(next) || next === self) continue
+            if ((next.properties.name ?? '') !== (chosen.properties.name ?? '')) continue
+            if (!next.properties.nodes.some((n) => curNodes.has(n))) continue
+            const cc = cur.geometry.coordinates as [number, number][]
+            const nc = next.geometry.coordinates as [number, number][]
+            const cCum = cumulative(cc), nCum = cumulative(nc)
+            const cb = pointAlong(cc, cCum, cCum[cCum.length - 1] / 2).brg
+            const nb = pointAlong(nc, nCum, nCum[nCum.length - 1] / 2).brg
+            const dot = Math.cos(((cb - nb) * Math.PI) / 180)
+            if (dot < 0.65) continue
+            chain.add(next)
+            queue.push(next)
+          }
+        }
+        medianPairs.set(self, [...chain])
+      }
+    }
+    /** 該斷面處的對向並排：edge = 橋面該側要鋪到多遠、side = 對向在哪一側、
+     * merged = 有鋪到中線（可立中央護欄；漸變帶裡是 false，兩向正在分開） */
+    const medianAt = (self: RoadFeature, s: Section, halfW: number):
+      { edge: number; side: 1 | -1; merged: boolean } | null => {
+      let best: { edge: number; side: 1 | -1; merged: boolean; half: number; mid: [number, number]; other: RoadFeature } | null = null
+      const pos: [number, number] = [s.lng, s.lat]
+      const paired = medianPairs.get(self)
+      if (!paired) return null
+      for (const o of paired) {
+        const pr = projToPolyArc(pos, o.geometry.coordinates as [number, number][])
+        if (pr.lat > MEDIAN_SEARCH_M) continue
+        // 對向才算（同向並排是主線＋輔助車道，不是一座橋的兩半）：
+        // 自身行進方向（E,N）=(rz, rx)，與投影段方向內積 < -0.5 → 夾角 >120°
+        if (s.rz * pr.dE + s.rx * pr.dN > -0.5) continue
+        const half = pr.lat / 2
+        const extra = half - halfW
+        if (extra < 0) continue // 兩線太近，鋪到中線反而比自身還窄
+        const t = Math.min(1, Math.max(0, (MEDIAN_EXTRA_MAX_M - extra) / MEDIAN_FADE_M))
+        if (t <= 0) continue
+        if (!best || half < best.half) {
+          // 側別：自身右向（E,N）=(rx, −rz) 與「往對向」的向量內積
+          const vE = (pr.q[0] - pos[0]) * KX, vN = (pr.q[1] - pos[1]) * KY
+          best = {
+            half, edge: halfW + extra * t, merged: t >= 0.999, other: o,
+            side: vE * s.rx - vN * s.rz >= 0 ? 1 : -1,
+            mid: [(pos[0] + pr.q[0]) / 2, (pos[1] + pr.q[1]) / 2],
+          }
+        }
+      }
+      if (!best) return null
+      // 中央帶淨空檢查：兩向之間若有別的高架（匝道穿越交流道），維持分開各自成橋
+      for (const o of allDecks) {
+        if (o === self || o === best.other) continue
+        const d = projToPolyArc(best.mid, o.geometry.coordinates as [number, number][]).lat
+        if (d < best.half - MEDIAN_CLEAR_M) return null
+      }
+      return best
+    }
+
     for (const { road, lenM, hM } of model.entries()) {
       const p = road.properties
       const coords = road.geometry.coordinates as [number, number][]
@@ -414,6 +620,7 @@ export class ElevatedLayer {
         model.heightAt(road, Math.max(0, Math.min(lenM, ((d - dA) * lenM) / span)))
       const taper = model.groundTaper(road)
       const roadWidens = widens.get(road) ?? []
+      const yAligns = yArmAlign.get(road) ?? []
       // 幾何取樣範圍：貼邊滑行段延伸到原始端點（節點正側方），不裁掉
       const gA = flushes.some((f) => f.atStart) ? 0 : dA
       const gB = flushes.some((f) => !f.atStart) ? lenM : dB
@@ -421,6 +628,25 @@ export class ElevatedLayer {
       // 斷面取樣：底下所有帶狀件共用（頂點對齊，接縫才不會裂）
       const section = (d: number): Section => {
         let { pos, brg } = pointAlong(coords, cum, d)
+        // Move a Y arm onto the left/right half of the stem and blend its
+        // tangent to the stem at the shared endpoint.  This works for both
+        // atStart and atEnd arms, so merge and diverge directions match.
+        for (const a of yAligns) {
+          const eD = a.atStart ? d : lenM - d
+          const L = Math.min(32, lenM / 2)
+          if (eD >= L) continue
+          const q = 1 - eD / L
+          pos = [pos[0] + (a.shiftE * q) / KX, pos[1] + (a.shiftN * q) / KY]
+          const rad = (brg * Math.PI) / 180
+          let natE = Math.sin(rad), natN = Math.cos(rad)
+          // pointAlong follows coordinate order; reverse the desired outward
+          // tangent for an arm whose shared node is at its end.
+          const targetSign = a.atStart ? 1 : -1
+          const targetE = a.tipE * targetSign, targetN = a.tipN * targetSign
+          natE = natE * (1 - q) + targetE * q
+          natN = natN * (1 - q) + targetN * q
+          brg = (Math.atan2(natE, natN) * 180) / Math.PI
+        }
         // 貼邊滑行：切點到節點側方之間，中心推到主線邊緣外、走向改沿主線。
         // 區間內「一律」夾（不看單點距離——自然線在目標距附近擺動時，夾/不夾
         // 交替會讓橋面扭轉）。並向端點「削尖」：內緣貼住主線邊不動、外緣
@@ -464,7 +690,7 @@ export class ElevatedLayer {
         for (const w of roadWidens) {
           const eD = w.atStart ? d : lenM - d
           const L = Math.min(30, lenM / 2)
-          if (eD < L && w.fromHalf > halfW) {
+          if (eD < L && Math.abs(w.fromHalf - halfW) > 0.02) {
             r *= (w.fromHalf + (halfW - w.fromHalf) * (eD / L)) / halfW
           }
         }
@@ -473,6 +699,9 @@ export class ElevatedLayer {
       }
       const at = (s: Section, off: number, y: number): V3 =>
         [s.x + s.rx * off * s.r, s.h + y, s.z + s.rz * off * s.r]
+      /** 同 at，但 off 已是最終偏移（不再乘收窄係數）——橋面邊緣/中線護欄用 */
+      const atAbs = (s: Section, off: number, y: number): V3 =>
+        [s.x + s.rx * off, s.h + y, s.z + s.rz * off]
 
       // 中央分隔護欄：couplet 合併的雙向橋面（實體島 centerM）在分向位置建
       // 兩側板＋頂蓋的矮牆（紐澤西護欄）——不建的話兩向路面在橋上黏在一起
@@ -493,18 +722,39 @@ export class ElevatedLayer {
         hs: secs.map((s) => s.h),
       })
 
+      // 對向並排：合體側的橋面邊緣推到兩線中點（edge 回傳「已含收窄 r」的絕對偏移，
+      // 所以用 atAbs 而不是 at——後者會再乘一次 r）
+      const meds = carriages.includes(road)
+        ? secs.map((s) => medianAt(road, s, halfW))
+        : secs.map(() => null)
+      /** 第 i 個斷面 side 側的橋面邊緣（帶正負號） */
+      const edge = (i: number, side: 1 | -1) => {
+        const m = meds[i]
+        const base = halfW * secs[i].r
+        return side * (m && m.side === side ? Math.max(base, m.edge * secs[i].r) : base)
+      }
+      /** 該側是不是「與對向接合的中線」（護欄/側裙要改樣式） */
+      const isSeam = (i: number, side: 1 | -1) => meds[i]?.side === side && meds[i]!.merged
+
       const gaps = railGaps.get(road) ?? []
       for (let i = 1; i < secs.length; i++) {
         const a = secs[i - 1], b = secs[i]
         const dMid = (ds[i - 1] + ds[i]) / 2
-        // 橋面（頂）＋底面＋兩側裙板（底/側從橋下可見——陸橋下平面路口）
-        deckBuf.quad(at(a, -halfW, 0), at(a, halfW, 0), at(b, -halfW, 0), at(b, halfW, 0))
-        sideBuf.quad(at(a, halfW, -DECK_T), at(a, -halfW, -DECK_T),
-          at(b, halfW, -DECK_T), at(b, -halfW, -DECK_T))
-        sideBuf.quad(at(a, -halfW, -DECK_T), at(a, -halfW, 0),
-          at(b, -halfW, -DECK_T), at(b, -halfW, 0))
-        sideBuf.quad(at(a, halfW, 0), at(a, halfW, -DECK_T),
-          at(b, halfW, 0), at(b, halfW, -DECK_T))
+        const aL = edge(i - 1, -1), aR = edge(i - 1, 1)
+        const bL = edge(i, -1), bR = edge(i, 1)
+        // 橋面（頂）＋底面＋兩側裙板（底/側從橋下可見——陸橋下平面路口）。
+        // 合體側不畫裙板：那裡是橋面中央，立一片垂直板會在橋底出現一道假邊
+        deckBuf.quad(atAbs(a, aL, 0), atAbs(a, aR, 0), atAbs(b, bL, 0), atAbs(b, bR, 0))
+        sideBuf.quad(atAbs(a, aR, -DECK_T), atAbs(a, aL, -DECK_T),
+          atAbs(b, bR, -DECK_T), atAbs(b, bL, -DECK_T))
+        if (!isSeam(i - 1, -1) && !isSeam(i, -1)) {
+          sideBuf.quad(atAbs(a, aL, -DECK_T), atAbs(a, aL, 0),
+            atAbs(b, bL, -DECK_T), atAbs(b, bL, 0))
+        }
+        if (!isSeam(i - 1, 1) && !isSeam(i, 1)) {
+          sideBuf.quad(atAbs(a, aR, 0), atAbs(a, aR, -DECK_T),
+            atAbs(b, bR, 0), atAbs(b, bR, -DECK_T))
+        }
         // 護欄：兩側直立板（DoubleSide 材質）。近地漸升（觸地端壓到 0 → 銜接感）；
         // 匝道併入口所在側開缺（讓車上得來）
         const rhA = RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
@@ -519,13 +769,26 @@ export class ElevatedLayer {
           || gaps.some((g) => g.side === -1 && arcL(g) >= g.d0 && arcL(g) <= g.d1)
         const gapR = inFlushInner(1)
           || gaps.some((g) => g.side === 1 && arcL(g) >= g.d0 && arcL(g) <= g.d1)
-        if (!gapL) {
-          railBuf.quad(at(a, -halfW + 0.12, 0), at(a, -halfW + 0.12, rhA),
-            at(b, -halfW + 0.12, 0), at(b, -halfW + 0.12, rhB))
+        // 護欄內縮量跟著收窄係數（= 原本 at(±halfW∓0.12) 的寫法），
+        // 貼邊楔形尖端才不會因為固定 12cm 內縮而翻到另一側
+        if (!gapL && !isSeam(i - 1, -1) && !isSeam(i, -1)) {
+          railBuf.quad(atAbs(a, aL + 0.12 * a.r, 0), atAbs(a, aL + 0.12 * a.r, rhA),
+            atAbs(b, bL + 0.12 * b.r, 0), atAbs(b, bL + 0.12 * b.r, rhB))
         }
-        if (!gapR) {
-          railBuf.quad(at(a, halfW - 0.12, rhA), at(a, halfW - 0.12, 0),
-            at(b, halfW - 0.12, rhB), at(b, halfW - 0.12, 0))
+        if (!gapR && !isSeam(i - 1, 1) && !isSeam(i, 1)) {
+          railBuf.quad(atAbs(a, aR - 0.12 * a.r, rhA), atAbs(a, aR - 0.12 * a.r, 0),
+            atAbs(b, bR - 0.12 * b.r, rhB), atAbs(b, bR - 0.12 * b.r, 0))
+        }
+        // 中線紐澤西護欄：兩向各畫「自己這半」（牆板 + 到中線的頂蓋），
+        // 於中線接合成一道完整護欄——不必指定誰負責，也不會兩片重疊 z-fighting
+        for (const side of [-1, 1] as const) {
+          if (!isSeam(i - 1, side) || !isSeam(i, side)) continue
+          const cA = CENTER_RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
+          const cB = CENTER_RAIL_H * Math.min(1, b.h / RAIL_RAMP_H)
+          const e0 = side < 0 ? aL : aR, e1 = side < 0 ? bL : bR
+          const w0 = e0 - side * MEDIAN_RAIL_HALF, w1 = e1 - side * MEDIAN_RAIL_HALF
+          railBuf.quad(atAbs(a, w0, 0), atAbs(a, w0, cA), atAbs(b, w1, 0), atAbs(b, w1, cB))
+          railBuf.quad(atAbs(a, w0, cA), atAbs(a, e0, cA), atAbs(b, w1, cB), atAbs(b, e1, cB))
         }
         // 中央護欄：分向線位置（divOffM）兩側板＋頂蓋（同樣近地漸升）
         if (hasCenterRail) {
@@ -539,10 +802,13 @@ export class ElevatedLayer {
             at(b, dvOff - ctrHalf, cB), at(b, dvOff + ctrHalf, cB))
         }
       }
-      // 首尾斷面封口（側裙端面）
-      for (const [s, sgn] of [[secs[0], -1], [secs[secs.length - 1], 1]] as const) {
-        sideBuf.quad(at(s, sgn * halfW, 0), at(s, -sgn * halfW, 0),
-          at(s, sgn * halfW, -DECK_T), at(s, -sgn * halfW, -DECK_T))
+      // 首尾斷面封口（側裙端面）——寬度跟著該斷面的實際邊緣（含合體側延伸）
+      for (const [i, sgn] of [[0, -1], [secs.length - 1, 1]] as const) {
+        const atStart = i === 0
+        if (openYEnds.get(road)?.has(atStart)) continue
+        const s = secs[i], eL = edge(i, -1), eR = edge(i, 1)
+        sideBuf.quad(atAbs(s, sgn < 0 ? eL : eR, 0), atAbs(s, sgn < 0 ? eR : eL, 0),
+          atAbs(s, sgn < 0 ? eL : eR, -DECK_T), atAbs(s, sgn < 0 ? eR : eL, -DECK_T))
       }
 
       // ── 車道標線（貼在橋面上 +3cm）──

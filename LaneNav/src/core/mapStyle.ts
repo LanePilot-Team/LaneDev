@@ -36,6 +36,11 @@ export function buildStyle(): StyleSpecification {
     version: 8,
     glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
     sources: {
+      'taiwan-ocean': {
+        type: 'geojson',
+        data: '/data/environment/taiwan_ocean.geojson',
+        attribution: 'Made with Natural Earth',
+      },
       'nanzih-green-areas': {
         type: 'geojson',
         data: '/data/environment/nanzih_green_areas.geojson',
@@ -66,6 +71,25 @@ export function buildStyle(): StyleSpecification {
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': C.bg } },
       {
+        id: 'taiwan-ocean-fill',
+        type: 'fill',
+        source: 'taiwan-ocean',
+        filter: ['==', ['get', 'water_type'], 'ocean'],
+        paint: { 'fill-color': '#BFD9EA', 'fill-opacity': 0.76 },
+      },
+      {
+        id: 'taiwan-coastline',
+        type: 'line',
+        source: 'taiwan-ocean',
+        filter: ['==', ['get', 'feature_category'], 'coastline'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#9FBFD2',
+          'line-opacity': 0.9,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 14, 1.4],
+        },
+      },
+      {
         id: 'green-areas-fill',
         type: 'fill',
         source: 'nanzih-green-areas',
@@ -94,14 +118,7 @@ export function buildStyle(): StyleSpecification {
         type: 'fill',
         source: 'nanzih-water-areas',
         paint: {
-          'fill-color': [
-            'match', ['get', 'water_type'],
-            'river', '#B7D4E7',
-            'lake_or_reservoir', '#BFD9EA',
-            'pond_or_basin', '#C7DEEA',
-            'wetland', '#C5DAD5',
-            '#BFD9EA',
-          ],
+          'fill-color': '#BFD9EA',
           'fill-opacity': 0.76,
         },
       },
@@ -111,12 +128,7 @@ export function buildStyle(): StyleSpecification {
         source: 'nanzih-waterways',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': [
-            'match', ['get', 'waterway_type'],
-            'river', '#8FB9D5',
-            ['stream', 'canal'], '#A9CDE3',
-            '#C5DDEA',
-          ],
+          'line-color': '#BFD9EA',
           'line-opacity': 0.82,
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
@@ -133,6 +145,28 @@ export function buildStyle(): StyleSpecification {
               1.5,
             ],
           ],
+        },
+      },
+      {
+        id: 'waterways-label',
+        type: 'symbol',
+        source: 'nanzih-waterways',
+        minzoom: 14.5,
+        filter: ['all', ['has', 'name'], ['!=', ['get', 'name'], '']],
+        layout: {
+          'symbol-placement': 'line',
+          'symbol-spacing': 260,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 13,
+          'text-rotation-alignment': 'map',
+          'text-pitch-alignment': 'map',
+          'text-keep-upright': true,
+        },
+        paint: {
+          'text-color': C.label,
+          'text-halo-color': C.labelHalo,
+          'text-halo-width': 1.6,
         },
       },
 
@@ -261,7 +295,7 @@ export function buildStyle(): StyleSpecification {
       },
       {
         id: 'motobox-icon', type: 'symbol', source: 'turnbays', minzoom: 16,
-        filter: ['==', ['get', 'kind'], 'motobox-icon'],
+        filter: ['in', ['get', 'kind'], ['literal', ['motobox-icon', 'moto-lane-entry-icon']]],
         layout: {
           'icon-image': ['get', 'icon'],
           // SVG 高度皆為 809px；每枚圖示依停等格分配寬度自動縮放。
@@ -315,8 +349,16 @@ export function buildStyle(): StyleSpecification {
         paint: {
           'fill-extrusion-color': [
             'match', ['get', 'building'],
-            'station_support', '#aaa49a',
-            'station_extension', '#ddd3c5',
+            'station_support', [
+              'match', ['get', 'station_parent_building'],
+              'train_station', '#ddd3c5',
+              C.building,
+            ],
+            'station_extension', [
+              'match', ['get', 'station_parent_building'],
+              'train_station', '#ddd3c5',
+              C.building,
+            ],
             ['industrial', 'warehouse', 'storage_tank'], '#c9c4bb',
             ['school', 'university', 'college', 'kindergarten', 'hospital', 'public'], '#d6dfcf',
             ['commercial', 'office', 'retail', 'train_station'], '#ddd3c5',
@@ -365,27 +407,37 @@ export function buildStyle(): StyleSpecification {
       // ── 待轉區（Enhancement Layer，可編輯）──
       {
         id: 'zone-fill', type: 'fill', source: 'zones',
+        filter: ['==', ['get', 'kind'], 'fill'],
         paint: {
           'fill-color': [
-            'case', ['boolean', ['get', 'selected'], false],
-            'rgba(59,130,246,0.35)', 'rgba(255,255,255,0.28)',
+            'case',
+            ['boolean', ['get', 'highlighted'], false], 'rgba(250,204,21,0.68)',
+            ['boolean', ['get', 'selected'], false], 'rgba(59,130,246,0.35)',
+            'rgba(255,255,255,0.28)',
           ],
         },
       },
       {
-        // 深色描邊墊底，讓白框在路面外的淺色地面上也看得見
-        id: 'zone-outline-casing', type: 'line', source: 'zones',
-        layout: { 'line-join': 'round' },
-        paint: { 'line-color': 'rgba(30,41,59,0.85)', 'line-width': widthMeters(0.34) },
+        id: 'zone-outline-casing', type: 'fill', source: 'zones',
+        filter: ['all',
+          ['==', ['get', 'kind'], 'outline-casing'],
+          ['==', ['get', 'groundMarking'], true],
+        ],
+        paint: { 'fill-color': 'rgba(30,41,59,0.85)' },
       },
       {
-        id: 'zone-outline', type: 'line', source: 'zones',
-        layout: { 'line-join': 'round' },
+        id: 'zone-outline', type: 'fill', source: 'zones',
+        filter: ['all',
+          ['==', ['get', 'kind'], 'outline'],
+          ['==', ['get', 'groundMarking'], true],
+        ],
         paint: {
-          'line-color': [
-            'case', ['boolean', ['get', 'selected'], false], '#3b82f6', '#ffffff',
+          'fill-color': [
+            'case',
+            ['boolean', ['get', 'highlighted'], false], '#fde047',
+            ['boolean', ['get', 'selected'], false], '#3b82f6',
+            '#ffffff',
           ],
-          'line-width': widthMeters(0.18),
         },
       },
       {
@@ -393,9 +445,10 @@ export function buildStyle(): StyleSpecification {
         filter: ['==', ['geometry-type'], 'Point'],
         layout: {
           'icon-image': 'zone-text',
-          'icon-size': ['interpolate', ['exponential', 2], ['zoom'], 16, 0.18, 20, 1.4],
-          // 文字永遠正立（框體本身已表達朝向）
-          'icon-rotation-alignment': 'viewport',
+          'icon-size': iconMeters(3.6, 160),
+          'icon-rotate': ['get', 'bearing'],
+          'icon-rotation-alignment': 'map',
+          'icon-pitch-alignment': 'map',
           'icon-allow-overlap': true,
         },
       },

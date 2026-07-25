@@ -208,8 +208,8 @@ check('雙端偏心左轉道採成對生成', pairedBays.length > 0 && pairedBay
   `${pairedBays.length} 條偏心道`)
 check('雙端偏心道不再各自繪製槽化斜線',
   pairedBays.every((b) => b.lines.every((line) => line.color !== 'yellow')))
-check('單端偏心道仍保留黃色槽化起始邊線',
-  singleBays.length === 0 || singleBays.every((b) => b.lines.some((line) => line.color === 'yellow')),
+check('單端偏心道不再由 bay 本身重複繪製黃線',
+  singleBays.every((b) => b.lines.every((line) => line.color !== 'yellow')),
   `${singleBays.length} 條單端偏心道`)
 check('偏心道路中央標線有正常生成', channelization.length > 0,
   `${channelization.length} 條中央標線`)
@@ -222,25 +222,19 @@ const goreHatches = goreFeatures.filter((f) => f.properties?.featureType === 'un
 check('每組雙端偏心道都生成兩條 S 型黃線',
   pairedCenterLines.length === pairedBays.length,
   `${pairedCenterLines.length} 條 S 型線 / ${pairedBays.length / 2} 組偏心道`)
-check('單方向未使用段以公尺制 smooth-taper Polygon 生成槽化區',
-  goreBodies.length > 0 && goreBodies.every((f) =>
-    f.geometry.type === 'Polygon' && f.properties?.geometryMode === 'smooth-taper'),
+check('單方向偏心道不再生成獨立槽化 Polygon',
+  goreBodies.length === 0 && goreOutlines.length === 0 && goreHatches.length === 0,
   `${goreBodies.length} 個槽化面`)
-check('每個槽化面都有外側黃線、下游封口與裁入面內的實體斜紋 Polygon',
-  goreOutlines.length === goreBodies.length * 2 && goreHatches.length > goreBodies.length,
-  `${goreOutlines.length} 個外框面 / ${goreHatches.length} 個斜紋面`)
-check('單方向偏心道使用端仍只保留既有雙黃線',
-  singleUsedLines.length > 0 && (() => {
+check('每條單方向偏心道改由兩條 S 型黃線統一繪製',
+  singleUsedLines.length === singleBays.length * 2 && (() => {
     const singleKeys = new Set(singleBays.map((b) => b.key))
     return channelization.every((line) => !line.ownerKey || !singleKeys.has(line.ownerKey) ||
       line.style === 'single-bay-used')
   })(),
-  `${singleUsedLines.length} 條使用端雙黃線`)
+  `${singleUsedLines.length} 條 S 型線 / ${singleBays.length} 條單端偏心道`)
 check('單方向偏心道的雙黃漸變使用多點平滑曲線',
-  singleBays.every((bay) => {
-    const yellow = bay.lines.filter((line) => line.color === 'yellow')
-    return yellow.length === 2 && yellow.every((line) => line.coords.length >= 4)
-  }), `${singleBays.length} 條單端偏心道`)
+  singleUsedLines.every((line) => line.coords.length >= 4),
+  `${singleBays.length} 條單端偏心道`)
 const deminJhongchang = 1398634938
 const deminJhongchangBlocks = roads.filter((r) =>
   r.properties.nodes.includes(deminJhongchang) &&

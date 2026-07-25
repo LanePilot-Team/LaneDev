@@ -21,7 +21,7 @@ import {
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
-  buildMotoBoxes, buildUnusedLaneGores, baysToGeoJSON,
+  buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
 import { buildRoadTexts } from '../core/roadtext'
@@ -42,6 +42,14 @@ export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 export const EMPTY_FC = { type: 'FeatureCollection', features: [] } as const
 
 const METERS_PER_LATITUDE_DEGREE = 111_000
+const NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID = '112463293'
+const JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID = '112463292'
+
+function isElevatedStation(feature: Feature<Polygon>): boolean {
+  const osmId = String(feature.properties?.osm_id ?? feature.id ?? '')
+  return feature.properties?.building === 'train_station' ||
+    osmId === JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID
+}
 
 /**
  * Widen both long sides of an elevated station and place a continuous support
@@ -71,7 +79,8 @@ function buildStationSideStructures(
   if (edges.length < 2) return []
 
   const osmId = String(station.properties?.osm_id ?? station.id ?? 'station')
-  const isNanzihTechnologyParkStation = osmId === '112463293'
+  const isNanzihTechnologyParkStation =
+    osmId === NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID
   type StationEdge = (typeof edges)[number]
   let first: StationEdge | undefined
   let second: StationEdge | undefined
@@ -135,6 +144,7 @@ function buildStationSideStructures(
     const sharedProperties = {
       ...(station.properties ?? {}),
       parent_osm_id: osmId,
+      station_parent_building: station.properties?.building ?? 'yes',
     }
     return [
       {
@@ -197,6 +207,7 @@ export interface MapCore {
   graphRef: RefObject<RoadGraph | null>
   zonesRef: RefObject<Zone[]>
   selectedZoneRef: RefObject<string | null>
+  highlightedZoneRef: RefObject<string | null>
   journalRef: RefObject<EnhancementRecord[]>
   baysRef: RefObject<TurnBay[]>
   /** 右轉附加車道（journal right_lane 折疊生成，refreshBays 重算） */
@@ -217,6 +228,7 @@ export interface MapCore {
   rawWaysRef: RefObject<Map<number, RawWay>>
   src: (id: string) => GeoJSONSource
   refreshZones: () => void
+  setZoneHighlight: (id: string | null) => void
   refreshBays: () => void
   refreshVehicles: () => void
   /** 路面與車道分隔線重繪（journal 覆寫/標註匯入後） */
@@ -243,6 +255,7 @@ export function useMapCore(
   const graphRef = useRef<RoadGraph | null>(null)
   const zonesRef = useRef<Zone[]>([])
   const selectedZoneRef = useRef<string | null>(null)
+  const highlightedZoneRef = useRef<string | null>(null)
   const journalRef = useRef<EnhancementRecord[]>([])
   const baysRef = useRef<TurnBay[]>([])
   const rightLanesRef = useRef<RightLane[]>([])
@@ -271,10 +284,31 @@ export function useMapCore(
 
   const refreshZones = useCallback(() => {
     if (!mapRef.current) return
-    src('zones').setData(zonesToGeoJSON(zonesRef.current, selectedZoneRef.current) as never)
+    src('zones').setData(groundMarkingPolygons(
+      zonesToGeoJSON(
+        zonesRef.current,
+        selectedZoneRef.current,
+        highlightedZoneRef.current,
+      ),
+      (properties) => properties?.kind === 'outline-casing' ? 0.34
+        : properties?.kind === 'outline' ? 0.18
+          : null,
+    ) as never)
     saveZones(zonesRef.current)
     setZoneCount(zonesRef.current.length)
     setZoneTick((t) => t + 1)
+  }, [src])
+
+  const setZoneHighlight = useCallback((id: string | null) => {
+    if (highlightedZoneRef.current === id) return
+    highlightedZoneRef.current = id
+    if (!mapRef.current) return
+    src('zones').setData(groundMarkingPolygons(
+      zonesToGeoJSON(zonesRef.current, selectedZoneRef.current, id),
+      (properties) => properties?.kind === 'outline-casing' ? 0.34
+        : properties?.kind === 'outline' ? 0.18
+          : null,
+    ) as never)
   }, [src])
 
   /** 重算偏心左轉道（路網/車道數/journal 變動後都要跑：bay 的橫向位置依斷面寬推導） */
@@ -295,6 +329,7 @@ export function useMapCore(
       baysRef.current, [...channel, ...stopLines],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
+      ...buildMotoLaneEntryIcons(graphRef.current, journalRef.current).features,
       ...buildUnusedLaneGores(graphRef.current, baysRef.current).features)
     const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
     src('turnbays').setData(groundMarkingPolygons(
@@ -357,11 +392,13 @@ export function useMapCore(
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
     coreRef.current = {
-      mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, journalRef, baysRef,
+      mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, highlightedZoneRef,
+      journalRef, baysRef,
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
-      src, refreshZones, refreshBays, refreshVehicles, redrawRoads, replaceBaseMap,
+      src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
+      redrawRoads, replaceBaseMap,
     }
   }
 
@@ -421,12 +458,23 @@ export function useMapCore(
         .filter((feature) => !removedBuildingOsmIds.has(String(feature.properties?.osm_id ?? '')))
         .map((feature) => {
           const properties = { ...(feature.properties ?? {}) }
+          const osmId = String(properties.osm_id ?? '')
           // 捷運／車站站體橫跨道路：底部抬高形成可通車的鏤空層，而非落地實心量體。
-          if (properties.building === 'train_station') {
-            properties.min_height_m = Math.max(Number(properties.min_height_m) || 0, 6)
+          if (isElevatedStation({ ...feature, properties } as Feature<Polygon>)) {
+            // 楠梓科技園區站橫跨加昌路；它的 footprint 是高空站體，
+            // 需保留比一般車站更清楚的道路及導航標線淨空。
+            const minimumClearance = (
+              osmId === NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID ||
+              osmId === JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID
+            ) ? 8 : 6
+            properties.min_height_m = Math.max(
+              Number(properties.min_height_m) || 0,
+              minimumClearance,
+            )
             properties.height_m = Math.max(
               Number(properties.height_m) || 9,
-              properties.min_height_m + 3,
+              properties.min_height_m +
+                (minimumClearance === 8 ? 4 : 3),
             )
           }
           return {
@@ -436,8 +484,8 @@ export function useMapCore(
           } as Feature<Polygon>
         })
       const stationSideStructures = preparedBuildings.flatMap((feature) =>
-        feature.properties?.building === 'train_station'
-          ? buildStationSideStructures(feature, Number(feature.properties.min_height_m) || 0)
+        isElevatedStation(feature)
+          ? buildStationSideStructures(feature, Number(feature.properties?.min_height_m) || 0)
           : [],
       )
       const buildings: FeatureCollection<Polygon> = {

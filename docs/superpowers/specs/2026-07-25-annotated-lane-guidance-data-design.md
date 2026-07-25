@@ -1,7 +1,7 @@
 # Annotated Lane Guidance Data Design
 
-**Date:** 2026-07-25  
-**Status:** Awaiting user review  
+**Date:** 2026-07-25
+**Status:** Awaiting user review
 **Branch:** `codex/lane-guidance-preview`
 
 ## Problem

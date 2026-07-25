@@ -36,6 +36,21 @@ export function buildStyle(): StyleSpecification {
     version: 8,
     glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
     sources: {
+      'nanzih-green-areas': {
+        type: 'geojson',
+        data: '/data/environment/nanzih_green_areas.geojson',
+        attribution: '© OpenStreetMap contributors',
+      },
+      'nanzih-water-areas': {
+        type: 'geojson',
+        data: '/data/environment/nanzih_water_areas.geojson',
+        attribution: '© OpenStreetMap contributors',
+      },
+      'nanzih-waterways': {
+        type: 'geojson',
+        data: '/data/environment/nanzih_waterways.geojson',
+        attribution: '© OpenStreetMap contributors',
+      },
       roads: { type: 'geojson', data: emptyFC as never },
       roadSurfaces: { type: 'geojson', data: emptyFC as never },
       dividers: { type: 'geojson', data: emptyFC as never },
@@ -43,12 +58,83 @@ export function buildStyle(): StyleSpecification {
       roadtext: { type: 'geojson', data: emptyFC as never },
       medians: { type: 'geojson', data: emptyFC as never },
       buildings: { type: 'geojson', data: emptyFC as never },
+      occludedBuildings: { type: 'geojson', data: emptyFC as never },
       route: { type: 'geojson', data: emptyFC as never },
       endpoints: { type: 'geojson', data: emptyFC as never },
       zones: { type: 'geojson', data: emptyFC as never },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': C.bg } },
+      {
+        id: 'green-areas-fill',
+        type: 'fill',
+        source: 'nanzih-green-areas',
+        paint: {
+          'fill-color': [
+            'match', ['get', 'green_type'],
+            'park', '#CFE7C7',
+            'garden', '#CFE7C7',
+            'forest_or_wood', '#B8D8AE',
+            'grass_or_meadow', '#DCEBCF',
+            'natural_green', '#C8DFC0',
+            'agricultural', '#E7EBCB',
+            '#DCEBCF',
+          ],
+          'fill-opacity': [
+            'match', ['get', 'green_priority'],
+            'high', 0.78,
+            'medium', 0.68,
+            'low', 0.58,
+            0.65,
+          ],
+        },
+      },
+      {
+        id: 'water-areas-fill',
+        type: 'fill',
+        source: 'nanzih-water-areas',
+        paint: {
+          'fill-color': [
+            'match', ['get', 'water_type'],
+            'river', '#B7D4E7',
+            'lake_or_reservoir', '#BFD9EA',
+            'pond_or_basin', '#C7DEEA',
+            'wetland', '#C5DAD5',
+            '#BFD9EA',
+          ],
+          'fill-opacity': 0.76,
+        },
+      },
+      {
+        id: 'waterways-line',
+        type: 'line',
+        source: 'nanzih-waterways',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': [
+            'match', ['get', 'waterway_type'],
+            'river', '#8FB9D5',
+            ['stream', 'canal'], '#A9CDE3',
+            '#C5DDEA',
+          ],
+          'line-opacity': 0.82,
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            11, [
+              'match', ['get', 'waterway_type'],
+              'river', 1.4,
+              ['stream', 'canal'], 0.9,
+              0.5,
+            ],
+            18, [
+              'match', ['get', 'waterway_type'],
+              'river', 5,
+              ['stream', 'canal'], 3,
+              1.5,
+            ],
+          ],
+        },
+      },
 
       // ── 簡化路網（低 zoom）──
       {
@@ -94,13 +180,19 @@ export function buildStyle(): StyleSpecification {
       {
         // bay 邊線與中央槽化線（台灣標線色）：分隔對向 = 黃、分隔同向 = 白；
         // stop = 路口停止線（白粗橫線，寬 0.45m 仿實際 30~60cm）
-        id: 'bay-edge', type: 'line', source: 'turnbays', minzoom: 15.5,
-        filter: ['==', ['get', 'kind'], 'line'],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        id: 'bay-edge', type: 'fill', source: 'turnbays', minzoom: 15.5,
+        filter: ['all', ['==', ['get', 'kind'], 'line'], ['==', ['get', 'groundMarking'], true]],
         paint: {
-          'line-color': ['match', ['get', 'color'], 'yellow', C.centerLine, C.laneLine],
-          'line-width': widthMeters(['match', ['get', 'color'],
-            'yellow', 0.15, 'stop', 0.45, 0.15] as ExpressionSpecification),
+          'fill-color': ['match', ['get', 'color'], 'yellow', C.centerLine, C.laneLine],
+        },
+      },
+      {
+        id: 'unused-lane-gore', type: 'fill', source: 'turnbays', minzoom: 15.5,
+        filter: ['in', ['get', 'featureType'],
+          ['literal', ['unused_lane_gore_outline', 'unused_lane_gore_hatch']]],
+        paint: {
+          'fill-color': ['coalesce', ['get', 'color'], C.centerLine],
+          'fill-opacity': 1,
         },
       },
       // ── 分隔島（Case B：成對單行間的實體分隔帶，自動推導）──
@@ -131,29 +223,27 @@ export function buildStyle(): StyleSpecification {
 
       // ── 車道線（載入時用 turf lineOffset 生成）──
       {
-        id: 'lane-divider', type: 'line', source: 'dividers', minzoom: 15.5,
+        id: 'lane-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'lane'],
         paint: {
-          'line-color': C.laneLine,
-          'line-width': widthMeters(0.15),
-          'line-dasharray': [27, 40], // ≈ 台灣 4m 線段 / 6m 間隔（單位=線寬倍數）
+          'fill-color': C.laneLine,
         },
       },
       {
-        id: 'center-divider', type: 'line', source: 'dividers', minzoom: 15.5,
+        id: 'center-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'center'],
-        paint: { 'line-color': C.centerLine, 'line-width': widthMeters(0.3) },
+        paint: { 'fill-color': C.centerLine },
       },
       {
-        id: 'center-divider-double', type: 'line', source: 'dividers', minzoom: 15.5,
+        id: 'center-divider-double', type: 'fill', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'center-double'],
-        paint: { 'line-color': C.centerLine, 'line-width': widthMeters(0.15) },
+        paint: { 'fill-color': C.centerLine },
       },
       {
         // 機車道分隔：白實線
-        id: 'moto-divider', type: 'line', source: 'dividers', minzoom: 15.5,
+        id: 'moto-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'moto'],
-        paint: { 'line-color': C.laneLine, 'line-width': widthMeters(0.15) },
+        paint: { 'fill-color': C.laneLine },
       },
 
       // ── 機車停等格（排在車道線之後：不透明 fill 蓋掉框內車道線＝「線在格前截止」，
@@ -223,10 +313,28 @@ export function buildStyle(): StyleSpecification {
       {
         id: 'buildings', type: 'fill-extrusion', source: 'buildings', minzoom: 14,
         paint: {
-          'fill-extrusion-color': C.building,
-          'fill-extrusion-height': ['get', 'height'],
-          // 不透明：半透明 extrusion 要排序（慢），且與路面穿插處特別明顯
+          'fill-extrusion-color': [
+            'match', ['get', 'building'],
+            'station_support', '#aaa49a',
+            'station_extension', '#ddd3c5',
+            ['industrial', 'warehouse', 'storage_tank'], '#c9c4bb',
+            ['school', 'university', 'college', 'kindergarten', 'hospital', 'public'], '#d6dfcf',
+            ['commercial', 'office', 'retail', 'train_station'], '#ddd3c5',
+            ['temple', 'church'], '#ddcfbf',
+            C.building,
+          ],
+          'fill-extrusion-height': ['coalesce', ['get', 'height_m'], 9],
+          'fill-extrusion-base': ['coalesce', ['get', 'min_height_m'], 0],
           'fill-extrusion-opacity': 1,
+        },
+      },
+      {
+        id: 'occluded-buildings', type: 'fill-extrusion', source: 'occludedBuildings', minzoom: 14,
+        paint: {
+          'fill-extrusion-color': '#cbd5e1',
+          'fill-extrusion-height': ['coalesce', ['get', 'height_m'], 9],
+          'fill-extrusion-base': ['coalesce', ['get', 'min_height_m'], 0],
+          'fill-extrusion-opacity': 0.22,
         },
       },
 

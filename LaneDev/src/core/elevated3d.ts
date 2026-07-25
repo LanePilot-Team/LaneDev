@@ -54,7 +54,11 @@ class TriBuf {
 }
 
 /** 斷面：中心點場景座標 + 行進右向單位向量 + 高度 + 橫向縮放（接地收窄） */
-interface Section { x: number; z: number; rx: number; rz: number; h: number; r: number }
+interface Section {
+  x: number; z: number; rx: number; rz: number; h: number; r: number
+  /** 斷面中心的經緯度（橋面高度剖面用；場景座標 x/z 已無法反推貼邊推移後的位置） */
+  lng: number; lat: number
+}
 
 /** 點到折線的最短距離（lat）與投影點弧長（arc，自折線首點起算；皆公尺） */
 interface PolyProj {
@@ -114,6 +118,8 @@ export class ElevatedLayer {
   private group = new THREE.Group()
   /** 路線絲帶（高架段的藍色路線帶＋chevron，畫在橋面上；平面段仍走 MapLibre） */
   private routeGroup = new THREE.Group()
+  /** 每個高架區塊的橋面中心線取樣（經緯度）與其高度——deckHeightAt 查表用 */
+  private deckProfile = new Map<RoadFeature, { pts: [number, number][]; hs: number[] }>()
   private originMatrix: THREE.Matrix4
   private originMerc: { x: number; y: number }
   private mercScale: number
@@ -167,6 +173,68 @@ export class ElevatedLayer {
   private disposeMeshes() {
     for (const m of this.group.children) (m as THREE.Mesh).geometry?.dispose()
     this.group.clear()
+    this.deckProfile.clear()
+    this.occlusionFaded = false
+  }
+
+  /**
+   * 該路段在 pos 處的「橋面實際高度」（公尺）；null = 這條路沒有建橋面。
+   * 用 deck mesh 的同一組斷面取樣內插——匝道的高度域在貼邊滑行段有重映射
+   * （hAt 把 [dA,dB] 拉伸到整條 way），直接問 ElevationModel 會低估好幾公尺，
+   * 路線帶就沉到橋面下、被深度測試擋掉（畫面上藍線整段消失）。
+   */
+  deckHeightAt(road: RoadFeature, pos: [number, number]): number | null {
+    const pr = this.deckProfile.get(road)
+    if (!pr || pr.pts.length === 0) return null
+    if (pr.pts.length === 1) return pr.hs[0]
+    let bestD2 = Infinity
+    let best = pr.hs[0]
+    for (let i = 1; i < pr.pts.length; i++) {
+      const a = pr.pts[i - 1], b = pr.pts[i]
+      const ax = (pos[0] - a[0]) * KX, ay = (pos[1] - a[1]) * KY
+      const vx = (b[0] - a[0]) * KX, vy = (b[1] - a[1]) * KY
+      const L2 = vx * vx + vy * vy
+      const t = L2 > 0 ? Math.max(0, Math.min(1, (ax * vx + ay * vy) / L2)) : 0
+      const dx = ax - vx * t, dy = ay - vy * t
+      const d2 = dx * dx + dy * dy
+      if (d2 < bestD2) {
+        bestD2 = d2
+        best = pr.hs[i - 1] + (pr.hs[i] - pr.hs[i - 1]) * t
+      }
+    }
+    return best
+  }
+
+  private occlusionFaded = false
+
+  /** 導航位於橋面下方時，只淡化橋體；車輛與 routeGroup 導航絲帶維持清楚。 */
+  setOcclusionAt(pos: [number, number], vehicleElevM = 0) {
+    let blocked = false
+    for (const [road, profile] of this.deckProfile) {
+      if (profile.pts.length < 2) continue
+      const hit = projToPolyArc(pos, profile.pts)
+      if (hit.lat > road.properties.width_m / 2 + 3) continue
+      const deckH = this.deckHeightAt(road, pos)
+      if (deckH !== null && deckH > vehicleElevM + 2) { blocked = true; break }
+    }
+    this.setOcclusionFade(blocked)
+  }
+
+  setOcclusionFade(faded: boolean) {
+    if (this.occlusionFaded === faded) return
+    this.occlusionFaded = faded
+    this.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of materials) {
+        if (!material) continue
+        material.transparent = faded
+        material.opacity = faded ? 0.25 : 1
+        material.depthWrite = !faded
+        material.needsUpdate = true
+      }
+    })
+    this.map?.triggerRepaint()
   }
 
   private disposeRoute() {
@@ -401,7 +469,7 @@ export class ElevatedLayer {
           }
         }
         // 場景 x=東、z=南；行進右向 =（cos brg, sin brg)（北向→右=東 ✓）
-        return { x: e, z: -n, rx: Math.cos(rad), rz: Math.sin(rad), h, r }
+        return { x: e, z: -n, rx: Math.cos(rad), rz: Math.sin(rad), h, r, lng: pos[0], lat: pos[1] }
       }
       const at = (s: Section, off: number, y: number): V3 =>
         [s.x + s.rx * off * s.r, s.h + y, s.z + s.rz * off * s.r]
@@ -418,6 +486,12 @@ export class ElevatedLayer {
       for (let d = gA; d <= gB; d += STEP_M) ds.push(d)
       if (ds[ds.length - 1] < gB) ds.push(gB)
       const secs = ds.map(section)
+      // 橋面高度剖面：路線帶/車輛要貼在橋面上，就得問「這裡的橋面多高」，
+      // 而不是 model.heightAt（匝道的高度域經過重映射，兩者在貼邊段差好幾公尺）
+      this.deckProfile.set(road, {
+        pts: secs.map((s) => [s.lng, s.lat] as [number, number]),
+        hs: secs.map((s) => s.h),
+      })
 
       const gaps = railGaps.get(road) ?? []
       for (let i = 1; i < secs.length; i++) {
@@ -550,11 +624,14 @@ export class ElevatedLayer {
       return band ? [band.coords] : []
     }
     const model = activeElevation()
-    // 每個取樣點的高度：detour 暫時路線（span 無 road）與非高架段 = 0
+    // 每個取樣點的高度：detour 暫時路線（span 無 road）與非高架段 = 0。
+    // 高架段一律問橋面本身（deckHeightAt），沒建橋面才退回高度模型
     const hs = band.coords.map((c, i) => {
       if (!model) return 0
       const span = spanAtDist(route, band.routeD[i])
-      return span?.road?.properties.elevated ? model.heightAtPos(span.road, c) : 0
+      const road = span?.road
+      if (!road?.properties.elevated) return 0
+      return this.deckHeightAt(road, c) ?? model.heightAtPos(road, c)
     })
 
     // 切段：地面（h≤eps）給 MapLibre、高架給 3D 絲帶；邊界各多含一點，接縫不斷
@@ -597,7 +674,7 @@ export class ElevatedLayer {
         const h = run.h[idx - 1] + (run.h[idx] - run.h[idx - 1]) * t
         const [e, n] = this.toScene(pos[0], pos[1])
         const rad = (brg * Math.PI) / 180
-        return { x: e, z: -n, rx: Math.cos(rad), rz: Math.sin(rad), h, r: 1 }
+        return { x: e, z: -n, rx: Math.cos(rad), rz: Math.sin(rad), h, r: 1, lng: pos[0], lat: pos[1] }
       }
       const at = (s: Section, off: number, y: number): V3 =>
         [s.x + s.rx * off, s.h + y, s.z + s.rz * off]
@@ -653,3 +730,13 @@ let activeLayer: ElevatedLayer | null = null
 
 export function setActiveElevatedLayer(l: ElevatedLayer | null) { activeLayer = l }
 export function activeElevatedLayer(): ElevatedLayer | null { return activeLayer }
+
+/**
+ * 路面高度（公尺）：高架段以「橋面實際高度」為準，其餘 0。
+ * 車輛（drive/gpsNav → models3d 的 z）與路線帶共用這個入口，兩者才會同高——
+ * 直接問 ElevationModel 會漏掉匝道貼邊段的高度域重映射。沒建 3D 橋面時退回模型。
+ */
+export function surfaceHeightAt(road: RoadFeature, pos: [number, number]): number {
+  if (!road.properties.elevated) return 0
+  return activeLayer?.deckHeightAt(road, pos) ?? activeElevation()?.heightAtPos(road, pos) ?? 0
+}

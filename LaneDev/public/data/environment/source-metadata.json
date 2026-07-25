@@ -1,0 +1,43 @@
+{
+  "source": "OpenStreetMap",
+  "extracted_at": "2026-07-25T06:24:40.628Z",
+  "administrative_relation_id": 2106299,
+  "overpass_area_id": 3602106299,
+  "endpoint": [
+    "https://overpass.kumi.systems/api/interpreter"
+  ],
+  "query": {
+    "green": "[out:json][timeout:180];\narea(3602106299)->.a;\n(\n  way(area.a)[\"leisure\"~\"^(park|garden|playground|recreation_ground|nature_reserve)$\"];\n  relation(area.a)[\"leisure\"~\"^(park|garden|playground|recreation_ground|nature_reserve)$\"];\n  way(area.a)[\"landuse\"~\"^(village_green|forest|grass|meadow|farmland|orchard)$\"];\n  relation(area.a)[\"landuse\"~\"^(village_green|forest|grass|meadow|farmland|orchard)$\"];\n  way(area.a)[\"natural\"~\"^(wood|scrub|grassland|wetland)$\"];\n  relation(area.a)[\"natural\"~\"^(wood|scrub|grassland|wetland)$\"];\n);\nout body;\n>;\nout skel qt;",
+    "waterAreas": "[out:json][timeout:180];\narea(3602106299)->.a;\n(\n  way(area.a)[\"natural\"=\"water\"];\n  relation(area.a)[\"natural\"=\"water\"];\n  way(area.a)[\"waterway\"=\"riverbank\"];\n  relation(area.a)[\"waterway\"=\"riverbank\"];\n  way(area.a)[\"natural\"=\"wetland\"];\n  relation(area.a)[\"natural\"=\"wetland\"];\n);\nout body;\n>;\nout skel qt;",
+    "waterways": "[out:json][timeout:180];\narea(3602106299)->.a;\nway(area.a)[\"waterway\"~\"^(river|stream|canal|drain|ditch)$\"];\nout body geom;"
+  },
+  "feature_counts": {
+    "green_areas": 169,
+    "water_areas": 29,
+    "waterways": 62,
+    "green_types": {
+      "grass_or_meadow": 58,
+      "park": 67,
+      "natural_green": 6,
+      "forest_or_wood": 7,
+      "garden": 21,
+      "agricultural": 10
+    },
+    "water_types": {
+      "river": 5,
+      "pond_or_basin": 13,
+      "wetland": 2,
+      "water_unspecified": 6,
+      "lake_or_reservoir": 3
+    },
+    "waterway_types": {
+      "stream": 10,
+      "canal": 4,
+      "drain": 9,
+      "ditch": 30,
+      "river": 9
+    }
+  },
+  "license": "ODbL 1.0",
+  "attribution": "© OpenStreetMap contributors"
+}

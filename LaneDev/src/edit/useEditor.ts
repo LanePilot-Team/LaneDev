@@ -65,6 +65,10 @@ export interface EditRoadState {
   bayF0: string; bayB0: string
   /** 兩向地面規則（GROUND_RULES code，順序 = 選取順序 = 印字由上往下） */
   laneMarksF: (LaneMark | null)[]; laneMarksB: (LaneMark | null)[]
+  /** 機車停等格涵蓋車道數（自最外側往內；0 = 關閉）與合法上限；*0 = 開面板初值 */
+  motoBoxF: number; motoBoxB: number
+  motoBoxF0: number; motoBoxB0: number
+  motoBoxMaxF: number; motoBoxMaxB: number
 }
 
 export interface Editor {
@@ -158,6 +162,13 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         p2.lanesForward + (p2.motoF ? 1 : 0))
       const laneMarksB = resizeLaneMarks(p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoB),
         p2.lanesBackward + (p2.motoB ? 1 : 0))
+      // 機車停等格現況（refreshBays 已把 folded journal 反映在 motoBoxesRef）
+      const mbOf = (dirKey: string) =>
+        core.motoBoxesRef.current.find((m) => m.dir === dirKey)
+      const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
+      const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
+      const motoBoxF = mbF?.coveredLanes ?? 0
+      const motoBoxB = mbB?.coveredLanes ?? 0
       setEditRoad({
         osmId: p2.osm_id, name: p2.name, oneway: p2.oneway,
         blockNode: p2.blockNode,
@@ -174,6 +185,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         nodeFirst, nodeLast,
         bayF, bayB, bayF0: bayF, bayB0: bayB,
         laneMarksF, laneMarksB,
+        motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
+        motoBoxMaxF: mbF?.maxLanes ?? 0, motoBoxMaxB: mbB?.maxLanes ?? 0,
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -279,6 +292,18 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     if (editRoad.oneway === 'no') {
       writeBay(bayKeyF, editRoad.bayF, editRoad.bayF0)
       writeBay(bayKeyB, editRoad.bayB, editRoad.bayB0)
+    }
+    // 機車停等格涵蓋車道數（有動才寫）：lanes = 涵蓋數，0 = 關閉
+    const writeMotoBox = (nodeId: number, back: boolean, v: number, v0: number) => {
+      if (v === v0) return
+      core.journalRef.current = appendRecord(core.journalRef.current, {
+        op: 'set', target: { type: 'moto_box', key: `way/${editRoad.osmId}@node/${nodeId}${back ? '~b' : ''}~m` },
+        fields: { lanes: v },
+      })
+    }
+    writeMotoBox(editRoad.nodeLast, false, editRoad.motoBoxF, editRoad.motoBoxF0)
+    if (editRoad.oneway === 'no') {
+      writeMotoBox(editRoad.nodeFirst, true, editRoad.motoBoxB, editRoad.motoBoxB0)
     }
     applyToRoads(core.roadsRef.current, foldJournal(core.journalRef.current))
     // 編輯即所見：路寬與車道線立即重繪（bay 橫向位置依斷面寬，也要跟著動）

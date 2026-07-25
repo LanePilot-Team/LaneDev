@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback, type RefObject } from 'react'
 import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
+import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
 import {
   buildDividers, buildRoadSurfaces, loadRoads, roadsFromGeoJSON, type RoadFeature,
@@ -20,7 +21,8 @@ import {
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
-  buildMotoBoxes, baysToGeoJSON, type TurnBay, type RightLane, type MotoBox,
+  buildMotoBoxes, buildUnusedLaneGores, baysToGeoJSON,
+  type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
 import { buildRoadTexts } from '../core/roadtext'
 import {
@@ -32,10 +34,134 @@ import { buildElevation, setActiveElevation } from '../core/elevation'
 import { ElevatedLayer, setActiveElevatedLayer } from '../core/elevated3d'
 import { NANZI_CENTER, haversine } from '../core/geo'
 import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
+import { groundMarkingPolygons } from '../core/groundMarkings'
+import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
 export const EMPTY_FC = { type: 'FeatureCollection', features: [] } as const
+
+const METERS_PER_LATITUDE_DEGREE = 111_000
+
+/**
+ * Widen both long sides of an elevated station and place a continuous support
+ * wall at each new outer edge, away from the road beneath the station.
+ */
+function buildStationSideStructures(
+  station: Feature<Polygon>,
+  baseHeight: number,
+): Feature<Polygon>[] {
+  const ring = station.geometry.coordinates[0]
+  if (!ring || ring.length < 4 || baseHeight <= 0) return []
+
+  const lat = ring.reduce((sum, point) => sum + point[1], 0) / ring.length
+  const metersPerLongitudeDegree = METERS_PER_LATITUDE_DEGREE * Math.cos(lat * Math.PI / 180)
+  const vertices = ring.slice(0, -1)
+  const center: [number, number] = [
+    vertices.reduce((sum, point) => sum + point[0], 0) / vertices.length,
+    vertices.reduce((sum, point) => sum + point[1], 0) / vertices.length,
+  ]
+  const edges = vertices.map((p, index) => {
+    const q = ring[index + 1]
+    const dx = (q[0] - p[0]) * metersPerLongitudeDegree
+    const dy = (q[1] - p[1]) * METERS_PER_LATITUDE_DEGREE
+    return { p, q, dx, dy, length: Math.hypot(dx, dy), index }
+  }).filter((edge) => edge.length >= 12)
+    .sort((a, b) => b.length - a.length)
+  if (edges.length < 2) return []
+
+  const osmId = String(station.properties?.osm_id ?? station.id ?? 'station')
+  const isNanzihTechnologyParkStation = osmId === '112463293'
+  type StationEdge = (typeof edges)[number]
+  let first: StationEdge | undefined
+  let second: StationEdge | undefined
+  if (isNanzihTechnologyParkStation) {
+    // This station has four narrow projecting wings. Only the two sides of its
+    // broad central body (ring edges 9 and 29) may receive support walls.
+    first = edges.find((edge) => edge.index === 9)
+    second = edges.find((edge) => edge.index === 29)
+    if (!first || !second) return []
+  } else {
+    const primary = edges[0]
+    first = primary
+    second = edges.find((edge) => {
+      const parallel = Math.abs(
+        (primary.dx * edge.dx + primary.dy * edge.dy) / (primary.length * edge.length),
+      )
+      const firstMid = [(primary.p[0] + primary.q[0]) / 2, (primary.p[1] + primary.q[1]) / 2]
+      const edgeMid = [(edge.p[0] + edge.q[0]) / 2, (edge.p[1] + edge.q[1]) / 2]
+      const separation = Math.hypot(
+        (edgeMid[0] - firstMid[0]) * metersPerLongitudeDegree,
+        (edgeMid[1] - firstMid[1]) * METERS_PER_LATITUDE_DEGREE,
+      )
+      return parallel >= 0.88 && separation >= 5
+    }) ?? edges[1]
+  }
+  if (!first || !second) return []
+
+  return [first, second].flatMap((edge, supportIndex) => {
+    const midpoint = [(edge.p[0] + edge.q[0]) / 2, (edge.p[1] + edge.q[1]) / 2]
+    let nx = -edge.dy / edge.length
+    let ny = edge.dx / edge.length
+    const towardCenterX = (center[0] - midpoint[0]) * metersPerLongitudeDegree
+    const towardCenterY = (center[1] - midpoint[1]) * METERS_PER_LATITUDE_DEGREE
+    // Use the normal pointing away from the footprint centre.
+    if (nx * towardCenterX + ny * towardCenterY > 0) {
+      nx *= -1
+      ny *= -1
+    }
+    const extensionWidth = isNanzihTechnologyParkStation ? 1.5 : 2.6
+    const wallThickness = isNanzihTechnologyParkStation ? 0.55 : 1.0
+    const offset = (meters: number): [number, number] => [
+      nx * meters / metersPerLongitudeDegree,
+      ny * meters / METERS_PER_LATITUDE_DEGREE,
+    ]
+    const innerWallOffset = offset(extensionWidth - wallThickness)
+    const outerOffset = offset(extensionWidth)
+    const extensionCoordinates: Position[][] = [[
+      edge.p,
+      edge.q,
+      [edge.q[0] + outerOffset[0], edge.q[1] + outerOffset[1]],
+      [edge.p[0] + outerOffset[0], edge.p[1] + outerOffset[1]],
+      edge.p,
+    ]]
+    const supportCoordinates: Position[][] = [[
+      [edge.p[0] + innerWallOffset[0], edge.p[1] + innerWallOffset[1]],
+      [edge.q[0] + innerWallOffset[0], edge.q[1] + innerWallOffset[1]],
+      [edge.q[0] + outerOffset[0], edge.q[1] + outerOffset[1]],
+      [edge.p[0] + outerOffset[0], edge.p[1] + outerOffset[1]],
+      [edge.p[0] + innerWallOffset[0], edge.p[1] + innerWallOffset[1]],
+    ]]
+    const sharedProperties = {
+      ...(station.properties ?? {}),
+      parent_osm_id: osmId,
+    }
+    return [
+      {
+        type: 'Feature',
+        id: `station-extension/${osmId}/${supportIndex}`,
+        properties: {
+          ...sharedProperties,
+          building: 'station_extension',
+          height_m: Number(station.properties?.height_m) || baseHeight + 3,
+          min_height_m: baseHeight,
+        },
+        geometry: { type: 'Polygon', coordinates: extensionCoordinates },
+      },
+      {
+        type: 'Feature',
+        id: `station-support/${osmId}/${supportIndex}`,
+        properties: {
+          ...sharedProperties,
+          building: 'station_support',
+          height_m: baseHeight,
+          min_height_m: 0,
+        },
+        geometry: { type: 'Polygon', coordinates: supportCoordinates },
+      },
+    ] as Feature<Polygon>[]
+  })
+}
 
 /** 預設底圖：LanePilot shard（含 node_refs）。
  * 橋頭暫時不載（2026-07-10 指示，先專注楠梓/藍田路實驗）——注意楠梓車站周邊
@@ -165,9 +291,18 @@ export function useMapCore(
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
       graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs)
-    src('turnbays').setData(cleanIntersectionFeatures(baysToGeoJSON(
+    const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines],
-      laneArrows, rightLanesRef.current, motoBoxes.boxes)) as never)
+      laneArrows, rightLanesRef.current, motoBoxes.boxes)
+    turnBayFeaturesRaw.features.push(
+      ...buildUnusedLaneGores(graphRef.current, baysRef.current).features)
+    const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
+    src('turnbays').setData(groundMarkingPolygons(
+      turnBayFeatures,
+      (p) => p?.kind === 'line'
+        ? (p.color === 'stop' ? 0.45 : 0.15)
+        : null,
+    ) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
     src('medians').setData(mediansToGeoJSON([
@@ -193,7 +328,13 @@ export function useMapCore(
   const redrawRoads = useCallback(() => {
     src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(roadsRef.current) } as never)
     src('roadSurfaces').setData(buildRoadSurfaces(roadsRef.current) as never)
-    src('dividers').setData(cleanIntersectionFeatures(buildDividers(roadsRef.current)) as never)
+    const dividerFeatures = cleanIntersectionFeatures(buildDividers(roadsRef.current))
+    src('dividers').setData(groundMarkingPolygons(
+      dividerFeatures,
+      (p) => p?.kind === 'center' ? 0.3
+        : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
+      (p) => p?.kind === 'lane',
+    ) as never)
   }, [src])
 
   /** 高架高度模型重建（底圖就緒/更換時）：渲染（橋面）與車輛 z 共用同一份 */
@@ -235,7 +376,10 @@ export function useMapCore(
       // 內顯效能：把渲染像素密度上限鎖在 1.5×（高 DPI 螢幕的畫布像素數會翻倍以上）
       pixelRatio: Math.min(window.devicePixelRatio, 1.5),
       fadeDuration: 0, // 符號淡入淡出動畫關掉，省連續重繪
-      attributionControl: { compact: true },
+      attributionControl: {
+        compact: true,
+        customAttribution: '© OpenStreetMap contributors',
+      },
       // 效能：MSAA 與 preserveDrawingBuffer 在內顯上很貴，只在 ?screenshot 時開
       canvasContextAttributes: location.search.includes('screenshot')
         ? { antialias: true, preserveDrawingBuffer: true }
@@ -267,10 +411,39 @@ export function useMapCore(
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
-      const [roadsRaw, buildings] = await Promise.all([
+      const [roadsRaw, buildingsRaw] = await Promise.all([
         loadDefaultRoads(),
-        fetch('/data/nanzi_buildings.geojson').then((r) => r.json()),
+        fetch('/data/nanzih_buildings_height.geojson').then((r) => r.json()) as
+          Promise<FeatureCollection<Polygon>>,
       ])
+      const removedBuildingOsmIds = new Set(['823172097', '823172098', '823172099'])
+      const preparedBuildings = buildingsRaw.features
+        .filter((feature) => !removedBuildingOsmIds.has(String(feature.properties?.osm_id ?? '')))
+        .map((feature) => {
+          const properties = { ...(feature.properties ?? {}) }
+          // 捷運／車站站體橫跨道路：底部抬高形成可通車的鏤空層，而非落地實心量體。
+          if (properties.building === 'train_station') {
+            properties.min_height_m = Math.max(Number(properties.min_height_m) || 0, 6)
+            properties.height_m = Math.max(
+              Number(properties.height_m) || 9,
+              properties.min_height_m + 3,
+            )
+          }
+          return {
+            ...feature,
+            id: feature.id ?? `way/${properties.osm_id}`,
+            properties,
+          } as Feature<Polygon>
+        })
+      const stationSideStructures = preparedBuildings.flatMap((feature) =>
+        feature.properties?.building === 'train_station'
+          ? buildStationSideStructures(feature, Number(feature.properties.min_height_m) || 0)
+          : [],
+      )
+      const buildings: FeatureCollection<Polygon> = {
+        ...buildingsRaw,
+        features: [...preparedBuildings, ...stationSideStructures],
+      }
       // 底圖前處理（人工修正 → couplet 合併 → 切塊）收斂在 core/pipeline.ts，
       // 與「匯入地圖」及離線 harness 共用。nodeRemap/wayRemap = 合併造成的
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
@@ -297,6 +470,7 @@ export function useMapCore(
       applyToRoads(roads, foldJournal(journalRef.current))
       redrawRoads()
       src('buildings').setData(buildings)
+      setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
       graphRef.current = new RoadGraph(roads)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
@@ -365,7 +539,10 @@ export function useMapCore(
 
     map.on('click', (e) => clickRef.current(e, map))
 
-    return () => { map.remove() }
+    return () => {
+      setActiveNavigationOcclusion(null)
+      map.remove()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

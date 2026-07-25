@@ -3,7 +3,7 @@
 // 用同一份幾何，變道/轉彎過程都精確貼在藍線上，不再另做一套偏移平滑。
 import { pointAlong, angleDelta, offsetMeters, cumulative, LANE_WIDTH_M } from '../core/geo'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult, type Maneuver } from '../core/graph'
-import { activeElevation } from '../core/elevation'
+import { surfaceHeightAt } from '../core/elevated3d'
 
 export interface DriveState {
   pos: [number, number]
@@ -98,8 +98,9 @@ export class Driver {
       const arrived = remainM < 5 || this.traveled >= bandLen
       // 目前所在道路（HUD 路名/車道列即時更新用）
       const rp = span?.road?.properties
-      // 高架高度：用 span 的路段身分查（不做「找最近高架」——平面路從高架下穿過會誤抬）
-      const elevM = span?.road ? activeElevation()?.heightAtPos(span.road, center) ?? 0 : 0
+      // 高架高度：用 span 的路段身分查（不做「找最近高架」——平面路從高架下穿過會誤抬）。
+      // 走 surfaceHeightAt = 橋面實際高度，與路線帶同一來源（車不會沉進橋面）
+      const elevM = span?.road ? surfaceHeightAt(span.road, center) : 0
       this.onTick({
         roadName: rp?.name,
         roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,

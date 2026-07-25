@@ -280,6 +280,31 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </div>
         </>
       )}
+      {editRoad.motoBoxMaxF > 0 && (
+        <div className="edit-row">
+          <span>{editRoad.fwdLabel}機車停等格</span>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoBoxF: Math.max(0, er.motoBoxF - 1),
+          }))}>−</button>
+          <b>{editRoad.motoBoxF === 0 ? '關閉' : `外側 ${editRoad.motoBoxF} 道`}</b>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoBoxF: Math.min(er.motoBoxMaxF, er.motoBoxF + 1),
+          }))}>＋</button>
+        </div>
+      )}
+      {editRoad.oneway === 'no' && editRoad.motoBoxMaxB > 0 && (
+        <div className="edit-row">
+          <span>{editRoad.bwdLabel}機車停等格</span>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoBoxB: Math.max(0, er.motoBoxB - 1),
+          }))}>−</button>
+          <b>{editRoad.motoBoxB === 0 ? '關閉' : `外側 ${editRoad.motoBoxB} 道`}</b>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, motoBoxB: Math.min(er.motoBoxMaxB, er.motoBoxB + 1),
+          }))}>＋</button>
+        </div>
+      )}
+      <div className="edit-help">停等格自最外側車道往內涵蓋；禁行機車車道不可涵蓋，上限已依現況鎖定。</div>
       </section>
 
       <section className="edit-section">

@@ -9,14 +9,14 @@ import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseImported } from '../src/core/importmap'
-import { roadsFromGeoJSON, buildDividers, type RoadFeature } from '../src/core/roads'
+import { roadsFromGeoJSON, buildDividers, laneSpanM, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
 import { RoadGraph } from '../src/core/graph'
-import { angleDelta, haversine } from '../src/core/geo'
+import { angleDelta, cumulative, haversine } from '../src/core/geo'
 import { foldJournal, applyToRoads, type EnhancementRecord } from '../src/core/enhancements'
 import {
   buildTurnBays, buildChannelization, buildStopLines, buildRightLanes, buildLaneArrows,
-  buildMotoBoxes,
+  buildMotoBoxes, buildUnusedLaneGores, isStopLineRoad,
   BAY_TEXT_ARROW_CLEARANCE_M,
 } from '../src/core/turnbays'
 import { buildRoadTexts } from '../src/core/roadtext'
@@ -214,18 +214,33 @@ check('單端偏心道仍保留黃色槽化起始邊線',
 check('偏心道路中央標線有正常生成', channelization.length > 0,
   `${channelization.length} 條中央標線`)
 const pairedCenterLines = channelization.filter((line) => line.style === 'paired-center')
-const channelCaps = channelization.filter((line) => line.style === 'channel-cap')
-const hatchOwners = new Set(channelization
-  .filter((line) => line.style === 'channel-hatch' && line.ownerKey)
-  .map((line) => line.ownerKey))
-const capOwners = new Set(channelCaps.map((line) => line.ownerKey))
+const singleUsedLines = channelization.filter((line) => line.style === 'single-bay-used')
+const goreFeatures = buildUnusedLaneGores(graph, bays).features
+const goreBodies = goreFeatures.filter((f) => f.properties?.featureType === 'unused_lane_gore')
+const goreOutlines = goreFeatures.filter((f) => f.properties?.featureType === 'unused_lane_gore_outline')
+const goreHatches = goreFeatures.filter((f) => f.properties?.featureType === 'unused_lane_gore_hatch')
 check('每組雙端偏心道都生成兩條 S 型黃線',
   pairedCenterLines.length === pairedBays.length,
   `${pairedCenterLines.length} 條 S 型線 / ${pairedBays.length / 2} 組偏心道`)
-check('所有實際生成的單端槽化區都有且只有一個封口',
-  channelCaps.length === capOwners.size &&
-  [...hatchOwners].every((key) => capOwners.has(key)),
-  `${channelCaps.length} 個封口 / ${hatchOwners.size} 個槽化區`)
+check('單方向未使用段以公尺制 smooth-taper Polygon 生成槽化區',
+  goreBodies.length > 0 && goreBodies.every((f) =>
+    f.geometry.type === 'Polygon' && f.properties?.geometryMode === 'smooth-taper'),
+  `${goreBodies.length} 個槽化面`)
+check('每個槽化面都有外側黃線、下游封口與裁入面內的實體斜紋 Polygon',
+  goreOutlines.length === goreBodies.length * 2 && goreHatches.length > goreBodies.length,
+  `${goreOutlines.length} 個外框面 / ${goreHatches.length} 個斜紋面`)
+check('單方向偏心道使用端仍只保留既有雙黃線',
+  singleUsedLines.length > 0 && (() => {
+    const singleKeys = new Set(singleBays.map((b) => b.key))
+    return channelization.every((line) => !line.ownerKey || !singleKeys.has(line.ownerKey) ||
+      line.style === 'single-bay-used')
+  })(),
+  `${singleUsedLines.length} 條使用端雙黃線`)
+check('單方向偏心道的雙黃漸變使用多點平滑曲線',
+  singleBays.every((bay) => {
+    const yellow = bay.lines.filter((line) => line.color === 'yellow')
+    return yellow.length === 2 && yellow.every((line) => line.coords.length >= 4)
+  }), `${singleBays.length} 條單端偏心道`)
 const deminJhongchang = 1398634938
 const deminJhongchangBlocks = roads.filter((r) =>
   r.properties.nodes.includes(deminJhongchang) &&
@@ -299,6 +314,38 @@ const stopLens = stops.map((s) => haversine(s.coords[0], s.coords[1]))
 check('停止線長度合理（1.5m~40m）',
   stopLens.every((L) => L > 1.5 && L < 40),
   `min ${Math.min(...stopLens).toFixed(1)}m / max ${Math.max(...stopLens).toFixed(1)}m`)
+const intersectionIds = new Set(graph.intersections().map((i) => i.id))
+const multiLaneStopKeys = new Set<string>()
+for (const e of graph.scopeEdges(isStopLineRoad, 7, 1.2, isStopLineRoad)) {
+  if (!intersectionIds.has(e.toNode) || e.endSetbackM <= 2) continue
+  if (laneSpanM(e.road.properties, e.back) <= 0) continue
+  const cum = cumulative(e.coords)
+  const d = cum[cum.length - 1] - e.endSetbackM
+  if (d < e.startSetbackM + 6) continue
+  multiLaneStopKeys.add(`${e.road.properties.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)
+}
+const renderedStopKeys = new Set(stops.map((s) => s.ownerKey).filter(Boolean))
+const missingMultiLaneStops = [...multiLaneStopKeys].filter((key) => !renderedStopKeys.has(key))
+check('所有正反合計至少兩道的道路，其合格路口進入方向皆有停止線',
+  missingMultiLaneStops.length === 0,
+  `${multiLaneStopKeys.size - missingMultiLaneStops.length}/${multiLaneStopKeys.size} 個多車道路口進入方向，` +
+  `總停止線 ${stops.length} 條` +
+  (missingMultiLaneStops.length ? `；缺 ${missingMultiLaneStops.slice(0, 8).join(', ')}` : ''))
+const lantianNodes = new Set(roads
+  .filter((r) => r.properties.name === '藍田路')
+  .flatMap((r) => r.properties.nodes))
+const lantianUniversity7Nodes = new Set(roads
+  .filter((r) => r.properties.name === '大學七街')
+  .flatMap((r) => r.properties.nodes)
+  .filter((node) => lantianNodes.has(node)))
+const lantianUniversity7Keys = new Set(graph
+  .scopeEdges((r) => ['藍田路', '大學七街'].includes(r.properties.name ?? ''), 7, 1.2, isStopLineRoad)
+  .filter((e) => lantianUniversity7Nodes.has(e.toNode) && isStopLineRoad(e.road))
+  .map((e) => `${e.road.properties.osm_id}@${e.toNode}${e.back ? '~b' : ''}`))
+check('藍田路 × 大學七街雙方朝向路口的多車道方向皆有停止線',
+  lantianUniversity7Keys.size >= 2 &&
+  [...lantianUniversity7Keys].every((key) => renderedStopKeys.has(key)),
+  `${[...lantianUniversity7Keys].filter((key) => renderedStopKeys.has(key)).length}/${lantianUniversity7Keys.size} 個方向`)
 
 // ── 2. 分向線終止端收邊（大學西路 → 援中路）──
 const byName = (nm: string) => roads.filter((r) => r.properties.name === nm)

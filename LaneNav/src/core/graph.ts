@@ -59,10 +59,38 @@ export interface RouteResult {
    * road/back = 該段對應的路與行進方向（禁行審計/除錯用；detour 暫時路線可缺）
    */
   spans: { toIdx: number; offM: number; leftM: number; rightM: number; road?: RoadFeature; back?: boolean }[]
+  /** 分流點（下交流道/左右分道）：轉角不足以成為 maneuver，但要提前切到正確側 */
+  diverges: Diverge[]
+  /**
+   * 匝道交織點的路線里程：路線「經過但不轉出」的交流道節點（該節點有別的匝道進出）。
+   * 提前變道不得早於這裡——長途要過兩個交流道才下去時，太早切出去等於整段卡在
+   * 別人的出口專用道/匯入道上。
+   */
+  weaves: number[]
 }
 
-/** 路口前開始變道的距離（公尺） */
+/**
+ * 分流點：路線在此離開「主流」——匝道出口、Y 型左右分道。轉向角 ≤25° 不會產生
+ * maneuver（HUD 也不該報「右轉」），但駕駛必須提前切到該側車道才走得到，
+ * 否則到了分流鼻端才橫切＝壓槽化線。laneBand 依 side 做提前變道。
+ */
+export interface Diverge {
+  distM: number
+  side: 'left' | 'right'
+  nodeId?: number
+}
+
+/** 路口前開始變道的最短距離（公尺）——實際提前量再依速率放大，見 leadWindow */
 export const LANE_CHANGE_M = 45
+/** 每跨一個車道所需秒數／切到定位後到路口的緩衝秒數（提前量 = 速率 × 這兩者）。
+ * 車多時要等空隙，一個車道抓 3.5 秒；就位緩衝要涵蓋路口前的排隊長度，
+ * 太晚切會卡在車陣外側切不進去 */
+const LANE_CHANGE_S = 3.5
+const SETTLE_S = 4
+/** 分流（匝道/左右分道）的緩衝秒數：走錯邊就得繞一大圈，且分流鼻端前多半是
+ * 槽化線不能再變換車道——60km/h 約 167m、90km/h 約 250m 前就要在正確車道上。
+ * 真的太早（上一個交流道還沒過）由 weaves 夾住，不會整段掛在別人的出口道上 */
+const DIVERGE_SETTLE_S = 10
 
 export interface Maneuver {
   distM: number
@@ -442,10 +470,15 @@ export class RoadGraph {
    * 中央槽化線渲染用：scope 內所有方向邊 + 兩端路口的收邊量（交叉路半寬），
    * 標線不畫進路口框。turnbays.ts 的 buildChannelization 使用。
    */
-  scopeEdges(scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2): ScopeEdge[] {
+  scopeEdges(
+    scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2,
+    crossQualifies?: (r: RoadFeature) => boolean,
+  ): ScopeEdge[] {
     // 收邊只看「夠格的交叉路」：不同路（id 與路名都不同）且寬 ≥7m（≥2 車道）。
     // 小巷（residential 6.4m）交會不清標線也不生停止線——實際道路的車道線
     // 會直接越過巷口；同路續接區塊也不算（自寬會把收邊撐到半個路寬）。
+    // crossQualifies（選用）：另讓「實際幹道／集散道」交叉路夠格（停等線用），
+    // 即使窄於 minCrossWidthM——幹道×幹道兩條 6.4m 相交也要有停等線回退。
     const crossW = (nodeId: number, self: Edge) => {
       let w = 0
       const sp = self.road.properties
@@ -453,7 +486,7 @@ export class RoadGraph {
         if (o === self || o === self.twin) continue
         const q = o.road.properties
         if (q.osm_id === sp.osm_id || (sp.name && q.name === sp.name)) continue
-        if (q.width_m < minCrossWidthM) continue
+        if (q.width_m < minCrossWidthM && !crossQualifies?.(o.road)) continue
         w = Math.max(w, q.width_m)
       }
       return w
@@ -634,9 +667,80 @@ export class RoadGraph {
       timeS: edges.reduce((s, e) => s + e.timeS, 0),
       maneuvers: buildManeuvers(edges),
       spans,
+      ...this.buildDiverges(edges, profile),
     }
   }
+
+  /**
+   * 分流點偵測：路線在某節點離開「主流」，但轉角小到不成為 maneuver。
+   * 判定條件（三者皆須成立）：
+   *   1. 該節點還有其他大致同向（≤FORK_FWD_DEG）的出邊——橫交道路不是分流；
+   *   2. 路線的出邊與所有競爭出邊都在同一側（角差 >FORK_SEP_DEG），才有「該切哪邊」；
+   *   3. 路線本身就是分出去的那條——比競爭者更偏（或路線是匝道 _link 而對方不是）。
+   *      主線直行、旁邊有匝道分出去的情況不算：續行主線不需要為別人換道。
+   */
+  private buildDiverges(edges: Edge[], profile: Profile): { diverges: Diverge[]; weaves: number[] } {
+    const out: Diverge[] = []
+    const weaves: number[] = []
+    let dist = edges[0].lengthM
+    for (let i = 1; i < edges.length; i++) {
+      const prev = edges[i - 1], next = edges[i]
+      const node = next.from >= 0 ? next.from : prev.to
+      const pc = prev.coords
+      const inBrg = bearing(pc[pc.length - 2], pc[pc.length - 1])
+      const outBrg = bearing(next.coords[0], next.coords[1])
+      const dOut = angleDelta(inBrg, outBrg)
+      // 交織點：此節點有「不屬於本路線」的匝道進出（別人的出口/匯入）
+      if (node >= 0 && this.hasOtherRamp(node, prev.road, next.road)) weaves.push(dist)
+      if (node >= 0 && !classifyTurn(dOut)) {
+        // 競爭出邊（同節點、大致同向、本車種可走）。partial edge 不是圖上的物件，
+        // 排不掉自己，但自己的角差 ≈0 會被 FORK_SEP_DEG 濾掉。
+        let nAlt = 0, minAlt = Infinity, relMin = Infinity, relMax = -Infinity
+        for (const a of this.adj.get(node) ?? []) {
+          if (a === next || a === prev.twin || a.coords.length < 2) continue
+          if (!edgeAllowed(a.road, a.back, profile)) continue
+          const ab = bearing(a.coords[0], a.coords[1])
+          if (Math.abs(angleDelta(inBrg, ab)) > FORK_FWD_DEG) continue
+          nAlt++
+          minAlt = Math.min(minAlt, Math.abs(angleDelta(inBrg, ab)))
+          const rel = angleDelta(ab, outBrg) // >0：路線在該支線右側
+          relMin = Math.min(relMin, rel)
+          relMax = Math.max(relMax, rel)
+        }
+        const side = nAlt === 0 ? null
+          : relMin > FORK_SEP_DEG ? 'right' : relMax < -FORK_SEP_DEG ? 'left' : null
+        const isRamp = isLink(next.road) && !isLink(prev.road)
+        if (side && (isRamp || Math.abs(dOut) >= minAlt - FORK_SEP_DEG)) {
+          out.push({ distM: dist, side, nodeId: node })
+        }
+      }
+      dist += next.lengthM
+    }
+    return { diverges: out, weaves }
+  }
+
+  /** 該節點是否有「本路線以外」的匝道進出（出邊、入邊都算）——交流道交織區的判準 */
+  private hasOtherRamp(node: number, from: RoadFeature, to: RoadFeature): boolean {
+    const mine = (r: RoadFeature) =>
+      r.properties.osm_id === from.properties.osm_id || r.properties.osm_id === to.properties.osm_id
+    for (const list of [this.adj.get(node), this.adjIn.get(node)]) {
+      for (const e of list ?? []) {
+        if (isLink(e.road) && !mine(e.road)) return true
+      }
+    }
+    return false
+  }
 }
+
+/** 匝道（交流道連絡道）路體 */
+function isLink(r: RoadFeature): boolean {
+  return r.properties.highway.endsWith('_link')
+}
+
+/** 只有大致同向的出邊才是分流競爭者（橫交道路走的是別的動線） */
+const FORK_FWD_DEG = 60
+/** 兩條出邊要差這麼多度才分得出左右（同角度＝重疊資料，不是分流） */
+const FORK_SEP_DEG = 4
 
 /** 轉彎後從轉向側車道漸出回巡航車道的過渡距離（公尺） */
 const EXIT_MERGE_M = 25
@@ -645,25 +749,96 @@ const EXIT_MERGE_M = 25
  * 橫掃對向/中央槽化線的長斜線（車貼帶行駛後這個瑕疵會直接變成行駛軌跡） */
 const BAND_STEP_M = 6
 
+/** 橫移一個車道寬的最短漸變長度：至少 14m，高速再依速率放長 */
+const SPAN_TAPER_MIN_M = 14
+const SPAN_TAPER_S = 1.5
+
+/** 每公尺可橫移量上限（= 一個車道寬 / 漸變長度）——巡航漸變與變道 ramp 共用同一斜率 */
+function maxSlew(v: number): number {
+  return LANE_WIDTH_M / Math.max(SPAN_TAPER_MIN_M, v * SPAN_TAPER_S)
+}
+
 export interface LaneBandResult {
   coords: [number, number][]
   /** 每個取樣點的 route 里程——模擬車沿帶行駛時內插回 route 里程（HUD/maneuver 用） */
   routeD: number[]
 }
 
+/** 橫向事件：轉向與分流統一成「到某里程前要切到某車道」，laneBand 一視同仁處理 */
+interface LatEvent {
+  distM: number
+  /** 轉向（有 HUD 指引）；分流事件為 undefined */
+  man?: Maneuver
+  /** 分流側（man 為 undefined 時有值） */
+  side?: 'left' | 'right'
+}
+
+/** 事件前最後一個經過的匝道交織點里程（沒有就 0）——變道不從那之前開始 */
+function lastWeaveBefore(weaves: number[], distM: number): number {
+  let out = 0
+  for (const w of weaves) {
+    if (w < distM - 1 && w > out) out = w
+  }
+  return out
+}
+
+/** 該路段的設計速率（m/s）——變道提前量與漸變長度都依它換算 */
+function spanSpeedMs(span?: RouteResult['spans'][number]): number {
+  return (SPEED_KMH[span?.road?.properties.highway ?? ''] ?? 40) / 3.6
+}
+
 /**
- * 車道級路線帶：把路線幾何偏移到「實際行駛的車道」上，含三種過渡：
- *   進彎：路口前漸進切到轉向車道；偏心左轉道對齊 bay 開口
- *        （漸變段斜切開始才變道，不壓上游槽化線與儲車段白線）
- *   出彎：轉彎後從轉向側車道（左轉→最內、右轉→最外）漸出回巡航車道
- *   巡航：span 的 offM
+ * 變道視窗：回傳〔開始變道距事件多遠, 完成變道距事件多遠〕（公尺）。
+ * 提前量隨速率與要跨的車道數放大：分流在 60km/h 跨一車道約 142m 前開始、100m 前就位，
+ * 一律固定 45m（90km/h 只有 1.8 秒）等於到了路口/鼻端才橫切。
+ */
+function leadWindow(v: number, latM: number, diverge: boolean): [number, number] {
+  const lanes = Math.max(1, Math.abs(latM) / LANE_WIDTH_M)
+  const end = Math.max(LANE_CHANGE_M * 0.4, v * (diverge ? DIVERGE_SETTLE_S : SETTLE_S))
+  return [end + Math.max(LANE_CHANGE_M * 0.6, v * LANE_CHANGE_S * lanes), end]
+}
+
+/**
+ * 巡航偏移的橫向變化率限制：車道數/路寬改變（或匝道接主線）時 span 的 offM 會直接跳，
+ * 逐段內插不夠用——路口附近常有數公尺長的碎段，漸變長度會被夾成 0 而還原成直角。
+ * 改成對整串取樣做斜率限制：正向一次、反向一次再取平均＝以交界為中心的對稱漸變，
+ * 需要時自然跨過好幾個碎段。每公尺可橫移量 = 一個車道寬 / 漸變長度（依速率）。
+ */
+function slewLimit(ds: number[], raw: number[], vs: number[]): number[] {
+  const n = raw.length
+  const rate = (i: number) => maxSlew(vs[i])
+  const pass = (order: number[]): number[] => {
+    const out = raw.slice()
+    for (let k = 1; k < n; k++) {
+      const i = order[k], j = order[k - 1]
+      const step = Math.abs(ds[i] - ds[j]) * Math.min(rate(i), rate(j))
+      out[i] = Math.max(out[j] - step, Math.min(out[j] + step, raw[i]))
+    }
+    return out
+  }
+  const fwd = pass([...raw.keys()])
+  const bwd = pass([...raw.keys()].reverse())
+  return raw.map((_, i) => (fwd[i] + bwd[i]) / 2)
+}
+
+/**
+ * 車道級路線帶：把路線幾何偏移到「實際行駛的車道」上，含四種過渡：
+ *   進彎/分流：路口或分流鼻端前，依速率提前漸進切到目標車道（見 leadWindow）；
+ *        偏心左轉道改對齊 bay 開口（漸變段斜切開始才變道，不壓上游槽化線與儲車段白線）
+ *   出彎：轉彎後從轉向側車道（左轉→最內、右轉→最外）漸出回巡航車道；
+ *        分流因轉角小、橫向座標系幾乎沒轉，直接由通過分流點時的偏移續接
+ *   巡航：span 的 offM，跨路段以 slewLimit 漸變（不會有橫向直角）
  * 路線帶畫在車道內、車貼在路線帶上（drive.ts 直接沿這條帶行駛）。
  */
 export function laneBand(route: RouteResult): LaneBandResult {
   const cs = route.coords
   const cum = route.cum
   const total = cum[cum.length - 1]
-  const mans = route.maneuvers.filter((m) => m.kind !== 'arrive')
+  // 轉向與分流合成一條依里程排序的事件序列
+  const evs: LatEvent[] = [
+    ...route.maneuvers.filter((m) => m.kind !== 'arrive').map((m) => ({ distM: m.distM, man: m })),
+    ...(route.diverges ?? []).map((g) => ({ distM: g.distM, side: g.side })),
+  ].sort((a, b) => a.distM - b.distM)
 
   // 取樣里程：原頂點（轉角錨點）＋ 全程步進（頂點附近 1.5m 內的步進點略過）
   const ds: number[] = [...cum]
@@ -675,47 +850,91 @@ export function laneBand(route: RouteResult): LaneBandResult {
     else if (cum.includes(d)) samples[samples.length - 1] = d // 頂點優先於鄰近步進點
   }
 
-  const coords: [number, number][] = []
-  const routeD: number[] = []
+  // 前置：每點的位置/所屬 span/原始巡航偏移，巡航偏移再做斜率限制（跨段漸變）
+  const at = samples.map((d) => pointAlong(cs, cum, d))
+  const sidx: number[] = []
   let si = 0
+  for (const p of at) {
+    while (si < route.spans.length - 1 && route.spans[si].toIdx < p.idx) si++
+    sidx.push(si)
+  }
+  const cruises = slewLimit(
+    samples,
+    sidx.map((i) => route.spans[i]?.offM ?? 0),
+    sidx.map((i) => spanSpeedMs(route.spans[i])))
+
+  const offs: number[] = []
   let mi = 0
-  for (const d of samples) {
-    const { pos, brg, idx } = pointAlong(cs, cum, d)
-    while (si < route.spans.length - 1 && route.spans[si].toIdx < idx) si++
-    const span = route.spans[si]
-    let off = span?.offM ?? 0
+  let lastOff: number | null = null // 上一取樣點的偏移
+  let passOff: number | null = null // 通過分流點當下的偏移（下游續接用）
+  for (let k = 0; k < samples.length; k++) {
+    const d = samples[k]
+    const { pos, brg } = at[k]
+    const span = route.spans[sidx[k]]
+    let off = span ? cruises[k] : 0
     if (span) {
-      while (mi < mans.length && mans[mi].distM < d - 0.5) mi++
-      const next = mi < mans.length ? mans[mi] : null
-      const prev = mi > 0 ? mans[mi - 1] : null
+      const cruise = off
+      while (mi < evs.length && evs[mi].distM < d - 0.5) { passOff = lastOff; mi++ }
+      const next = mi < evs.length ? evs[mi] : null
+      const prev = mi > 0 ? evs[mi - 1] : null
       let entering = false
       if (next) {
-        // 進彎 ramp：一般 45m→18m；偏心道/右轉道對齊 bay 幾何（漸變段起點→儲車段起點）
-        const hasBayWin = (next.bayOffM ?? next.rightOffM) !== undefined && next.bayMouthM !== undefined
-        const rampStart = hasBayWin ? next.bayMouthM! + (next.bayTaperM ?? 15) : LANE_CHANGE_M
-        const rampEnd = hasBayWin ? next.bayMouthM! : LANE_CHANGE_M * 0.4
+        const target = next.man ? turnTarget(next.man, span)
+          : next.side === 'right' ? span.rightM : span.leftM
+        // 偏心道/右轉道對齊 bay 幾何（漸變段起點→儲車段起點）；其餘依速率提前
+        const hasBayWin = next.man &&
+          (next.man.bayOffM ?? next.man.rightOffM) !== undefined && next.man.bayMouthM !== undefined
+        const v = spanSpeedMs(span)
+        let [rampStart, rampEnd] = hasBayWin
+          ? [next.man!.bayMouthM! + (next.man!.bayTaperM ?? 15), next.man!.bayMouthM!]
+          : leadWindow(v, target - cruise, !next.man)
+        if (!hasBayWin) {
+          // 提前量的起點不得早於：上一個事件（連續路口會變成整段左右擺）、
+          // 以及最後一個經過的匝道交織點（長途在兩個交流道之後才下去時，
+          // 早於前一個交流道切出去會整段掛在別人的出口/匯入道上）。
+          // 但壓縮到比 maxSlew 還陡就不叫變道了，斜率下限優先（bay 的窗是實體幾何，不動）
+          const bound = Math.max(
+            prev ? prev.distM + EXIT_MERGE_M : 0,
+            lastWeaveBefore(route.weaves, next.distM))
+          const floor = rampEnd + Math.abs(target - cruise) / maxSlew(v)
+          rampStart = Math.min(rampStart, Math.max(floor, next.distM - bound))
+        }
         const gap = next.distM - d
         if (gap <= rampStart) {
           const t = Math.min(1, Math.max(0, (rampStart - gap) / Math.max(1, rampStart - rampEnd)))
-          off = span.offM + (turnTarget(next, span) - span.offM) * t
+          off = cruise + (target - cruise) * t
           entering = true
         }
       }
       if (!entering && prev) {
-        // 出彎漸出：左轉/迴轉從最內車道、右轉從最外車道，漸回巡航車道
+        // 出彎漸出：左轉/迴轉從最內車道、右轉從最外車道，漸回巡航車道。
+        // 分流沒有轉向、橫向座標系也沒轉，改從通過分流點時的偏移續接（匝道中心線
+        // 起點就在主線中心線上，不續接會在鼻端出現一整個車道寬的橫跳）。
         const e = d - prev.distM
         if (e < EXIT_MERGE_M) {
-          const from =
-            prev.kind === 'right' || prev.kind === 'slight-right' || prev.twoStage ? span.rightM
-            : prev.kind === 'left' || prev.kind === 'slight-left' || prev.kind === 'uturn' ? span.leftM
-            : span.offM
-          off = from + (span.offM - from) * Math.max(0, e / EXIT_MERGE_M)
+          const p = prev.man
+          const from = !p ? passOff ?? cruise
+            : p.kind === 'right' || p.kind === 'slight-right' || p.twoStage ? span.rightM
+            : p.kind === 'left' || p.kind === 'slight-left' || p.kind === 'uturn' ? span.leftM
+            : cruise
+          off = from + (cruise - from) * Math.max(0, e / EXIT_MERGE_M)
         }
       }
     }
+    lastOff = off
+    offs.push(off)
+  }
+
+  // 收尾再限一次斜率：span 交界處連「目標車道」本身都會跳（前後路段車道數不同，
+  // 最內/最外的位置不一樣），變道中途遇到交界就會在 ramp 上折一角。
+  const smooth = slewLimit(samples, offs, sidx.map((i) => spanSpeedMs(route.spans[i])))
+  const coords: [number, number][] = []
+  const routeD: number[] = []
+  for (let k = 0; k < samples.length; k++) {
+    const { pos, brg } = at[k]
     const rad = ((brg + 90) * Math.PI) / 180
-    coords.push(offsetMeters(pos, off * Math.sin(rad), off * Math.cos(rad)))
-    routeD.push(d)
+    coords.push(offsetMeters(pos, smooth[k] * Math.sin(rad), smooth[k] * Math.cos(rad)))
+    routeD.push(samples[k])
   }
   return { coords, routeD }
 }
@@ -730,6 +949,8 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const coords = [...legs[0].coords]
   const spans = [...legs[0].spans]
   const maneuvers = [...legs[0].maneuvers.slice(0, -1)]
+  const diverges = [...legs[0].diverges]
+  const weaves = [...legs[0].weaves]
   let distOff = legs[0].lengthM
   let timeS = legs[0].timeS
   for (let i = 1; i < legs.length; i++) {
@@ -739,6 +960,8 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
     coords.push(...L.coords.slice(1))
     for (const s of L.spans) spans.push({ ...s, toIdx: base + s.toIdx })
     for (const m of L.maneuvers.slice(0, -1)) maneuvers.push({ ...m, distM: m.distM + distOff })
+    for (const g of L.diverges) diverges.push({ ...g, distM: g.distM + distOff })
+    for (const w of L.weaves) weaves.push(w + distOff)
     distOff += L.lengthM
     timeS += L.timeS
   }
@@ -746,7 +969,7 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const arrive = last.maneuvers[last.maneuvers.length - 1]
   maneuvers.push({ ...arrive, distM: distOff - last.lengthM + arrive.distM })
   const cum = cumulative(coords)
-  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans }
+  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans, diverges, weaves }
 }
 
 /** 相鄰轉向合併門檻：錯位路口/巷弄接駁的兩個轉向點通常在 20m 內 */

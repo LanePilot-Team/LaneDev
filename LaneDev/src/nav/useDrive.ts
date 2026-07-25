@@ -11,6 +11,7 @@ import { VehicleModelLayer } from '../core/models3d'
 import { cumulative } from '../core/geo'
 import type { Mode } from '../app/mapCore'
 import type { Stop } from '../plan/usePlanner'
+import { activeNavigationOcclusion } from '../core/occlusion'
 
 /** 路口決策：接近下個轉彎多近（公尺）才顯示「不照指引走」按鈕 */
 const DECISION_BUTTON_RANGE_M = 30
@@ -85,6 +86,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     setGpsMsg(null)
     setDrive(null)
     p.vehicleLayerRef.current?.setNav(null)
+    activeNavigationOcclusion()?.clear()
   }
 
   function runDriver(route: RouteResult, opts?: { autoRerouteAfterM?: number }) {
@@ -104,6 +106,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       frame++
       if (frame % 2 === 0 || s.arrived) {
         p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
+        activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
         // 不帶 zoom/pitch → 導航中可自由縮放（mvp 行為）；
         // 手勢後 250ms 內暫停跟隨，讓 scrollZoom 的平滑動畫跑完（車模照常更新）
         if (performance.now() - p.lastGestureRef.current > 250) {
@@ -151,6 +154,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         lastDriveRef.current = s
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
         p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
+        activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
         if (performance.now() - p.lastGestureRef.current > 250) {
           map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding })
         }
@@ -203,6 +207,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       coords, cum, lengthM: cum[cum.length - 1], timeS: 0,
       maneuvers: [],
       spans: [{ toIdx: coords.length - 1, offM: 0, leftM: 0, rightM: 0 }],
+      diverges: [], weaves: [],
     }
     p.routeRef.current = detourRoute
     drawRouteLine(detourRoute)

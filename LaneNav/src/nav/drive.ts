@@ -4,6 +4,7 @@
 import { pointAlong, angleDelta, offsetMeters, cumulative, LANE_WIDTH_M } from '../core/geo'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult, type Maneuver } from '../core/graph'
 import { activeElevation } from '../core/elevation'
+import type { ResolvedLaneGuidance } from '../core/laneGuidance'
 
 export interface DriveState {
   pos: [number, number]
@@ -20,8 +21,7 @@ export interface DriveState {
   /** 目前所在道路名（span.road）——HUD 底部列顯示；detour 暫時路線可能沒有 */
   roadName?: string
   /** 目前行向的車道數/轉向真值——HUD 車道列隨所在路段即時更新 */
-  roadLanes?: number
-  roadTurnLanes?: string[]
+  roadLaneGuidance?: ResolvedLaneGuidance
   /** 高架高度（公尺）：所在路段屬高架清單時 >0，車模 z 用（core/elevation.ts） */
   elevM?: number
 }
@@ -102,8 +102,7 @@ export class Driver {
       const elevM = span?.road ? activeElevation()?.heightAtPos(span.road, center) ?? 0 : 0
       this.onTick({
         roadName: rp?.name,
-        roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,
-        roadTurnLanes: rp ? (span!.back ? rp.turnLanesB : rp.turnLanes) : undefined,
+        roadLaneGuidance: span?.laneGuidance,
         elevM,
         pos,
         bearing: (this.smoothBrg + 360) % 360,

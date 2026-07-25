@@ -4,6 +4,12 @@
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
 import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
 import { MOTO_LANE_M, type RoadFeature } from './roads'
+import {
+  buildLaneGuidanceIndex,
+  resolveLaneGuidance,
+  type LaneGuidanceIndex,
+  type ResolvedLaneGuidance,
+} from './laneGuidance'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -58,7 +64,15 @@ export interface RouteResult {
    * offM = 巡航車道、leftM/rightM = 該路段最左/最右可用車道（路口前變道用）。
    * road/back = 該段對應的路與行進方向（禁行審計/除錯用；detour 暫時路線可缺）
    */
-  spans: { toIdx: number; offM: number; leftM: number; rightM: number; road?: RoadFeature; back?: boolean }[]
+  spans: {
+    toIdx: number
+    offM: number
+    leftM: number
+    rightM: number
+    road?: RoadFeature
+    back?: boolean
+    laneGuidance?: ResolvedLaneGuidance
+  }[]
 }
 
 /** 路口前開始變道的距離（公尺） */
@@ -87,6 +101,7 @@ export interface Maneuver {
   rightOffM?: number
   lanesForward: number
   turnLanes?: string[]
+  laneGuidance?: ResolvedLaneGuidance
 }
 
 /** scope 內的方向邊（中央槽化線/地面車道箭頭渲染用） */
@@ -223,7 +238,10 @@ export class RoadGraph {
   private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
 
-  constructor(roads: RoadFeature[]) {
+  constructor(
+    roads: RoadFeature[],
+    private laneGuidanceIndex: LaneGuidanceIndex = buildLaneGuidanceIndex([]),
+  ) {
     const usage = new Map<number, number>()
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -599,14 +617,30 @@ export class RoadGraph {
     for (const e of edges) {
       coords.push(...e.coords.slice(1))
       const lo = laneOffsets(e, profile)
-      spans.push({ toIdx: coords.length - 1, offM: lo.cruise, leftM: lo.left, rightM: lo.right, road: e.road, back: e.back })
+      const p = e.road.properties
+      const roadLaneCount = e.back ? p.lanesBackward : p.lanesForward
+      const osmMovements = e.back ? p.turnLanesB : p.turnLanes
+      spans.push({
+        toIdx: coords.length - 1,
+        offM: lo.cruise,
+        leftM: lo.left,
+        rightM: lo.right,
+        road: e.road,
+        back: e.back,
+        laneGuidance: resolveLaneGuidance(this.laneGuidanceIndex, {
+          wayId: p.osm_id,
+          direction: e.back ? 'backward' : 'forward',
+          roadLaneCount,
+          osmMovements,
+        }),
+      })
     }
     const cum = cumulative(coords)
     return {
       coords, cum,
       lengthM: cum[cum.length - 1],
       timeS: edges.reduce((s, e) => s + e.timeS, 0),
-      maneuvers: buildManeuvers(edges),
+      maneuvers: buildManeuvers(edges, this.laneGuidanceIndex),
       spans,
     }
   }
@@ -735,7 +769,10 @@ function classifyTurn(d: number): Maneuver['kind'] | null {
   return null
 }
 
-function buildManeuvers(edges: Edge[]): Maneuver[] {
+function buildManeuvers(
+  edges: Edge[],
+  laneGuidanceIndex: LaneGuidanceIndex,
+): Maneuver[] {
   type Cand = { m: Maneuver; inBrg: number; outBrg: number; d: number }
   const cands: Cand[] = []
   let dist = edges[0].lengthM
@@ -747,21 +784,32 @@ function buildManeuvers(edges: Edge[]): Maneuver[] {
     const d = angleDelta(inBrg, outBrg)
     const kind = classifyTurn(d)
     if (kind) {
+      const nodeId = next.from >= 0 ? next.from : prev.to >= 0 ? prev.to : undefined
+      const roadProps = prev.road.properties
+      const roadLaneCount = prev.back
+        ? roadProps.lanesBackward
+        : roadProps.lanesForward
+      const osmMovements = prev.back
+        ? roadProps.turnLanesB
+        : roadProps.turnLanes
       cands.push({
         m: {
           distM: dist,
           kind,
           roadName: next.name,
-          nodeId: next.from >= 0 ? next.from : prev.to >= 0 ? prev.to : undefined,
+          nodeId,
           pos: next.coords[0],
           fromBearing: inBrg,
           // HUD 車道格：取「進入行向」的車道數與轉向（逆向邊用 backward 組）
-          lanesForward: prev.back
-            ? prev.road.properties.lanesBackward
-            : prev.road.properties.lanesForward,
-          turnLanes: prev.back
-            ? prev.road.properties.turnLanesB
-            : prev.road.properties.turnLanes,
+          lanesForward: roadLaneCount,
+          turnLanes: osmMovements,
+          laneGuidance: resolveLaneGuidance(laneGuidanceIndex, {
+            wayId: roadProps.osm_id,
+            intersectionNodeId: nodeId,
+            direction: prev.back ? 'backward' : 'forward',
+            roadLaneCount,
+            osmMovements,
+          }),
         },
         inBrg, outBrg, d,
       })

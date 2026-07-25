@@ -4,7 +4,7 @@ import type { Maneuver, Profile } from '../core/graph'
 import type { DriveState } from './drive'
 import type { DecisionKind } from './useDrive'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
-import { buildLanePreview } from './lanePreview'
+import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
 
 // ── 距離分階段提醒（照 mvp）：250m 預備切車道(藍) → 60m 動作(橘紅) → 25m 內顯示「現在」──
 const FAR_THRESHOLD = 250
@@ -73,10 +73,16 @@ export function TopBanner({ drive, twoStage, profile }: {
     : dist > 1000 ? `前方 ${(dist / 1000).toFixed(1)} 公里`
       : `前方 ${roundDistance(dist)} 公尺`
   const tone = twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
+  const guidance = selectLanePreviewGuidance({
+    distanceM: dist,
+    current: drive.roadLaneGuidance,
+    maneuver: m.laneGuidance,
+  })
   const bay = !twoStage && m.bayOffM !== undefined // 偏心左轉道（兩段式不進 bay）
   const lanePreview = buildLanePreview({
-    laneCount: drive.roadLanes,
-    turnLanes: drive.roadTurnLanes,
+    laneCount: guidance?.laneCount,
+    turnLanes: guidance?.laneMovements,
+    guidanceSource: guidance?.source,
     maneuverKind: m.kind,
     distanceM: dist,
     twoStage,

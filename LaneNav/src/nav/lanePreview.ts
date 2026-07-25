@@ -10,9 +10,22 @@ export type LanePreviewAction = 'left' | 'through' | 'right' | 'uturn'
 export interface LanePreviewInput {
   laneCount?: number
   turnLanes?: string[]
+  guidanceSource?: LaneGuidanceSource
   maneuverKind: 'left' | 'right' | 'slight-left' | 'slight-right' | 'uturn' | 'arrive'
   distanceM: number
   twoStage: boolean
+}
+
+export function selectLanePreviewGuidance<T>({
+  distanceM,
+  current,
+  maneuver,
+}: {
+  distanceM: number
+  current?: T
+  maneuver?: T
+}): T | undefined {
+  return distanceM <= 250 ? maneuver ?? current : current ?? maneuver
 }
 
 export interface LanePreviewLane {
@@ -108,7 +121,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const count = Math.min(sourceCount, MAX_LANES)
   const truncated = sourceCount > MAX_LANES
   const turnLanes = input.turnLanes
-  const realMovements = Array.isArray(turnLanes) && turnLanes.length >= count
+  const realMovements = Array.isArray(turnLanes) && turnLanes.length > 0
 
   if (!realMovements) {
     return {
@@ -121,7 +134,10 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     }
   }
 
-  const parsed = turnLanes.slice(0, count).map(parseMoves)
+  const parsed = Array.from(
+    { length: count },
+    (_, index) => parseMoves(turnLanes[index] ?? ''),
+  )
   const hasKnownMovement = parsed.some((moves) => moves.size > 0)
   if (!hasKnownMovement) {
     return {
@@ -150,8 +166,11 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     status: 'ready',
     lanes,
     immediateAction,
-    inferred: false,
+    inferred: input.guidanceSource
+      ? input.guidanceSource === 'inferred'
+      : false,
     truncated,
     showTwoStageSign: twoStageNear,
   }
 }
+import type { LaneGuidanceSource } from '../core/laneGuidance'

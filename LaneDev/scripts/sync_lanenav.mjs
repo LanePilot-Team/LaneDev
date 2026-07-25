@@ -22,6 +22,8 @@ const WHITELIST = [
   'src/browse',
   'src/App.css',
   'public/data',
+  'scripts/build_lane_guidance.mjs',
+  'scripts/build_lane_guidance.test.mjs',
 ]
 
 if (!existsSync(navRoot)) {

@@ -105,8 +105,7 @@ export class GpsDriver {
     const elevM = span?.road ? activeElevation()?.heightAtPos(span.road, here) ?? 0 : 0
     this.onTick({
       roadName: rp?.name,
-      roadLanes: rp ? (span!.back ? rp.lanesBackward : rp.lanesForward) : undefined,
-      roadTurnLanes: rp ? (span!.back ? rp.turnLanesB : rp.turnLanes) : undefined,
+      roadLaneGuidance: span?.laneGuidance,
       elevM,
       pos: here,
       bearing: this.lastBearing,

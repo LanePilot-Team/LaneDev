@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildLanePreview } from './lanePreview.ts'
+import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview.ts'
 
 const ready = (overrides = {}) => buildLanePreview({
   laneCount: 3,
@@ -27,6 +27,41 @@ test('switches to the maneuver at exactly 250 metres', () => {
   const model = ready({ distanceM: 250 })
   assert.equal(model.immediateAction, 'right')
   assert.deepEqual(model.lanes.map((lane) => lane.active), [false, true, true])
+})
+
+test('uses current span beyond 250m and maneuver guidance at 250m', () => {
+  const current = {
+    laneCount: 2,
+    laneMovements: ['through', 'through'],
+    source: 'osm',
+  }
+  const maneuver = {
+    laneCount: 3,
+    laneMovements: ['left', 'through', 'through'],
+    source: 'annotation',
+  }
+
+  assert.equal(selectLanePreviewGuidance({
+    distanceM: 251,
+    current,
+    maneuver,
+  }), current)
+  assert.equal(selectLanePreviewGuidance({
+    distanceM: 250,
+    current,
+    maneuver,
+  }), maneuver)
+})
+
+test('keeps annotation source out of the inference note', () => {
+  const model = ready({
+    turnLanes: ['left'],
+    laneCount: 3,
+    maneuverKind: 'left',
+    guidanceSource: 'annotation',
+  })
+  assert.equal(model.inferred, false)
+  assert.deepEqual(model.lanes.map((lane) => lane.active), [true, false, false])
 })
 
 test('infers a rightmost combined lane and marks the result inferred', () => {

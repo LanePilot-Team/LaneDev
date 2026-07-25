@@ -81,7 +81,7 @@ The generator:
 - fails on malformed identities that would create an ambiguous key;
 - produces identical output for `LaneDev` and `LaneNav`.
 
-The current 9.1 MB annotation file produces approximately 102.5 KB of uncompressed navigation data, or about 7.5 KB when gzip-compressed.
+The current 9.1 MB annotation file produces approximately 136 KB of uncompressed navigation data, or about 7.6 KB when gzip-compressed.
 
 Generation runs before development and production builds so committed source annotations and the runtime artifact cannot silently drift.
 

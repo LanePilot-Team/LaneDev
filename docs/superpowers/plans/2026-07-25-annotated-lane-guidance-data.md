@@ -187,7 +187,7 @@ export function extractLaneGuidance(text) {
 }
 ```
 
-Before returning, the generator must reject duplicate keys composed from scope, way ID, optional node ID, and direction. The CLI must read `public/data/lanepilot/annotations.jsonl`, write pretty JSON plus one trailing newline, and print record count and byte size.
+Before returning, the generator must reject duplicate keys composed from scope, way ID, optional node ID, and direction. The CLI must read `public/data/lanepilot/annotations.jsonl`, write compact single-line JSON plus one trailing newline, and print record count and byte size.
 
 - [ ] **Step 4: Add package scripts**
 

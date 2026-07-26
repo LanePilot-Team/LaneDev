@@ -200,6 +200,7 @@ function subtractRoadSurfaces(
 export function buildMedians(roads: RoadFeature[]): MedianIsland[] {
   const scope = roads.filter((r) =>
     MEDIAN_SCOPE_ROADS.has(r.properties.name ?? '') &&
+    r.properties.roadMarkingMode !== 'none' &&
     r.properties.oneway === 'yes' && r.geometry.coordinates.length >= 2)
   if (scope.length < 2) return []
   const scopeSet = new Set(scope)
@@ -232,6 +233,7 @@ const TWIN_ISLAND_PAIRS: { a: number; b: number; w?: number }[] = [
   { a: 24275640, b: 339750719, w: 1.6 },  // 西側：南向主線↔慢車道
   { a: 339750719, b: 297138331 },         // 中央大綠帶（鋪滿實際間隙）
   { a: 297138331, b: 297138333, w: 6.4 }, // 東側兩路體（實地 6.4m）
+
 ]
 
 const twinKey = (a: number, b: number) => `twin/${a}-${b}`
@@ -252,6 +254,7 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
   const scopeSet = new Set<RoadFeature>()
   for (const r of roads) {
     if (!ids.has(r.properties.osm_id)) continue
+    if (r.properties.roadMarkingMode === 'none') continue
     if (!byId.has(r.properties.osm_id)) byId.set(r.properties.osm_id, [])
     byId.get(r.properties.osm_id)!.push(r)
     scopeSet.add(r)
@@ -300,6 +303,7 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
   const out: MedianIsland[] = []
   const edges = graph.scopeEdges((r) => {
     const p = r.properties
+    if (p.roadMarkingMode === 'none') return false
     return (p.motoF && (p.motoSepF || 0) > 0)
       || (p.oneway === 'no' && p.motoB && (p.motoSepB || 0) > 0)
   })
@@ -340,6 +344,7 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
   const out: MedianIsland[] = []
   const edges = graph.scopeEdges((r) =>
     r.properties.oneway === 'no' && (r.properties.centerM || 0) > 0 &&
+    r.properties.roadMarkingMode !== 'none' &&
     r.properties.centerKind === 'island')
   for (const e of edges) {
     if (e.back) continue // 以順向 frame 統一處理一次

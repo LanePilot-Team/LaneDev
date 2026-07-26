@@ -59,6 +59,7 @@ export function buildStyle(): StyleSpecification {
       roads: { type: 'geojson', data: emptyFC as never },
       roadSurfaces: { type: 'geojson', data: emptyFC as never },
       dividers: { type: 'geojson', data: emptyFC as never },
+      roadPreview: { type: 'geojson', data: emptyFC as never },
       turnbays: { type: 'geojson', data: emptyFC as never },
       roadtext: { type: 'geojson', data: emptyFC as never },
       medians: { type: 'geojson', data: emptyFC as never },
@@ -279,6 +280,32 @@ export function buildStyle(): StyleSpecification {
         filter: ['==', ['get', 'kind'], 'moto'],
         paint: { 'fill-color': C.laneLine },
       },
+      // 編輯模式即時預覽：只重算目前選取的道路區塊。
+      {
+        id: 'road-preview-casing', type: 'fill', source: 'roadPreview', minzoom: LANE_ZOOM,
+        filter: ['==', ['get', 'surfaceKind'], 'casing'],
+        paint: { 'fill-color': C.casing },
+      },
+      {
+        id: 'road-preview-surface', type: 'fill', source: 'roadPreview', minzoom: LANE_ZOOM,
+        filter: ['==', ['get', 'surfaceKind'], 'surface'],
+        paint: { 'fill-color': C.surface },
+      },
+      {
+        id: 'road-preview-lane', type: 'fill', source: 'roadPreview', minzoom: 15.5,
+        filter: ['==', ['get', 'kind'], 'lane'],
+        paint: { 'fill-color': C.laneLine },
+      },
+      {
+        id: 'road-preview-center', type: 'fill', source: 'roadPreview', minzoom: 15.5,
+        filter: ['in', ['get', 'kind'], ['literal', ['center', 'center-double']]],
+        paint: { 'fill-color': C.centerLine },
+      },
+      {
+        id: 'road-preview-moto', type: 'fill', source: 'roadPreview', minzoom: 15.5,
+        filter: ['==', ['get', 'kind'], 'moto'],
+        paint: { 'fill-color': C.laneLine },
+      },
 
       // ── 機車停等格（排在車道線之後：不透明 fill 蓋掉框內車道線＝「線在格前截止」，
       // 填色比路面淺一階讓框本體清楚可辨；白框加粗 0.22m）──
@@ -329,6 +356,7 @@ export function buildStyle(): StyleSpecification {
       {
         id: 'oneway-arrow', type: 'symbol', source: 'roads', minzoom: 16,
         filter: ['all', ['==', ['get', 'oneway'], 'yes'], ['!=', ['get', 'elevated'], true],
+          ['!=', ['get', 'roadMarkingMode'], 'none'],
           ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {
           'symbol-placement': 'line',
@@ -467,7 +495,8 @@ export function buildStyle(): StyleSpecification {
       // ── 路名 ──
       {
         id: 'road-label', type: 'symbol', source: 'roads', minzoom: 14.5,
-        filter: ['all', ['has', 'name'], ['!=', ['get', 'hideIntersectionInfo'], true]],
+        filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
+          ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {
           'symbol-placement': 'line',
           'text-field': ['get', 'name'],
@@ -691,19 +720,28 @@ export function makeIcons(): Record<string, ImageData> {
       g.beginPath(); g.moveTo(1, 50); g.lineTo(19, 35); g.lineTo(19, 65)
       g.closePath(); g.fill()
     }),
-    'lane-arrow-left-right': canvasImage(64, 96, (g) => {
+    // 合體式左轉＋右轉：共用單一主幹，在同一高度平順分岔，
+    // 左右箭頭頭部與前右／左前樣式採相同比例，縮小後仍清楚可辨。
+    'lane-arrow-left-right': canvasImage(72, 96, (g) => {
       g.strokeStyle = '#ffffff'
-      g.lineWidth = 7
+      g.lineWidth = 8
+      g.lineCap = 'butt'
       g.lineJoin = 'round'
-      g.beginPath(); g.moveTo(32, 92); g.lineTo(32, 50); g.stroke()
+      // 共用主幹
+      g.beginPath(); g.moveTo(36, 92); g.lineTo(36, 67); g.stroke()
+      // 左右兩側由同一分岔點對稱彎出，並各保留短水平箭桿
+      g.beginPath()
+      g.moveTo(36, 69); g.quadraticCurveTo(36, 49, 16, 49); g.lineTo(12, 49)
+      g.stroke()
+      g.beginPath()
+      g.moveTo(36, 69); g.quadraticCurveTo(36, 49, 56, 49); g.lineTo(60, 49)
+      g.stroke()
       g.fillStyle = '#ffffff'
-      // 右彎
-      g.beginPath(); g.moveTo(32, 66); g.quadraticCurveTo(50, 62, 52, 50); g.stroke()
-      g.beginPath(); g.moveTo(44, 36); g.lineTo(64, 44); g.lineTo(50, 60)
+      // 左箭頭
+      g.beginPath(); g.moveTo(0, 49); g.lineTo(20, 34); g.lineTo(20, 64)
       g.closePath(); g.fill()
-      // 左彎（鏡像）
-      g.beginPath(); g.moveTo(32, 66); g.quadraticCurveTo(14, 62, 12, 50); g.stroke()
-      g.beginPath(); g.moveTo(20, 36); g.lineTo(0, 44); g.lineTo(14, 60)
+      // 右箭頭
+      g.beginPath(); g.moveTo(72, 49); g.lineTo(52, 34); g.lineTo(52, 64)
       g.closePath(); g.fill()
     }),
     // 地面規則印字（roadtext.ts GROUND_RULES 決定點位與順序）

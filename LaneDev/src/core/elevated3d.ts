@@ -815,19 +815,33 @@ export class ElevatedLayer {
       // 橫向偏移邏輯與 roads.buildDividers 同一套斷面模型（右正）
       const f = p.lanesForward
       const marks: { off: number; color: 'white' | 'yellow'; dash: boolean }[] = []
-      marks.push({ off: -halfW + 0.35, color: 'white', dash: false })
-      marks.push({ off: halfW - 0.35, color: 'white', dash: false })
-      if (p.oneway === 'yes') {
-        const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + (p.motoSepF || 0) : 0)
-        const left = -total / 2
-        for (let k = 1; k < f; k++) marks.push({ off: left + k * LANE_WIDTH_M, color: 'white', dash: true })
-      } else {
-        const b = p.lanesBackward
-        const c = (p.centerM || 0) / 2
-        const dv = p.divOffM || 0
-        if (c === 0) marks.push({ off: dv, color: 'yellow', dash: false })
-        for (let k = 1; k < f; k++) marks.push({ off: dv + c + k * LANE_WIDTH_M, color: 'white', dash: true })
-        for (let k = 1; k < b; k++) marks.push({ off: dv - c - k * LANE_WIDTH_M, color: 'white', dash: true })
+      if (p.roadMarkingMode !== 'none') {
+        if (p.roadMarkingMode === 'all') {
+          marks.push({ off: -halfW + 0.35, color: 'white', dash: false })
+          marks.push({ off: halfW - 0.35, color: 'white', dash: false })
+        }
+        if (p.oneway === 'yes') {
+          if (p.roadMarkingMode === 'all') {
+            const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + (p.motoSepF || 0) : 0)
+            const left = -total / 2
+            for (let k = 1; k < f; k++) {
+              marks.push({ off: left + k * LANE_WIDTH_M, color: 'white', dash: true })
+            }
+          }
+        } else {
+          const b = p.lanesBackward
+          const c = (p.centerM || 0) / 2
+          const dv = p.divOffM || 0
+          if (c === 0) marks.push({ off: dv, color: 'yellow', dash: false })
+          if (p.roadMarkingMode === 'all') {
+            for (let k = 1; k < f; k++) {
+              marks.push({ off: dv + c + k * LANE_WIDTH_M, color: 'white', dash: true })
+            }
+            for (let k = 1; k < b; k++) {
+              marks.push({ off: dv - c - k * LANE_WIDTH_M, color: 'white', dash: true })
+            }
+          }
+        }
       }
       for (const mk of marks) {
         const buf = mk.color === 'yellow' ? yellowBuf : whiteBuf

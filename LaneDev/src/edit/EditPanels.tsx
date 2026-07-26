@@ -1,9 +1,9 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
 import type { Profile } from '../core/graph'
 import { exportEnhancements } from '../core/enhancements'
-import { makeZoneCtx, planZone } from '../core/zones'
+import { makeZoneCtx, markZoneDeleted, planZone } from '../core/zones'
 import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays'
-import { angleDelta } from '../core/geo'
+import { angleDelta, offsetMeters } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore } from '../app/mapCore'
 import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext'
@@ -322,19 +322,22 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
 
       <section className="edit-section">
       <h3>5. 道路繪圖開關</h3>
-      <p>各路段可單獨覆寫。關閉「本路段繪圖」會隱藏車道線、箭頭、文字、停止線及圖示，但保留道路面與中央實體島。</p>
-      <div className="edit-row">
+      <p>各路段可單獨選擇完整顯示、只留中央格式，或清空所有道路繪製；道路面本身不受影響。</p>
+      <div className="edit-row" style={{ alignItems: 'stretch' }}>
         <span>本路段道路繪圖</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {([
           ['all', '全部資訊顯示'],
-          ['center', '只保留中線格式'],
+          ['center', '保留中線格式其他不顯示'],
           ['none', '全部資訊不顯示'],
         ] as const).map(([mode, label]) => (
           <button key={mode} className={`mini${editRoad.roadMarkingMode === mode ? ' on' : ''}`}
+            style={{ width: '100%' }}
             onClick={() => setEditRoad((er) => er && ({ ...er, roadMarkingMode: mode }))}>
             {label}
           </button>
         ))}
+        </div>
       </div>
       <div className="edit-row">
         <span>{editRoad.fwdLabel}停止線</span>
@@ -387,6 +390,11 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         <button className="mini go" onClick={editor.saveRoadEdit}>儲存並套用</button>
         <button className="mini" onClick={() => setEditRoad(null)}>取消</button>
       </div>
+      <div className="road-danger-zone">
+        <button className="road-delete-link" onClick={editor.deleteRoadSegment}>
+          刪除此路段…
+        </button>
+      </div>
     </div>
   )
 }
@@ -431,6 +439,40 @@ export function TwinIslandPanel({ editor }: { editor: Editor }) {
 export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const { zonePanel, setZonePanel } = editor
   if (!zonePanel) return null
+  const updateZone = (id: string, patch: Record<string, unknown>) => {
+    core.zonesRef.current = core.zonesRef.current.map((z) =>
+      z.id === id ? { ...z, ...patch } : z)
+    core.refreshZones()
+  }
+  const moveZone = (id: string, lateralOffsetM: number, forwardOffsetM: number) => {
+    core.zonesRef.current = core.zonesRef.current.map((z) => {
+      if (z.id !== id) return z
+      const baseCenter = z.baseCenter ?? z.center
+      const a = (z.bearing * Math.PI) / 180
+      const f: [number, number] = [Math.sin(a), Math.cos(a)]
+      const r: [number, number] = [Math.cos(a), -Math.sin(a)]
+      return {
+        ...z,
+        baseCenter,
+        lateralOffsetM,
+        forwardOffsetM,
+        center: offsetMeters(
+          baseCenter,
+          lateralOffsetM * r[0] + forwardOffsetM * f[0],
+          lateralOffsetM * r[1] + forwardOffsetM * f[1],
+        ),
+      }
+    })
+    core.refreshZones()
+  }
+  const rotateZone = (id: string, rotationDeg: number) => {
+    core.zonesRef.current = core.zonesRef.current.map((z) => {
+      if (z.id !== id) return z
+      const baseBearing = z.baseBearing ?? z.bearing
+      return { ...z, baseBearing, rotationDeg, bearing: baseBearing + rotationDeg }
+    })
+    core.refreshZones()
+  }
   return (
     <div className="side-panel">
       <div className="sp-head">
@@ -466,18 +508,74 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
       {core.zonesRef.current.some((z) => z.intersectionId === zonePanel.nodeId) && (
         <>
           <div className="road-src" style={{ marginTop: 10 }}>此路口已設定：</div>
+          <div className="road-src">停用後不會顯示，也不會被機車導航採用。</div>
           {core.zonesRef.current
             .filter((z) => z.intersectionId === zonePanel.nodeId)
             .map((z) => (
-              <div key={z.id} className="sp-stop">
+              <div key={z.id}
+                className={`sp-stop zone-item${core.selectedZoneRef.current === z.id ? ' selected-zone' : ''}`}>
                 <span className="sp-pos">
                   {z.from.name ?? '未命名'}（{compassOf(z.from.bearing)}）→{' '}
                   {z.to.name ?? '未命名'}（{compassOf(z.to.bearing)}）
                 </span>
+                <button className={`mini${z.visible !== false ? ' on' : ''}`} onClick={() => {
+                  core.zonesRef.current = core.zonesRef.current.map((x) =>
+                    x.id === z.id ? { ...x, visible: x.visible === false } : x)
+                  core.refreshZones()
+                }}>{z.visible === false ? '啟用' : '停用'}</button>
                 <button className="mini warn-btn" onClick={() => {
+                  markZoneDeleted(z.id)
                   core.zonesRef.current = core.zonesRef.current.filter((x) => x.id !== z.id)
                   core.refreshZones()
                 }}>刪除</button>
+                {z.visible !== false && (
+                  <div className="zone-custom">
+                    <label>形狀
+                      <select value={z.shape ?? (Math.abs(z.sk ?? 0) > 0.04 ? 'parallelogram' : 'rectangle')}
+                        onChange={(e) => updateZone(z.id, { shape: e.target.value })}>
+                        <option value="rectangle">長方形</option>
+                        <option value="square">正方形</option>
+                        <option value="parallelogram">平行四邊形</option>
+                      </select>
+                    </label>
+                    <label>寬度 {z.w.toFixed(1)}m
+                      <input type="range" min="2" max="8" step="0.2" value={z.w}
+                        onChange={(e) => updateZone(z.id, { w: Number(e.target.value) })} />
+                    </label>
+                    {(z.shape ?? 'rectangle') !== 'square' && (
+                      <label>深度 {z.d.toFixed(1)}m
+                        <input type="range" min="1.6" max="6" step="0.2" value={z.d}
+                          onChange={(e) => updateZone(z.id, { d: Number(e.target.value) })} />
+                      </label>
+                    )}
+                    {(z.shape ?? (Math.abs(z.sk ?? 0) > 0.04 ? 'parallelogram' : 'rectangle')) === 'parallelogram' && (
+                      <label>傾斜量 {(z.shapeSkew ?? z.sk ?? 0.25).toFixed(2)}
+                        <input type="range" min="-0.7" max="0.7" step="0.05"
+                          value={z.shapeSkew ?? z.sk ?? 0.25}
+                          onChange={(e) => updateZone(z.id, { shapeSkew: Number(e.target.value) })} />
+                      </label>
+                    )}
+                    <label>左右微調 {(z.lateralOffsetM ?? 0).toFixed(1)}m
+                      <input type="range" min="-4" max="4" step="0.2"
+                        value={z.lateralOffsetM ?? 0}
+                        onChange={(e) => moveZone(z.id, Number(e.target.value), z.forwardOffsetM ?? 0)} />
+                    </label>
+                    <label>前後微調 {(z.forwardOffsetM ?? 0).toFixed(1)}m
+                      <input type="range" min="-4" max="4" step="0.2"
+                        value={z.forwardOffsetM ?? 0}
+                        onChange={(e) => moveZone(z.id, z.lateralOffsetM ?? 0, Number(e.target.value))} />
+                    </label>
+                    <label>旋轉 {(z.rotationDeg ?? 0).toFixed(0)}°
+                      <input type="range" min="-35" max="35" step="1"
+                        value={z.rotationDeg ?? 0}
+                        onChange={(e) => rotateZone(z.id, Number(e.target.value))} />
+                    </label>
+                    <div className="zone-actions">
+                      <button className="mini" onClick={() => moveZone(z.id, 0, 0)}>位置復原</button>
+                      <button className="mini" onClick={() => rotateZone(z.id, 0)}>角度復原</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
         </>

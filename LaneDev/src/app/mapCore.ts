@@ -14,7 +14,9 @@ import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
 import { parseImported, mergeMaps } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
-import { loadZones, saveZones, zonesToGeoJSON, type Zone } from '../core/zones'
+import {
+  loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
+} from '../core/zones'
 import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
@@ -284,6 +286,12 @@ export function useMapCore(
 
   const refreshZones = useCallback(() => {
     if (!mapRef.current) return
+    if (
+      highlightedZoneRef.current
+      && zonesRef.current.some((z) => z.id === highlightedZoneRef.current && z.visible === false)
+    ) {
+      highlightedZoneRef.current = null
+    }
     src('zones').setData(groundMarkingPolygons(
       zonesToGeoJSON(
         zonesRef.current,
@@ -516,10 +524,12 @@ export function useMapCore(
         } catch { /* 沒有 seed 檔就算了 */ }
       }
       applyToRoads(roads, foldJournal(journalRef.current))
+      // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
+      roadsRef.current = roads.filter((road) => !road.properties.deleted)
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roads)
+      graphRef.current = new RoadGraph(roadsRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -548,6 +558,12 @@ export function useMapCore(
             const parsed = parseImported(await r.text())
             if (parsed.kind === 'annotations') {
               const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
+              const savedImported = new Map(
+                zonesRef.current
+                  .filter((z) => z.id.startsWith('zone-lp-'))
+                  .map((z) => [z.id, z]),
+              )
+              const deleted = loadDeletedZoneIds()
               const res = zonesFromAnnotations({
                 records: parsed.records,
                 graph: graphRef.current,
@@ -556,7 +572,12 @@ export function useMapCore(
                 rawWays: rawWaysRef.current,
                 existing: manual,
               })
-              zonesRef.current = [...manual, ...res.zones]
+              // 靜態標註只提供初始值；同 ID 的人工位置、尺寸、形狀、旋轉與啟停狀態優先。
+              // 明確刪除的 ID 由 tombstone 排除，避免重新整理後被自動匯入復活。
+              const imported = res.zones
+                .filter((z) => !deleted.has(z.id))
+                .map((z) => savedImported.get(z.id) ?? z)
+              zonesRef.current = [...manual, ...imported]
               if (res.skips.length) {
                 console.warn(`LanePilot 待轉區標註略過 ${res.skips.length} 筆`, res.skips)
               }

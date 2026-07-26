@@ -1,14 +1,17 @@
 // 編輯模式（LaneDev 專屬，不同步到 LaneNav）：車道/待轉區/偏心道/車輛四種工具的
 // 狀態、地圖點擊分派與 journal 寫入。
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import type { Map as MLMap, MapMouseEvent } from 'maplibre-gl'
+import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
-import { groundMoves } from '../core/turnbays'
+import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore, Mode } from '../app/mapCore'
-import type { LaneMark } from '../core/roads'
+import {
+  buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
+} from '../core/roads'
+import { groundMarkingPolygons } from '../core/groundMarkings'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle'
 
@@ -90,6 +93,7 @@ export interface Editor {
   editWarn: string | null
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
+  deleteRoadSegment: () => void
   overrideBay: (key: string, fields: Record<string, string | number>) => void
   overrideRightLane: (key: string, fields: Record<string, string | number>) => void
   deleteVehicle: (id: string) => void
@@ -110,6 +114,56 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   void bayTick
   const [editWarn, setEditWarn] = useState<string | null>(null)
   const editWarnTimer = useRef<number>(0)
+
+  // 編輯中的即時預覽只重算目前道路區塊，不修改正式 roadsRef 或 journal。
+  useEffect(() => {
+    const map = core.mapRef.current
+    if (!map?.isStyleLoaded()) return
+    const source = map.getSource('roadPreview') as GeoJSONSource | undefined
+    if (!source) return
+    if (!editRoad) {
+      source.setData({ type: 'FeatureCollection', features: [] })
+      return
+    }
+    const original = core.roadsRef.current.find((road) =>
+      road.properties.osm_id === editRoad.osmId
+      && road.properties.blockNode === editRoad.blockNode)
+    if (!original) return
+    const preview: RoadFeature = {
+      ...original,
+      properties: {
+        ...original.properties,
+        lanesForward: editRoad.f,
+        lanesBackward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
+        lanes: editRoad.f + (editRoad.oneway === 'yes' ? 0 : editRoad.b),
+        motoF: editRoad.motoF,
+        motoB: editRoad.oneway === 'yes' ? false : editRoad.motoB,
+        motoSepF: editRoad.motoF ? editRoad.motoSepF : 0,
+        motoSepB: editRoad.oneway === 'yes' || !editRoad.motoB ? 0 : editRoad.motoSepB,
+        centerM: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
+        centerKind: editRoad.centerKind,
+        extraM: editRoad.extraM,
+        roadMarkingMode: editRoad.roadMarkingMode,
+        turnLanes: editRoad.turnLanes,
+        turnLanesB: editRoad.turnLanesB,
+        laneMarksF: editRoad.laneMarksF,
+        laneMarksB: editRoad.laneMarksB,
+      },
+    }
+    computeDerived(preview.properties)
+    const surfaces = buildRoadSurfaces([preview])
+    const dividerLines = buildDividers([preview])
+    const dividers = groundMarkingPolygons(
+      dividerLines,
+      (p) => p?.kind === 'center' ? 0.3
+        : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
+      (p) => p?.kind === 'lane',
+    )
+    source.setData({
+      type: 'FeatureCollection',
+      features: [...surfaces.features, ...dividers.features],
+    } as never)
+  }, [core, editRoad])
 
   function warn(msg: string) {
     setEditWarn(msg)
@@ -146,8 +200,15 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const tlB = g && p2.oneway === 'no'
         ? groundMoves(g, core.baysRef.current, road, true, core.rightLanesRef.current)
         : Array.from({ length: Math.max(1, p2.lanesBackward) }, () => 'through')
-      const nodeFirst = p2.nodes[0] ?? 0
-      const nodeLast = p2.nodes[p2.nodes.length - 1] ?? 0
+      // 停等格／偏心道鍵必須採 RoadGraph 實際行向終點；couplet、反向 way、
+      // 切塊後 properties.nodes 的首尾不一定等於 graph edge 的 toNode。
+      // 收邊參數與停止線/停等格一致（stopLineEdges）：停等格資格要看 endSetbackM，
+      // 面板若用別組參數判定，就會給出建置端一定會拒絕的設定入口。
+      const directionEdges = g ? stopLineEdges(g, (candidate) => candidate === road) : []
+      const forwardEdge = directionEdges.find((edge) => !edge.back)
+      const backwardEdge = directionEdges.find((edge) => edge.back)
+      const nodeLast = forwardEdge?.toNode ?? p2.nodes[p2.nodes.length - 1] ?? 0
+      const nodeFirst = backwardEdge?.toNode ?? p2.nodes[0] ?? 0
       // 兩向偏心道現況（folded journal 已反映在 baysRef）
       const bayOf = (key: string) =>
         core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
@@ -171,6 +232,16 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         core.motoBoxesRef.current.find((m) => m.dir === dirKey)
       const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
       const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
+      // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
+      // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
+      // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
+      const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
+      const inferMotoBoxMax = (back: boolean) => {
+        const edge = back ? backwardEdge : forwardEdge
+        if (!motoBoxSlot || !edge) return 0
+        const slot = motoBoxSlot(edge)
+        return slot.eligible && !slot.sepIsland ? slot.maxLanes : 0
+      }
       const motoBoxF = mbF?.coveredLanes ?? 0
       const motoBoxB = mbB?.coveredLanes ?? 0
       setEditRoad({
@@ -197,7 +268,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         bayF, bayB, bayF0: bayF, bayB0: bayB,
         laneMarksF, laneMarksB,
         motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
-        motoBoxMaxF: mbF?.maxLanes ?? 0, motoBoxMaxB: mbB?.maxLanes ?? 0,
+        motoBoxMaxF: mbF?.maxLanes ?? inferMotoBoxMax(false),
+        motoBoxMaxB: mbB?.maxLanes ?? inferMotoBoxMax(true),
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -248,6 +320,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         const z = core.zonesRef.current.find((z) => z.id === String(hitZone[0].properties.id))
         if (z) { core.selectedZoneRef.current = z.id; nodeId = z.intersectionId }
       } else {
+        core.selectedZoneRef.current = null
         let bestD = 25
         for (const it of core.intersectionsRef.current) {
           const d = haversine(p, it.pos)
@@ -338,7 +411,43 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       }
       if (failed.length) warn(`${failed.join('、')}偏心道未生成：此區塊太短，放不下儲車段`)
     }
+    // 停等格同樣要回饋：設了涵蓋車道數但幾何放不下（格寬 <1.2m）時不要靜默還原
+    const motoFailed: string[] = []
+    const boxDrawn = (nodeId: number, back: boolean) =>
+      !!core.motoBoxesRef.current.find(
+        (m) => m.dir === `${editRoad.osmId}@${nodeId}${back ? '~b' : ''}`)?.ring
+    if (editRoad.motoBoxF > 0 && !boxDrawn(editRoad.nodeLast, false)) {
+      motoFailed.push(editRoad.fwdLabel)
+    }
+    if (editRoad.oneway === 'no' && editRoad.motoBoxB > 0
+      && !boxDrawn(editRoad.nodeFirst, true)) {
+      motoFailed.push(editRoad.bwdLabel)
+    }
+    if (motoFailed.length) {
+      warn(`${motoFailed.join('、')}機車停等格未生成：此行向路口前放不下停等格`)
+    }
     setEditRoad(null)
+  }
+
+  function deleteRoadSegment() {
+    if (!editRoad) return
+    const roadName = editRoad.name ?? `way/${editRoad.osmId}`
+    const ok = window.confirm(
+      `確定刪除「${roadName}」目前選取的整條路段嗎？\n\n`
+      + '此操作會刪除這個路口到路口區塊的道路本體、標線，並從導航路網排除。'
+    )
+    if (!ok) return
+    const key = `way/${editRoad.osmId}@b/${editRoad.blockNode}`
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set',
+      target: { type: 'road', key },
+      fields: { deleted: 1 },
+    })
+    const remaining = core.roadsRef.current.filter((road) =>
+      !(road.properties.osm_id === editRoad.osmId
+        && road.properties.blockNode === editRoad.blockNode))
+    setEditRoad(null)
+    core.replaceBaseMap(remaining)
   }
 
   /** 偏心道覆寫寫入 journal 並立即重算（present:0 關閉、present:1 開啟、附參數） */
@@ -410,7 +519,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
-    handleEditClick, saveRoadEdit, overrideBay, overrideRightLane, overrideTwin,
+    handleEditClick, saveRoadEdit, deleteRoadSegment,
+    overrideBay, overrideRightLane, overrideTwin,
     deleteVehicle, clearVehicles, closeAll,
   }
 }

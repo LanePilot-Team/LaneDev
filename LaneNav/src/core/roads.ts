@@ -85,6 +85,8 @@ export interface RoadProps {
   /** 區塊識別：way 依路口切塊後，區塊第一個 node id（journal 區塊鍵 way/W@b/N 用）。
    * 未切塊（無中間路口）時 = nodes[0]。 */
   blockNode: number
+  /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
+  deleted?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
    * forward/backward 是 OSM 原始方向，比對時要翻轉 */
   reversed?: boolean

@@ -12,7 +12,7 @@ import { angleDelta, cumulative } from '../core/geo'
 import type { Mode } from '../app/mapCore'
 import type { Stop } from '../plan/usePlanner'
 import { activeNavigationOcclusion } from '../core/occlusion'
-import type { Zone } from '../core/zones'
+import { isZoneEnabled, type Zone } from '../core/zones'
 
 /** 路口決策：接近下個轉彎多近（公尺）才顯示「不照指引走」按鈕 */
 const DECISION_BUTTON_RANGE_M = 30
@@ -94,7 +94,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       && (state?.nextDistM ?? Number.POSITIVE_INFINITY) <= ZONE_HIGHLIGHT_RANGE_M
     ) {
       nextId = p.zonesRef.current.find((zone) =>
-        zone.intersectionId === maneuver.nodeId
+        isZoneEnabled(zone)
+        && zone.intersectionId === maneuver.nodeId
         && Math.abs(angleDelta(zone.from.bearing, maneuver.fromBearing!)) < 50
       )?.id ?? null
     }

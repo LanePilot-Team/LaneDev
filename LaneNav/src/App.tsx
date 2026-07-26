@@ -38,9 +38,11 @@ export default function App() {
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
+    zonesRef: core.zonesRef,
     profileRef: planner.profileRef, stopsRef: planner.stopsRef,
     vehicleLayerRef: core.vehicleLayerRef, lastGestureRef: core.lastGestureRef,
     annotateTwoStage: planner.annotateTwoStage,
+    setZoneHighlight: core.setZoneHighlight,
   })
   planner.stopAllDriversRef.current = stopAllDrivers
 

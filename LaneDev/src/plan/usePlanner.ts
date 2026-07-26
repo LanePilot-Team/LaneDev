@@ -10,6 +10,7 @@ import { activeElevatedLayer } from '../core/elevated3d'
 import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
+import { isZoneEnabled } from '../core/zones'
 
 export interface Stop { id: number; pos: [number, number] | null }
 
@@ -207,6 +208,7 @@ export function usePlanner(core: MapCore): Planner {
     if (prof !== 'moto') return false
     if (m.kind !== 'left' && m.kind !== 'uturn' && m.kind !== 'slight-left') return false
     return core.zonesRef.current.some((z) =>
+      isZoneEnabled(z) &&
       m.nodeId !== undefined && z.intersectionId === m.nodeId &&
       m.fromBearing !== undefined &&
       Math.abs(angleDelta(z.from.bearing, m.fromBearing)) < 50)

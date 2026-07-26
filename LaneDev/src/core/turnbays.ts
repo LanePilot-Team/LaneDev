@@ -135,6 +135,17 @@ export const isStopLineRoad = (r: {
     : p.lanesForward + p.lanesBackward >= 2
 }
 
+/**
+ * 停止線／停等格共用的方向邊查詢：收邊（endSetbackM）必須用同一組交叉路資格
+ * 判定，否則「畫得出停止線的路口」與「畫得出停等格的路口」會不一致——面板依
+ * 前者放行、建置端依後者拒絕，人工設定就會被靜默還原。
+ */
+export function stopLineEdges(
+  graph: RoadGraph, scope: (r: ScopeEdge['road']) => boolean,
+): ScopeEdge[] {
+  return graph.scopeEdges(scope, 7, 1.2, isStopLineRoad)
+}
+
 const anchorKey = (a: BayAnchor) => `way/${a.wayId}@node/${a.nodeId}${a.back ? '~b' : ''}`
 
 export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): TurnBay[] {
@@ -941,22 +952,13 @@ export function buildLaneArrows(
     // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
     const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
-    const currentBayKey = `${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`
-    const oppositeBayKey = `${p.osm_id}@${e.fromNode}${e.back ? '' : '~b'}`
-    // 單方向偏心道的使用方向：把相鄰正常車道原有箭頭移到
-    // 「偏心車道中心（dv）」與「最內側正常車道中心」的中點。
-    // 只調整位置，不改寫原本由 turn:lanes／拓撲推導出的箭頭種類。
-    const isSingleBayUsedDirection =
-      p.oneway === 'no' && bayKeys.has(currentBayKey) && !bayKeys.has(oppositeBayKey)
     const { brg } = pointAlong(e.coords, cum, d)
     // 箭頭列對齊交會道路：每車道依橫向位置縱向平移，整排與停止線平行
     const sk = crossSkew(graph, e.road, e.toNode, brg)
     for (let k = 0; k < lanes; k++) {
       if (!moves[k]) continue
       const normalLaneOff = base + (k + 0.5) * LANE_WIDTH_M
-      const off = isSingleBayUsedDirection && k === 0
-        ? (dv + normalLaneOff) / 2
-        : normalLaneOff
+      const off = normalLaneOff
       const dk = Math.max(e.startSetbackM + 4, Math.min(total - 1, d + sk * off))
       out.push({
         pos: offsetAt(e.coords, cum, dk, off),
@@ -1180,9 +1182,8 @@ export function buildStopLines(
   const inter = new Set(graph.intersections().map((i) => i.id))
   const out: PaintLine[] = []
   const seen = new Set<string>()
-  for (const e of graph.scopeEdges((r) =>
-    scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id) || isStopLineRoad(r),
-    7, 1.2, isStopLineRoad)) {
+  for (const e of stopLineEdges(graph, (r) =>
+    scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id) || isStopLineRoad(r))) {
     const p = e.road.properties
     if (p.roadMarkingMode !== 'all') continue
     if ((e.back ? p.stopLineB : p.stopLineF) === false) continue
@@ -1361,46 +1362,31 @@ export function buildMotoLaneEntryIcons(
   return featureCollection(features)
 }
 
-function foldMotoBoxOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
-  const out = new Map<string, Record<string, string | number>>()
-  for (const rec of journal) {
-    if (rec.target.type !== 'moto_box') continue
-    if (rec.op === 'delete') out.delete(rec.target.key)
-    else out.set(rec.target.key, { ...out.get(rec.target.key), ...rec.fields })
-  }
-  return out
+/** 停等格逐行向的資格與合法上限（面板 stepper 與 buildMotoBoxes 共用同一份判定） */
+export interface MotoBoxSlot {
+  /** 依附條件成立：標線模式 all + 終點為真路口 + 有夠格交叉路（同停止線）+ 縱向放得下。
+   * false 時面板不顯示 stepper——不給建置端一定會拒絕的設定入口。 */
+  eligible: boolean
+  /** 合法可涵蓋車道數上限（自最外側往內掃，遇禁行機車即止；0 = 無合法停等空間）。
+   * 人工設定同樣不可越過禁行機車車道，故此上限對自動與人工一致。 */
+  maxLanes: number
+  /** 汽車道全禁行、僅靠線隔機車道成立的一格（格子只涵蓋機車道） */
+  motoOnly: boolean
+  /** 被快慢分隔島隔開：自動不生成（騎士在專用道停等），僅既有人工紀錄仍尊重 */
+  sepIsland: boolean
 }
 
-export function buildMotoBoxes(
-  graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[], journal: EnhancementRecord[] = [],
-): MotoBoxes {
-  const over = foldMotoBoxOverrides(journal)
-  const rlMap = new Map(rightLanes.map((r) => [`${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`, r]))
-  const rlWays = new Set(rightLanes.map((r) => r.wayId))
+/**
+ * graph 級前置（路口集合）只算一次，回傳逐行向的停等格判定函式。
+ * useEditor 的面板與 buildMotoBoxes 都走這裡，兩邊的規則不會再各走各的。
+ */
+export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot {
   const inter = new Set(graph.intersections().map((i) => i.id))
-  const boxes: MotoBox[] = []
-  const dirs = new Set<string>()
-  const seen = new Set<string>()
-  for (const e of graph.scopeEdges((r) =>
-    scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id) || isMajorStopRoad(r),
-    7, 1.2, isMajorStopRoad)) {
+  return (e: ScopeEdge): MotoBoxSlot => {
     const p = e.road.properties
-    if (p.roadMarkingMode !== 'all') continue
-    const dir = `${p.osm_id}${'@'}${e.toNode}${e.back ? '~b' : ''}`
-    if (seen.has(dir)) continue
-    seen.add(dir)
-    const rl = rlMap.get(dir)
-    // 與停止線同一批行向（格子必須依附停止線存在）
-    if (!scopeFn(e.road) && !hasTl(e.road) && !rl && !isMajorStopRoad(e.road)) continue
-    if (!inter.has(e.toNode)) continue
-    if (e.endSetbackM <= 2) continue
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
-    if (lanes < 1) continue
     const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
     const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
-    if (moto && sep > 0) continue // 1) 快慢分隔島隔開的機車專用道
-    const span = laneSpanM(p, e.back)
-    if (span <= 0) continue
     // 每車道「禁行機車」判定：顯式車道標記優先，否則舊制 rules/motorcycle=no
     // 展開為全車道禁行（同 buildRoadTexts 的相容規則）
     const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
@@ -1416,17 +1402,82 @@ export function buildMotoBoxes(
       if (noMotoAt(k)) break
       autoKL = k
     }
-    const maxLanes = lanes - autoKL
-    if (maxLanes < 1 && !moto) continue // 2) 無合法停等空間
+    const legalCarLanes = lanes - autoKL
+    const motoOnly = legalCarLanes < 1 && !!moto
+    const total = cumulative(e.coords)[e.coords.length - 1]
+    // 縱向：停止線退 GAP 再退一整格深，前面還要留 4m 給車道箭頭（同 d0 檢查）
+    const fitsLengthwise =
+      total - e.endSetbackM - MOTO_BOX_GAP_M - MOTO_BOX_DEPTH_M >= e.startSetbackM + 4
+    return {
+      eligible: p.roadMarkingMode === 'all' && inter.has(e.toNode) && e.endSetbackM > 2
+        && lanes >= 1 && laneSpanM(p, e.back) > 0 && fitsLengthwise,
+      maxLanes: lanes < 1 ? 0 : motoOnly ? 1 : legalCarLanes,
+      motoOnly,
+      sepIsland: !!moto && sep > 0,
+    }
+  }
+}
+
+function foldMotoBoxOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
+  const out = new Map<string, Record<string, string | number>>()
+  for (const rec of journal) {
+    if (rec.target.type !== 'moto_box') continue
+    if (rec.op === 'delete') out.delete(rec.target.key)
+    else out.set(rec.target.key, { ...out.get(rec.target.key), ...rec.fields })
+  }
+  return out
+}
+
+export function buildMotoBoxes(
+  graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[], journal: EnhancementRecord[] = [],
+): MotoBoxes {
+  const over = foldMotoBoxOverrides(journal)
+  // 人工明確指定的停等格必須進入候選掃描；不可先被預設道路範圍濾掉，
+  // 否則會形成「journal 有資料、面板顯示已設定，但地圖沒有幾何」。
+  const explicitWays = new Set<number>()
+  for (const [key, fields] of over) {
+    const match = key.match(/^way\/(\d+)@node\//)
+    if (match && Number(fields.lanes) > 0) explicitWays.add(Number(match[1]))
+  }
+  const rlMap = new Map(rightLanes.map((r) => [`${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`, r]))
+  const rlWays = new Set(rightLanes.map((r) => r.wayId))
+  const slotOf = makeMotoBoxSlot(graph)
+  const boxes: MotoBox[] = []
+  const dirs = new Set<string>()
+  const seen = new Set<string>()
+  // 收邊與停止線同一組交叉路資格（stopLineEdges）：畫得出停止線的路口就畫得出格子。
+  for (const e of stopLineEdges(graph, (r) =>
+    scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id)
+      || isMajorStopRoad(r) || explicitWays.has(r.properties.osm_id))) {
+    const p = e.road.properties
+    const dir = `${p.osm_id}${'@'}${e.toNode}${e.back ? '~b' : ''}`
     const key = `way/${p.osm_id}@node/${e.toNode}${e.back ? '~b' : ''}~m`
-    // journal 覆寫：lanes 涵蓋車道數（0 = 關閉；夾在 [0, maxLanes]，不可越禁行）
     const ov = over.get(key)
+    const requestedLanes = Math.max(0, Number(ov?.lanes) || 0)
+    const explicitlyEnabled = requestedLanes > 0
+    if (seen.has(dir)) continue
+    const rl = rlMap.get(dir)
+    // 與停止線同一批行向（格子必須依附停止線存在）
+    if (!scopeFn(e.road) && !hasTl(e.road) && !rl
+      && !isMajorStopRoad(e.road) && !explicitlyEnabled) continue
+    const slot = slotOf(e)
+    if (!slot.eligible) continue
+    // 自動模式不跨快慢分隔島；人工明確指定時由人工判斷現場狀況。
+    if (slot.sepIsland && !explicitlyEnabled) continue
+    const { maxLanes, motoOnly } = slot
+    if (maxLanes < 1) continue // 2) 無合法停等空間（人工設定同樣不可涵蓋禁行機車車道）
+    const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
+    const span = laneSpanM(p, e.back)
+    // 同一 way/節點可能有多個切塊候選；只有真正成為候選後才標記，避免先遇到
+    // 不合格的切塊而把後續有效的進入方向誤判為重複（同 buildStopLines）。
+    seen.add(dir)
+    // journal 覆寫：lanes 涵蓋車道數（0 = 關閉；夾在 [0, maxLanes]，不可越禁行）
     const coveredLanes = ov?.lanes !== undefined
       ? Math.max(0, Math.min(maxLanes, Number(ov.lanes)))
       : maxLanes
     // 關閉：仍記錄候選（ring=null）供面板顯示 stepper 與上限
     if (coveredLanes === 0) { boxes.push({ key, dir, ring: null, coveredLanes: 0, maxLanes }); continue }
-    const kL = lanes - coveredLanes
+    const kL = motoOnly ? lanes : lanes - coveredLanes
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
     const d1 = total - e.endSetbackM - MOTO_BOX_GAP_M
@@ -1437,7 +1488,7 @@ export function buildMotoBoxes(
     const innerClear = kL === 0 ? MOTO_BOX_INNER_CLEAR_M : MOTO_BOX_LANE_CLEAR_M
     const inner = base + kL * LANE_WIDTH_M + innerClear
     const outer = base + span + (rl ? rl.widthM : 0) - 0.15
-    // 短段/太窄：記錄候選但不渲染（ring=null）
+    // 太窄：記錄候選但不渲染（ring=null；縱向長度已由 slot.eligible 先擋）
     if (d0 < e.startSetbackM + 4 || outer - inner < 1.2) {
       boxes.push({ key, dir, ring: null, coveredLanes, maxLanes }); continue
     }

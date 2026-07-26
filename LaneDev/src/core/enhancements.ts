@@ -172,6 +172,7 @@ export function applyToRoads(
     if (fields.extra_width_m !== undefined) {
       p.extraM = Math.max(-3.2, Math.min(6.4, Number(fields.extra_width_m) || 0)) // 路寬微調（路肩）
     }
+    if (fields.deleted !== undefined) p.deleted = Number(fields.deleted) > 0
     computeDerived(p)
   }
   return n

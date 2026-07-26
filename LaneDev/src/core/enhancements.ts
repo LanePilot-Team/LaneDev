@@ -9,6 +9,7 @@ import { computeDerived, type RoadFeature } from './roads'
 import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
+import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
 
 export interface EnhancementRecord {
   seq: number
@@ -35,6 +36,7 @@ const JOURNAL_KEY = 'navsim-journal-v1'
 export const AUTHOR = 'rex' // TODO: 多人協作時做成設定
 
 export function loadJournal(): EnhancementRecord[] {
+  if (hasStaticRoadDatabase()) return staticJournal()
   try {
     return JSON.parse(localStorage.getItem(JOURNAL_KEY) ?? '[]')
   } catch {
@@ -54,6 +56,7 @@ export function appendRecord(
     author,
   }]
   localStorage.setItem(JOURNAL_KEY, JSON.stringify(next))
+  updateStaticEditor({ journal: next })
   return next
 }
 
@@ -77,6 +80,7 @@ export function remapJournalNodes(
   })
   if (changed > 0) {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(out))
+    updateStaticEditor({ journal: out })
     console.info(`journal 遷移：${changed} 筆鍵值隨 couplet 合併重映射`)
   }
   return out

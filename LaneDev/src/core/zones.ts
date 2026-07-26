@@ -8,6 +8,9 @@ import {
 } from './geo'
 import { laneSpanM } from './roads'
 import type { RoadGraph, ScopeEdge, TurnOption } from './graph'
+import {
+  hasStaticRoadDatabase, staticDeletedZoneIds, staticZones, updateStaticEditor,
+} from './staticDatabase'
 
 export interface Zone {
   id: string
@@ -43,6 +46,11 @@ const STORAGE_KEY = 'navsim-zones-v2' // v1 是自由放置的舊格式，直接
 const DELETED_STORAGE_KEY = 'navsim-zones-deleted-v1'
 
 export function loadZones(): Zone[] {
+  const canonical = staticZones()
+  if (hasStaticRoadDatabase()) {
+    return canonical.filter((z) => z.intersectionId && z.from)
+      .map((z) => ({ ...z, visible: z.visible !== false }))
+  }
   try {
     const zs: Zone[] = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
     return zs.filter((z) => z.intersectionId && z.from)
@@ -54,10 +62,13 @@ export function loadZones(): Zone[] {
 
 export function saveZones(zones: Zone[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(zones))
+  updateStaticEditor({ waiting_zones: zones })
 }
 
 /** 記錄使用者明確刪除的靜態匯入待轉格，避免下次啟動被自動匯入復活。 */
 export function loadDeletedZoneIds(): Set<string> {
+  const canonical = staticDeletedZoneIds()
+  if (hasStaticRoadDatabase()) return new Set(canonical)
   try {
     return new Set(JSON.parse(localStorage.getItem(DELETED_STORAGE_KEY) ?? '[]') as string[])
   } catch {
@@ -69,6 +80,7 @@ export function markZoneDeleted(id: string) {
   const ids = loadDeletedZoneIds()
   ids.add(id)
   localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]))
+  updateStaticEditor({ deleted_waiting_zone_ids: [...ids] })
 }
 
 /** 停止線對齊定位用的幾何上下文：進入路口的方向邊索引。

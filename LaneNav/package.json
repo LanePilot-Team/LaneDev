@@ -4,9 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run lane-guidance:data",
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:lane-preview": "node --test src/nav/lanePreview.test.mjs",
+    "test:lane-guidance": "node --test scripts/build_lane_guidance.test.mjs src/core/laneGuidance.test.mjs",
+    "prebuild": "npm run lane-guidance:data",
+    "lane-guidance:data": "node scripts/build_lane_guidance.mjs"
   },
   "dependencies": {
     "@turf/turf": "^7.3.5",

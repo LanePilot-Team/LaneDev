@@ -36,6 +36,12 @@ import { NANZI_CENTER, haversine } from '../core/geo'
 import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
 import { groundMarkingPolygons } from '../core/groundMarkings'
 import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
+import {
+  buildLaneGuidanceIndex,
+  remapLaneGuidanceRecords,
+  type LaneGuidanceIndex,
+  type LaneGuidanceRecord,
+} from '../core/laneGuidance'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -200,6 +206,32 @@ async function loadDefaultRoads() {
   }
 }
 
+async function loadLaneGuidanceRecords(): Promise<LaneGuidanceRecord[]> {
+  try {
+    const response = await fetch('/data/lanepilot/lane-guidance.json')
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const records: unknown = await response.json()
+    if (!Array.isArray(records)) throw new Error('根節點不是陣列')
+    return records as LaneGuidanceRecord[]
+  } catch (error) {
+    console.warn('車道標註索引載入失敗，改用 OSM／系統推測', error)
+    return []
+  }
+}
+
+function guidanceIndexForRoads(
+  records: LaneGuidanceRecord[],
+  roads: RoadFeature[],
+  nodeRemap: Map<number, number>,
+  wayRemap: Map<number, DropRemap>,
+): LaneGuidanceIndex {
+  return buildLaneGuidanceIndex(remapLaneGuidanceRecords(records, {
+    existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
+    nodeRemap,
+    wayRemap,
+  }))
+}
+
 /** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
 export interface MapCore {
   mapRef: RefObject<MLMap | null>
@@ -269,6 +301,8 @@ export function useMapCore(
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
+  const laneGuidanceRecordsRef = useRef<LaneGuidanceRecord[]>([])
+  const laneGuidanceIndexRef = useRef<LaneGuidanceIndex>(buildLaneGuidanceIndex([]))
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -382,7 +416,13 @@ export function useMapCore(
   const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
     roadsRef.current = roads
     redrawRoads()
-    graphRef.current = new RoadGraph(roads)
+    laneGuidanceIndexRef.current = guidanceIndexForRoads(
+      laneGuidanceRecordsRef.current,
+      roads,
+      nodeRemapRef.current,
+      wayRemapRef.current,
+    )
+    graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
     rebuildElevation(roads)
@@ -448,10 +488,11 @@ export function useMapCore(
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
-      const [roadsRaw, buildingsRaw] = await Promise.all([
+      const [roadsRaw, buildingsRaw, laneGuidanceRecords] = await Promise.all([
         loadDefaultRoads(),
         fetch('/data/nanzih_buildings_height.geojson').then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
+        loadLaneGuidanceRecords(),
       ])
       const removedBuildingOsmIds = new Set(['823172097', '823172098', '823172099'])
       const preparedBuildings = buildingsRaw.features
@@ -500,6 +541,13 @@ export function useMapCore(
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
       wayRemapRef.current = wayRemap
+      laneGuidanceRecordsRef.current = laneGuidanceRecords
+      laneGuidanceIndexRef.current = guidanceIndexForRoads(
+        laneGuidanceRecords,
+        roads,
+        nodeRemap,
+        wayRemap,
+      )
       // 除錯開關：?journal=off 完全不套標註（連 seed 都不載），看純 OSM 原始狀態。
       // 同學的 LanePilot annotation（author=lanepilot）實驗期間一律不套。
       const journalOff = location.search.includes('journal=off')
@@ -519,7 +567,7 @@ export function useMapCore(
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roads)
+      graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；

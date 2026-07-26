@@ -23,6 +23,8 @@ const WHITELIST = [
   'src/App.css',
   'public/data',
   'public/assets/road-markings',
+  'scripts/build_lane_guidance.mjs',
+  'scripts/build_lane_guidance.test.mjs',
 ]
 
 if (!existsSync(navRoot)) {

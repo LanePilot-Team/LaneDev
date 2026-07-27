@@ -12,6 +12,7 @@ import { DriveHUD } from './nav/DriveHUD'
 import { useEditor } from './edit/useEditor'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
+  RoadDrawPanel,
 } from './edit/EditPanels'
 import './App.css'
 
@@ -39,7 +40,8 @@ export default function App() {
 
   const {
     drive, multiplier, gpsMsg, decisionOptions,
-    startDrive, startGpsNav, stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+    startDrive, startGpsNav, replayDrive, canReplay,
+    stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
@@ -91,7 +93,8 @@ export default function App() {
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg} multiplier={multiplier}
           decisionOptions={decisionOptions}
-          onEnd={endDrive} onCycleMultiplier={cycleMultiplier}
+          onEnd={endDrive} onReplay={canReplay ? replayDrive : undefined}
+          onCycleMultiplier={cycleMultiplier}
           onTakeAlternative={takeAlternative} onSwitchLane={switchLane}
         />
       )}
@@ -128,6 +131,7 @@ export default function App() {
       {mode === 'edit' && editor.editTool === 'lane' && <TwinIslandPanel editor={editor} />}
       {mode === 'edit' && editor.editTool === 'zone' && <ZonePanel core={core} editor={editor} />}
       {mode === 'edit' && editor.editTool === 'bay' && <BayPanel core={core} editor={editor} />}
+      {mode === 'edit' && editor.editTool === 'road' && <RoadDrawPanel editor={editor} />}
       {mode === 'edit' && editor.editTool === 'vehicle' && (
         <VehiclePanel core={core} editor={editor}
           selectedVehicle={selectedVehicle} vehicleCount={vehicleCount} />

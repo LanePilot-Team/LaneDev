@@ -131,7 +131,7 @@ const DECISION_LABEL: Record<DecisionKind, string> = { left: '左轉', straight:
 /** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
   drive, twoStage, profile, gpsMsg, multiplier, decisionOptions,
-  onEnd, onCycleMultiplier, onTakeAlternative, onSwitchLane,
+  onEnd, onReplay, onCycleMultiplier, onTakeAlternative, onSwitchLane,
 }: {
   drive: DriveState | null
   twoStage: boolean
@@ -140,6 +140,8 @@ export function DriveHUD({
   multiplier: number
   decisionOptions: { kind: DecisionKind }[]
   onEnd: () => void
+  /** 模擬到達後的「再跑一次」；GPS 導航不傳（不顯示按鈕） */
+  onReplay?: () => void
   onCycleMultiplier: () => void
   onTakeAlternative: (kind: DecisionKind) => void
   onSwitchLane: (dir: -1 | 1) => void
@@ -180,6 +182,9 @@ export function DriveHUD({
       )}
       <div className="bottom-bar">
         <button className="end-btn" onClick={onEnd}>✕ 結束</button>
+        {drive.arrived && onReplay && (
+          <button className="replay-btn" onClick={onReplay}>↺ 再跑一次</button>
+        )}
         {isDesktop && (
           <button className="lane-btn" onClick={() => onSwitchLane(-1)} title="換到左邊車道">◀</button>
         )}

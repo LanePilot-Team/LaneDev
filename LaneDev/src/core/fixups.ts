@@ -22,6 +22,13 @@ const LANES_FIX: Record<number, number> = {
   1464614123: 3, // 土庫一路 東向（德民新橋東端）
 }
 
+/** 雙向化修正：OSM 把分隔道路拆成成對單行 way，但對向 way 在 shard 界外，
+ * couplet 合併配不成對——把留在 shard 內的這條直接改雙向。
+ * 翠華路（台17）楠梓段：實地雙向各 2 車道（2026-07-27 使用者確認）。 */
+const TWO_WAY_FIX: Record<number, { lanesF: number; lanesB: number }> = {
+  267715853: { lanesF: 2, lanesB: 2 }, // 翠華路
+}
+
 /** 已確認為 OSM 幾何殘段，不應進入顯示或路由。 */
 export const REMOVED_WAY_IDS = new Set([
   287447934,
@@ -120,6 +127,13 @@ export function applyFixups(roads: RoadFeature[]) {
     if (lanes !== undefined) {
       p.lanesForward = lanes
       if (p.oneway === 'no') p.lanesBackward = lanes
+      computeDerived(p)
+    }
+    const twoWay = TWO_WAY_FIX[p.osm_id]
+    if (twoWay !== undefined) {
+      p.oneway = 'no'
+      p.lanesForward = twoWay.lanesF
+      p.lanesBackward = twoWay.lanesB
       computeDerived(p)
     }
   }

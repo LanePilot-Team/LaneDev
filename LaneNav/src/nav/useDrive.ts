@@ -48,6 +48,9 @@ export interface UseDriveResult {
   decisionOptions: { kind: DecisionKind }[]
   startDrive: () => void
   startGpsNav: () => void
+  /** 模擬到達後「再跑一次」：用出發當下的原始路線重播（reroute/detour 改過的不算）；GPS 導航無此功能 */
+  replayDrive: () => void
+  canReplay: boolean
   /** 停掉目前在跑的 Driver/GpsDriver（不管哪一種）並清空行駛相關 state；給 endDrive/clearAllRoute 共用 */
   stopAllDrivers: () => void
   cycleMultiplier: () => void
@@ -59,6 +62,7 @@ export interface UseDriveResult {
 export function useDrive(p: UseDriveParams): UseDriveResult {
   const driverRef = useRef<Driver | null>(null)
   const gpsDriverRef = useRef<GpsDriver | null>(null)
+  const initialRouteRef = useRef<RouteResult | null>(null) // 模擬出發時的路線快照（重播用）
   const lastDriveRef = useRef<DriveState | null>(null)
   const activeZoneIdRef = useRef<string | null>(null)
   const [drive, setDrive] = useState<DriveState | null>(null)
@@ -106,6 +110,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   function stopAllDrivers() {
     driverRef.current?.stop()
     driverRef.current = null
+    initialRouteRef.current = null
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
     setGpsMsg(null)
@@ -157,10 +162,22 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const map = p.mapRef.current
     if (!route || !map) return
     p.setMode('drive')
+    initialRouteRef.current = route
     // 導航中地圖每幀旋轉，符號圖層會不停重排——關掉最吵的單行箭頭與路名省 CPU
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
     map.setLayoutProperty('road-label', 'visibility', 'none')
     map.jumpTo({ zoom: 17.6, pitch: 60 })
+    runDriver(route)
+  }
+
+  /** 再跑一次：回到出發時的原始路線從頭重播（中途 reroute/detour 換掉的路線不保留） */
+  function replayDrive() {
+    const route = initialRouteRef.current
+    const map = p.mapRef.current
+    if (!route || !map) return
+    p.routeRef.current = route
+    drawRouteLine(route)
+    map.jumpTo({ zoom: 17.6, pitch: 60 }) // 到達後使用者可能縮放過，重播時重設鏡頭
     runDriver(route)
   }
 
@@ -170,6 +187,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const map = p.mapRef.current
     if (!route || !map) return
     p.setMode('drive')
+    initialRouteRef.current = null // 真 GPS 導航沒有「再跑一次」（人不會瞬移回起點）
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
     map.setLayoutProperty('road-label', 'visibility', 'none')
     setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
@@ -282,6 +300,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
 
   return {
     drive, multiplier, gpsMsg, decisionOptions,
-    startDrive, startGpsNav, stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+    startDrive, startGpsNav, replayDrive, canReplay: !!initialRouteRef.current,
+    stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
   }
 }

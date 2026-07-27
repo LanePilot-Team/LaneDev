@@ -19,6 +19,7 @@ import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
+import { newRoadsFromFolded } from '../core/newroads'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
@@ -563,11 +564,15 @@ export function useMapCore(
           localStorage.setItem('navsim-journal-v1', JSON.stringify(seed))
         } catch { /* 沒有 seed 檔就算了 */ }
       }
-      applyToRoads(roads, foldJournal(journalRef.current))
+      // 自訂新增道路（journal new_road）物化混入底圖：graph/渲染/車道編輯一體適用
+      const folded = foldJournal(journalRef.current)
+      const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
+      roadsRef.current = roadsAll
+      applyToRoads(roadsAll, folded)
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
+      graphRef.current = new RoadGraph(roadsAll, laneGuidanceIndexRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -599,7 +604,7 @@ export function useMapCore(
               const res = zonesFromAnnotations({
                 records: parsed.records,
                 graph: graphRef.current,
-                roads,
+                roads: roadsAll,
                 nodeRemap, wayRemap,
                 rawWays: rawWaysRef.current,
                 existing: manual,
@@ -620,7 +625,7 @@ export function useMapCore(
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer
       setActiveElevatedLayer(eLayer) // usePlanner/useDrive 畫路線絲帶用（模組單例）
-      rebuildElevation(roads)
+      rebuildElevation(roadsAll)
       map.addLayer(eLayer.asLayer())
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer
       // 真 3D 車輛模型圖層（three.js）

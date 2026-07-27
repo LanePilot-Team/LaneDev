@@ -76,6 +76,8 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
           onClick={() => { editor.setEditTool('bay'); editor.setEditRoad(null); editor.setZonePanel(null) }}>偏心道</button>
         <button className={`mini${editTool === 'vehicle' ? ' on' : ''}`}
           onClick={() => { editor.setEditTool('vehicle'); editor.setEditRoad(null); editor.setZonePanel(null); editor.setBayPanel(null) }}>車輛</button>
+        <button className={`mini${editTool === 'road' ? ' on' : ''}`}
+          onClick={() => { editor.setEditTool('road'); editor.setEditRoad(null); editor.setZonePanel(null); editor.setBayPanel(null) }}>新路</button>
       </span>
       {editWarn ?? (editTool === 'lane'
         ? '點選道路 → 右側面板編輯車道（雙向道可設中央帶）'
@@ -83,7 +85,9 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
           ? '點選「路口」→ 右側面板選左轉方向（位置自動計算）'
           : editTool === 'bay'
             ? '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道'
-            : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
+            : editTool === 'road'
+              ? '點地圖依序放頂點（靠近既有路口/節點會自動吸附）→ 面板按「完成」成路 · 點自訂道路可刪除'
+              : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
       {!editWarn && (
         <button className="mini"
           onClick={() => exportEnhancements(core.journalRef.current, core.zonesRef.current, core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current)}>
@@ -585,6 +589,61 @@ export function VehiclePanel({ core, editor, selectedVehicle, vehicleCount }: {
       <div className="edit-row">
         <button className="mini warn-btn" onClick={() => editor.deleteVehicle(selectedVehicle.id)}>刪除此車</button>
         <button className="mini" onClick={editor.clearVehicles}>清空全部 ({vehicleCount})</button>
+      </div>
+    </div>
+  )
+}
+
+/** 側面板：拉線新增道路（草稿屬性與完成；或選取既有自訂道路刪除） */
+export function RoadDrawPanel({ editor }: { editor: Editor }) {
+  const { draftRoad, selNewRoad } = editor
+  if (selNewRoad) {
+    return (
+      <div className="side-panel">
+        <div className="sp-head">
+          <div><span className="sp-kicker">自訂道路</span><b>{selNewRoad.name ?? '（未命名道路）'}</b></div>
+          <button className="sp-close" onClick={() => editor.setSelNewRoad(null)}>✕</button>
+        </div>
+        <div className="road-src">way/{selNewRoad.osmId} · 使用者拉線新增（journal new_road）</div>
+        <div className="edit-notice">刪除只移除這條自訂道路；車道等覆寫紀錄留在 journal 不影響其他路。</div>
+        <div className="edit-row">
+          <button className="mini warn-btn" onClick={() => editor.deleteNewRoad(selNewRoad.osmId)}>刪除這條道路</button>
+        </div>
+      </div>
+    )
+  }
+  if (!draftRoad) return null
+  const n = draftRoad.coords.length
+  const snapped = draftRoad.nodeIds.filter((x) => x !== null).length
+  const endsSnapped = draftRoad.nodeIds[0] !== null || draftRoad.nodeIds[n - 1] !== null
+  return (
+    <div className="side-panel">
+      <div className="sp-head">
+        <div><span className="sp-kicker">新增道路</span><b>拉線草稿</b></div>
+        <button className="sp-close" onClick={editor.cancelDraftRoad}>✕</button>
+      </div>
+      <div className="road-src">頂點 {n} · 已吸附 {snapped}（藍點）· Esc 取消</div>
+      <div className="edit-notice">
+        端點要吸附在既有路口/節點上（藍點）路網才會連通、可導航。
+        完成後預設雙向 1+1 車道，可用「車道」工具繼續編輯斷面。
+      </div>
+      <div className="edit-row">
+        <span>道路名稱</span>
+        <input value={editor.draftName} maxLength={20} placeholder="（可留白）"
+          onChange={(e) => editor.setDraftName(e.target.value)} />
+      </div>
+      <div className="edit-row">
+        <span>單行道（依繪製方向）</span>
+        <input type="checkbox" checked={editor.draftOneway}
+          onChange={(e) => editor.setDraftOneway(e.target.checked)} />
+      </div>
+      {!endsSnapped && n >= 2 && (
+        <div className="edit-notice">⚠ 目前兩端都沒吸附到既有路網，完成後導航到不了這條路。</div>
+      )}
+      <div className="edit-row">
+        <button className="mini" onClick={editor.undoDraftVertex}>回退頂點</button>
+        <button className="mini" onClick={editor.cancelDraftRoad}>取消</button>
+        <button className="mini go" disabled={n < 2} onClick={editor.finishDraftRoad}>完成成路</button>
       </div>
     </div>
   )

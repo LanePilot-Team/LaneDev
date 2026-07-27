@@ -965,12 +965,69 @@ export function laneBand(route: RouteResult): LaneBandResult {
   const coords: [number, number][] = []
   const routeD: number[] = []
   for (let k = 0; k < samples.length; k++) {
-    const { pos, brg } = at[k]
+    const { pos } = at[k]
+    // 轉角 miter 偏移：方向取前後鄰取樣點的角平分線、長度除以 cos(半轉角)。
+    // 逐點垂直於「進入段」方位角（pointAlong 在頂點回傳進入段）會讓內側轉角
+    // 先沿直行方向衝過頭、再急折回目標路——右轉（右駕右偏移）路口尤其明顯，
+    // 模擬車看起來像過了路口才繞回來。miter 上限 2（≈120° 轉角）防銳角尖刺。
+    const prevPos = k > 0 ? at[k - 1].pos : pos
+    const nextPos = k < samples.length - 1 ? at[k + 1].pos : pos
+    const bIn = k > 0 ? bearing(prevPos, pos) : bearing(pos, nextPos)
+    const bOut = k < samples.length - 1 ? bearing(pos, nextPos) : bIn
+    const half = angleDelta(bIn, bOut) / 2
+    const brg = bIn + half
+    const miter = Math.min(2, 1 / Math.max(0.5, Math.cos((half * Math.PI) / 180)))
+    const off = smooth[k] * miter
     const rad = ((brg + 90) * Math.PI) / 180
-    coords.push(offsetMeters(pos, smooth[k] * Math.sin(rad), smooth[k] * Math.cos(rad)))
+    coords.push(offsetMeters(pos, off * Math.sin(rad), off * Math.cos(rad)))
     routeD.push(samples[k])
   }
-  return { coords, routeD }
+  return trimInsideCorners(coords, routeD, route.maneuvers)
+}
+
+/** 帶點倒退判定門檻：相鄰兩段夾角超過此值（度）視為「衝過切點再折回」的鋸齒 */
+const BACKTRACK_DEG = 95
+/** 只在左右轉 ±這個範圍（公尺）內做內側切角清理 */
+const CORNER_TRIM_M = 20
+
+/**
+ * 內側轉角清理：偏移帶在轉角內側有「切角區」——偏移 o、轉角 θ 時，兩條偏移線
+ * 的交點落在節點前後各 o·tan(θ/2)（寬路右轉可達 8m+）。取樣按路線里程走，
+ * 會沿進入向多畫到節點才折回出彎線，帶出現倒退鋸齒＝模擬車「過了路口再繞回」。
+ * 把造成倒退的點迭代移除，帶自然收斂成兩條偏移線的交點連線（正確內側切角）。
+ * 只清左右轉附近；迴轉的髮夾彎是真實行駛幾何，剪了會切過分隔島，不動。
+ */
+function trimInsideCorners(
+  coords: [number, number][], routeD: number[], maneuvers: Maneuver[],
+): LaneBandResult {
+  const wins = maneuvers
+    .filter((m) => m.kind === 'left' || m.kind === 'right')
+    .map((m) => m.distM)
+  if (!wins.length || coords.length < 3) return { coords, routeD }
+  const kx = 111320 * COS_LAT, ky = 110540
+  const keep = coords.map(() => true)
+  const near = (d: number) => wins.some((w) => Math.abs(d - w) < CORNER_TRIM_M)
+  const cosLimit = Math.cos((BACKTRACK_DEG * Math.PI) / 180)
+  for (let pass = 0; pass < 12; pass++) {
+    const idx: number[] = []
+    for (let i = 0; i < coords.length; i++) if (keep[i]) idx.push(i)
+    let changed = false
+    for (let k = 1; k < idx.length - 1; k++) {
+      const i = idx[k]
+      if (!near(routeD[i])) continue
+      const a = coords[idx[k - 1]], b = coords[i], c = coords[idx[k + 1]]
+      const abx = (b[0] - a[0]) * kx, aby = (b[1] - a[1]) * ky
+      const bcx = (c[0] - b[0]) * kx, bcy = (c[1] - b[1]) * ky
+      const la = Math.hypot(abx, aby), lb = Math.hypot(bcx, bcy)
+      if (la < 0.05 || lb < 0.05) continue
+      if ((abx * bcx + aby * bcy) / (la * lb) < cosLimit) { keep[i] = false; changed = true }
+    }
+    if (!changed) break
+  }
+  return {
+    coords: coords.filter((_, i) => keep[i]),
+    routeD: routeD.filter((_, i) => keep[i]),
+  }
 }
 
 /** 路線帶幾何（畫圖用）；模擬行駛要拿里程對應表，用 laneBand */

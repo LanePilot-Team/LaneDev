@@ -34,7 +34,8 @@ export default function App() {
 
   const {
     drive, multiplier, gpsMsg, decisionOptions,
-    startDrive, startGpsNav, stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+    startDrive, startGpsNav, replayDrive, canReplay,
+    stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
@@ -79,7 +80,8 @@ export default function App() {
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg} multiplier={multiplier}
           decisionOptions={decisionOptions}
-          onEnd={endDrive} onCycleMultiplier={cycleMultiplier}
+          onEnd={endDrive} onReplay={canReplay ? replayDrive : undefined}
+          onCycleMultiplier={cycleMultiplier}
           onTakeAlternative={takeAlternative} onSwitchLane={switchLane}
         />
       )}

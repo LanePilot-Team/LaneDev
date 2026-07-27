@@ -88,6 +88,9 @@ export interface RoadProps {
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
    * forward/backward 是 OSM 原始方向，比對時要翻轉 */
   reversed?: boolean
+  /** 使用者拉線新增的自訂道路（journal new_road 物化）。注意不能用「osm_id < 0」
+   * 判斷——couplet/藍田路切分段也用負 id（-原way id），只有這個旗標可靠 */
+  userRoad?: boolean
   nodes: number[]
 }
 

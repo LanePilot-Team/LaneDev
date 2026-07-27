@@ -9,6 +9,7 @@ import {
 import { roadsFromGeoJSON, type RoadFeature } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
+import { newRoadsFromFolded } from '../core/newroads'
 import { saveZones } from '../core/zones'
 import { buildRawWays, zonesFromAnnotations } from '../core/zoneimport'
 import type { MapCore, Mode } from './mapCore'
@@ -59,10 +60,12 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
   const roadsRaw = roadsFromGeoJSON({ type: 'FeatureCollection', features })
   core.rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
   const prep = prepareBaseRoads(roadsRaw)
-  const roads = prep.roads
   core.nodeRemapRef.current = prep.nodeRemap
   core.wayRemapRef.current = prep.wayRemap
-  applyToRoads(roads, foldJournal(core.journalRef.current))
+  // 自訂新增道路一併混入（吸附的 node 若不在新底圖範圍內，該路仍渲染但不連通）
+  const folded = foldJournal(core.journalRef.current)
+  const roads = [...prep.roads, ...newRoadsFromFolded(folded, prep.nodeRemap)]
+  applyToRoads(roads, folded)
   ui.switchMode('browse') // 內部已處理「行駛中先 endDrive」，涵蓋模擬與 GPS 兩種模式
   core.replaceBaseMap(roads)
   const first = roads[0].geometry.coordinates[0] as [number, number]

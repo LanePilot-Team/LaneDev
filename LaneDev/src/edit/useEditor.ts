@@ -4,13 +4,23 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
+import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore, Mode } from '../app/mapCore'
 import type { LaneMark } from '../core/roads'
 
-export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle'
+export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
+
+/** 拉線吸附半徑（公尺）：頂點落在既有路網 node 這個距離內就吸上去 */
+const ROAD_SNAP_M = 15
+
+/** 拉線中的新道路草稿：座標與 node id 逐點對齊（null = 自由頂點，完成時配負數 id） */
+export interface DraftRoad {
+  coords: [number, number][]
+  nodeIds: (number | null)[]
+}
 
 export const TURN_CYCLE = ['through', 'left', 'right', 'left;through', 'through;right', 'through+right', 'left;right', 'reverse']
 export const TURN_EDIT_GLYPH: Record<string, string> = {
@@ -90,6 +100,19 @@ export interface Editor {
   editWarn: string | null
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
+  /** 拉線新增道路（road 工具）：草稿與屬性 */
+  draftRoad: DraftRoad | null
+  draftName: string
+  setDraftName: (v: string) => void
+  draftOneway: boolean
+  setDraftOneway: (v: boolean) => void
+  undoDraftVertex: () => void
+  cancelDraftRoad: () => void
+  finishDraftRoad: () => void
+  /** 點選到的既有自訂道路（可刪除） */
+  selNewRoad: { osmId: number; name?: string } | null
+  setSelNewRoad: (v: { osmId: number; name?: string } | null) => void
+  deleteNewRoad: (osmId: number) => void
   overrideBay: (key: string, fields: Record<string, string | number>) => void
   overrideRightLane: (key: string, fields: Record<string, string | number>) => void
   deleteVehicle: (id: string) => void
@@ -101,7 +124,11 @@ export interface Editor {
 export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef: RefObject<Mode>): Editor {
   const [editTool, setEditToolState] = useState<EditTool>('lane')
   const editToolRef = useRef<EditTool>('lane')
-  const setEditTool = (t: EditTool) => { editToolRef.current = t; setEditToolState(t) }
+  const setEditTool = (t: EditTool) => {
+    editToolRef.current = t
+    setEditToolState(t)
+    if (t !== 'road') { updateDraft(null); setSelNewRoad(null) } // 換工具＝放棄拉線草稿
+  }
   const [editRoad, setEditRoad] = useState<EditRoadState | null>(null)
   const [zonePanel, setZonePanel] = useState<{ nodeId: number; options: TurnOption[] } | null>(null)
   const [bayPanel, setBayPanel] = useState<{ nodeId: number } | null>(null)
@@ -110,6 +137,105 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   void bayTick
   const [editWarn, setEditWarn] = useState<string | null>(null)
   const editWarnTimer = useRef<number>(0)
+  // ── 拉線新增道路（road 工具）──
+  const draftRoadRef = useRef<DraftRoad | null>(null) // 地圖 handler 讀 ref，state 給面板
+  const [draftRoad, setDraftRoadState] = useState<DraftRoad | null>(null)
+  const [draftName, setDraftName] = useState('')
+  const [draftOneway, setDraftOneway] = useState(false)
+  const [selNewRoad, setSelNewRoad] = useState<{ osmId: number; name?: string } | null>(null)
+
+  /** 草稿更新三合一：ref（點擊 handler）+ state（面板）+ 地圖預覽 */
+  function updateDraft(d: DraftRoad | null) {
+    draftRoadRef.current = d
+    setDraftRoadState(d)
+    if (!core.mapRef.current) return
+    const features: object[] = []
+    if (d && d.coords.length >= 2) {
+      features.push({
+        type: 'Feature', properties: { kind: 'line' },
+        geometry: { type: 'LineString', coordinates: d.coords },
+      })
+    }
+    if (d) {
+      d.coords.forEach((c, i) => features.push({
+        type: 'Feature', properties: { kind: 'vertex', snapped: d.nodeIds[i] !== null },
+        geometry: { type: 'Point', coordinates: c },
+      }))
+    }
+    core.src('draftroad').setData({ type: 'FeatureCollection', features } as never)
+  }
+
+  /** 找 ROAD_SNAP_M 內最近的既有路網頂點（node id 與座標對齊的路才可靠） */
+  function snapToNode(p: [number, number]): { pos: [number, number]; id: number } | null {
+    let best: { pos: [number, number]; id: number; d: number } | null = null
+    for (const r of core.roadsRef.current) {
+      const ns = r.properties.nodes
+      const cs = r.geometry.coordinates as [number, number][]
+      if (ns.length !== cs.length) continue
+      for (let i = 0; i < ns.length; i++) {
+        const d = haversine(p, cs[i])
+        if (d < ROAD_SNAP_M && (!best || d < best.d)) best = { pos: cs[i], id: ns[i], d }
+      }
+    }
+    return best
+  }
+
+  /** 依 journal 重新物化自訂道路並重建路網（新增/刪除後）。
+   * 底圖（含 couplet 合併的負 id 路段）不動，userRoad 全部重生成——journal 是唯一真相 */
+  function rebuildNewRoads() {
+    const folded = foldJournal(core.journalRef.current)
+    const base = core.roadsRef.current.filter((r) => !r.properties.userRoad)
+    const news = newRoadsFromFolded(folded, core.nodeRemapRef.current)
+    applyToRoads(news, folded) // 車道覆寫也套在新路上（base 已套過，只補新物化的）
+    core.replaceBaseMap([...base, ...news])
+  }
+
+  function undoDraftVertex() {
+    const d = draftRoadRef.current
+    if (!d) return
+    updateDraft(d.coords.length <= 1 ? null
+      : { coords: d.coords.slice(0, -1), nodeIds: d.nodeIds.slice(0, -1) })
+  }
+
+  function cancelDraftRoad() {
+    updateDraft(null)
+  }
+
+  function finishDraftRoad() {
+    const d = draftRoadRef.current
+    if (!d || d.coords.length < 2) { warn('至少要兩個頂點才能成路'); return }
+    const ids = nextNewRoadIds(core.journalRef.current)
+    let nodeSeq = ids.nodeId
+    const nodes = d.nodeIds.map((n) => n ?? nodeSeq--)
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set',
+      target: { type: 'new_road', key: `way/${ids.wayId}` },
+      fields: {
+        geometry: JSON.stringify(d.coords.map((c) => [+c[0].toFixed(7), +c[1].toFixed(7)])),
+        nodes: JSON.stringify(nodes),
+        ...(draftName.trim() ? { name: draftName.trim() } : {}),
+        highway: 'residential',
+        oneway: draftOneway ? 'yes' : 'no',
+      },
+    })
+    rebuildNewRoads()
+    updateDraft(null)
+    setDraftName('')
+    setDraftOneway(false)
+    const endsSnapped = (d.nodeIds[0] !== null ? 1 : 0)
+      + (d.nodeIds[d.nodeIds.length - 1] !== null ? 1 : 0)
+    warn(endsSnapped === 0
+      ? '已新增道路，但兩端都沒接上既有路網——導航到不了，建議刪除重畫並吸附路口'
+      : `已新增道路（way/${ids.wayId}）：可用「車道」工具繼續編輯斷面`)
+  }
+
+  function deleteNewRoad(osmId: number) {
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'delete', target: { type: 'new_road', key: `way/${osmId}` },
+    })
+    setSelNewRoad(null)
+    rebuildNewRoads()
+  }
 
   function warn(msg: string) {
     setEditWarn(msg)
@@ -227,6 +353,25 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       core.vehiclesRef.current = [...core.vehiclesRef.current, v]
       core.selectedVehicleRef.current = v.id
       core.refreshVehicles()
+    } else if (editToolRef.current === 'road') {
+      // 拉線新增道路：沒在拉線時點自訂道路（負 id）= 選取可刪；否則放頂點（自動吸附）
+      if (!draftRoadRef.current) {
+        const hit = map.queryRenderedFeatures(e.point, { layers: ['road-surface', 'roads-simple'] })
+        // 只認 userRoad 旗標——couplet 合併路段也是負 id，不能拿來刪
+        if (hit[0]?.properties?.userRoad) {
+          const hitId = Number(hit[0].properties.osm_id)
+          const road = core.roadsRef.current.find((r) => r.properties.osm_id === hitId)
+          setSelNewRoad({ osmId: hitId, name: road?.properties.name })
+          return
+        }
+      }
+      setSelNewRoad(null)
+      const snap = snapToNode(p)
+      const d = draftRoadRef.current
+      updateDraft({
+        coords: [...(d?.coords ?? []), snap?.pos ?? p],
+        nodeIds: [...(d?.nodeIds ?? []), snap?.id ?? null],
+      })
     } else if (editToolRef.current === 'bay') {
       // 偏心左轉道：點路口 → 面板列出各進入行向的 bay 狀態（開/關/參數，journal 覆寫）
       let nodeId: number | null = null
@@ -385,6 +530,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     setZonePanel(null)
     setBayPanel(null)
     setIslandPanel(null)
+    updateDraft(null)
+    setSelNewRoad(null)
     core.selectedZoneRef.current = null
     core.selectedVehicleRef.current = null
   }
@@ -394,6 +541,11 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (modeRef.current !== 'edit') return
+      if (editToolRef.current === 'road' && ev.key === 'Escape') {
+        updateDraft(null)
+        setSelNewRoad(null)
+        return
+      }
       if (editToolRef.current === 'vehicle' && core.selectedVehicleRef.current &&
         (ev.key === 'Delete' || ev.key === 'Backspace')) {
         core.vehiclesRef.current = core.vehiclesRef.current.filter(
@@ -411,6 +563,9 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
     handleEditClick, saveRoadEdit, overrideBay, overrideRightLane, overrideTwin,
+    draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,
+    undoDraftVertex, cancelDraftRoad, finishDraftRoad,
+    selNewRoad, setSelNewRoad, deleteNewRoad,
     deleteVehicle, clearVehicles, closeAll,
   }
 }

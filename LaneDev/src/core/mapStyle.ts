@@ -67,6 +67,7 @@ export function buildStyle(): StyleSpecification {
       route: { type: 'geojson', data: emptyFC as never },
       endpoints: { type: 'geojson', data: emptyFC as never },
       zones: { type: 'geojson', data: emptyFC as never },
+      draftroad: { type: 'geojson', data: emptyFC as never }, // 新增道路拉線預覽（LaneDev 編輯模式）
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': C.bg } },
@@ -478,6 +479,25 @@ export function buildStyle(): StyleSpecification {
           'text-color': C.label,
           'text-halo-color': C.labelHalo,
           'text-halo-width': 1.6,
+        },
+      },
+
+      // ── 新增道路拉線預覽（LaneDev 編輯模式；LaneNav 不寫入此 source）──
+      {
+        id: 'draft-road-line', type: 'line', source: 'draftroad',
+        filter: ['==', ['get', 'kind'], 'line'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#e0762e', 'line-width': 4, 'line-dasharray': [1.4, 1] },
+      },
+      {
+        id: 'draft-road-vertex', type: 'circle', source: 'draftroad',
+        filter: ['==', ['get', 'kind'], 'vertex'],
+        paint: {
+          'circle-radius': 5.5,
+          // 藍 = 已吸附既有 node（可連通路網）、白 = 自由頂點
+          'circle-color': ['case', ['==', ['get', 'snapped'], true], '#1058b8', '#ffffff'],
+          'circle-stroke-color': '#e0762e',
+          'circle-stroke-width': 2,
         },
       },
 

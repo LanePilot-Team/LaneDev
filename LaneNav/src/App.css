@@ -253,6 +253,12 @@ body {
 }
 .end-btn { background: #f1f3f6; color: #3d4a5c; }
 .mult-btn { background: #eef3fb; color: #1058b8; min-width: 52px; }
+/* 模擬到達後的「再跑一次」：主動作色，與結束/變速鈕並排 */
+.replay-btn {
+  border: none; border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  background: #1058b8; color: #fff;
+}
 .lane-btn {
   border: none; border-radius: 10px; padding: 10px 16px;
   font-size: 16px; font-weight: 700; cursor: pointer;

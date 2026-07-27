@@ -25,9 +25,15 @@ export interface EnhancementRecord {
    *          與 turn_bay 同格式加 ~r 尾碼——foldJournal 依 key 折疊，尾碼避免鍵碰撞）
    * moto_box key = "way/W@node/N[~b]~m"（機車停等格：present 開關 / lanes 涵蓋車道數，
    *          自最外側往內算；不可越過禁行機車車道，超出自動夾回）
+   * new_road key = "way/-N"（負數 way id：使用者拉線新增的道路，
+   *          fields 含 geometry/nodes/name/highway/oneway，見 core/newroads.ts；
+   *          車道屬性沿用 road 覆寫鍵空間 way/-N@b/…）
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
-  target: { type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box'; key: string }
+  target: {
+    type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box' | 'new_road'
+    key: string
+  }
   fields?: Record<string, string | number>
 }
 

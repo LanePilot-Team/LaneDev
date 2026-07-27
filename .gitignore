@@ -3,16 +3,18 @@ node_modules/
 dist/
 dist-ssr/
 *.local
-*.tsbuildinfo
+tsconfig.tsbuildinfo
 
-# 編輯器 / OS
+# 編輯器
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# OS
 .DS_Store
 Thumbs.db
 
-# 環境變數
+# 環境變數（目前專案沒有，預留）
 .env
 .env.*
 !.env.example
@@ -20,4 +22,7 @@ Thumbs.db
 # 記錄檔
 *.log
 npm-debug.log*
+
+# 工具暫存（不進版控）
 .gstack/
+.claude/

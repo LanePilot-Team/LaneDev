@@ -275,6 +275,15 @@ export class RoadGraph {
   private adj = new Map<number, Edge[]>()
   private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
+  private edgeLookup = new Map<string, Edge>()
+  /** 路網建立後不再改變；快取路口索引，避免每條標線重掃完整 edge 集合。 */
+  private intersectionCache: { id: number; pos: [number, number] }[] | null = null
+  private intersectionIdCache: Set<number> | null = null
+  private approachExtensionCache = new Map<string, {
+    coords: [number, number][]
+    toNode: number
+    endSetbackM: number
+  } | null>()
 
   constructor(roads: RoadFeature[]) {
     const usage = new Map<number, number>()
@@ -315,6 +324,10 @@ export class RoadGraph {
     if (!this.adjIn.has(e.to)) this.adjIn.set(e.to, [])
     this.adjIn.get(e.to)!.push(e)
     this.edges.push(e)
+    this.edgeLookup.set(
+      `${e.road.properties.osm_id}@${e.road.properties.blockNode}:${e.from}>${e.to}:${e.back ? 1 : 0}`,
+      e,
+    )
   }
 
   /**
@@ -371,6 +384,7 @@ export class RoadGraph {
 
   /** 路口清單（相鄰節點 ≥3）——待轉區只能放在路口附近 */
   intersections(): { id: number; pos: [number, number] }[] {
+    if (this.intersectionCache) return this.intersectionCache
     const neighbors = new Map<number, Set<number>>()
     for (const e of this.edges) {
       if (!neighbors.has(e.from)) neighbors.set(e.from, new Set())
@@ -382,6 +396,7 @@ export class RoadGraph {
     for (const [id, ns] of neighbors) {
       if (ns.size >= 3 && this.nodePos.has(id)) out.push({ id, pos: this.nodePos.get(id)! })
     }
+    this.intersectionCache = out
     return out
   }
 
@@ -527,6 +542,83 @@ export class RoadGraph {
           endSetbackM: w1 > 0 ? w1 / 2 + clearanceM : 0,
         }
       })
+  }
+
+  /**
+   * 將「道路本體 → 短落地連接 way → 真正路口」視為同一個進口。
+   *
+   * OSM 常在橋名、bridge/layer 或 way ID 切換處插入數公尺至數十公尺的
+   * 連接段；若標線只看原 edge，箭頭、停止線與停等格會被判定為尚未到路口。
+   * 本函式只穿越沒有真正岔路、方向近乎連續的短段，不會跨越一般路口。
+   */
+  extendApproachToIntersection(
+    input: ScopeEdge, maxExtensionM = 45, clearanceM = 1.2,
+  ): ScopeEdge {
+    const intersections = this.intersectionIdCache
+      ?? (this.intersectionIdCache = new Set(this.intersections().map((item) => item.id)))
+    if (intersections.has(input.toNode)) return input
+
+    const cacheKey =
+      `${input.road.properties.osm_id}@${input.road.properties.blockNode}:`
+      + `${input.fromNode}>${input.toNode}:${input.back ? 1 : 0}:`
+      + `${maxExtensionM}:${clearanceM}`
+    const cached = this.approachExtensionCache.get(cacheKey)
+    if (cached === null) return input
+    if (cached) return { ...input, ...cached }
+
+    let current = this.edgeLookup.get(
+      `${input.road.properties.osm_id}@${input.road.properties.blockNode}:`
+      + `${input.fromNode}>${input.toNode}:${input.back ? 1 : 0}`,
+    )
+    if (!current) {
+      this.approachExtensionCache.set(cacheKey, null)
+      return input
+    }
+
+    const coords = [...input.coords]
+    let nodeId = input.toNode
+    let addedM = 0
+    const visited = new Set<Edge>([current])
+
+    for (let step = 0; step < 4 && !intersections.has(nodeId); step++) {
+      const incomingBearing = bearing(
+        coords[coords.length - 2], coords[coords.length - 1])
+      const candidates = (this.adj.get(nodeId) ?? [])
+        .filter((edge) => !visited.has(edge) && edge.coords.length >= 2)
+        .map((edge) => ({
+          edge,
+          delta: Math.abs(angleDelta(
+            incomingBearing, bearing(edge.coords[0], edge.coords[1]))),
+        }))
+        .filter(({ edge, delta }) =>
+          delta <= 35 && addedM + edge.lengthM <= maxExtensionM
+          && edgeAllowed(edge.road, edge.back, 'car'))
+        .sort((a, b) => a.delta - b.delta)
+
+      // 有兩條同樣合理的出口代表已經分岔，不替使用者猜路。
+      if (candidates.length === 0
+        || (candidates.length > 1 && candidates[1].delta - candidates[0].delta < 8)) break
+
+      current = candidates[0].edge
+      visited.add(current)
+      coords.push(...current.coords.slice(1))
+      addedM += current.lengthM
+      nodeId = current.to
+    }
+
+    if (!intersections.has(nodeId)) {
+      this.approachExtensionCache.set(cacheKey, null)
+      return input
+    }
+    const endBearing = bearing(coords[coords.length - 2], coords[coords.length - 1])
+    const crossWidth = this.crossWidthAt(nodeId, endBearing, current.road)
+    const extension = {
+      coords,
+      toNode: nodeId,
+      endSetbackM: crossWidth > 0 ? crossWidth / 2 + clearanceM : input.endSetbackM,
+    }
+    this.approachExtensionCache.set(cacheKey, extension)
+    return { ...input, ...extension }
   }
 
   /** 路口出口方向查詢（地面車道箭頭用）：該行向在節點可直行/左轉/右轉？ */

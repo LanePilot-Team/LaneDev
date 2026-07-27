@@ -215,6 +215,14 @@ body {
   font-size: 19px; font-weight: 700; color: #1058b8; cursor: pointer;
 }
 .lane-pick:hover { border-color: #3b82f6; }
+.arrow-style-select {
+  width: 58px;
+  min-width: 58px;
+  padding: 0 18px 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
 
 /* ── 路段資訊卡 ── */
 .road-card {

@@ -8,11 +8,11 @@ import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
 import {
-  buildDividers, buildRoadSurfaces, loadRoads, roadsFromGeoJSON, type RoadFeature,
+  buildDividers, buildRoadSurfaces, roadsFromGeoJSON, type RoadFeature,
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
-import { parseImported, mergeMaps } from '../core/importmap'
+import { parseImported } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
 import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
@@ -38,6 +38,9 @@ import { NANZI_CENTER, haversine } from '../core/geo'
 import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
 import { groundMarkingPolygons } from '../core/groundMarkings'
 import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
+import {
+  loadStaticRoadDatabase, staticAnnotations, staticSegments, updateStaticEditor,
+} from '../core/staticDatabase'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -175,31 +178,15 @@ function buildStationSideStructures(
   })
 }
 
-/** 預設底圖：LanePilot shard（含 node_refs）。
- * 橋頭暫時不載（2026-07-10 指示，先專注楠梓/藍田路實驗）——注意楠梓車站周邊
- * 路網在 OSM 行政區劃屬橋頭，Demo 路線東端會缺路，要跑車站 Demo 再加回來 */
-const DEFAULT_SHARD_URLS = [
-  '/data/lanepilot/area_4212599.segments.jsonl', // 楠梓區
-]
-
 async function loadDefaultRoads() {
-  // 底圖預設 = LanePilot shard（同學版 OSM，幾何較新較貼實地——槽化/偏心規則
-  // 依賴路段幾何，舊 Overpass 快照與實地有出入會讓規則不穩）。
-  // 標註仍不套用（journal 過濾 author=lanepilot）。?base=osm 退回快照對照。
-  if (location.search.includes('base=osm')) return loadRoads('/data/nanzi_roads.geojson')
-  try {
-    const texts = await Promise.all(DEFAULT_SHARD_URLS.map(async (u) => {
-      const r = await fetch(u)
-      if (!r.ok) throw new Error(`${u} → HTTP ${r.status}`)
-      return r.text()
-    }))
-    const parts = texts.map(parseImported)
-      .filter((p): p is Extract<ReturnType<typeof parseImported>, { kind: 'map' }> => p.kind === 'map')
-    return roadsFromGeoJSON(mergeMaps(parts).fc)
-  } catch (e) {
-    console.warn('LanePilot shard 底圖載入失敗，退回 Overpass 快照', e)
-    return loadRoads('/data/nanzi_roads.geojson')
-  }
+  await loadStaticRoadDatabase()
+  const canonicalSegments = staticSegments()
+  if (!canonicalSegments.length) throw new Error('唯一靜態道路資料庫沒有路段')
+  const parsed = parseImported(
+    canonicalSegments.map((record) => JSON.stringify(record)).join('\n'),
+  )
+  if (parsed.kind !== 'map') throw new Error('唯一靜態道路資料庫格式錯誤')
+  return roadsFromGeoJSON(parsed.fc)
 }
 
 /** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
@@ -326,13 +313,15 @@ export function useMapCore(
     rightLanesRef.current = buildRightLanes(graphRef.current, journalRef.current)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
-    const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
+    const stopLines = buildStopLines(
+      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
       graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
-      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs)
+      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
+      journalRef.current)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
@@ -521,6 +510,22 @@ export function useMapCore(
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
       rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
       const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
+      if (import.meta.env.DEV) {
+        const bounds = {
+          minLng: Infinity, minLat: Infinity,
+          maxLng: -Infinity, maxLat: -Infinity,
+        }
+        for (const road of roads) for (const point of road.geometry.coordinates) {
+          bounds.minLng = Math.min(bounds.minLng, point[0])
+          bounds.minLat = Math.min(bounds.minLat, point[1])
+          bounds.maxLng = Math.max(bounds.maxLng, point[0])
+          bounds.maxLat = Math.max(bounds.maxLat, point[1])
+        }
+        console.info('Canonical road database prepared', JSON.stringify({
+          roads: roads.length,
+          bounds: Number.isFinite(bounds.minLng) ? bounds : null,
+        }))
+      }
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
       wayRemapRef.current = wayRemap
@@ -530,15 +535,7 @@ export function useMapCore(
       // 遷移在過濾之前：remapJournalNodes 會回存整份 journal（含 lanepilot 紀錄）
       journalRef.current = journalOff
         ? []
-        : remapJournalNodes(loadJournal(), nodeRemap).filter((r) => r.author !== 'lanepilot')
-      if (!journalOff && journalRef.current.length === 0) {
-        // 首次啟動：載入示範標註（大學南路 2+2+機車道／大學西路 1+1+機車道）
-        try {
-          const seed: EnhancementRecord[] = await fetch('/data/seed_journal.json').then((r) => r.json())
-          journalRef.current = seed
-          localStorage.setItem('navsim-journal-v1', JSON.stringify(seed))
-        } catch { /* 沒有 seed 檔就算了 */ }
-      }
+        : remapJournalNodes(loadJournal(), nodeRemap)
       applyToRoads(roads, foldJournal(journalRef.current))
       // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
       roadsRef.current = roads.filter((road) => !road.properties.deleted)
@@ -564,14 +561,55 @@ export function useMapCore(
         }
         return id === z.intersectionId ? z : { ...z, intersectionId: id }
       })
+      // Rebuild LanePilot lane profiles from the canonical annotations, then
+      // append browser-made records last so the effective value is exactly what
+      // the editor shows. Persist the combined result into the same database.
+      // 正常情況直接使用靜態資料庫內已轉換完成的 LanePilot journal。
+      // 僅相容舊資料庫：沒有任何匯入紀錄時才做一次性轉換。
+      if (!journalOff && !journalRef.current.some((r) => r.author === 'lanepilot')) {
+        try {
+          const canonicalAnnotations = staticAnnotations()
+          if (canonicalAnnotations.length) {
+            const parsed = parseImported(
+              canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n'),
+            )
+            if (parsed.kind === 'annotations') {
+              const manualJournal = [...journalRef.current]
+              journalRef.current = []
+              const { importAnnotations } = await import('./importFlow')
+              importAnnotations(coreRef.current, {
+                switchMode: () => undefined,
+                setImportMsg: (message) => {
+                  if (message) console.info(message)
+                },
+              }, parsed.records, 'road_database.json')
+              const importedJournal = journalRef.current.filter((r) => r.author === 'lanepilot')
+              journalRef.current = [...importedJournal, ...manualJournal].map((record, index) => ({
+                ...record,
+                seq: index + 1,
+              }))
+              updateStaticEditor({ journal: journalRef.current })
+              applyToRoads(roadsRef.current, foldJournal(journalRef.current))
+              graphRef.current = new RoadGraph(roadsRef.current)
+              intersectionsRef.current = graphRef.current.intersections()
+            }
+          }
+        } catch (error) {
+          console.warn('Canonical LanePilot 車道標註套用失敗；沿用人工資料', error)
+        }
+      }
       // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
       // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
       // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。
-      if (!location.search.includes('lpzones=off')) {
+      // 已寫進唯一靜態資料來源的待轉區不必每次由 annotations 重新配對。
+      if (!location.search.includes('lpzones=off')
+        && !zonesRef.current.some((z) => z.id.startsWith('zone-lp-'))) {
         try {
-          const r = await fetch('/data/lanepilot/annotations.jsonl')
-          if (r.ok) {
-            const parsed = parseImported(await r.text())
+          const canonicalAnnotations = staticAnnotations()
+          const annotationText =
+            canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n')
+          if (annotationText) {
+            const parsed = parseImported(annotationText)
             if (parsed.kind === 'annotations') {
               const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
               const savedImported = new Map(

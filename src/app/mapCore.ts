@@ -7,14 +7,12 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
-import { asset } from '../core/asset'
 import {
-  buildDividers, buildRoadSurfaces, loadRoads, roadsFromGeoJSON, type RoadFeature,
+  buildDividers, buildRoadSurfaces, roadsFromGeoJSON, type RoadFeature,
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
-import { mapFromSegmentRecords, parseImported, mergeMaps } from '../core/importmap'
-import { loadStaticRoadDatabase } from '../core/staticDatabase'
+import { parseImported } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
 import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
@@ -23,7 +21,6 @@ import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
-import { newRoadsFromFolded } from '../core/newroads'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
@@ -42,11 +39,8 @@ import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/inters
 import { groundMarkingPolygons } from '../core/groundMarkings'
 import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
 import {
-  buildLaneGuidanceIndex,
-  remapLaneGuidanceRecords,
-  type LaneGuidanceIndex,
-  type LaneGuidanceRecord,
-} from '../core/laneGuidance'
+  loadStaticRoadDatabase, staticAnnotations, staticSegments, updateStaticEditor,
+} from '../core/staticDatabase'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -184,64 +178,15 @@ function buildStationSideStructures(
   })
 }
 
-/** 預設底圖：LanePilot shard（含 node_refs）。
- * 橋頭暫時不載（2026-07-10 指示，先專注楠梓/藍田路實驗）——注意楠梓車站周邊
- * 路網在 OSM 行政區劃屬橋頭，Demo 路線東端會缺路，要跑車站 Demo 再加回來 */
-const DEFAULT_SHARD_URLS = [
-  asset('/data/lanepilot/area_4212599.segments.jsonl'), // 楠梓區
-]
-
 async function loadDefaultRoads() {
-  // 底圖優先序：唯一靜態道路資料庫（road_database.json，捏合結果的讀取端）
-  // → LanePilot shard → Overpass 快照。資料庫 segments 與 shard 同源
-  // （楠梓區 nav_segment），但額外承載捏合改寫；?base=osm 直接退回快照對照。
-  // 標註仍不套用（journal 過濾 author=lanepilot）。
-  if (location.search.includes('base=osm')) return loadRoads(asset('/data/nanzi_roads.geojson'))
-  try {
-    const db = await loadStaticRoadDatabase()
-    return roadsFromGeoJSON(mapFromSegmentRecords(db.segments).fc)
-  } catch (e) {
-    console.warn('靜態道路資料庫載入失敗，退回 LanePilot shard', e)
-  }
-  try {
-    const texts = await Promise.all(DEFAULT_SHARD_URLS.map(async (u) => {
-      const r = await fetch(u)
-      if (!r.ok) throw new Error(`${u} → HTTP ${r.status}`)
-      return r.text()
-    }))
-    const parts = texts.map(parseImported)
-      .filter((p): p is Extract<ReturnType<typeof parseImported>, { kind: 'map' }> => p.kind === 'map')
-    return roadsFromGeoJSON(mergeMaps(parts).fc)
-  } catch (e) {
-    console.warn('LanePilot shard 底圖載入失敗，退回 Overpass 快照', e)
-    return loadRoads(asset('/data/nanzi_roads.geojson'))
-  }
-}
-
-async function loadLaneGuidanceRecords(): Promise<LaneGuidanceRecord[]> {
-  try {
-    const response = await fetch(asset('/data/lanepilot/lane-guidance.json'))
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const records: unknown = await response.json()
-    if (!Array.isArray(records)) throw new Error('根節點不是陣列')
-    return records as LaneGuidanceRecord[]
-  } catch (error) {
-    console.warn('車道標註索引載入失敗，改用 OSM／系統推測', error)
-    return []
-  }
-}
-
-function guidanceIndexForRoads(
-  records: LaneGuidanceRecord[],
-  roads: RoadFeature[],
-  nodeRemap: Map<number, number>,
-  wayRemap: Map<number, DropRemap>,
-): LaneGuidanceIndex {
-  return buildLaneGuidanceIndex(remapLaneGuidanceRecords(records, {
-    existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
-    nodeRemap,
-    wayRemap,
-  }))
+  await loadStaticRoadDatabase()
+  const canonicalSegments = staticSegments()
+  if (!canonicalSegments.length) throw new Error('唯一靜態道路資料庫沒有路段')
+  const parsed = parseImported(
+    canonicalSegments.map((record) => JSON.stringify(record)).join('\n'),
+  )
+  if (parsed.kind !== 'map') throw new Error('唯一靜態道路資料庫格式錯誤')
+  return roadsFromGeoJSON(parsed.fc)
 }
 
 /** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
@@ -313,8 +258,6 @@ export function useMapCore(
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
-  const laneGuidanceRecordsRef = useRef<LaneGuidanceRecord[]>([])
-  const laneGuidanceIndexRef = useRef<LaneGuidanceIndex>(buildLaneGuidanceIndex([]))
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -370,13 +313,15 @@ export function useMapCore(
     rightLanesRef.current = buildRightLanes(graphRef.current, journalRef.current)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
-    const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
+    const stopLines = buildStopLines(
+      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
       graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
-      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs)
+      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
+      journalRef.current)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
@@ -434,13 +379,7 @@ export function useMapCore(
   const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
     roadsRef.current = roads
     redrawRoads()
-    laneGuidanceIndexRef.current = guidanceIndexForRoads(
-      laneGuidanceRecordsRef.current,
-      roads,
-      nodeRemapRef.current,
-      wayRemapRef.current,
-    )
-    graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
+    graphRef.current = new RoadGraph(roads)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
     rebuildElevation(roads)
@@ -500,17 +439,16 @@ export function useMapCore(
         img.src = url
       })
       const [motorcycleIcon, bicycleIcon] = await Promise.all([
-        loadSvg(asset('/assets/road-markings/motorcycle.svg')),
-        loadSvg(asset('/assets/road-markings/bicycle.svg')),
+        loadSvg('/assets/road-markings/motorcycle.svg'),
+        loadSvg('/assets/road-markings/bicycle.svg'),
       ])
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
-      const [roadsRaw, buildingsRaw, laneGuidanceRecords] = await Promise.all([
+      const [roadsRaw, buildingsRaw] = await Promise.all([
         loadDefaultRoads(),
-        fetch(asset('/data/nanzih_buildings_height.geojson')).then((r) => r.json()) as
+        fetch('/data/nanzih_buildings_height.geojson').then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
-        loadLaneGuidanceRecords(),
       ])
       // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
       // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
@@ -572,41 +510,39 @@ export function useMapCore(
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
       rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
       const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
+      if (import.meta.env.DEV) {
+        const bounds = {
+          minLng: Infinity, minLat: Infinity,
+          maxLng: -Infinity, maxLat: -Infinity,
+        }
+        for (const road of roads) for (const point of road.geometry.coordinates) {
+          bounds.minLng = Math.min(bounds.minLng, point[0])
+          bounds.minLat = Math.min(bounds.minLat, point[1])
+          bounds.maxLng = Math.max(bounds.maxLng, point[0])
+          bounds.maxLat = Math.max(bounds.maxLat, point[1])
+        }
+        console.info('Canonical road database prepared', JSON.stringify({
+          roads: roads.length,
+          bounds: Number.isFinite(bounds.minLng) ? bounds : null,
+        }))
+      }
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
       wayRemapRef.current = wayRemap
-      laneGuidanceRecordsRef.current = laneGuidanceRecords
-      laneGuidanceIndexRef.current = guidanceIndexForRoads(
-        laneGuidanceRecords,
-        roads,
-        nodeRemap,
-        wayRemap,
-      )
       // 除錯開關：?journal=off 完全不套標註（連 seed 都不載），看純 OSM 原始狀態。
       // 同學的 LanePilot annotation（author=lanepilot）實驗期間一律不套。
       const journalOff = location.search.includes('journal=off')
       // 遷移在過濾之前：remapJournalNodes 會回存整份 journal（含 lanepilot 紀錄）
       journalRef.current = journalOff
         ? []
-        : remapJournalNodes(loadJournal(), nodeRemap).filter((r) => r.author !== 'lanepilot')
-      if (!journalOff && journalRef.current.length === 0) {
-        // 首次啟動：載入示範標註（大學南路 2+2+機車道／大學西路 1+1+機車道）
-        try {
-          const seed: EnhancementRecord[] = await fetch(asset('/data/seed_journal.json')).then((r) => r.json())
-          journalRef.current = seed
-          localStorage.setItem('navsim-journal-v1', JSON.stringify(seed))
-        } catch { /* 沒有 seed 檔就算了 */ }
-      }
-      // 自訂新增道路（journal new_road）物化混入底圖：graph/渲染/車道編輯一體適用
-      const folded = foldJournal(journalRef.current)
-      const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
-      applyToRoads(roadsAll, folded) // 先套用才有 deleted 旗標可濾
+        : remapJournalNodes(loadJournal(), nodeRemap)
+      applyToRoads(roads, foldJournal(journalRef.current))
       // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
-      roadsRef.current = roadsAll.filter((road) => !road.properties.deleted)
+      roadsRef.current = roads.filter((road) => !road.properties.deleted)
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
+      graphRef.current = new RoadGraph(roadsRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -625,14 +561,55 @@ export function useMapCore(
         }
         return id === z.intersectionId ? z : { ...z, intersectionId: id }
       })
+      // Rebuild LanePilot lane profiles from the canonical annotations, then
+      // append browser-made records last so the effective value is exactly what
+      // the editor shows. Persist the combined result into the same database.
+      // 正常情況直接使用靜態資料庫內已轉換完成的 LanePilot journal。
+      // 僅相容舊資料庫：沒有任何匯入紀錄時才做一次性轉換。
+      if (!journalOff && !journalRef.current.some((r) => r.author === 'lanepilot')) {
+        try {
+          const canonicalAnnotations = staticAnnotations()
+          if (canonicalAnnotations.length) {
+            const parsed = parseImported(
+              canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n'),
+            )
+            if (parsed.kind === 'annotations') {
+              const manualJournal = [...journalRef.current]
+              journalRef.current = []
+              const { importAnnotations } = await import('./importFlow')
+              importAnnotations(coreRef.current, {
+                switchMode: () => undefined,
+                setImportMsg: (message) => {
+                  if (message) console.info(message)
+                },
+              }, parsed.records, 'road_database.json')
+              const importedJournal = journalRef.current.filter((r) => r.author === 'lanepilot')
+              journalRef.current = [...importedJournal, ...manualJournal].map((record, index) => ({
+                ...record,
+                seq: index + 1,
+              }))
+              updateStaticEditor({ journal: journalRef.current })
+              applyToRoads(roadsRef.current, foldJournal(journalRef.current))
+              graphRef.current = new RoadGraph(roadsRef.current)
+              intersectionsRef.current = graphRef.current.intersections()
+            }
+          }
+        } catch (error) {
+          console.warn('Canonical LanePilot 車道標註套用失敗；沿用人工資料', error)
+        }
+      }
       // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
       // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
       // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。
-      if (!location.search.includes('lpzones=off')) {
+      // 已寫進唯一靜態資料來源的待轉區不必每次由 annotations 重新配對。
+      if (!location.search.includes('lpzones=off')
+        && !zonesRef.current.some((z) => z.id.startsWith('zone-lp-'))) {
         try {
-          const r = await fetch(asset('/data/lanepilot/annotations.jsonl'))
-          if (r.ok) {
-            const parsed = parseImported(await r.text())
+          const canonicalAnnotations = staticAnnotations()
+          const annotationText =
+            canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n')
+          if (annotationText) {
+            const parsed = parseImported(annotationText)
             if (parsed.kind === 'annotations') {
               const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
               const savedImported = new Map(
@@ -644,7 +621,7 @@ export function useMapCore(
               const res = zonesFromAnnotations({
                 records: parsed.records,
                 graph: graphRef.current,
-                roads: roadsAll,
+                roads,
                 nodeRemap, wayRemap,
                 rawWays: rawWaysRef.current,
                 existing: manual,
@@ -670,7 +647,7 @@ export function useMapCore(
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer
       setActiveElevatedLayer(eLayer) // usePlanner/useDrive 畫路線絲帶用（模組單例）
-      rebuildElevation(roadsAll)
+      rebuildElevation(roads)
       map.addLayer(eLayer.asLayer())
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer
       // 真 3D 車輛模型圖層（three.js）

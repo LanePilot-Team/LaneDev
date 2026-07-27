@@ -10,6 +10,7 @@ import { angleDelta, bearing, haversine } from './geo'
 import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
+import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
 
 export interface EnhancementRecord {
   seq: number
@@ -20,56 +21,47 @@ export interface EnhancementRecord {
    * road     key = "way/24275091"（整條 way 覆寫，舊格式）
    *          或   "way/24275091@b/123456"（區塊覆寫：way 依路口切塊後，
    *          @b/ 後為區塊第一個 node id；套用時區塊級蓋過 way 級）
-   * turn_bay key = "way/W@node/N"（偏心左轉道覆寫，見 路上元件擴充設計.md §1.3）
+   * turn_bay key = "way/W@node/N"（偏心左轉道覆寫；single_mode=capped/ignore
+   *          控制單邊使用時另一端封口或完全忽略，見 路上元件擴充設計.md §1.3）
    * twin_island key = "twin/A-B"（顯式配對分隔島覆寫：w 島寬 / present 開關）
    * right_lane key = "way/W@node/N[~b]~r"（路口前右轉附加車道：present/len_m/width_m；
    *          與 turn_bay 同格式加 ~r 尾碼——foldJournal 依 key 折疊，尾碼避免鍵碰撞）
-   * moto_box key = "way/W@node/N[~b]~m"（機車停等格：present 開關 / lanes 涵蓋車道數，
-   *          自最外側往內算；不可越過禁行機車車道，超出自動夾回）
-   * new_road key = "way/-N"（負數 way id：使用者拉線新增的道路，
-   *          fields 含 geometry/nodes/name/highway/oneway，見 core/newroads.ts；
-   *          車道屬性沿用 road 覆寫鍵空間 way/-N@b/…）
+   * moto_box key = "way/W@node/N[~b]~m"（機車停等格：lanes 相容舊格式；
+   *          start_lane/end_lane 為駕駛視角左→右的連續車道範圍，不可越過禁行機車車道）
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
   target: {
-    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane'
-      | 'moto_box' | 'new_road'
+    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box'
     key: string
   }
   fields?: Record<string, string | number>
 }
 
 const JOURNAL_KEY = 'navsim-journal-v1'
-const AUTHOR_KEY = 'navsim-author'
+export const AUTHOR = 'rex' // TODO: 多人協作時做成設定
+let pendingJournal: EnhancementRecord[] | null = null
+let journalFlushQueued = false
 
-/** 標註者署名：**預設空白**（不再寫死單一作者）。使用者在「匯出」時填寫，
- * 存 localStorage 供下次沿用。空字串 = 尚未署名，匯出時會補進未署名的紀錄。 */
-export function getAuthor(): string {
-  try {
-    return localStorage.getItem(AUTHOR_KEY) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-export function setAuthor(name: string) {
-  try {
-    localStorage.setItem(AUTHOR_KEY, name)
-  } catch { /* 隱私模式寫不進去就算了 */ }
-}
-
-/** 補上署名並回存：只填 author 空白的紀錄，不動已有作者
- * （seed / lanepilot / 已署名的別人），append-only 的可追溯性不受影響。 */
-export function stampAuthor(
-  journal: EnhancementRecord[], author: string,
-): EnhancementRecord[] {
-  if (!author) return journal
-  const next = journal.map((r) => (r.author ? r : { ...r, author }))
-  localStorage.setItem(JOURNAL_KEY, JSON.stringify(next))
-  return next
+/**
+ * 一次儲存可能連續追加多筆紀錄；等本輪同步工作結束後，只持久化最後版本，
+ * 避免每一筆都重新序列化完整 journal 與靜態 editor database。
+ */
+function queueJournalPersistence(journal: EnhancementRecord[]) {
+  pendingJournal = journal
+  if (journalFlushQueued) return
+  journalFlushQueued = true
+  queueMicrotask(() => {
+    journalFlushQueued = false
+    const latest = pendingJournal
+    pendingJournal = null
+    if (!latest) return
+    if (hasStaticRoadDatabase()) updateStaticEditor({ journal: latest })
+    else localStorage.setItem(JOURNAL_KEY, JSON.stringify(latest))
+  })
 }
 
 export function loadJournal(): EnhancementRecord[] {
+  if (hasStaticRoadDatabase()) return staticJournal()
   try {
     return JSON.parse(localStorage.getItem(JOURNAL_KEY) ?? '[]')
   } catch {
@@ -80,7 +72,7 @@ export function loadJournal(): EnhancementRecord[] {
 export function appendRecord(
   journal: EnhancementRecord[],
   rec: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>,
-  author: string = getAuthor(), // 匯入 LanePilot 標註時標記來源
+  author: string = AUTHOR, // 匯入 LanePilot 標註時標記來源
 ): EnhancementRecord[] {
   const next = [...journal, {
     ...rec,
@@ -88,7 +80,7 @@ export function appendRecord(
     ts: new Date().toISOString(),
     author,
   }]
-  localStorage.setItem(JOURNAL_KEY, JSON.stringify(next))
+  queueJournalPersistence(next)
   return next
 }
 
@@ -112,6 +104,7 @@ export function remapJournalNodes(
   })
   if (changed > 0) {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(out))
+    updateStaticEditor({ journal: out })
     console.info(`journal 遷移：${changed} 筆鍵值隨 couplet 合併重映射`)
   }
   return out
@@ -376,68 +369,16 @@ export function journalForMergedRoads(journal: EnhancementRecord[]): Enhancement
   })
 }
 
-/**
- * 靜態捏合（mergeStaticRoadSegments）成功後，把「活」journal（localStorage）
- * 跟著遷移——與 vite middleware 對 road_database.json 內嵌快照做的是同一套語意：
- * 捏合會把兩個 way 的中間 node 換成合成 id，區塊結構重排，舊 @b/ 鍵全數失效，
- * 所以兩個 way 的 road 區塊覆寫收斂成主 way 的 way 級覆寫（以主區塊現值為準）；
- * 次 way 的路口元件鍵（turn_bay/right_lane/moto_box）改掛主 way。
- * 回存 localStorage 後由呼叫端整頁重載。
- */
-export function migrateJournalForStaticMerge(
-  journal: EnhancementRecord[], primaryKey: string, secondaryKey: string,
-): EnhancementRecord[] {
-  const pm = primaryKey.match(/^way\/(-?\d+)@b\/-?\d+$/)
-  const sm = secondaryKey.match(/^way\/(-?\d+)@b\/-?\d+$/)
-  if (!pm || !sm) return journal
-  const p = pm[1]
-  const s = sm[1]
-  const masterFields: Record<string, string | number> = {}
-  for (const rec of journal) {
-    if (rec.op !== 'set' || rec.target.type !== 'road') continue
-    if (rec.target.key === `way/${p}` || rec.target.key === primaryKey) {
-      Object.assign(masterFields, rec.fields ?? {})
-    }
-  }
-  const isMergedRoadKey = (key: string) =>
-    key === `way/${p}` || key.startsWith(`way/${p}@b/`)
-    || key === `way/${s}` || key.startsWith(`way/${s}@b/`)
-  const migrated: EnhancementRecord[] = []
-  for (const rec of journal) {
-    const key = rec.target.key
-    if (rec.target.type === 'road' && isMergedRoadKey(key)) continue
-    if (rec.target.type === 'road_merge'
-      && (key.includes(`way/${p}@`) || key.includes(`way/${s}@`))) continue
-    migrated.push(key.startsWith(`way/${s}@`)
-      ? { ...rec, target: { ...rec.target, key: key.replace(`way/${s}@`, `way/${p}@`) } }
-      : rec)
-  }
-  if (Object.keys(masterFields).length) {
-    migrated.push({
-      seq: 0,
-      ts: new Date().toISOString(),
-      author: getAuthor(),
-      op: 'set',
-      target: { type: 'road', key: `way/${p}` },
-      fields: masterFields,
-    })
-  }
-  const out = migrated.map((rec, i) => ({ ...rec, seq: i + 1 }))
-  localStorage.setItem(JOURNAL_KEY, JSON.stringify(out))
-  return out
-}
-
 /** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型
  * + 偏心左轉道 + 右轉附加車道 */
 export function exportEnhancements(
   journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
   bays: TurnBay[] = [], rightLanes: RightLane[] = [],
-  author: string = getAuthor(), // 匯出當下由使用者填寫；未填則留空
 ) {
   const payload = {
     format: 'navsim-enhancement-v0.5',
     exported_at: new Date().toISOString(),
-    author,
+    author: AUTHOR,
     journal,
     latest: Object.fromEntries(foldJournal(journal)),
     waiting_zones: zones.map((z) => ({

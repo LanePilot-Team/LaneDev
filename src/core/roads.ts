@@ -31,7 +31,7 @@ export interface RoadProps {
    * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
   motoSepF: number
   motoSepB: number
-  /** 人工繪圖選項（預設開啟）。 */
+  /** 機車道入口圖示（預設關閉，需人工明確開啟）。 */
   motoEntryIconF: boolean
   motoEntryIconB: boolean
   motoTextDiamondF: boolean
@@ -196,8 +196,8 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       motoB: false,
       motoSepF: 0,
       motoSepB: 0,
-      motoEntryIconF: true,
-      motoEntryIconB: true,
+      motoEntryIconF: false,
+      motoEntryIconB: false,
       motoTextDiamondF: false,
       motoTextDiamondB: false,
       stopLineF: true,

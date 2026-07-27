@@ -23,6 +23,7 @@ import {
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
+  buildLeftTurnWaitingAreas,
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
@@ -315,6 +316,7 @@ export function useMapCore(
     const channel = buildChannelization(graphRef.current, baysRef.current)
     const stopLines = buildStopLines(
       graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
+    const leftWaitAreas = buildLeftTurnWaitingAreas(graphRef.current, baysRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
       graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
@@ -323,7 +325,7 @@ export function useMapCore(
       graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
       journalRef.current)
     const turnBayFeaturesRaw = baysToGeoJSON(
-      baysRef.current, [...channel, ...stopLines],
+      baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
       ...buildMotoLaneEntryIcons(graphRef.current, journalRef.current).features,

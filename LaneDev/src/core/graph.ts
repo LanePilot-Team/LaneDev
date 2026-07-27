@@ -114,6 +114,8 @@ export interface Maneuver {
   fromBearing?: number
   /** 是否為兩段式左轉（由 App 依待轉區標註在路線建立後標記） */
   twoStage?: boolean
+  /** 進入方向設有「機車左轉專用」車道；機車左轉時應靠右進入該專用道。 */
+  motoLeftTurnLane?: boolean
   /** 偏心左轉道：路口前變道目標＝bay 中心偏移（way 線右正、左負；由 App 在
    * annotateTwoStage 之後依 turnbays 標記，兩段式左轉不標） */
   bayOffM?: number
@@ -222,6 +224,7 @@ function turnTarget(
 ): number {
   if (m.kind === 'right' || m.kind === 'slight-right') return m.rightOffM ?? span.rightM
   if (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn') {
+    if (m.motoLeftTurnLane) return span.rightM
     return m.twoStage ? span.rightM : (m.bayOffM ?? span.leftM)
   }
   return span.offM
@@ -494,7 +497,14 @@ export class RoadGraph {
       seen.add(key)
       // 停止線回退：取路口上其他道路的最大斷面寬（近似交叉路寬）
       let crossW = 0
-      for (const o of others) crossW = Math.max(crossW, o.road.properties.width_m)
+      const self = e.road.properties
+      for (const o of others) {
+        const other = o.road.properties
+        // 同一 OSM way 或同名道路的續接區塊不是交叉道路；若納入，偏心道會
+        // 比真正停止線多退半個主路寬，箭頭看起來永遠離停止線過遠。
+        if (other.osm_id === self.osm_id || (self.name && other.name === self.name)) continue
+        crossW = Math.max(crossW, other.width_m)
+      }
       out.push({
         wayId: e.road.properties.osm_id, nodeId: e.to,
         coords: c, road: e.road, back: e.back, approachBearing: endBrg,
@@ -781,7 +791,7 @@ export class RoadGraph {
       coords, cum,
       lengthM: cum[cum.length - 1],
       timeS: edges.reduce((s, e) => s + e.timeS, 0),
-      maneuvers: buildManeuvers(edges),
+      maneuvers: buildManeuvers(edges, profile),
       spans,
       ...this.buildDiverges(edges, profile),
     }
@@ -1100,7 +1110,7 @@ function classifyTurn(d: number): Maneuver['kind'] | null {
   return null
 }
 
-function buildManeuvers(edges: Edge[]): Maneuver[] {
+function buildManeuvers(edges: Edge[], profile: Profile): Maneuver[] {
   type Cand = { m: Maneuver; inBrg: number; outBrg: number; d: number }
   const cands: Cand[] = []
   let dist = edges[0].lengthM
@@ -1112,6 +1122,9 @@ function buildManeuvers(edges: Edge[]): Maneuver[] {
     const d = angleDelta(inBrg, outBrg)
     const kind = classifyTurn(d)
     if (kind) {
+      const incomingMarks = prev.back
+        ? prev.road.properties.laneMarksB
+        : prev.road.properties.laneMarksF
       cands.push({
         m: {
           distM: dist,
@@ -1120,6 +1133,8 @@ function buildManeuvers(edges: Edge[]): Maneuver[] {
           nodeId: next.from >= 0 ? next.from : prev.to >= 0 ? prev.to : undefined,
           pos: next.coords[0],
           fromBearing: inBrg,
+          motoLeftTurnLane: profile === 'moto' && (incomingMarks?.some(
+            (mark) => mark?.text.trim() === '機車左轉專用') ?? false),
           // HUD 車道格：取「進入行向」的車道數與轉向（逆向邊用 backward 組）
           lanesForward: prev.back
             ? prev.road.properties.lanesBackward

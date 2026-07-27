@@ -8,7 +8,7 @@
 // （present:0 = 實地確認沒有）。標線顏色規則：分隔對向 = 黃、分隔同向 = 白。
 import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
-import { angleDelta, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
+import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
 import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
@@ -57,7 +57,7 @@ export interface TurnBay {
   casing: [number, number][] | null
   arrows: { pos: [number, number]; brg: number; dM: number }[]
   /** 偏心道專屬路面印字錨點；位於儲車段內並朝向路口。 */
-  roadText: { pos: [number, number]; brg: number; dM: number }
+  roadText?: { pos: [number, number]; brg: number; dM: number }
   /** 邊線：黃 = 分隔對向（左緣/斜切），白 = 分隔同向（右緣） */
   lines: PaintLine[]
 }
@@ -72,6 +72,8 @@ export interface PaintLine {
     | 'channel-cap'
     | 'single-bay-used'
     | 'single-bay-unused'
+    | 'left-wait-side'
+    | 'left-wait-front'
     | 'stop'
   ownerKey?: string
 }
@@ -306,14 +308,11 @@ function sampleDs(from: number, to: number, step: number, extra: number[] = []):
 export const BAY_TEXT_ARROW_CLEARANCE_M = 9.25
 function bayMarkLayout(d0: number, bayStart: number, end: number, shift: number) {
   const clamp = (d: number) => Math.max(d0 + 2, Math.min(end - 2, d))
-  const frontArrow = clamp(end - 4 + shift)
+  // 偏心道只保留最前方一組轉向箭頭，中心貼近停止線前約 2.8m；
+  // 箭頭本體仍完整留在停止線內，不再因長儲車段於中段多畫一組。
+  const frontArrow = clamp(end - 2.8 + shift)
   const textD = clamp(Math.min(bayStart + 5 + shift, frontArrow - BAY_TEXT_ARROW_CLEARANCE_M))
   const arrows = [frontArrow]
-  const second = clamp(end - 11 + shift)
-  // 第二個箭頭只有在不碰文字、也不碰前方箭頭時才保留；短 bay 自動只畫一個。
-  if (second - textD >= BAY_TEXT_ARROW_CLEARANCE_M && frontArrow - second >= 6.5) {
-    arrows.push(second)
-  }
   return { textD, arrowDs: arrows }
 }
 
@@ -323,9 +322,12 @@ function makeBay(
 ): TurnBay | null {
   const cum = cumulative(a.coords)
   const total = cum[cum.length - 1]
-  // bay 前端收在停止線（節點回退交叉路半寬），不畫進路口框
+  // bay 前端收在停止線（節點回退交叉路半寬），不畫進路口框。
+  // 人工明確開啟時允許緊湊配置：OSM 常被小巷口切成短 block，不能讓已儲存的
+  // present:1 因自動生成的保守門檻而失效；沒有人工覆寫的路段仍維持原門檻。
   const end = total - a.setbackM
-  if (end < MIN_DEFORM + 8) return null // 放不下儲車段
+  const manuallyForced = !!o && Number(o.present) === 1
+  if (end < MIN_DEFORM + (manuallyForced ? 4 : 8)) return null
 
   const p = a.road.properties
   const isCenter = p.oneway === 'no' && (p.centerM || 0) > 0
@@ -334,7 +336,12 @@ function makeBay(
   if (p.oneway === 'no' && !isCenter) return null
   const widthM = isCenter ? p.centerM : num(o?.width_m, DEFAULTS.width_m)
   const bayLenM = Math.min(num(o?.bay_len_m, dflt.bayLen), end * 0.8)
-  const taperLenM = Math.min(num(o?.taper_len_m, dflt.taperLen), end * 0.3)
+  // 緊湊 block 仍須保證 bay + taper 不超過可用長度，避免 d0 落到線段外。
+  const taperLenM = Math.min(
+    num(o?.taper_len_m, dflt.taperLen),
+    end * 0.3,
+    Math.max(2, end - bayLenM),
+  )
   const turns = String(o?.turns ?? DEFAULTS.turns)
   const singleMode: TurnBay['singleMode'] = o?.single_mode === 'ignore' ? 'ignore' : 'capped'
   const d0 = end - bayLenM - taperLenM
@@ -376,7 +383,7 @@ function makeBay(
         brg: pointAlong(a.coords, cum, d).brg,
         dM: d,
       })),
-      roadText: {
+      roadText: bayLenM < 20 ? undefined : {
         pos: offsetAt(a.coords, cum, textD, dv),
         brg: pointAlong(a.coords, cum, textD).brg,
         dM: textD,
@@ -414,7 +421,7 @@ function makeBay(
       brg: pointAlong(a.coords, cum, d).brg,
       dM: d,
     })),
-    roadText: {
+    roadText: bayLenM < 20 ? undefined : {
       pos: offsetAt(a.coords, cum, textD, offM),
       brg: pointAlong(a.coords, cum, textD).brg,
       dM: textD,
@@ -991,6 +998,10 @@ export function buildLaneArrows(
     const tlRaw = (p.oneway === 'yes' || !e.back) ? p.turnLanes : p.turnLanesB
     const explicit = tlRaw?.map(canonTurn)
     const hasExplicit = !!explicit?.some(Boolean)
+    const laneMarks = (p.oneway === 'yes' || !e.back) ? p.laneMarksF : p.laneMarksB
+    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
+    const hasMotoLeftLane = !!moto &&
+      laneMarks?.[lanes]?.text.trim() === '機車左轉專用'
     // 非實驗範圍：實際幹道／集散道用路口拓撲推薦值（下方 kinds 分支）；
     // 其餘（小巷）只在有轉向真值時畫
     if (!scopeFn(e.road) && !isMajorStopRoad(e.road) && !hasExplicit) continue
@@ -1001,7 +1012,7 @@ export function buildLaneArrows(
     const showExit = (e.back ? p.arrowDisplayB : p.arrowDisplayF) !== false
     const showStart = total >= 50 && hasBay &&
       (e.back ? p.startArrowDisplayB : p.startArrowDisplayF) === true
-    if (!showExit && !showStart) continue
+    if (!showExit && !showStart && !hasMotoLeftLane) continue
     const endBrg = pointAlong(e.coords, cum, Math.max(0, total - 2)).brg
     const smallCrossW = graph.crossWidthAt(e.toNode, endBrg, e.road)
     const arrowSetback = Math.max(e.endSetbackM, smallCrossW > 0 ? smallCrossW / 2 + 1.2 : 0)
@@ -1047,6 +1058,20 @@ export function buildLaneArrows(
           pos: offsetAt(e.coords, cum, dk, off),
           brg: pointAlong(e.coords, cum, dk).brg,
           icon: ARROW_ICON[moves[k]] ?? 'lane-arrow-through',
+        })
+      }
+    }
+    // 「機車左轉專用」是獨立於汽車車道箭頭的道路語意：在最外側機車道、
+    // 緊鄰停止線前自動放一枚左轉箭頭。不得占用汽車道的 turn:lanes 欄位。
+    if (hasMotoLeftLane) {
+      const sep = p.oneway === 'yes' ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
+      const motoOff = base + lanes * LANE_WIDTH_M + sep + MOTO_LANE_M / 2
+      const motoD = total - arrowSetback - 3.5
+      if (motoD >= e.startSetbackM + 2) {
+        out.push({
+          pos: offsetAt(e.coords, cum, motoD, motoOff),
+          brg: pointAlong(e.coords, cum, motoD).brg,
+          icon: 'bay-arrow-left',
         })
       }
     }
@@ -1331,6 +1356,95 @@ export function buildStopLines(
       color: 'stop', style: 'stop', ownerKey: dirKey,
       coords: [pt(inner + 0.15), pt(outer - 0.15)],
     })
+  }
+  return out
+}
+
+/**
+ * 汽車左轉待轉區：由既有停止線向路口內突出。
+ * 左右為密集白色虛線，前端為實心白色停止線；不含文字，且只依人工開關生成。
+ */
+export function buildLeftTurnWaitingAreas(
+  graph: RoadGraph, bays: TurnBay[],
+): PaintLine[] {
+  const out: PaintLine[] = []
+  const bayMap = new Map(bays.map((bay) => [
+    `${bay.wayId}@${bay.nodeId}${bay.back ? '~b' : ''}`, bay,
+  ]))
+  const seen = new Set<string>()
+
+  for (const edge of stopLineEdges(graph, (road) => {
+    const p = road.properties
+    return p.roadMarkingMode === 'all' && (p.leftWaitAreaF || p.leftWaitAreaB)
+  })) {
+    const p = edge.road.properties
+    const enabled = p.oneway === 'yes' || !edge.back ? p.leftWaitAreaF : p.leftWaitAreaB
+    if (!enabled) continue
+    const key = `${p.osm_id}@${edge.toNode}${edge.back ? '~b' : ''}`
+    if (seen.has(key)) continue
+
+    const turns = p.oneway === 'yes' || !edge.back ? p.turnLanes : p.turnLanesB
+    const bay = bayMap.get(key)
+    if (!bay && !turns?.[0]?.includes('left')) continue
+
+    const cum = cumulative(edge.coords)
+    const total = cum[cum.length - 1]
+    const stopD = total - edge.endSetbackM
+    const frontD = Math.min(total - 0.45, stopD + Math.min(8, edge.endSetbackM - 0.45))
+    if (frontD - stopD < 2) continue
+
+    // 依實際左轉出口角度決定彎曲量。行進 frame 中左側為負 offset；
+    // 起點維持接在原停止線，往路口內持續微彎，不在前端把切線拉回直線。
+    const inBrg = pointAlong(edge.coords, cum, Math.max(0, total - 1)).brg
+    const leftExit = graph.alternativesAt(edge.toNode, inBrg, 'car')
+      .find((option) => option.kind === 'left' && option.coords.length >= 2)
+    const turnDelta = leftExit
+      ? Math.abs(angleDelta(inBrg, bearing(leftExit.coords[0], leftExit.coords[1])))
+      : 70
+    const waitLen = frontD - stopD
+    const maxBendM = Math.min(1.8, waitLen * 0.2 * Math.min(1, turnDelta / 90))
+    const bendAt = (d: number) => {
+      const t = Math.max(0, Math.min(1, (d - stopD) / waitLen))
+      return -maxBendM * t * t
+    }
+
+    const span = laneSpanM(p, edge.back)
+    const normalInner = p.oneway === 'yes' ? -span / 2 : (p.centerM || 0) / 2
+    let inner = normalInner
+    let outer = normalInner + Math.min(LANE_WIDTH_M, span)
+    if (bay) {
+      inner = bay.offM - bay.widthM / 2
+      outer = bay.offM + bay.widthM / 2
+    }
+
+    // 由原停止線後方一點開始，避免虛線與原本粗停止線黏成一塊。
+    const dashStart = stopD + 0.35
+    const dashEnd = frontD - 0.3
+    const dashM = 0.55
+    const gapM = 0.35
+    for (let d = dashStart; d < dashEnd; d += dashM + gapM) {
+      const d1 = Math.min(d + dashM, dashEnd)
+      if (d1 - d < 0.2) continue
+      for (const offset of [inner, outer]) {
+        out.push({
+          color: 'white',
+          style: 'left-wait-side',
+          coords: [
+            offsetAt(edge.coords, cum, d, offset + bendAt(d)),
+            offsetAt(edge.coords, cum, d1, offset + bendAt(d1)),
+          ],
+        })
+      }
+    }
+    out.push({
+      color: 'stop',
+      style: 'left-wait-front',
+      coords: [
+        offsetAt(edge.coords, cum, frontD, inner + bendAt(frontD)),
+        offsetAt(edge.coords, cum, frontD, outer + bendAt(frontD)),
+      ],
+    })
+    seen.add(key)
   }
   return out
 }

@@ -214,11 +214,23 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             if (!er) return er
             // 關機車道時若車道 0，自動補回 1（斷面不能空）
             const f = er.motoF && er.f === 0 ? 1 : er.f
-            return { ...er, motoF: !er.motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
+            const motoF = !er.motoF
+            const oldSlots = er.motoBoxSlotsF
+            const motoBoxSlotsF = f + (motoF ? 1 : 0) + (er.rightLaneF ? 1 : 0)
+            const wantedEnd = motoF && er.motoBoxF > 0 && er.motoBoxEndF >= oldSlots
+              ? motoBoxSlotsF : Math.min(er.motoBoxEndF, motoBoxSlotsF)
+            const motoBoxEndF = Math.max(1, wantedEnd)
+            const motoBoxStartF = Math.min(er.motoBoxStartF, motoBoxEndF - 1)
+            return { ...er, motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
               startTurnLanes: resizeTurnLanes(er.startTurnLanes, f),
               laneMarksF: er.motoF
                 ? resizeLaneMarks(er.laneMarksF.slice(0, er.f), f)
-                : [...resizeLaneMarks(er.laneMarksF, f), null] }
+                : [...resizeLaneMarks(er.laneMarksF, f), null],
+              motoBoxSlotsF,
+              motoBoxMaxF: Math.max(er.motoBoxMaxF, motoBoxSlotsF - er.motoBoxMinF),
+              motoBoxStartF,
+              motoBoxEndF,
+              motoBoxF: er.motoBoxF > 0 ? motoBoxEndF - motoBoxStartF : 0 }
           })}>
           {editRoad.motoF ? '已設機車道' : '＋機車道'}
         </button>
@@ -258,11 +270,23 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             onClick={() => setEditRoad((er) => {
               if (!er) return er
               const b = er.motoB && er.b === 0 ? 1 : er.b
-              return { ...er, motoB: !er.motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
+              const motoB = !er.motoB
+              const oldSlots = er.motoBoxSlotsB
+              const motoBoxSlotsB = b + (motoB ? 1 : 0) + (er.rightLaneB ? 1 : 0)
+              const wantedEnd = motoB && er.motoBoxB > 0 && er.motoBoxEndB >= oldSlots
+                ? motoBoxSlotsB : Math.min(er.motoBoxEndB, motoBoxSlotsB)
+              const motoBoxEndB = Math.max(1, wantedEnd)
+              const motoBoxStartB = Math.min(er.motoBoxStartB, motoBoxEndB - 1)
+              return { ...er, motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
                 startTurnLanesB: resizeTurnLanes(er.startTurnLanesB, b),
                 laneMarksB: er.motoB
                   ? resizeLaneMarks(er.laneMarksB.slice(0, er.b), b)
-                  : [...resizeLaneMarks(er.laneMarksB, b), null] }
+                  : [...resizeLaneMarks(er.laneMarksB, b), null],
+                motoBoxSlotsB,
+                motoBoxMaxB: Math.max(er.motoBoxMaxB, motoBoxSlotsB - er.motoBoxMinB),
+                motoBoxStartB,
+                motoBoxEndB,
+                motoBoxB: er.motoBoxB > 0 ? motoBoxEndB - motoBoxStartB : 0 }
             })}>
             {editRoad.motoB ? '已設機車道' : '＋機車道'}
           </button>
@@ -405,6 +429,17 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             })} />
         ))}
       </div>
+      {(editRoad.bayF !== 'none' || editRoad.turnLanes[0]?.includes('left')) && (
+        <div className="edit-row">
+          <span>{editRoad.fwdLabel}左轉待轉區</span>
+          <button
+            className={`mini${editRoad.leftWaitAreaF ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({
+              ...er, leftWaitAreaF: !er.leftWaitAreaF,
+            }))}
+          >{editRoad.leftWaitAreaF ? '已開啟' : '關閉'}</button>
+        </div>
+      )}
       {editRoad.segmentLengthM >= 50 && editRoad.bayF !== 'none' && (
         <>
           <div className="edit-row">
@@ -453,6 +488,17 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
                 })} />
             ))}
           </div>
+          {(editRoad.bayB !== 'none' || editRoad.turnLanesB[0]?.includes('left')) && (
+            <div className="edit-row">
+              <span>{editRoad.bwdLabel}左轉待轉區</span>
+              <button
+                className={`mini${editRoad.leftWaitAreaB ? ' on' : ''}`}
+                onClick={() => setEditRoad((er) => er && ({
+                  ...er, leftWaitAreaB: !er.leftWaitAreaB,
+                }))}
+              >{editRoad.leftWaitAreaB ? '已開啟' : '關閉'}</button>
+            </div>
+          )}
           {editRoad.segmentLengthM >= 50 && editRoad.bayB !== 'none' && (
             <>
               <div className="edit-row">
@@ -709,12 +755,15 @@ export function TwinIslandPanel({ editor }: { editor: Editor }) {
 export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const { zonePanel, setZonePanel } = editor
   if (!zonePanel) return null
+  const zoneMoveLimitM = 16
   const updateZone = (id: string, patch: Record<string, unknown>) => {
     core.zonesRef.current = core.zonesRef.current.map((z) =>
       z.id === id ? { ...z, ...patch } : z)
     core.refreshZones()
   }
   const moveZone = (id: string, lateralOffsetM: number, forwardOffsetM: number) => {
+    const lateral = Math.max(-zoneMoveLimitM, Math.min(zoneMoveLimitM, lateralOffsetM))
+    const forward = Math.max(-zoneMoveLimitM, Math.min(zoneMoveLimitM, forwardOffsetM))
     core.zonesRef.current = core.zonesRef.current.map((z) => {
       if (z.id !== id) return z
       const baseCenter = z.baseCenter ?? z.center
@@ -724,12 +773,12 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
       return {
         ...z,
         baseCenter,
-        lateralOffsetM,
-        forwardOffsetM,
+        lateralOffsetM: lateral,
+        forwardOffsetM: forward,
         center: offsetMeters(
           baseCenter,
-          lateralOffsetM * r[0] + forwardOffsetM * f[0],
-          lateralOffsetM * r[1] + forwardOffsetM * f[1],
+          lateral * r[0] + forward * f[0],
+          lateral * r[1] + forward * f[1],
         ),
       }
     })
@@ -826,12 +875,12 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
                       </label>
                     )}
                     <label>左右微調 {(z.lateralOffsetM ?? 0).toFixed(1)}m
-                      <input type="range" min="-4" max="4" step="0.2"
+                      <input type="range" min={-zoneMoveLimitM} max={zoneMoveLimitM} step="0.2"
                         value={z.lateralOffsetM ?? 0}
                         onChange={(e) => moveZone(z.id, Number(e.target.value), z.forwardOffsetM ?? 0)} />
                     </label>
                     <label>前後微調 {(z.forwardOffsetM ?? 0).toFixed(1)}m
-                      <input type="range" min="-4" max="4" step="0.2"
+                      <input type="range" min={-zoneMoveLimitM} max={zoneMoveLimitM} step="0.2"
                         value={z.forwardOffsetM ?? 0}
                         onChange={(e) => moveZone(z.id, z.lateralOffsetM ?? 0, Number(e.target.value))} />
                     </label>

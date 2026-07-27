@@ -169,6 +169,12 @@ export function applyToRoads(
     if (fields.start_arrow_display_b !== undefined) {
       p.startArrowDisplayB = Number(fields.start_arrow_display_b) > 0
     }
+    if (fields.left_wait_area_f !== undefined) {
+      p.leftWaitAreaF = Number(fields.left_wait_area_f) > 0
+    }
+    if (fields.left_wait_area_b !== undefined) {
+      p.leftWaitAreaB = p.oneway === 'yes' ? false : Number(fields.left_wait_area_b) > 0
+    }
     if (fields.start_turn_lanes !== undefined) {
       p.startTurnLanes = String(fields.start_turn_lanes).split('|')
     }

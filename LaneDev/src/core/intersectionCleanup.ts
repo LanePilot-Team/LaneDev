@@ -65,6 +65,12 @@ function clipLine(coords: [number, number][]): [number, number][][] {
 export function cleanIntersectionFeatures(fc: FeatureCollection): FeatureCollection {
   const features: Feature[] = []
   for (const f of fc.features) {
+    // 左轉待轉區本來就刻意畫在路口內，不可被一般「清空路口標線」流程裁掉。
+    if (f.properties?.style === 'left-wait-side'
+      || f.properties?.style === 'left-wait-front') {
+      features.push(f)
+      continue
+    }
     const g = f.geometry as Geometry | null
     if (!g) continue
     if (g.type === 'Point') {

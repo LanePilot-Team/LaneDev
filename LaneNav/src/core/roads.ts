@@ -42,6 +42,9 @@ export interface RoadProps {
   arrowDisplayB: boolean
   startArrowDisplayF: boolean
   startArrowDisplayB: boolean
+  /** 汽車左轉待轉區：停止線向路口內延伸的虛線框，預設關閉。 */
+  leftWaitAreaF: boolean
+  leftWaitAreaB: boolean
   /** 路段開頭箭頭，與路口出口箭頭分開設定（駕駛視角左→右）。 */
   startTurnLanes?: string[]
   startTurnLanesB?: string[]
@@ -203,6 +206,8 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       arrowDisplayB: true,
       startArrowDisplayF: false,
       startArrowDisplayB: false,
+      leftWaitAreaF: false,
+      leftWaitAreaB: false,
       startTurnLanes: undefined,
       startTurnLanesB: undefined,
       roadMarkingMode: 'all',

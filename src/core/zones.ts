@@ -16,6 +16,17 @@ export interface Zone {
   bearing: number // 待轉格朝向 = 左轉後的行向
   w: number
   d: number
+  /** 是否顯示此待轉格；獨立於道路標線的 all/center/none 模式。 */
+  /** false = 完全停用：不繪製，也不可供路線規劃或導航提示使用。 */
+  visible?: boolean
+  /** 人工微調以初始位置為基準，限制在路口附近。 */
+  baseCenter?: [number, number]
+  lateralOffsetM?: number
+  forwardOffsetM?: number
+  baseBearing?: number
+  rotationDeg?: number
+  shape?: 'rectangle' | 'square' | 'parallelogram'
+  shapeSkew?: number
   /** 斜交路口的停止線 skew 係數（橫向偏移 o 的縱向平移 = o×sk）；
    * 格子前後緣沿用同一係數，與停止線平行。舊資料無此欄位 = 0（正矩形） */
   sk?: number
@@ -23,12 +34,19 @@ export interface Zone {
   to: { name?: string; bearing: number }
 }
 
+/** 舊資料沒有 visible 欄位時維持啟用；false 代表整個功能停用，不只是隱藏。 */
+export function isZoneEnabled(zone: Zone): boolean {
+  return zone.visible !== false
+}
+
 const STORAGE_KEY = 'navsim-zones-v2' // v1 是自由放置的舊格式，直接棄用
+const DELETED_STORAGE_KEY = 'navsim-zones-deleted-v1'
 
 export function loadZones(): Zone[] {
   try {
     const zs: Zone[] = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
     return zs.filter((z) => z.intersectionId && z.from)
+      .map((z) => ({ ...z, visible: z.visible !== false }))
   } catch {
     return []
   }
@@ -36,6 +54,21 @@ export function loadZones(): Zone[] {
 
 export function saveZones(zones: Zone[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(zones))
+}
+
+/** 記錄使用者明確刪除的靜態匯入待轉格，避免下次啟動被自動匯入復活。 */
+export function loadDeletedZoneIds(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DELETED_STORAGE_KEY) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
+
+export function markZoneDeleted(id: string) {
+  const ids = loadDeletedZoneIds()
+  ids.add(id)
+  localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]))
 }
 
 /** 停止線對齊定位用的幾何上下文：進入路口的方向邊索引。
@@ -108,7 +141,7 @@ function planZoneAtStopLine(opt: TurnOption, ctx: ZoneCtx): Zone | null {
   const dStop = total - e.endSetbackM
   if (dStop < 1) return null // approach 太短（停止線都擠不下），退回幾何近似
   // 橫向定位同 buildStopLines：車道塊 [base, base+span]，右緣即停止線外端
-  const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
+  const dv = 0
   const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
   const w = Math.max(2.4, Math.min(span, 6.4) - 0.4) // 寬：貼車道塊、上限兩車道
   const oCenter = base + span - 0.3 - w / 2
@@ -140,9 +173,12 @@ export function zonePolygon(z: Zone): [number, number][] {
   const φ = (z.bearing * Math.PI) / 180
   const f = [Math.sin(φ), Math.cos(φ)]
   const r = [Math.cos(φ), -Math.sin(φ)]
+  const shape = z.shape ?? (Math.abs(z.sk ?? 0) > 0.04 ? 'parallelogram' : 'rectangle')
+  const depth = shape === 'square' ? z.w : z.d
+  const skew = shape === 'parallelogram' ? (z.shapeSkew ?? z.sk ?? 0.25) : 0
   const corner = (sw: number, sd: number) => {
     const lat = (sw * z.w) / 2
-    const lon = (sd * z.d) / 2 + (z.sk ?? 0) * lat // 斜交：前後緣平行停止線
+    const lon = (sd * depth) / 2 + skew * lat
     return offsetMeters(z.center, lat * r[0] + lon * f[0], lat * r[1] + lon * f[1])
   }
   const c = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]
@@ -157,6 +193,7 @@ export function zonesToGeoJSON(
 ): FeatureCollection {
   const features: Feature[] = []
   for (const z of zones) {
+    if (!isZoneEnabled(z)) continue
     const selected = z.id === selectedId
     const highlighted = z.id === highlightedId
     const polygon = zonePolygon(z)

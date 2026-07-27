@@ -135,6 +135,31 @@ body {
 .mini.go { background: #22c55e; font-weight: 700; }
 .mini.on { background: #3b82f6; font-weight: 700; }
 .tool-toggle { display: flex; gap: 4px; margin-right: 4px; }
+.zone-custom {
+  width: 100%; min-width: 0; box-sizing: border-box;
+  margin-top: 8px; padding: 10px;
+  border-radius: 10px; background: #f4f7fb; color: #3d4a5c;
+  display: grid; gap: 8px;
+}
+.zone-custom label {
+  min-width: 0;
+  display: grid; grid-template-columns: minmax(92px, 112px) minmax(0, 1fr);
+  align-items: center; gap: 8px;
+}
+.zone-custom select, .zone-custom input { width: 100%; min-width: 0; box-sizing: border-box; }
+.zone-item { flex-wrap: wrap; align-items: flex-start; overflow: hidden; }
+.zone-item > .sp-pos { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.zone-item.selected-zone {
+  background: #eef5ff;
+  outline: 2px solid #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  animation: zone-selected-pulse .55s ease-out;
+}
+@keyframes zone-selected-pulse {
+  from { box-shadow: 0 0 0 9px rgba(59, 130, 246, 0.32); }
+  to { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14); }
+}
+.zone-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 
 /* ── 右側面板（路線規劃 / 車道編輯 / 車輛）── */
 .side-panel {
@@ -194,6 +219,18 @@ body {
 .side-panel .edit-row b { font-size: 18px; min-width: 20px; text-align: center; }
 .side-panel .edit-row .row-title { display: block; min-width: 0; text-align: left; font-size: 13.5px; margin-bottom: 2px; }
 .side-panel .road-src { margin-bottom: 4px; }
+.road-danger-zone {
+  margin-top: 14px; padding-top: 8px; border-top: 1px solid #eef1f5;
+  text-align: right;
+}
+.road-delete-link {
+  border: 0; padding: 3px 2px; background: transparent;
+  color: #9a6f73; font-size: 11px; cursor: pointer;
+  text-decoration: underline; text-decoration-color: transparent;
+}
+.road-delete-link:hover {
+  color: #b3261e; text-decoration-color: currentColor;
+}
 .edit-lanes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .edit-notice { margin: 10px 0 2px; padding: 9px 11px; border-radius: 9px; background: #eef4ff; color: #31557f; font-size: 12.5px; line-height: 1.45; }
 .edit-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e7ebf0; }

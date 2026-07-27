@@ -7,7 +7,7 @@
 import { buffer, lineOffset } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
 import {
-  angleDelta, bearing, cumulative, haversine, pointAlong, skewFromCross, LANE_WIDTH_M,
+  angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M,
 } from './geo'
 
 export const MOTO_LANE_M = 2.2
@@ -38,12 +38,21 @@ export interface RoadProps {
   motoTextDiamondB: boolean
   stopLineF: boolean
   stopLineB: boolean
+  arrowDisplayF: boolean
+  arrowDisplayB: boolean
+  startArrowDisplayF: boolean
+  startArrowDisplayB: boolean
+  /** 路段開頭箭頭，與路口出口箭頭分開設定（駕駛視角左→右）。 */
+  startTurnLanes?: string[]
+  startTurnLanesB?: string[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */
   centerM: number
   /** 中央帶內容：hatch = 槽化線（可切偏心道）｜island = 實體分隔島（journal center_kind） */
   centerKind: 'hatch' | 'island'
+  centerExtendStart: boolean
+  centerExtendEnd: boolean
   /** couplet 合併產生的路段——中央帶編輯只對這類路段開放 */
   coupletMerged?: boolean
   /** 路寬微調（公尺，journal extra_width_m）：實際鋪面寬 ≠ lanes×3.2 時的補正，
@@ -85,6 +94,8 @@ export interface RoadProps {
   /** 區塊識別：way 依路口切塊後，區塊第一個 node id（journal 區塊鍵 way/W@b/N 用）。
    * 未切塊（無中間路口）時 = nodes[0]。 */
   blockNode: number
+  /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
+  deleted?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
    * forward/backward 是 OSM 原始方向，比對時要翻轉 */
   reversed?: boolean
@@ -191,9 +202,17 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       motoTextDiamondB: false,
       stopLineF: true,
       stopLineB: true,
+      arrowDisplayF: true,
+      arrowDisplayB: true,
+      startArrowDisplayF: false,
+      startArrowDisplayB: false,
+      startTurnLanes: undefined,
+      startTurnLanesB: undefined,
       roadMarkingMode: 'all',
       centerM: 0,
       centerKind: 'hatch',
+      centerExtendStart: false,
+      centerExtendEnd: false,
       extraM: 0,
       divOffM: 0,
       width_m: 0,
@@ -233,11 +252,21 @@ export function buildRoadSurfaces(
   const features: Feature<Polygon | MultiPolygon, RoadSurfaceProps>[] = []
   for (const road of roads) {
     if (road.properties.elevated || road.geometry.coordinates.length < 2) continue
+    // OSM 的雙向道路軸代表分向基準，不是非對稱斷面的外框中心。
+    // 將路面中心往車道較多的一側平移，中央帶與相鄰對稱區段才能連續。
+    let surfaceAxis: Feature<LineString> = road
+    if (road.properties.oneway === 'no' && Math.abs(road.properties.divOffM || 0) > 0.01) {
+      try {
+        surfaceAxis = lineOffset(road, -(road.properties.divOffM || 0), { units: 'meters' })
+      } catch {
+        surfaceAxis = road
+      }
+    }
     for (const [surfaceKind, extraWidth] of [
       ['casing', 2.4],
       ['surface', 0.8],
     ] as const) {
-      const polygon = buffer(road, (road.properties.width_m + extraWidth) / 2, {
+      const polygon = buffer(surfaceAxis, (road.properties.width_m + extraWidth) / 2, {
         units: 'meters',
         steps: 4,
       })
@@ -474,23 +503,54 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   let info1 = ZERO
   let curId = 0
   let roadMarkingMode: RoadProps['roadMarkingMode'] = 'all'
+  let axisShift = 0
+  let centerExtendStart = false
+  let centerExtendEnd = false
+  let centerTipExtensionM = 0
   /** 依「該端停止線的延長線」裁切後偏移：裁切點 = 收邊基準 + 橫向偏移×skew ∓ 0.5m */
   const push = (off: number, kind: string) => {
     if (roadMarkingMode === 'center' && (kind === 'lane' || kind === 'moto')) return
+    const isCenterLine = kind === 'center' || kind === 'center-double'
     let cs = cs0
     if (cum) {
-      const from = info0.trim > 0 ? info0.trim + info0.sk * off + 0.5 : 0
-      const to = info1.trim > 0 ? L - info1.trim + info1.sk * off - 0.5 : L
+      const from = !isCenterLine || !centerExtendStart
+        ? (info0.trim > 0 ? info0.trim + info0.sk * off + 0.5 : 0)
+        : 0
+      const to = !isCenterLine || !centerExtendEnd
+        ? (info1.trim > 0 ? L - info1.trim + info1.sk * off - 0.5 : L)
+        : L
       const sliced = sliceByDist(cs0, cum, Math.max(0, from), Math.min(L, to))
       if (!sliced) return // 這條分隔線全在路口框內
       cs = sliced
+    }
+    if (isCenterLine && cs.length >= 2) {
+      cs = [...cs]
+      if (centerExtendStart) {
+        const brg = bearing(cs[1], cs[0])
+        cs.unshift(offsetMeters(
+          cs[0],
+          Math.sin(brg * Math.PI / 180) * centerTipExtensionM,
+          Math.cos(brg * Math.PI / 180) * centerTipExtensionM,
+        ))
+      }
+      if (centerExtendEnd) {
+        const brg = bearing(cs[cs.length - 2], cs[cs.length - 1])
+        cs.push(offsetMeters(
+          cs[cs.length - 1],
+          Math.sin(brg * Math.PI / 180) * centerTipExtensionM,
+          Math.cos(brg * Math.PI / 180) * centerTipExtensionM,
+        ))
+      }
     }
     try {
       const feat: Feature<LineString> = {
         type: 'Feature', properties: {},
         geometry: { type: 'LineString', coordinates: cs },
       }
-      const line = off === 0 ? feat : lineOffset(feat, off, { units: 'meters' })
+      const renderOff = off + axisShift
+      const line = Math.abs(renderOff) < 0.001
+        ? feat
+        : lineOffset(feat, renderOff, { units: 'meters' })
       features.push({
         type: 'Feature', geometry: line.geometry,
         properties: { kind, osm_id: curId }, // osm_id 供除錯/離線稽核，樣式不使用
@@ -501,6 +561,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     const p = road.properties
     curId = p.osm_id
     roadMarkingMode = p.roadMarkingMode
+    axisShift = p.oneway === 'no' ? -(p.divOffM || 0) : 0
+    centerExtendStart = p.oneway === 'no' && p.centerExtendStart
+    centerExtendEnd = p.oneway === 'no' && p.centerExtendEnd
+    centerTipExtensionM = Math.max(1, p.width_m / 2)
     if (roadMarkingMode === 'none') continue
     if (p.elevated) continue // 高架：標線由 elevated3d 畫在橋面，地面不畫
     if (road.geometry.coordinates.length < 2) continue

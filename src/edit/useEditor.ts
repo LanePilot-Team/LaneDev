@@ -1,15 +1,21 @@
 // 編輯模式（LaneDev 專屬，不同步到 LaneNav）：車道/待轉區/偏心道/車輛四種工具的
 // 狀態、地圖點擊分派與 journal 寫入。
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import type { Map as MLMap, MapMouseEvent } from 'maplibre-gl'
+import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
-import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
+import {
+  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
+} from '../core/enhancements'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
-import { groundMoves } from '../core/turnbays'
+import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore, Mode } from '../app/mapCore'
-import type { LaneMark } from '../core/roads'
+import {
+  buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
+} from '../core/roads'
+import { groundMarkingPolygons } from '../core/groundMarkings'
+import { mergeStaticRoadSegments } from '../core/staticDatabase'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -64,8 +70,13 @@ export interface EditRoadState {
   motoEntryIconF: boolean; motoEntryIconB: boolean
   motoTextDiamondF: boolean; motoTextDiamondB: boolean
   stopLineF: boolean; stopLineB: boolean
+  arrowDisplayF: boolean; arrowDisplayB: boolean
+  startArrowDisplayF: boolean; startArrowDisplayB: boolean
+  startTurnLanes: string[]; startTurnLanesB: string[]
+  segmentLengthM: number
   roadMarkingMode: 'all' | 'center' | 'none'
   centerM: number; centerKind: 'hatch' | 'island'
+  centerExtendStart: boolean; centerExtendEnd: boolean
   /** 路寬微調（公尺，可負；對稱加減在斷面兩側，車道線不動） */
   extraM: number
   canCenter: boolean // 中央帶編輯只對 couplet 合併段開放
@@ -113,6 +124,7 @@ export interface Editor {
   selNewRoad: { osmId: number; name?: string } | null
   setSelNewRoad: (v: { osmId: number; name?: string } | null) => void
   deleteNewRoad: (osmId: number) => void
+  deleteRoadSegment: () => void
   overrideBay: (key: string, fields: Record<string, string | number>) => void
   overrideRightLane: (key: string, fields: Record<string, string | number>) => void
   deleteVehicle: (id: string) => void
@@ -236,6 +248,67 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     setSelNewRoad(null)
     rebuildNewRoads()
   }
+  const mergeFirstRef = useRef<{ osmId: number; blockNode: number } | null>(null)
+
+  // 編輯中的即時預覽只重算目前道路區塊，不修改正式 roadsRef 或 journal。
+  useEffect(() => {
+    const map = core.mapRef.current
+    if (!map?.isStyleLoaded()) return
+    const source = map.getSource('roadPreview') as GeoJSONSource | undefined
+    if (!source) return
+    if (!editRoad) {
+      source.setData({ type: 'FeatureCollection', features: [] })
+      return
+    }
+    const original = core.roadsRef.current.find((road) =>
+      road.properties.osm_id === editRoad.osmId
+      && road.properties.blockNode === editRoad.blockNode)
+    if (!original) return
+    const preview: RoadFeature = {
+      ...original,
+      properties: {
+        ...original.properties,
+        lanesForward: editRoad.f,
+        lanesBackward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
+        lanes: editRoad.f + (editRoad.oneway === 'yes' ? 0 : editRoad.b),
+        motoF: editRoad.motoF,
+        motoB: editRoad.oneway === 'yes' ? false : editRoad.motoB,
+        motoSepF: editRoad.motoF ? editRoad.motoSepF : 0,
+        motoSepB: editRoad.oneway === 'yes' || !editRoad.motoB ? 0 : editRoad.motoSepB,
+        centerM: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
+        centerKind: editRoad.centerKind,
+        centerExtendStart: editRoad.centerExtendStart,
+        centerExtendEnd: editRoad.centerExtendEnd,
+        extraM: editRoad.extraM,
+        roadMarkingMode: editRoad.roadMarkingMode,
+        sharedLane: editRoad.oneway === 'no' && editRoad.f + editRoad.b === 1
+          && !editRoad.motoF && !editRoad.motoB,
+        arrowDisplayF: editRoad.arrowDisplayF,
+        arrowDisplayB: editRoad.oneway === 'yes' ? false : editRoad.arrowDisplayB,
+        startArrowDisplayF: editRoad.startArrowDisplayF,
+        startArrowDisplayB: editRoad.oneway === 'yes' ? false : editRoad.startArrowDisplayB,
+        startTurnLanes: editRoad.startTurnLanes,
+        startTurnLanesB: editRoad.startTurnLanesB,
+        turnLanes: editRoad.turnLanes,
+        turnLanesB: editRoad.turnLanesB,
+        laneMarksF: editRoad.laneMarksF,
+        laneMarksB: editRoad.laneMarksB,
+      },
+    }
+    computeDerived(preview.properties)
+    const surfaces = buildRoadSurfaces([preview])
+    const dividerLines = buildDividers([preview])
+    const dividers = groundMarkingPolygons(
+      dividerLines,
+      (p) => p?.kind === 'center' ? 0.3
+        : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
+      (p) => p?.kind === 'lane',
+    )
+    source.setData({
+      type: 'FeatureCollection',
+      features: [...surfaces.features, ...dividers.features],
+    } as never)
+  }, [core, editRoad])
 
   function warn(msg: string) {
     setEditWarn(msg)
@@ -262,9 +335,61 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         (r) => r.properties.osm_id === Number(hit[0].properties.osm_id)
           && r.properties.blockNode === Number(hit[0].properties.blockNode))
       if (!road) return
+      const ctrlSelect = e.originalEvent.ctrlKey || e.originalEvent.metaKey
+      if (ctrlSelect) {
+        const firstKey = mergeFirstRef.current
+        if (!firstKey) {
+          mergeFirstRef.current = {
+            osmId: road.properties.osm_id,
+            blockNode: road.properties.blockNode,
+          }
+          warn('已選取第一段；請繼續按住 Ctrl 點選相接且平行的第二段')
+          // 繼續開啟第一段面板／預覽，作為清楚的選取提示。
+        } else {
+          const first = core.roadsRef.current.find((r) =>
+            r.properties.osm_id === firstKey.osmId
+            && r.properties.blockNode === firstKey.blockNode)
+          if (!first) {
+            mergeFirstRef.current = null
+            warn('第一段已不存在，請重新選取')
+            return
+          }
+          const check = checkRoadMerge(first, road)
+          if (!check.ok) {
+            warn(`無法合併：${check.reason}`)
+            return
+          }
+          const ok = window.confirm(
+            `確定將這兩段「${first.properties.name ?? '未命名道路'}」捏合為同一路段嗎？\n\n`
+            + `保留：${check.primaryKey}\n合併：${check.secondaryKey}\n\n`
+            + '此操作會直接改寫唯一靜態 OSM：第二段將退出活躍路網，'
+            + '中間路口連接會取消，整段共用第一段的道路與偏心道樣式。'
+          )
+          if (!ok) return
+          mergeFirstRef.current = null
+          setEditRoad(null)
+          warn('正在改寫唯一靜態道路資料庫…')
+          const firstNodes = first.properties.nodes
+          const joinNode = check.primaryAt === 'start'
+            ? firstNodes[0]
+            : firstNodes[firstNodes.length - 1]
+          void mergeStaticRoadSegments(check.primaryKey, check.secondaryKey, joinNode)
+            .then(() => window.location.reload())
+            .catch((error) => {
+              warn(`靜態 OSM 捏合失敗：${error instanceof Error ? error.message : String(error)}`)
+            })
+          return
+        }
+      } else {
+        mergeFirstRef.current = null
+      }
       const p2 = road.properties
       const cs = road.geometry.coordinates as [number, number][]
       const brg = geoBearing(cs[0], cs[cs.length - 1])
+      const segmentLengthM = cs.slice(1).reduce(
+        (sum, point, index) => sum + haversine(cs[index], point),
+        0,
+      )
       // 面板初始值 = 路面圖示（有真值用真值，否則同 buildLaneArrows 的預設推導）
       const g = core.graphRef.current
       const tl = g ? groundMoves(g, core.baysRef.current, road, false, core.rightLanesRef.current)
@@ -272,8 +397,15 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const tlB = g && p2.oneway === 'no'
         ? groundMoves(g, core.baysRef.current, road, true, core.rightLanesRef.current)
         : Array.from({ length: Math.max(1, p2.lanesBackward) }, () => 'through')
-      const nodeFirst = p2.nodes[0] ?? 0
-      const nodeLast = p2.nodes[p2.nodes.length - 1] ?? 0
+      // 停等格／偏心道鍵必須採 RoadGraph 實際行向終點；couplet、反向 way、
+      // 切塊後 properties.nodes 的首尾不一定等於 graph edge 的 toNode。
+      // 收邊參數與停止線/停等格一致（stopLineEdges）：停等格資格要看 endSetbackM，
+      // 面板若用別組參數判定，就會給出建置端一定會拒絕的設定入口。
+      const directionEdges = g ? stopLineEdges(g, (candidate) => candidate === road) : []
+      const forwardEdge = directionEdges.find((edge) => !edge.back)
+      const backwardEdge = directionEdges.find((edge) => edge.back)
+      const nodeLast = forwardEdge?.toNode ?? p2.nodes[p2.nodes.length - 1] ?? 0
+      const nodeFirst = backwardEdge?.toNode ?? p2.nodes[0] ?? 0
       // 兩向偏心道現況（folded journal 已反映在 baysRef）
       const bayOf = (key: string) =>
         core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
@@ -297,6 +429,16 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         core.motoBoxesRef.current.find((m) => m.dir === dirKey)
       const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
       const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
+      // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
+      // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
+      // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
+      const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
+      const inferMotoBoxMax = (back: boolean) => {
+        const edge = back ? backwardEdge : forwardEdge
+        if (!motoBoxSlot || !edge) return 0
+        const slot = motoBoxSlot(edge)
+        return slot.eligible && !slot.sepIsland ? slot.maxLanes : 0
+      }
       const motoBoxF = mbF?.coveredLanes ?? 0
       const motoBoxB = mbB?.coveredLanes ?? 0
       setEditRoad({
@@ -311,10 +453,22 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         motoTextDiamondB: !!p2.motoTextDiamondB,
         stopLineF: p2.stopLineF !== false,
         stopLineB: p2.stopLineB !== false,
+        arrowDisplayF: p2.arrowDisplayF !== false,
+        arrowDisplayB: p2.arrowDisplayB !== false,
+        startArrowDisplayF: !!p2.startArrowDisplayF,
+        startArrowDisplayB: !!p2.startArrowDisplayB,
+        startTurnLanes: resizeTurnLanes(p2.startTurnLanes ?? tl, p2.lanesForward),
+        startTurnLanesB: resizeTurnLanes(
+          p2.startTurnLanesB ?? tlB,
+          Math.max(1, p2.lanesBackward),
+        ),
+        segmentLengthM,
         roadMarkingMode: p2.roadMarkingMode,
         centerM: p2.centerM || 0,
         extraM: p2.extraM || 0,
         centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
+        centerExtendStart: !!p2.centerExtendStart,
+        centerExtendEnd: !!p2.centerExtendEnd,
         canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
         fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
         turnLanes: resizeTurnLanes(tl, p2.lanesForward),
@@ -323,7 +477,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         bayF, bayB, bayF0: bayF, bayB0: bayB,
         laneMarksF, laneMarksB,
         motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
-        motoBoxMaxF: mbF?.maxLanes ?? 0, motoBoxMaxB: mbB?.maxLanes ?? 0,
+        motoBoxMaxF: mbF?.maxLanes ?? inferMotoBoxMax(false),
+        motoBoxMaxB: mbB?.maxLanes ?? inferMotoBoxMax(true),
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -393,6 +548,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         const z = core.zonesRef.current.find((z) => z.id === String(hitZone[0].properties.id))
         if (z) { core.selectedZoneRef.current = z.id; nodeId = z.intersectionId }
       } else {
+        core.selectedZoneRef.current = null
         let bestD = 25
         for (const it of core.intersectionsRef.current) {
           const d = haversine(p, it.pos)
@@ -418,6 +574,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       fields: {
         lanes_forward: editRoad.f,
         lanes_backward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
+        shared_lane: editRoad.oneway === 'no' && editRoad.f + editRoad.b === 1
+          && !editRoad.motoF && !editRoad.motoB ? 1 : 0,
         moto_forward: editRoad.motoF ? 1 : 0,
         moto_backward: editRoad.oneway === 'yes' ? 0 : (editRoad.motoB ? 1 : 0),
         moto_sep_f: editRoad.motoF ? editRoad.motoSepF : 0,
@@ -428,9 +586,21 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         moto_text_diamond_b: editRoad.oneway === 'yes' ? 0 : (editRoad.motoTextDiamondB ? 1 : 0),
         stop_line_f: editRoad.stopLineF ? 1 : 0,
         stop_line_b: editRoad.oneway === 'yes' ? 0 : (editRoad.stopLineB ? 1 : 0),
+        arrow_display_f: editRoad.arrowDisplayF ? 1 : 0,
+        arrow_display_b: editRoad.oneway === 'yes' ? 0 : (editRoad.arrowDisplayB ? 1 : 0),
+        start_arrow_display_f: editRoad.startArrowDisplayF ? 1 : 0,
+        start_arrow_display_b: editRoad.oneway === 'yes'
+          ? 0
+          : (editRoad.startArrowDisplayB ? 1 : 0),
+        start_turn_lanes: editRoad.startTurnLanes.join('|'),
+        start_turn_lanes_backward: editRoad.oneway === 'yes'
+          ? ''
+          : editRoad.startTurnLanesB.join('|'),
         road_marking_mode: editRoad.roadMarkingMode,
         center_m: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
         center_kind: editRoad.centerKind,
+        center_extend_start: editRoad.centerExtendStart ? 1 : 0,
+        center_extend_end: editRoad.centerExtendEnd ? 1 : 0,
         extra_width_m: editRoad.extraM,
         turn_lanes: editRoad.turnLanes.join('|'),
         lane_marks_forward: JSON.stringify(editRoad.laneMarksF),
@@ -483,7 +653,43 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       }
       if (failed.length) warn(`${failed.join('、')}偏心道未生成：此區塊太短，放不下儲車段`)
     }
+    // 停等格同樣要回饋：設了涵蓋車道數但幾何放不下（格寬 <1.2m）時不要靜默還原
+    const motoFailed: string[] = []
+    const boxDrawn = (nodeId: number, back: boolean) =>
+      !!core.motoBoxesRef.current.find(
+        (m) => m.dir === `${editRoad.osmId}@${nodeId}${back ? '~b' : ''}`)?.ring
+    if (editRoad.motoBoxF > 0 && !boxDrawn(editRoad.nodeLast, false)) {
+      motoFailed.push(editRoad.fwdLabel)
+    }
+    if (editRoad.oneway === 'no' && editRoad.motoBoxB > 0
+      && !boxDrawn(editRoad.nodeFirst, true)) {
+      motoFailed.push(editRoad.bwdLabel)
+    }
+    if (motoFailed.length) {
+      warn(`${motoFailed.join('、')}機車停等格未生成：此行向路口前放不下停等格`)
+    }
     setEditRoad(null)
+  }
+
+  function deleteRoadSegment() {
+    if (!editRoad) return
+    const roadName = editRoad.name ?? `way/${editRoad.osmId}`
+    const ok = window.confirm(
+      `確定刪除「${roadName}」目前選取的整條路段嗎？\n\n`
+      + '此操作會刪除這個路口到路口區塊的道路本體、標線，並從導航路網排除。'
+    )
+    if (!ok) return
+    const key = `way/${editRoad.osmId}@b/${editRoad.blockNode}`
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set',
+      target: { type: 'road', key },
+      fields: { deleted: 1 },
+    })
+    const remaining = core.roadsRef.current.filter((road) =>
+      !(road.properties.osm_id === editRoad.osmId
+        && road.properties.blockNode === editRoad.blockNode))
+    setEditRoad(null)
+    core.replaceBaseMap(remaining)
   }
 
   /** 偏心道覆寫寫入 journal 並立即重算（present:0 關閉、present:1 開啟、附參數） */
@@ -562,7 +768,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
-    handleEditClick, saveRoadEdit, overrideBay, overrideRightLane, overrideTwin,
+    handleEditClick, saveRoadEdit, deleteRoadSegment,
+    overrideBay, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,
     undoDraftVertex, cancelDraftRoad, finishDraftRoad,
     selNewRoad, setSelNewRoad, deleteNewRoad,

@@ -6,6 +6,7 @@
 //   - latest    = 折疊後的目前值，渲染與導航吃這份
 // 匯出檔同時含兩者 + 待轉區，之後轉 LanePilot schema 只是欄位映射。
 import { computeDerived, type RoadFeature } from './roads'
+import { angleDelta, bearing, haversine } from './geo'
 import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
@@ -31,7 +32,8 @@ export interface EnhancementRecord {
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
   target: {
-    type: 'road' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box' | 'new_road'
+    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane'
+      | 'moto_box' | 'new_road'
     key: string
   }
   fields?: Record<string, string | number>
@@ -155,6 +157,9 @@ export function applyToRoads(
       p.lanesForward = p.oneway === 'yes' ? lanes : Math.ceil(lanes / 2)
       p.lanesBackward = p.oneway === 'yes' ? 0 : Math.max(1, lanes - p.lanesForward)
     }
+    if (fields.shared_lane !== undefined) {
+      p.sharedLane = p.oneway === 'no' && Number(fields.shared_lane) > 0
+    }
     if (fields.moto_forward !== undefined) p.motoF = Number(fields.moto_forward) > 0
     if (fields.moto_backward !== undefined) p.motoB = p.oneway === 'yes' ? false : Number(fields.moto_backward) > 0
     if (fields.moto_entry_icon_f !== undefined) p.motoEntryIconF = Number(fields.moto_entry_icon_f) > 0
@@ -163,6 +168,22 @@ export function applyToRoads(
     if (fields.moto_text_diamond_b !== undefined) p.motoTextDiamondB = Number(fields.moto_text_diamond_b) > 0
     if (fields.stop_line_f !== undefined) p.stopLineF = Number(fields.stop_line_f) > 0
     if (fields.stop_line_b !== undefined) p.stopLineB = Number(fields.stop_line_b) > 0
+    if (fields.arrow_display_f !== undefined) p.arrowDisplayF = Number(fields.arrow_display_f) > 0
+    if (fields.arrow_display_b !== undefined) p.arrowDisplayB = Number(fields.arrow_display_b) > 0
+    if (fields.start_arrow_display_f !== undefined) {
+      p.startArrowDisplayF = Number(fields.start_arrow_display_f) > 0
+    }
+    if (fields.start_arrow_display_b !== undefined) {
+      p.startArrowDisplayB = Number(fields.start_arrow_display_b) > 0
+    }
+    if (fields.start_turn_lanes !== undefined) {
+      p.startTurnLanes = String(fields.start_turn_lanes).split('|')
+    }
+    if (fields.start_turn_lanes_backward !== undefined) {
+      p.startTurnLanesB = p.oneway === 'yes'
+        ? undefined
+        : String(fields.start_turn_lanes_backward).split('|')
+    }
     if (fields.road_marking_mode !== undefined) {
       const mode = String(fields.road_marking_mode)
       p.roadMarkingMode = mode === 'none' ? 'none' : mode === 'center' ? 'center' : 'all'
@@ -202,12 +223,157 @@ export function applyToRoads(
     }
     if (fields.center_m !== undefined) p.centerM = Math.max(0, Number(fields.center_m)) // 中央帶（偏心道/槽化/島）
     if (fields.center_kind !== undefined) p.centerKind = fields.center_kind === 'island' ? 'island' : 'hatch'
+    if (fields.center_extend_start !== undefined) {
+      p.centerExtendStart = Number(fields.center_extend_start) > 0
+    }
+    if (fields.center_extend_end !== undefined) {
+      p.centerExtendEnd = Number(fields.center_extend_end) > 0
+    }
     if (fields.extra_width_m !== undefined) {
       p.extraM = Math.max(-3.2, Math.min(6.4, Number(fields.extra_width_m) || 0)) // 路寬微調（路肩）
     }
+    if (fields.deleted !== undefined) p.deleted = Number(fields.deleted) > 0
     computeDerived(p)
   }
   return n
+}
+
+export interface RoadMergeCheck {
+  ok: boolean
+  reason?: string
+  primaryKey: string
+  secondaryKey: string
+  primaryAt: 'start' | 'end'
+  secondaryAt: 'start' | 'end'
+}
+
+const roadBlockKey = (r: RoadFeature) =>
+  `way/${r.properties.osm_id}@b/${r.properties.blockNode}`
+
+/** 嚴格檢查兩個路口到路口區塊能否安全接成同一路段。 */
+export function checkRoadMerge(primary: RoadFeature, secondary: RoadFeature): RoadMergeCheck {
+  const result: RoadMergeCheck = {
+    ok: false,
+    primaryKey: roadBlockKey(primary),
+    secondaryKey: roadBlockKey(secondary),
+    primaryAt: 'end',
+    secondaryAt: 'start',
+  }
+  if (primary === secondary || result.primaryKey === result.secondaryKey) {
+    return { ...result, reason: '不可選取同一路段兩次' }
+  }
+  const pa = primary.properties
+  const pb = secondary.properties
+  const normName = (v?: string) => (v ?? '').replace(/\s+/g, '').trim()
+  if (!normName(pa.name) || normName(pa.name) !== normName(pb.name)) {
+    return { ...result, reason: '兩段道路名稱不同，為避免誤併已拒絕' }
+  }
+  if (pa.highway !== pb.highway || pa.oneway !== pb.oneway) {
+    return { ...result, reason: '道路等級或單雙向設定不同' }
+  }
+  if (pa.lanesForward !== pb.lanesForward || pa.lanesBackward !== pb.lanesBackward
+    || pa.motoF !== pb.motoF || pa.motoB !== pb.motoB) {
+    return { ...result, reason: '兩段車道配置不同，請先調整一致' }
+  }
+  const a = primary.geometry.coordinates as [number, number][]
+  const b = secondary.geometry.coordinates as [number, number][]
+  if (a.length < 2 || b.length < 2) return { ...result, reason: '道路幾何點不足' }
+  const pairs = [
+    { primaryAt: 'start' as const, secondaryAt: 'start' as const, d: haversine(a[0], b[0]) },
+    { primaryAt: 'start' as const, secondaryAt: 'end' as const, d: haversine(a[0], b[b.length - 1]) },
+    { primaryAt: 'end' as const, secondaryAt: 'start' as const, d: haversine(a[a.length - 1], b[0]) },
+    { primaryAt: 'end' as const, secondaryAt: 'end' as const, d: haversine(a[a.length - 1], b[b.length - 1]) },
+  ].sort((x, y) => x.d - y.d)
+  const join = pairs[0]
+  result.primaryAt = join.primaryAt
+  result.secondaryAt = join.secondaryAt
+  if (join.d > 1) return { ...result, reason: `兩段端點未相接（相距 ${join.d.toFixed(1)} 公尺）` }
+
+  const pAway = join.primaryAt === 'start' ? bearing(a[0], a[1]) : bearing(a[a.length - 1], a[a.length - 2])
+  const sAway = join.secondaryAt === 'start' ? bearing(b[0], b[1]) : bearing(b[b.length - 1], b[b.length - 2])
+  const straightError = Math.abs(180 - Math.abs(angleDelta(pAway, sAway)))
+  if (straightError > 15) {
+    return { ...result, reason: `兩段接合角度不是平順直線（偏差 ${straightError.toFixed(1)}°）` }
+  }
+  return { ...result, ok: true }
+}
+
+/**
+ * 套用已確認的可逆合併紀錄。原始靜態 OSM 不會被刪除；
+ * 每次載入時才在記憶體內接合，並重建道路與導航圖。
+ */
+export function applyRoadMerges(roads: RoadFeature[], journal: EnhancementRecord[]): number {
+  let merged = 0
+  for (const [key, fields] of foldJournal(journal)) {
+    if (!key.startsWith('merge/')) continue
+    const primary = roads.find((r) => roadBlockKey(r) === String(fields.primary ?? ''))
+    const secondary = roads.find((r) => roadBlockKey(r) === String(fields.secondary ?? ''))
+    if (!primary || !secondary) continue
+    const check = checkRoadMerge(primary, secondary)
+    if (!check.ok) {
+      console.warn(`略過不安全的路段合併 ${key}：${check.reason}`)
+      continue
+    }
+    const a = primary.geometry.coordinates as [number, number][]
+    const b0 = secondary.geometry.coordinates as [number, number][]
+    const b = check.secondaryAt === 'start' ? b0 : [...b0].reverse()
+    const bNodes = check.secondaryAt === 'start'
+      ? [...secondary.properties.nodes]
+      : [...secondary.properties.nodes].reverse()
+    if (check.primaryAt === 'end') {
+      primary.geometry.coordinates = [...a, ...b.slice(1)]
+      primary.properties.nodes = [...primary.properties.nodes, ...bNodes.slice(1)]
+    } else {
+      primary.geometry.coordinates = [...b.slice(1).reverse(), ...a]
+      primary.properties.nodes = [...bNodes.slice(1).reverse(), ...primary.properties.nodes]
+    }
+    const secondaryIndex = roads.indexOf(secondary)
+    if (secondaryIndex >= 0) roads.splice(secondaryIndex, 1)
+    merged++
+  }
+  return merged
+}
+
+/**
+ * 合併後的路口元件仍可能使用次路段的 way id。建立僅供計算使用的 journal 視圖，
+ * 將偏心道、右轉附加道、機車停等格鍵值改掛到主路段；原始歷程保持不變。
+ */
+export function journalForMergedRoads(journal: EnhancementRecord[]): EnhancementRecord[] {
+  const aliases: {
+    fromWay: string
+    toWay: string
+    nodes: Set<number> | null
+  }[] = []
+  for (const [key, fields] of foldJournal(journal)) {
+    if (!key.startsWith('merge/')) continue
+    const pm = String(fields.primary ?? '').match(/^way\/(-?\d+)@b\/-?\d+$/)
+    const sm = String(fields.secondary ?? '').match(/^way\/(-?\d+)@b\/-?\d+$/)
+    if (!pm || !sm) continue
+    let nodes: Set<number> | null = null
+    if (fields.secondary_nodes !== undefined) {
+      try {
+        const values = JSON.parse(String(fields.secondary_nodes))
+        if (Array.isArray(values)) nodes = new Set(values.map(Number).filter(Number.isFinite))
+      } catch { /* 舊紀錄沒有 node 清單，退回整個次 way 的元件鍵遷移 */ }
+    }
+    aliases.push({ fromWay: sm[1], toWay: pm[1], nodes })
+  }
+  if (!aliases.length) return journal
+  return journal.map((record) => {
+    if (!['turn_bay', 'right_lane', 'moto_box'].includes(record.target.type)) return record
+    const m = record.target.key.match(/^way\/(-?\d+)@node\/(-?\d+)((?:~b)?(?:~r|~m)?)$/)
+    if (!m) return record
+    const alias = aliases.find((a) =>
+      a.fromWay === m[1] && (!a.nodes || a.nodes.has(Number(m[2]))))
+    if (!alias) return record
+    return {
+      ...record,
+      target: {
+        ...record.target,
+        key: `way/${alias.toWay}@node/${m[2]}${m[3] ?? ''}`,
+      },
+    }
+  })
 }
 
 /** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型

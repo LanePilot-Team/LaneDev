@@ -20,12 +20,24 @@ const MAX_SPEED_MS = 90 / 3.6
 
 export type Profile = 'car' | 'moto'
 
-/** 機車可否行駛（國道禁行 + OSM motorcycle=no） */
-export function motoAllowed(r: RoadFeature): boolean {
+/** 某方向可供機車使用的汽車車道索引（0-based）；自定義「禁行機車」同步作導航限制。 */
+function motoLegalCarLanes(r: RoadFeature, back: boolean): number[] {
+  const p = r.properties
+  const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
+  const marks = p.oneway === 'yes' || !back ? p.laneMarksF : p.laneMarksB
+  const rules = p.oneway === 'yes' || !back ? p.rulesF : p.rulesB
+  if (!marks && rules?.includes('no_moto')) return []
+  return Array.from({ length: lanes }, (_, k) => k)
+    .filter((k) => marks?.[k]?.text.trim() !== '禁行機車')
+}
+
+/** 機車可否行駛（國道、OSM motorcycle=no、方向別自定義禁行機車）。 */
+export function motoAllowed(r: RoadFeature, back: boolean = false): boolean {
   const p = r.properties
   if (p.highway === 'motorway' || p.highway === 'motorway_link') return false
   if (p.motorcycle === 'no') return false
-  return true
+  const motoLane = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
+  return motoLane || motoLegalCarLanes(r, back).length > 0
 }
 
 /** 汽車可否行駛：OSM motorcar=no（機車專用道路體，如高雄大學路機車道）禁行；
@@ -38,7 +50,7 @@ export function carAllowed(r: RoadFeature, back: boolean): boolean {
 
 /** 車種通行檢查（方向敏感：雙向道可以只有單向被編輯成 0 汽車車道） */
 function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
-  return profile === 'moto' ? motoAllowed(r) : carAllowed(r, back)
+  return profile === 'moto' ? motoAllowed(r, back) : carAllowed(r, back)
 }
 
 interface Edge {
@@ -190,7 +202,13 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
     const lane = (k: number) => base + (k - 0.5) * LANE_WIDTH_M
     const moto = p.motoF ? base + L0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(L)
     const car = (k: number) => (L0 > 0 ? lane(k) : moto) // 0 車道時所有偏移落在機車道
-    if (profile === 'moto') return { cruise: moto, left: car(1), right: moto }
+    if (profile === 'moto') {
+      if (p.motoF) return { cruise: moto, left: moto, right: moto }
+      const legal = motoLegalCarLanes(e.road, false)
+      const leftK = (legal[0] ?? 0) + 1
+      const rightK = (legal[legal.length - 1] ?? L - 1) + 1
+      return { cruise: car(rightK), left: car(leftK), right: car(rightK) }
+    }
     return { cruise: car(Math.ceil(L / 2)), left: car(1), right: car(L) }
   }
   const f0 = e.back ? p.lanesBackward : p.lanesForward
@@ -198,12 +216,18 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   const m = e.back ? p.motoB : p.motoF
   const sep = m ? (e.back ? p.motoSepB : p.motoSepF) || 0 : 0
   // 分向線位置（行進 frame）＋中央帶：車道整體外移
-  const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+  const dv = 0
   const c = dv + (p.centerM || 0) / 2
   const lane = (k: number) => c + (k - 0.5) * LANE_WIDTH_M
   const moto = m ? c + f0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(f)
   const car = (k: number) => (f0 > 0 ? lane(k) : moto)
-  if (profile === 'moto') return { cruise: moto, left: car(1), right: moto }
+  if (profile === 'moto') {
+    if (m) return { cruise: moto, left: moto, right: moto }
+    const legal = motoLegalCarLanes(e.road, e.back)
+    const leftK = (legal[0] ?? 0) + 1
+    const rightK = (legal[legal.length - 1] ?? f - 1) + 1
+    return { cruise: car(rightK), left: car(leftK), right: car(rightK) }
+  }
   return { cruise: car(1), left: car(1), right: car(f) } // 汽車巡航走內側車道
 }
 

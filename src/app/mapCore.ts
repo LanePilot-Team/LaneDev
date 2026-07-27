@@ -15,7 +15,9 @@ import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
 import { parseImported, mergeMaps } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
-import { loadZones, saveZones, zonesToGeoJSON, type Zone } from '../core/zones'
+import {
+  loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
+} from '../core/zones'
 import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
@@ -320,6 +322,12 @@ export function useMapCore(
 
   const refreshZones = useCallback(() => {
     if (!mapRef.current) return
+    if (
+      highlightedZoneRef.current
+      && zonesRef.current.some((z) => z.id === highlightedZoneRef.current && z.visible === false)
+    ) {
+      highlightedZoneRef.current = null
+    }
     src('zones').setData(groundMarkingPolygons(
       zonesToGeoJSON(
         zonesRef.current,
@@ -496,7 +504,23 @@ export function useMapCore(
           Promise<FeatureCollection<Polygon>>,
         loadLaneGuidanceRecords(),
       ])
-      const removedBuildingOsmIds = new Set(['823172097', '823172098', '823172099'])
+      // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
+      // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
+      // 不列入此清單。
+      const removedBuildingOsmIds = new Set([
+        '823172097', '823172098', '823172099',
+        '631751541', // 寶溪北街115巷
+        '682189070', // 大學南路273巷
+        '631753341', // 寶溪北街19巷
+        '631740710', // 無名 service 路段
+        '434973244', // 無名 service 路段
+        '773733480', // 大學三十八街207巷
+        '773733478', // 藍昌路532巷
+        '752957679', // 無名 service 路段
+        '237779871', // 大學三十二街388巷
+        '231986022', // 無名 service 路段
+        '464258028', // 無名 service 路段
+      ])
       const preparedBuildings = buildingsRaw.features
         .filter((feature) => !removedBuildingOsmIds.has(String(feature.properties?.osm_id ?? '')))
         .map((feature) => {
@@ -568,12 +592,13 @@ export function useMapCore(
       // 自訂新增道路（journal new_road）物化混入底圖：graph/渲染/車道編輯一體適用
       const folded = foldJournal(journalRef.current)
       const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
-      roadsRef.current = roadsAll
-      applyToRoads(roadsAll, folded)
+      applyToRoads(roadsAll, folded) // 先套用才有 deleted 旗標可濾
+      // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
+      roadsRef.current = roadsAll.filter((road) => !road.properties.deleted)
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roadsAll, laneGuidanceIndexRef.current)
+      graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -602,6 +627,12 @@ export function useMapCore(
             const parsed = parseImported(await r.text())
             if (parsed.kind === 'annotations') {
               const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
+              const savedImported = new Map(
+                zonesRef.current
+                  .filter((z) => z.id.startsWith('zone-lp-'))
+                  .map((z) => [z.id, z]),
+              )
+              const deleted = loadDeletedZoneIds()
               const res = zonesFromAnnotations({
                 records: parsed.records,
                 graph: graphRef.current,
@@ -610,7 +641,12 @@ export function useMapCore(
                 rawWays: rawWaysRef.current,
                 existing: manual,
               })
-              zonesRef.current = [...manual, ...res.zones]
+              // 靜態標註只提供初始值；同 ID 的人工位置、尺寸、形狀、旋轉與啟停狀態優先。
+              // 明確刪除的 ID 由 tombstone 排除，避免重新整理後被自動匯入復活。
+              const imported = res.zones
+                .filter((z) => !deleted.has(z.id))
+                .map((z) => savedImported.get(z.id) ?? z)
+              zonesRef.current = [...manual, ...imported]
               if (res.skips.length) {
                 console.warn(`LanePilot 待轉區標註略過 ${res.skips.length} 筆`, res.skips)
               }

@@ -82,7 +82,12 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
  *   lane_profiles   → journal 車道覆寫（記 author=lanepilot，可追溯/可重匯）
  *   movement_rules  → 兩段式左轉/待轉區 → zones（位置由路口幾何自動計算）
  */
-function importAnnotations(core: MapCore, ui: ImportUi, records: ImportedAnnotation[], fileName: string) {
+export function importAnnotations(
+  core: MapCore,
+  ui: ImportUi,
+  records: ImportedAnnotation[],
+  fileName: string,
+) {
   // way 依路口切塊後同 osm_id 有多個區塊，全部收（進入行向要逐塊找 node）
   const byId = new Map<number, RoadFeature[]>()
   for (const r of core.roadsRef.current) {

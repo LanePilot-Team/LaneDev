@@ -78,7 +78,7 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
           onClick={() => { editor.setEditTool('vehicle'); editor.setEditRoad(null); editor.setZonePanel(null); editor.setBayPanel(null) }}>車輛</button>
       </span>
       {editWarn ?? (editTool === 'lane'
-        ? '點選道路 → 右側面板編輯車道（雙向道可設中央帶）'
+        ? '點選道路編輯車道；按住 Ctrl 依序點兩段相接、平行道路可捏合路段'
         : editTool === 'zone'
           ? '點選「路口」→ 右側面板選左轉方向（位置自動計算）'
           : editTool === 'bay'
@@ -117,15 +117,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         <span>{editRoad.oneway === 'yes' ? `${editRoad.fwdLabel}（單行）` : editRoad.fwdLabel}汽車道</span>
         <button className="mini" onClick={() => setEditRoad((er) => {
           if (!er) return er
-          const min = er.motoF ? 0 : 1 // 有機車道可減到 0 = 該向純機車道
+          const canShareOneLane = er.oneway === 'no' && er.b === 1 && !er.motoF && !er.motoB
+          const min = er.motoF || canShareOneLane ? 0 : 1
           const f = Math.max(min, er.f - 1)
           return { ...er, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
+            startTurnLanes: resizeTurnLanes(er.startTurnLanes, f),
             laneMarksF: resizeDirectionMarks(er.laneMarksF, er.f, f, er.motoF) }
         })}>−</button>
         <b>{editRoad.f}</b>
         <button className="mini" onClick={() => setEditRoad((er) => er && ({
           ...er, f: Math.min(6, er.f + 1),
           turnLanes: resizeTurnLanes(er.turnLanes, Math.min(6, er.f + 1)),
+          startTurnLanes: resizeTurnLanes(er.startTurnLanes, Math.min(6, er.f + 1)),
           laneMarksF: resizeDirectionMarks(er.laneMarksF, er.f, Math.min(6, er.f + 1), er.motoF),
         }))}>＋</button>
         <button className={`mini${editRoad.motoF ? ' on' : ''}`}
@@ -134,6 +137,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             // 關機車道時若車道 0，自動補回 1（斷面不能空）
             const f = er.motoF && er.f === 0 ? 1 : er.f
             return { ...er, motoF: !er.motoF, f, turnLanes: resizeTurnLanes(er.turnLanes, f),
+              startTurnLanes: resizeTurnLanes(er.startTurnLanes, f),
               laneMarksF: er.motoF
                 ? resizeLaneMarks(er.laneMarksF.slice(0, er.f), f)
                 : [...resizeLaneMarks(er.laneMarksF, f), null] }
@@ -158,15 +162,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         <span>{editRoad.bwdLabel}汽車道</span>
           <button className="mini" onClick={() => setEditRoad((er) => {
             if (!er) return er
-            const min = er.motoB ? 0 : 1
+            const canShareOneLane = er.f === 1 && !er.motoF && !er.motoB
+            const min = er.motoB || canShareOneLane ? 0 : 1
             const b = Math.max(min, er.b - 1)
             return { ...er, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
+              startTurnLanesB: resizeTurnLanes(er.startTurnLanesB, b),
               laneMarksB: resizeDirectionMarks(er.laneMarksB, er.b, b, er.motoB) }
           })}>−</button>
           <b>{editRoad.b}</b>
           <button className="mini" onClick={() => setEditRoad((er) => er && ({
             ...er, b: Math.min(6, er.b + 1),
             turnLanesB: resizeTurnLanes(er.turnLanesB, Math.min(6, er.b + 1)),
+            startTurnLanesB: resizeTurnLanes(er.startTurnLanesB, Math.min(6, er.b + 1)),
             laneMarksB: resizeDirectionMarks(er.laneMarksB, er.b, Math.min(6, er.b + 1), er.motoB),
           }))}>＋</button>
           <button className={`mini${editRoad.motoB ? ' on' : ''}`}
@@ -174,6 +181,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               if (!er) return er
               const b = er.motoB && er.b === 0 ? 1 : er.b
               return { ...er, motoB: !er.motoB, b, turnLanesB: resizeTurnLanes(er.turnLanesB, b),
+                startTurnLanesB: resizeTurnLanes(er.startTurnLanesB, b),
                 laneMarksB: er.motoB
                   ? resizeLaneMarks(er.laneMarksB.slice(0, er.b), b)
                   : [...resizeLaneMarks(er.laneMarksB, b), null] }
@@ -195,6 +203,9 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         </div>
       )}
       <div className="edit-help">快慢分隔為 0 時繪製白實線；調高後改為同寬度的實體分隔島。</div>
+      {editRoad.oneway === 'no' && editRoad.f + editRoad.b === 1 && !editRoad.motoF && !editRoad.motoB && (
+        <div className="edit-help">目前為正反共用一道寬：道路仍維持雙向通行，且不繪製中央線。</div>
+      )}
       </section>
 
       <section className="edit-section">
@@ -243,6 +254,28 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </button>
         </div>
       )}
+      {editRoad.oneway === 'no' && (
+        <div className="edit-row">
+          <span>
+            <b className="row-title">中央線延伸至圓形端頭</b>
+            前、後兩端可分別設定；預設不延伸。
+          </span>
+          <button
+            className={`mini${editRoad.centerExtendStart ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({
+              ...er,
+              centerExtendStart: !er.centerExtendStart,
+            }))}
+          >{editRoad.bwdLabel}端 {editRoad.centerExtendStart ? '延伸' : '不延伸'}</button>
+          <button
+            className={`mini${editRoad.centerExtendEnd ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({
+              ...er,
+              centerExtendEnd: !er.centerExtendEnd,
+            }))}
+          >{editRoad.fwdLabel}端 {editRoad.centerExtendEnd ? '延伸' : '不延伸'}</button>
+        </div>
+      )}
       {editRoad.oneway === 'no' && editRoad.centerKind !== 'island' && editRoad.centerM > 0 && (
         <div className="edit-row">
           <span>中央偏心道用途</span>
@@ -254,7 +287,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           }))}>{editRoad.bwdLabel} {BAY_TURN_GLYPH[editRoad.bayB] ?? '無'}</button>
         </div>
       )}
-      <div className="edit-row"><span><b className="row-title">{editRoad.fwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span></div>
+      <div className="edit-row">
+        <span><b className="row-title">{editRoad.fwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span>
+        <button
+          className={`mini${editRoad.arrowDisplayF ? ' on' : ''}`}
+          onClick={() => setEditRoad((er) => er && ({ ...er, arrowDisplayF: !er.arrowDisplayF }))}
+        >{editRoad.arrowDisplayF ? '顯示開啟' : '顯示關閉'}</button>
+      </div>
       <div className="edit-lanes">
         {editRoad.turnLanes.map((v, i) => (
           <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
@@ -265,9 +304,41 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
         ))}
       </div>
+      {editRoad.segmentLengthM >= 50 && editRoad.bayF !== 'none' && (
+        <>
+          <div className="edit-row">
+            <span>{editRoad.fwdLabel}道路開頭箭頭</span>
+            <button
+              className={`mini${editRoad.startArrowDisplayF ? ' on' : ''}`}
+              onClick={() => setEditRoad((er) => er && ({
+                ...er,
+                startArrowDisplayF: !er.startArrowDisplayF,
+              }))}
+            >{editRoad.startArrowDisplayF ? '顯示開啟' : '顯示關閉'}</button>
+          </div>
+          {editRoad.startArrowDisplayF && (
+            <div className="edit-lanes">
+              {editRoad.startTurnLanes.map((v, i) => (
+                <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
+                  if (!er) return er
+                  const next = [...er.startTurnLanes]
+                  next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
+                  return { ...er, startTurnLanes: next }
+                })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       {editRoad.oneway === 'no' && (
         <>
-          <div className="edit-row"><span><b className="row-title">{editRoad.bwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span></div>
+          <div className="edit-row">
+            <span><b className="row-title">{editRoad.bwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span>
+            <button
+              className={`mini${editRoad.arrowDisplayB ? ' on' : ''}`}
+              onClick={() => setEditRoad((er) => er && ({ ...er, arrowDisplayB: !er.arrowDisplayB }))}
+            >{editRoad.arrowDisplayB ? '顯示開啟' : '顯示關閉'}</button>
+          </div>
           <div className="edit-lanes">
             {editRoad.turnLanesB.map((v, i) => (
               <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
@@ -278,6 +349,32 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
             ))}
           </div>
+          {editRoad.segmentLengthM >= 50 && editRoad.bayB !== 'none' && (
+            <>
+              <div className="edit-row">
+                <span>{editRoad.bwdLabel}道路開頭箭頭</span>
+                <button
+                  className={`mini${editRoad.startArrowDisplayB ? ' on' : ''}`}
+                  onClick={() => setEditRoad((er) => er && ({
+                    ...er,
+                    startArrowDisplayB: !er.startArrowDisplayB,
+                  }))}
+                >{editRoad.startArrowDisplayB ? '顯示開啟' : '顯示關閉'}</button>
+              </div>
+              {editRoad.startArrowDisplayB && (
+                <div className="edit-lanes">
+                  {editRoad.startTurnLanesB.map((v, i) => (
+                    <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
+                      if (!er) return er
+                      const next = [...er.startTurnLanesB]
+                      next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
+                      return { ...er, startTurnLanesB: next }
+                    })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
       {editRoad.motoBoxMaxF > 0 && (

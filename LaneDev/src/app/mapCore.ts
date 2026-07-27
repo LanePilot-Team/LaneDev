@@ -448,7 +448,23 @@ export function useMapCore(
         fetch('/data/nanzih_buildings_height.geojson').then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
       ])
-      const removedBuildingOsmIds = new Set(['823172097', '823172098', '823172099'])
+      // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
+      // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
+      // 不列入此清單。
+      const removedBuildingOsmIds = new Set([
+        '823172097', '823172098', '823172099',
+        '631751541', // 寶溪北街115巷
+        '682189070', // 大學南路273巷
+        '631753341', // 寶溪北街19巷
+        '631740710', // 無名 service 路段
+        '434973244', // 無名 service 路段
+        '773733480', // 大學三十八街207巷
+        '773733478', // 藍昌路532巷
+        '752957679', // 無名 service 路段
+        '237779871', // 大學三十二街388巷
+        '231986022', // 無名 service 路段
+        '464258028', // 無名 service 路段
+      ])
       const preparedBuildings = buildingsRaw.features
         .filter((feature) => !removedBuildingOsmIds.has(String(feature.properties?.osm_id ?? '')))
         .map((feature) => {

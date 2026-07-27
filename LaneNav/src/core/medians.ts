@@ -317,7 +317,7 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
     const total = cum[cum.length - 1]
     const { s0, s1 } = islandSetbacks(graph, e, total)
     if (s1 - s0 < MIN_ISLAND_M) continue
-    const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
+    const dv = 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     const inner = base + lanes * LANE_WIDTH_M
     const ds: number[] = []
@@ -353,7 +353,7 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
     const total = cum[cum.length - 1]
     const { s0, s1 } = islandSetbacks(graph, e, total)
     if (s1 - s0 < MIN_ISLAND_M) continue
-    const dv = p.divOffM || 0
+    const dv = 0
     const c = p.centerM / 2
     const fwdBay = bayMap.get(`${p.osm_id}@${e.toNode}`)
     const bwdBay = bayMap.get(`${p.osm_id}@${e.fromNode}~b`)

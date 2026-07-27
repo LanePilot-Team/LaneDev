@@ -110,6 +110,24 @@ export function updateStaticEditor(patch: Partial<StaticEditorState>) {
   scheduleStaticEditorSave()
 }
 
+/** 直接把兩筆活躍靜態 OSM segment 捏合；成功後須重新載入資料庫。 */
+export async function mergeStaticRoadSegments(
+  primary: string,
+  secondary: string,
+  joinNode: number,
+): Promise<void> {
+  const response = await fetch('/api/static-road-database/merge', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ primary, secondary, joinNode }),
+  })
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(detail || `HTTP ${response.status}`)
+  }
+  database = null
+}
+
 export function scheduleStaticEditorSave(delayMs = 350) {
   if (!database) return
   if (saveTimer !== null) window.clearTimeout(saveTimer)

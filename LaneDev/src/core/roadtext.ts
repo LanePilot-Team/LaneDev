@@ -56,7 +56,7 @@ export function buildRoadTexts(graph: RoadGraph, bays: TurnBay[] = []): FeatureC
     const s0 = e.startSetbackM
     const s1 = total - e.endSetbackM
     if (s1 - s0 < ROAD_TEXT_LEN_M + 4) continue
-    const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
+    const dv = 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     const sep = p.oneway === 'yes' ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
     const offs = Array.from({ length: lanes }, (_, k) => base + (k + 0.5) * LANE_WIDTH_M)

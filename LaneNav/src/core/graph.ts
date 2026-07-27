@@ -201,7 +201,7 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   const m = e.back ? p.motoB : p.motoF
   const sep = m ? (e.back ? p.motoSepB : p.motoSepF) || 0 : 0
   // 分向線位置（行進 frame）＋中央帶：車道整體外移
-  const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+  const dv = 0
   const c = dv + (p.centerM || 0) / 2
   const lane = (k: number) => c + (k - 0.5) * LANE_WIDTH_M
   const moto = m ? c + f0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(f)

@@ -153,7 +153,7 @@ function planZoneAtStopLine(opt: TurnOption, ctx: ZoneCtx): Zone | null {
   const dStop = total - e.endSetbackM
   if (dStop < 1) return null // approach 太短（停止線都擠不下），退回幾何近似
   // 橫向定位同 buildStopLines：車道塊 [base, base+span]，右緣即停止線外端
-  const dv = e.back ? -(p.divOffM || 0) : p.divOffM || 0
+  const dv = 0
   const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
   const w = Math.max(2.4, Math.min(span, 6.4) - 0.4) // 寬：貼車道塊、上限兩車道
   const oCenter = base + span - 0.3 - w / 2

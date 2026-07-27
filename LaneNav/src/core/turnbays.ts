@@ -294,7 +294,7 @@ function makeBay(
 
   if (isCenter) {
     // ── 中央帶偏心道：bay = 中央車道本身（藍田路實驗主場）──
-    const dv = a.back ? -(p.divOffM || 0) : (p.divOffM || 0) // 中央帶中心（行進 frame）
+    const dv = 0 // 雙向道路中央分向基準固定在 OSM 軸
     const c = p.centerM / 2
     // 漸變段：雙黃線從自己車道側（dv+c）斜切到對向側（dv−c）——「慢慢雙黃線斜對切」
     const taperDs = sampleDs(d0, bayStart, 3)
@@ -529,7 +529,7 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     const c = (p.centerM || 0) / 2
     if (c === 0 || e.back) continue // 中央帶以順向 frame 統一處理一次
     if (p.centerKind === 'island') continue // 實體島由 medians.buildCenterIslands 畫
-    const dv = p.divOffM || 0 // 中央帶中心（順向 frame）
+    const dv = 0 // 雙向道路中央分向基準固定在 OSM 軸
 
     // 兩向 bay 在此路段的佔用區間（換算到順向 frame）
     const fwdBay = bayMap.get(`${p.osm_id}@${e.toNode}`)
@@ -926,6 +926,12 @@ export function buildLaneArrows(
     if (!scopeFn(e.road) && !isMajorStopRoad(e.road) && !hasExplicit) continue
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
+    const directionKey = `${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`
+    const hasBay = bayKeys.has(directionKey)
+    const showExit = (e.back ? p.arrowDisplayB : p.arrowDisplayF) !== false
+    const showStart = total >= 50 && hasBay &&
+      (e.back ? p.startArrowDisplayB : p.startArrowDisplayF) === true
+    if (!showExit && !showStart) continue
     const endBrg = pointAlong(e.coords, cum, Math.max(0, total - 2)).brg
     const smallCrossW = graph.crossWidthAt(e.toNode, endBrg, e.road)
     const arrowSetback = Math.max(e.endSetbackM, smallCrossW > 0 ? smallCrossW / 2 + 1.2 : 0)
@@ -941,7 +947,6 @@ export function buildLaneArrows(
     } else {
       const kinds = graph.exitKindsAt(e.toNode, endBrg)
       if (kinds.size === 0) continue
-      const hasBay = bayKeys.has(`${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)
       const hasRl = rlKeys.has(`${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)
       // 每車道的動作：預設直行；最外側補右轉（右轉道存在時由附加車道承擔）；
       // 無偏心道時最內側補左轉
@@ -950,21 +955,43 @@ export function buildLaneArrows(
       if (kinds.has('left') && !hasBay) moves[0] = moves[0] ? 'left;through' : 'left'
     }
     // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
-    const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+    // 雙向道路以 OSM 軸作中央分向基準；非對稱寬度由路面向多車道側展開。
+    const dv = 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
-    const { brg } = pointAlong(e.coords, cum, d)
-    // 箭頭列對齊交會道路：每車道依橫向位置縱向平移，整排與停止線平行
-    const sk = crossSkew(graph, e.road, e.toNode, brg)
-    for (let k = 0; k < lanes; k++) {
-      if (!moves[k]) continue
-      const normalLaneOff = base + (k + 0.5) * LANE_WIDTH_M
-      const off = normalLaneOff
-      const dk = Math.max(e.startSetbackM + 4, Math.min(total - 1, d + sk * off))
-      out.push({
-        pos: offsetAt(e.coords, cum, dk, off),
-        brg: pointAlong(e.coords, cum, dk).brg,
-        icon: ARROW_ICON[moves[k]] ?? 'lane-arrow-through',
-      })
+    if (showExit) {
+      const { brg } = pointAlong(e.coords, cum, d)
+      // 箭頭列對齊交會道路：每車道依橫向位置縱向平移，整排與停止線平行
+      const sk = crossSkew(graph, e.road, e.toNode, brg)
+      for (let k = 0; k < lanes; k++) {
+        if (!moves[k]) continue
+        const off = base + (k + 0.5) * LANE_WIDTH_M
+        const dk = Math.max(e.startSetbackM + 4, Math.min(total - 1, d + sk * off))
+        out.push({
+          pos: offsetAt(e.coords, cum, dk, off),
+          brg: pointAlong(e.coords, cum, dk).brg,
+          icon: ARROW_ICON[moves[k]] ?? 'lane-arrow-through',
+        })
+      }
+    }
+    if (showStart) {
+      const startD = e.startSetbackM + 8
+      if (startD < total - e.endSetbackM - 8) {
+        const startRaw = (p.oneway === 'yes' || !e.back)
+          ? p.startTurnLanes
+          : p.startTurnLanesB
+        const startMoves = startRaw?.length
+          ? Array.from({ length: lanes }, (_, k) => canonTurn(startRaw[k] ?? ''))
+          : moves
+        for (let k = 0; k < lanes; k++) {
+          if (!startMoves[k]) continue
+          const off = base + (k + 0.5) * LANE_WIDTH_M
+          out.push({
+            pos: offsetAt(e.coords, cum, startD, off),
+            brg: pointAlong(e.coords, cum, startD).brg,
+            icon: ARROW_ICON[startMoves[k]] ?? 'lane-arrow-through',
+          })
+        }
+      }
     }
   }
   return out
@@ -1085,7 +1112,7 @@ function makeRightLane(
   const d0 = Math.max(0, end - lenM - taperLenM)
   const start = end - lenM // 全寬儲車段起點
   // 既有斷面右緣（行進 frame）：單行道置中、雙向 = 分向線 + 中央帶半寬 + 車道塊
-  const dv = a.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+  const dv = 0
   const R0 = p.oneway === 'yes' ? span / 2 : dv + (p.centerM || 0) / 2 + span
   const wAt = (d: number) =>
     d >= start ? widthM : taperLenM > 0 ? (widthM * (d - d0)) / taperLenM : widthM
@@ -1204,7 +1231,7 @@ export function buildStopLines(
     // 同一 way/節點可能有多個切塊候選；只有真正成功產生停止線後才標記，
     // 避免先遇到過短切塊而把後續有效進入方向誤判為重複。
     seen.add(dirKey)
-    const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+    const dv = 0
     const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
     const bay = bayMap.get(dirKey)
     // 內界：有中央偏心道延伸到對向側邊界、side bay 延伸過附加車道；否則車道塊左緣
@@ -1321,9 +1348,7 @@ export function buildMotoLaneEntryIcons(
     const separatorWidth = properties.oneway === 'yes'
       ? properties.motoSepF || 0
       : edge.back ? properties.motoSepB || 0 : properties.motoSepF || 0
-    const dividerOffset = edge.back
-      ? -(properties.divOffM || 0)
-      : properties.divOffM || 0
+    const dividerOffset = 0
     const innerEdge = properties.oneway === 'yes'
       ? -properties.width_m / 2 + carLaneCount * LANE_WIDTH_M + separatorWidth
       : dividerOffset + (properties.centerM || 0) / 2 +
@@ -1482,7 +1507,7 @@ export function buildMotoBoxes(
     const total = cum[cum.length - 1]
     const d1 = total - e.endSetbackM - MOTO_BOX_GAP_M
     const d0 = d1 - MOTO_BOX_DEPTH_M
-    const dv = e.back ? -(p.divOffM || 0) : (p.divOffM || 0)
+    const dv = 0
     const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
     // 內緣淨空：緊鄰中央（kL=0）多留避雙黃線；否則位於車道分隔線上，小淨空
     const innerClear = kL === 0 ? MOTO_BOX_INNER_CLEAR_M : MOTO_BOX_LANE_CLEAR_M

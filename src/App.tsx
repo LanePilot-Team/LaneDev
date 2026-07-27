@@ -81,11 +81,23 @@ export default function App() {
     core.mapRef.current?.flyTo({ center: [120.2790, 22.7300], zoom: 17.5, pitch: 58, bearing: 20 })
   }
 
+  function focusDistrict(district: 'nanzih' | 'zuoying') {
+    const center: [number, number] = district === 'zuoying'
+      ? [120.294, 22.686]
+      : [120.303, 22.739]
+    core.mapRef.current?.flyTo({
+      center,
+      zoom: 13.6,
+      pitch: 0,
+      bearing: 0,
+    })
+  }
+
   return (
     <div className="app" data-zone-tick={zoneTick}>
       <div ref={containerRef} className="map" />
 
-      {loading && <div className="loading">載入楠梓區路網中…</div>}
+      {loading && <div className="loading">載入楠梓＋左營路網中…</div>}
 
       {/* ── 導航 HUD ── */}
       {mode === 'drive' && (
@@ -105,6 +117,8 @@ export default function App() {
           <button className={mode === 'browse' ? 'on' : ''} onClick={() => switchMode('browse')}>瀏覽</button>
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => switchMode('edit')}>編輯地圖</button>
           <button className={mode === 'pick' ? 'on' : ''} onClick={() => startPick(false)}>規劃路線</button>
+          <button onClick={() => focusDistrict('nanzih')}>楠梓區</button>
+          <button onClick={() => focusDistrict('zuoying')}>左營區</button>
           <button onClick={() => startPick(true)}>Demo 路線</button>
           <button onClick={flyToDemoArea}>大學路口 3D</button>
           <button onClick={() => importInputRef.current?.click()}>匯入地圖</button>

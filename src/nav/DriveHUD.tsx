@@ -26,6 +26,10 @@ function roundDistance(m: number): string {
 export function guidanceText(m: Maneuver, phase: Phase, profile: Profile, twoStage: boolean, bay: boolean): string {
   const into = m.roadName ? `・進入${m.roadName}` : ''
   if (m.kind === 'arrive') return '即將抵達目的地'
+  if (profile === 'moto' && m.motoLeftTurnLane &&
+    (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn')) {
+    return '靠右前往機車專用左轉道'
+  }
   if (twoStage) {
     return phase === 'near'
       ? '靠右進入待轉區（兩段式左轉）'

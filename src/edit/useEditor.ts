@@ -72,6 +72,7 @@ export interface EditRoadState {
   stopLineF: boolean; stopLineB: boolean
   arrowDisplayF: boolean; arrowDisplayB: boolean
   startArrowDisplayF: boolean; startArrowDisplayB: boolean
+  leftWaitAreaF: boolean; leftWaitAreaB: boolean
   startTurnLanes: string[]; startTurnLanesB: string[]
   segmentLengthM: number
   roadMarkingMode: 'all' | 'center' | 'none'
@@ -301,6 +302,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         arrowDisplayB: editRoad.oneway === 'yes' ? false : editRoad.arrowDisplayB,
         startArrowDisplayF: editRoad.startArrowDisplayF,
         startArrowDisplayB: editRoad.oneway === 'yes' ? false : editRoad.startArrowDisplayB,
+        leftWaitAreaF: editRoad.leftWaitAreaF,
+        leftWaitAreaB: editRoad.oneway === 'yes' ? false : editRoad.leftWaitAreaB,
         startTurnLanes: editRoad.startTurnLanes,
         startTurnLanesB: editRoad.startTurnLanesB,
         turnLanes: editRoad.turnLanes,
@@ -495,6 +498,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         arrowDisplayB: p2.arrowDisplayB !== false,
         startArrowDisplayF: !!p2.startArrowDisplayF,
         startArrowDisplayB: !!p2.startArrowDisplayB,
+        leftWaitAreaF: !!p2.leftWaitAreaF,
+        leftWaitAreaB: !!p2.leftWaitAreaB,
         startTurnLanes: resizeTurnLanes(p2.startTurnLanes ?? tl, p2.lanesForward),
         startTurnLanesB: resizeTurnLanes(
           p2.startTurnLanesB ?? tlB,
@@ -649,6 +654,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         start_arrow_display_b: editRoad.oneway === 'yes'
           ? 0
           : (editRoad.startArrowDisplayB ? 1 : 0),
+        left_wait_area_f: editRoad.leftWaitAreaF ? 1 : 0,
+        left_wait_area_b: editRoad.oneway === 'yes' ? 0 : (editRoad.leftWaitAreaB ? 1 : 0),
         start_turn_lanes: editRoad.startTurnLanes.join('|'),
         start_turn_lanes_backward: editRoad.oneway === 'yes'
           ? ''

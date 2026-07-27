@@ -207,6 +207,8 @@ export function usePlanner(core: MapCore): Planner {
   function computeTwoStage(m: Maneuver, prof: Profile): boolean {
     if (prof !== 'moto') return false
     if (m.kind !== 'left' && m.kind !== 'uturn' && m.kind !== 'slight-left') return false
+    // 有人工標註的機車左轉專用道時，應靠右直接進入專用道，不採兩段式待轉。
+    if (m.motoLeftTurnLane) return false
     return core.zonesRef.current.some((z) =>
       isZoneEnabled(z) &&
       m.nodeId !== undefined && z.intersectionId === m.nodeId &&

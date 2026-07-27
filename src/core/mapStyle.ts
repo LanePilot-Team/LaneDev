@@ -569,6 +569,16 @@ function canvasImage(w: number, h: number, draw: (g: CanvasRenderingContext2D) =
   return g.getImageData(0, 0, w, h)
 }
 
+/** 路面箭頭保留原高度與筆畫，只略縮橫向，避免貼住相鄰車道線。 */
+function roadArrowImage(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void) {
+  return canvasImage(w, h, (g) => {
+    g.translate(w / 2, 0)
+    g.scale(0.92, 1)
+    g.translate(-w / 2, 0)
+    draw(g)
+  })
+}
+
 export function makeIcons(): Record<string, ImageData> {
   return {
     // 導航自車：白圈藍箭頭（線放置的箭頭指右 = 線方向）
@@ -641,7 +651,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.beginPath(); g.arc(10, 26, 6, 0, Math.PI * 2); g.stroke()
     }),
     // 偏心左轉道地面箭頭（畫成朝上 = 行進方向，圖層用 icon-rotate 對齊路向）
-    'bay-arrow-left': canvasImage(48, 96, (g) => {
+    'bay-arrow-left': roadArrowImage(48, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'
@@ -654,7 +664,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.moveTo(20, 12); g.lineTo(2, 26); g.lineTo(20, 40)
       g.closePath(); g.fill()
     }),
-    'bay-arrow-uturn': canvasImage(48, 96, (g) => {
+    'bay-arrow-uturn': roadArrowImage(48, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'
@@ -670,7 +680,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.closePath(); g.fill()
     }),
     // 路口地面車道箭頭（朝上 = 行進方向，icon-rotate 對齊路向）
-    'lane-arrow-through': canvasImage(48, 96, (g) => {
+    'lane-arrow-through': roadArrowImage(48, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.beginPath(); g.moveTo(24, 92); g.lineTo(24, 30); g.stroke()
@@ -678,7 +688,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.beginPath(); g.moveTo(24, 4); g.lineTo(10, 34); g.lineTo(38, 34)
       g.closePath(); g.fill()
     }),
-    'lane-arrow-right': canvasImage(48, 96, (g) => {
+    'lane-arrow-right': roadArrowImage(48, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'
@@ -693,7 +703,7 @@ export function makeIcons(): Record<string, ImageData> {
     }),
     // 合體式直行＋右轉：直行主幹保持完整，右轉支線由主幹分岔後水平指向右側。
     // 造型參照台灣路面箭頭，刻意拉開兩個箭頭頭部，縮小後仍可辨識兩種動作。
-    'lane-arrow-through-right': canvasImage(68, 96, (g) => {
+    'lane-arrow-through-right': roadArrowImage(68, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'
@@ -709,7 +719,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.closePath(); g.fill()
     }),
     // 並排式直行+右轉（兩支完整箭頭各自獨立，非合體分岔）
-    'lane-arrow-through-right-dual': canvasImage(72, 96, (g) => {
+    'lane-arrow-through-right-dual': roadArrowImage(72, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 7
       g.lineCap = 'butt'
@@ -728,7 +738,7 @@ export function makeIcons(): Record<string, ImageData> {
       g.closePath(); g.fill()
     }),
     // 合體式左轉＋直行：與上式鏡像，兩個箭頭頭部清楚分離。
-    'lane-arrow-left-through': canvasImage(68, 96, (g) => {
+    'lane-arrow-left-through': roadArrowImage(68, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'
@@ -743,7 +753,7 @@ export function makeIcons(): Record<string, ImageData> {
     }),
     // 合體式左轉＋右轉：共用單一主幹，在同一高度平順分岔，
     // 左右箭頭頭部與前右／左前樣式採相同比例，縮小後仍清楚可辨。
-    'lane-arrow-left-right': canvasImage(72, 96, (g) => {
+    'lane-arrow-left-right': roadArrowImage(72, 96, (g) => {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 8
       g.lineCap = 'butt'

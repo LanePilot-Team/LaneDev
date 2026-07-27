@@ -19,6 +19,7 @@ export const CAR_LANE_MARKS: LaneMark[] = [
 
 export const MOTO_LANE_MARKS: LaneMark[] = [
   { text: '機車專用', color: '#ffffff' },
+  { text: '機車左轉專用', color: '#ffffff' },
   { text: '機慢車專用', color: '#ffffff' },
   { text: '機車優先', color: '#ffffff' },
   { text: '機慢車優先', color: '#ffffff' },
@@ -89,9 +90,37 @@ export function buildRoadTexts(graph: RoadGraph, bays: TurnBay[] = []): FeatureC
       }
       if (duplicate < 0) features.push(feature)
       else if (Number(features[duplicate].properties?.spanM) < s1 - s0) features[duplicate] = feature
+
+      // 機車左轉專用道在路口前再提示一次：箭頭由 turnbays.ts 放在最靠近
+      // 停止線處，這裡的文字接在箭頭後方（行進方向的上游側）。
+      if (moto && i === lanes && mark.text.trim() === '機車左轉專用') {
+        // 六字直排（可能另含上下菱形）比一般四字標記更長，需與前方
+        // 左轉箭頭保留足夠淨距，避免文字尾端壓到箭身。
+        const nearD = s1 - 16
+        if (nearD > d + 7 && nearD > s0 + ROAD_TEXT_LEN_M / 2) {
+          const near = pointAlong(e.coords, cum, nearD)
+          features.push({
+            type: 'Feature',
+            properties: {
+              label: addDiamond ? '◇機車左轉專用◇' : '機車左轉專用',
+              color: mark.color || '#ffffff',
+              lane: i,
+              laneType: 'moto',
+              brg: Math.round((((near.brg % 360) + 360) % 360) * 10) / 10,
+              roadKey: `${roadKey}:moto-left-near`,
+              spanM: s1 - s0,
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: offsetAt(e.coords, cum, nearD, offs[i]),
+            },
+          })
+        }
+      }
     })
   }
   for (const bay of bays) {
+    if (!bay.roadText) continue
     const brg = ((bay.roadText.brg % 360) + 360) % 360
     features.push({
       type: 'Feature',

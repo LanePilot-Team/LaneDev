@@ -13,7 +13,8 @@ import {
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
-import { parseImported, mergeMaps } from '../core/importmap'
+import { mapFromSegmentRecords, parseImported, mergeMaps } from '../core/importmap'
+import { loadStaticRoadDatabase } from '../core/staticDatabase'
 import { RoadGraph } from '../core/graph'
 import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
@@ -191,10 +192,17 @@ const DEFAULT_SHARD_URLS = [
 ]
 
 async function loadDefaultRoads() {
-  // 底圖預設 = LanePilot shard（同學版 OSM，幾何較新較貼實地——槽化/偏心規則
-  // 依賴路段幾何，舊 Overpass 快照與實地有出入會讓規則不穩）。
-  // 標註仍不套用（journal 過濾 author=lanepilot）。?base=osm 退回快照對照。
+  // 底圖優先序：唯一靜態道路資料庫（road_database.json，捏合結果的讀取端）
+  // → LanePilot shard → Overpass 快照。資料庫 segments 與 shard 同源
+  // （楠梓區 nav_segment），但額外承載捏合改寫；?base=osm 直接退回快照對照。
+  // 標註仍不套用（journal 過濾 author=lanepilot）。
   if (location.search.includes('base=osm')) return loadRoads(asset('/data/nanzi_roads.geojson'))
+  try {
+    const db = await loadStaticRoadDatabase()
+    return roadsFromGeoJSON(mapFromSegmentRecords(db.segments).fc)
+  } catch (e) {
+    console.warn('靜態道路資料庫載入失敗，退回 LanePilot shard', e)
+  }
   try {
     const texts = await Promise.all(DEFAULT_SHARD_URLS.map(async (u) => {
       const r = await fetch(u)

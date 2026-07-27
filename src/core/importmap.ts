@@ -54,6 +54,56 @@ function annotationRecord(rec: Record<string, unknown>): AnnotationRecord | null
   }
 }
 
+/** 單筆 nav_segment → 底圖 Feature（jsonl 逐行與靜態資料庫 segments 共用） */
+function segmentFeature(rec: Record<string, unknown>): Feature<LineString> | null {
+  const identity = rec.object_identity as Record<string, unknown> | undefined
+  if (String(identity?.object_type ?? '') !== 'nav_segment') return null
+  const geometry = rec.geometry as LineString | undefined
+  if (!geometry || geometry.type !== 'LineString') return null
+  const laneNav = (rec.lane_nav_tags ?? {}) as Record<string, unknown>
+  const tags = (rec.osm_raw_tags ?? {}) as Record<string, string>
+  const nodeRefs = rec.node_refs as number[] | undefined
+  return {
+    type: 'Feature',
+    geometry,
+    properties: {
+      osm_id: (identity!.source_osm as Record<string, unknown>).osm_id,
+      name: tags.name ?? (laneNav.road_name as string | undefined),
+      highway: tags.highway ?? (laneNav.road_class as string | undefined),
+      oneway: tags.oneway,
+      maxspeed: tags.maxspeed,
+      motorcycle: tags.motorcycle,
+      motorcar: tags.motorcar,
+      junction: tags.junction,
+      bridge: tags.bridge,
+      layer: tags.layer,
+      tunnel: tags.tunnel,
+      lanes: tags.lanes,
+      lanes_forward: tags['lanes:forward'],
+      lanes_backward: tags['lanes:backward'],
+      turn_lanes: tags['turn:lanes'],
+      turn_lanes_forward: tags['turn:lanes:forward'],
+      nodes: nodeRefs ?? [],
+    },
+  }
+}
+
+/** 靜態道路資料庫 segments（已解析的 nav_segment 陣列）→ 底圖。
+ * 捏合後同一 osm_id 可能拆成多筆（split_index），全數保留不去重——
+ * 區塊識別靠 osm_id + blockNode，graph 拓撲靠共用 node 接起來。 */
+export function mapFromSegmentRecords(
+  records: Record<string, unknown>[],
+): Extract<ImportResult, { kind: 'map' }> {
+  const features: Feature<LineString>[] = []
+  for (const rec of records) {
+    const feature = segmentFeature(rec)
+    if (feature) features.push(feature)
+  }
+  if (!features.length) throw new Error('沒有可用的 nav_segment 路段')
+  const fc: FeatureCollection<LineString> = { type: 'FeatureCollection', features }
+  return { kind: 'map', fc, total: features.length, withNodes: countNodes(fc) }
+}
+
 export function parseImported(text: string): ImportResult {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('檔案是空的')
@@ -73,7 +123,6 @@ export function parseImported(text: string): ImportResult {
   // JSONL：逐行解析，路段與標註分開收
   const features: Feature<LineString>[] = []
   const annotations: AnnotationRecord[] = []
-  let withNodes = 0
   for (const line of trimmed.split('\n')) {
     if (!line.trim()) continue
     let rec: Record<string, unknown>
@@ -82,48 +131,19 @@ export function parseImported(text: string): ImportResult {
     } catch {
       throw new Error('不是有效的 JSONL（某一行無法解析）')
     }
-    const identity = rec.object_identity as Record<string, unknown> | undefined
-    const objType = String(identity?.object_type ?? '')
-    const laneNav = (rec.lane_nav_tags ?? {}) as Record<string, unknown>
-
-    if (objType.includes('annotation')) {
+    if (String((rec.object_identity as Record<string, unknown> | undefined)?.object_type ?? '')
+      .includes('annotation')) {
       const ann = annotationRecord(rec)
       if (ann) annotations.push(ann)
       continue
     }
-
-    const geometry = rec.geometry as LineString | undefined
-    if (objType !== 'nav_segment' || !geometry || geometry.type !== 'LineString') continue
-    const tags = (rec.osm_raw_tags ?? {}) as Record<string, string>
-    const nodeRefs = rec.node_refs as number[] | undefined
-    if (nodeRefs && nodeRefs.length === geometry.coordinates.length) withNodes++
-    features.push({
-      type: 'Feature',
-      geometry,
-      properties: {
-        osm_id: (identity!.source_osm as Record<string, unknown>).osm_id,
-        name: tags.name ?? (laneNav.road_name as string | undefined),
-        highway: tags.highway ?? (laneNav.road_class as string | undefined),
-        oneway: tags.oneway,
-        maxspeed: tags.maxspeed,
-        motorcycle: tags.motorcycle,
-        motorcar: tags.motorcar,
-        junction: tags.junction,
-        bridge: tags.bridge,
-        layer: tags.layer,
-        tunnel: tags.tunnel,
-        lanes: tags.lanes,
-        lanes_forward: tags['lanes:forward'],
-        lanes_backward: tags['lanes:backward'],
-        turn_lanes: tags['turn:lanes'],
-        turn_lanes_forward: tags['turn:lanes:forward'],
-        nodes: nodeRefs ?? [],
-      },
-    })
+    const feature = segmentFeature(rec)
+    if (feature) features.push(feature)
   }
 
   if (features.length) {
-    return { kind: 'map', fc: { type: 'FeatureCollection', features }, total: features.length, withNodes }
+    const fc: FeatureCollection<LineString> = { type: 'FeatureCollection', features }
+    return { kind: 'map', fc, total: features.length, withNodes: countNodes(fc) }
   }
   if (annotations.length) return { kind: 'annotations', records: annotations }
   throw new Error('檔案裡沒有可用的內容（需要 segments.jsonl、annotations.jsonl 或路網 GeoJSON）')

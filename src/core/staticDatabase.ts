@@ -1,13 +1,4 @@
-import type { EnhancementRecord } from './enhancements'
-import type { Zone } from './zones'
 import { asset } from './asset'
-
-export interface StaticEditorState {
-  updated_at: string
-  journal: EnhancementRecord[]
-  waiting_zones: Zone[]
-  deleted_waiting_zone_ids: string[]
-}
 
 export interface StaticRoadDatabase {
   format: 'lanedev-static-road-database-v1'
@@ -15,105 +6,35 @@ export interface StaticRoadDatabase {
   regions: { area_id: string; name: string }[]
   segments: Record<string, unknown>[]
   annotations: Record<string, unknown>[]
-  editor: StaticEditorState
+  /** anna 分支留下的編輯狀態快照（journal/待轉區）。**不讀取**：編輯狀態的
+   * 權威來源仍是 localStorage（seed_journal 機制），貿然鏡像會把使用者的
+   * 本地編輯蓋掉。/api/static-road-database/editor 寫入端保留，待日後
+   * 設計好與 seed_journal / couplet remap 的整合再接。 */
+  editor?: unknown
 }
 
 // 走 asset()：Pages 是 project site（base=/LaneDev/），寫死 /data/… 線上會 404。
 // 註：寫入端（/api/static-road-database/*）只有 vite dev middleware 有，線上無法寫。
 const DATABASE_URL = asset('/data/road_database.json')
-const LOCAL_UPDATED_KEY = 'lanedev-static-editor-updated-at'
 
 let database: StaticRoadDatabase | null = null
-let saveTimer: number | null = null
 
-function emptyEditor(): StaticEditorState {
-  return {
-    updated_at: '',
-    journal: [],
-    waiting_zones: [],
-    deleted_waiting_zone_ids: [],
-  }
-}
-
+/** 唯一靜態道路資料庫：底圖 segments 的權威來源（捏合結果的讀取端）。
+ * no-store：捏合改寫檔案後 reload 必須拿到新內容，不能吃 HTTP 快取。 */
 export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
   if (database) return database
   const response = await fetch(DATABASE_URL, { cache: 'no-store' })
-  if (!response.ok) throw new Error(`讀取唯一靜態道路資料庫失敗（HTTP ${response.status}）`)
-  database = await response.json() as StaticRoadDatabase
-  database.editor ??= emptyEditor()
-
-  // One-time migration: data already edited in this browser predates the static
-  // database. Browser edits are authoritative, so migrate them into the file.
-  const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY)
-  const localJournal = localStorage.getItem('navsim-journal-v1')
-  const localZones = localStorage.getItem('navsim-zones-v2')
-  const localDeleted = localStorage.getItem('navsim-zones-deleted-v1')
-  const hasLegacyLocalData = Boolean(localJournal || localZones || localDeleted)
-  const localIsNewer = localUpdatedAt
-    ? localUpdatedAt > (database.editor.updated_at || '')
-    : hasLegacyLocalData && !database.editor.updated_at
-  if (localIsNewer) {
-    try {
-      if (localJournal) database.editor.journal = JSON.parse(localJournal)
-      if (localZones) database.editor.waiting_zones = JSON.parse(localZones)
-      if (localDeleted) database.editor.deleted_waiting_zone_ids = JSON.parse(localDeleted)
-      database.editor.updated_at = localUpdatedAt || new Date().toISOString()
-      scheduleStaticEditorSave(0)
-    } catch {
-      // Invalid legacy browser data must never replace the canonical file.
-    }
-  } else {
-    mirrorEditorToBrowser(database.editor)
+  if (!response.ok) throw new Error(`讀取靜態道路資料庫失敗（HTTP ${response.status}）`)
+  const parsed = await response.json() as StaticRoadDatabase
+  if (!Array.isArray(parsed.segments) || parsed.segments.length === 0) {
+    throw new Error('靜態道路資料庫沒有 segments')
   }
+  database = parsed
   return database
 }
 
-export function staticSegments(): Record<string, unknown>[] {
-  return database?.segments ?? []
-}
-
-export function hasStaticRoadDatabase(): boolean {
-  return database !== null
-}
-
-export function staticAnnotations(): Record<string, unknown>[] {
-  return database?.annotations ?? []
-}
-
-export function staticJournal(): EnhancementRecord[] {
-  return database?.editor.journal ?? []
-}
-
-export function staticZones(): Zone[] {
-  return database?.editor.waiting_zones ?? []
-}
-
-export function staticDeletedZoneIds(): string[] {
-  return database?.editor.deleted_waiting_zone_ids ?? []
-}
-
-function mirrorEditorToBrowser(editor: StaticEditorState) {
-  localStorage.setItem('navsim-journal-v1', JSON.stringify(editor.journal))
-  localStorage.setItem('navsim-zones-v2', JSON.stringify(editor.waiting_zones))
-  localStorage.setItem(
-    'navsim-zones-deleted-v1',
-    JSON.stringify(editor.deleted_waiting_zone_ids),
-  )
-  localStorage.setItem(LOCAL_UPDATED_KEY, editor.updated_at)
-}
-
-export function updateStaticEditor(patch: Partial<StaticEditorState>) {
-  if (!database) return
-  database.editor = {
-    ...database.editor,
-    ...patch,
-    updated_at: new Date().toISOString(),
-  }
-  mirrorEditorToBrowser(database.editor)
-  scheduleStaticEditorSave()
-}
-
-/** 直接把兩筆活躍靜態 OSM segment 捏合；成功後須重新載入資料庫。 */
+/** 直接把兩筆活躍靜態 OSM segment 捏合（vite dev middleware 改寫檔案）；
+ * 成功後呼叫端要遷移 live journal 鍵（migrateJournalForStaticMerge）再整頁重載。 */
 export async function mergeStaticRoadSegments(
   primary: string,
   secondary: string,
@@ -129,22 +50,4 @@ export async function mergeStaticRoadSegments(
     throw new Error(detail || `HTTP ${response.status}`)
   }
   database = null
-}
-
-export function scheduleStaticEditorSave(delayMs = 350) {
-  if (!database) return
-  if (saveTimer !== null) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(async () => {
-    saveTimer = null
-    try {
-      const response = await fetch('/api/static-road-database/editor', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(database!.editor),
-      })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    } catch (error) {
-      console.error('靜態道路資料庫寫入失敗；瀏覽器備援仍保留本次修改', error)
-    }
-  }, delayMs)
 }

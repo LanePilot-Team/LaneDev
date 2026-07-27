@@ -376,6 +376,57 @@ export function journalForMergedRoads(journal: EnhancementRecord[]): Enhancement
   })
 }
 
+/**
+ * 靜態捏合（mergeStaticRoadSegments）成功後，把「活」journal（localStorage）
+ * 跟著遷移——與 vite middleware 對 road_database.json 內嵌快照做的是同一套語意：
+ * 捏合會把兩個 way 的中間 node 換成合成 id，區塊結構重排，舊 @b/ 鍵全數失效，
+ * 所以兩個 way 的 road 區塊覆寫收斂成主 way 的 way 級覆寫（以主區塊現值為準）；
+ * 次 way 的路口元件鍵（turn_bay/right_lane/moto_box）改掛主 way。
+ * 回存 localStorage 後由呼叫端整頁重載。
+ */
+export function migrateJournalForStaticMerge(
+  journal: EnhancementRecord[], primaryKey: string, secondaryKey: string,
+): EnhancementRecord[] {
+  const pm = primaryKey.match(/^way\/(-?\d+)@b\/-?\d+$/)
+  const sm = secondaryKey.match(/^way\/(-?\d+)@b\/-?\d+$/)
+  if (!pm || !sm) return journal
+  const p = pm[1]
+  const s = sm[1]
+  const masterFields: Record<string, string | number> = {}
+  for (const rec of journal) {
+    if (rec.op !== 'set' || rec.target.type !== 'road') continue
+    if (rec.target.key === `way/${p}` || rec.target.key === primaryKey) {
+      Object.assign(masterFields, rec.fields ?? {})
+    }
+  }
+  const isMergedRoadKey = (key: string) =>
+    key === `way/${p}` || key.startsWith(`way/${p}@b/`)
+    || key === `way/${s}` || key.startsWith(`way/${s}@b/`)
+  const migrated: EnhancementRecord[] = []
+  for (const rec of journal) {
+    const key = rec.target.key
+    if (rec.target.type === 'road' && isMergedRoadKey(key)) continue
+    if (rec.target.type === 'road_merge'
+      && (key.includes(`way/${p}@`) || key.includes(`way/${s}@`))) continue
+    migrated.push(key.startsWith(`way/${s}@`)
+      ? { ...rec, target: { ...rec.target, key: key.replace(`way/${s}@`, `way/${p}@`) } }
+      : rec)
+  }
+  if (Object.keys(masterFields).length) {
+    migrated.push({
+      seq: 0,
+      ts: new Date().toISOString(),
+      author: getAuthor(),
+      op: 'set',
+      target: { type: 'road', key: `way/${p}` },
+      fields: masterFields,
+    })
+  }
+  const out = migrated.map((rec, i) => ({ ...rec, seq: i + 1 }))
+  localStorage.setItem(JOURNAL_KEY, JSON.stringify(out))
+  return out
+}
+
 /** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型
  * + 偏心左轉道 + 右轉附加車道 */
 export function exportEnhancements(

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
+  appendRecord, applyToRoads, checkRoadMerge, foldJournal, migrateJournalForStaticMerge,
 } from '../core/enhancements'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
@@ -374,7 +374,13 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             ? firstNodes[0]
             : firstNodes[firstNodes.length - 1]
           void mergeStaticRoadSegments(check.primaryKey, check.secondaryKey, joinNode)
-            .then(() => window.location.reload())
+            .then(() => {
+              // 資料庫已改寫：live journal 的區塊鍵/元件鍵跟著遷移再重載，
+              // 否則舊鍵指向已消失的區塊，覆寫會靜默失效。
+              core.journalRef.current = migrateJournalForStaticMerge(
+                core.journalRef.current, check.primaryKey, check.secondaryKey)
+              window.location.reload()
+            })
             .catch((error) => {
               warn(`靜態 OSM 捏合失敗：${error instanceof Error ? error.message : String(error)}`)
             })

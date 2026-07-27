@@ -78,12 +78,26 @@ export interface EditRoadState {
   /** 兩向偏心道轉向（BAY_TURN_CYCLE 值）；*0 = 開面板時的初值，儲存只寫差異 */
   bayF: string; bayB: string
   bayF0: string; bayB0: string
+  /** 單邊偏心道另一端的處理；雙邊使用時此值不參與幾何。 */
+  baySingleMode: 'capped' | 'ignore'
+  baySingleMode0: 'capped' | 'ignore'
   /** 兩向地面規則（GROUND_RULES code，順序 = 選取順序 = 印字由上往下） */
   laneMarksF: (LaneMark | null)[]; laneMarksB: (LaneMark | null)[]
-  /** 機車停等格涵蓋車道數（自最外側往內；0 = 關閉）與合法上限；*0 = 開面板初值 */
+  /** 機車停等格涵蓋車道數及自駕駛視角左→右的起訖範圍；*0 = 開面板初值 */
   motoBoxF: number; motoBoxB: number
   motoBoxF0: number; motoBoxB0: number
   motoBoxMaxF: number; motoBoxMaxB: number
+  motoBoxStartF: number; motoBoxEndF: number
+  motoBoxStartB: number; motoBoxEndB: number
+  motoBoxStartF0: number; motoBoxEndF0: number
+  motoBoxStartB0: number; motoBoxEndB0: number
+  motoBoxSlotsF: number; motoBoxSlotsB: number
+  motoBoxMinF: number; motoBoxMinB: number
+  /** 路口末端才分出的右轉專用道（獨立於整段基本車道數）。 */
+  rightLaneF: boolean; rightLaneB: boolean
+  rightLaneF0: boolean; rightLaneB0: boolean
+  rightLaneLenF: number; rightLaneLenB: number
+  rightLaneLenF0: number; rightLaneLenB0: number
 }
 
 export interface Editor {
@@ -285,6 +299,10 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
       const bayF = bayOf(`way/${p2.osm_id}@node/${nodeLast}`)
       const bayB = bayOf(`way/${p2.osm_id}@node/${nodeFirst}~b`)
+      const activeBay = core.baysRef.current.find((b) =>
+        b.key === `way/${p2.osm_id}@node/${nodeLast}`
+        || b.key === `way/${p2.osm_id}@node/${nodeFirst}~b`)
+      const baySingleMode = activeBay?.singleMode ?? 'capped'
       // 地面規則現況（無人工設定時顯示 fallback，讓使用者看到現有印字的來源）
       const rulesF = p2.rulesF ?? (p2.motorcycle === 'no' ? ['no_moto'] : [])
       const rulesB = p2.oneway === 'no'
@@ -303,16 +321,30 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         core.motoBoxesRef.current.find((m) => m.dir === dirKey)
       const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
       const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
+      const rlF = core.rightLanesRef.current.find((r) =>
+        r.wayId === p2.osm_id && r.nodeId === nodeLast && !r.back)
+      const rlB = core.rightLanesRef.current.find((r) =>
+        r.wayId === p2.osm_id && r.nodeId === nodeFirst && r.back)
       // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
       // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
       // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
       const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
-      const inferMotoBoxMax = (back: boolean) => {
+      const inferMotoBox = (back: boolean) => {
         const edge = back ? backwardEdge : forwardEdge
-        if (!motoBoxSlot || !edge) return 0
+        if (!motoBoxSlot || !edge) return { max: 0, start: 0, end: 0 }
         const slot = motoBoxSlot(edge)
-        return slot.eligible && !slot.sepIsland ? slot.maxLanes : 0
+        if (!slot.eligible || slot.sepIsland) return { max: 0, start: 0, end: 0 }
+        const lanes = p2.oneway === 'yes'
+          ? p2.lanesForward : back ? p2.lanesBackward : p2.lanesForward
+        const moto = p2.oneway === 'yes' ? p2.motoF : back ? p2.motoB : p2.motoF
+        return {
+          max: slot.maxLanes,
+          start: slot.firstLegalLane,
+          end: lanes + (moto ? 1 : 0),
+        }
       }
+      const inferredF = inferMotoBox(false)
+      const inferredB = inferMotoBox(true)
       const motoBoxF = mbF?.coveredLanes ?? 0
       const motoBoxB = mbB?.coveredLanes ?? 0
       setEditRoad({
@@ -321,8 +353,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         f: p2.lanesForward, b: p2.lanesBackward,
         motoF: p2.motoF, motoB: p2.motoB,
         motoSepF: p2.motoSepF || 0, motoSepB: p2.motoSepB || 0,
-        motoEntryIconF: p2.motoEntryIconF !== false,
-        motoEntryIconB: p2.motoEntryIconB !== false,
+        motoEntryIconF: !!p2.motoEntryIconF,
+        motoEntryIconB: !!p2.motoEntryIconB,
         motoTextDiamondF: !!p2.motoTextDiamondF,
         motoTextDiamondB: !!p2.motoTextDiamondB,
         stopLineF: p2.stopLineF !== false,
@@ -349,10 +381,29 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
         nodeFirst, nodeLast,
         bayF, bayB, bayF0: bayF, bayB0: bayB,
+        baySingleMode, baySingleMode0: baySingleMode,
         laneMarksF, laneMarksB,
         motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
-        motoBoxMaxF: mbF?.maxLanes ?? inferMotoBoxMax(false),
-        motoBoxMaxB: mbB?.maxLanes ?? inferMotoBoxMax(true),
+        motoBoxMaxF: mbF?.maxLanes ?? inferredF.max,
+        motoBoxMaxB: mbB?.maxLanes ?? inferredB.max,
+        motoBoxStartF: mbF?.startLane ?? inferredF.start,
+        motoBoxEndF: mbF?.endLane ?? inferredF.end,
+        motoBoxStartB: mbB?.startLane ?? inferredB.start,
+        motoBoxEndB: mbB?.endLane ?? inferredB.end,
+        motoBoxStartF0: mbF?.startLane ?? inferredF.start,
+        motoBoxEndF0: mbF?.endLane ?? inferredF.end,
+        motoBoxStartB0: mbB?.startLane ?? inferredB.start,
+        motoBoxEndB0: mbB?.endLane ?? inferredB.end,
+        motoBoxSlotsF: p2.lanesForward + (p2.motoF ? 1 : 0) + (rlF ? 1 : 0),
+        motoBoxSlotsB: p2.lanesBackward + (p2.motoB ? 1 : 0) + (rlB ? 1 : 0),
+        motoBoxMinF: inferredF.start,
+        motoBoxMinB: inferredB.start,
+        rightLaneF: !!rlF, rightLaneB: !!rlB,
+        rightLaneF0: !!rlF, rightLaneB0: !!rlB,
+        rightLaneLenF: Math.round(rlF?.lenM ?? 20),
+        rightLaneLenB: Math.round(rlB?.lenM ?? 20),
+        rightLaneLenF0: Math.round(rlF?.lenM ?? 20),
+        rightLaneLenB0: Math.round(rlB?.lenM ?? 20),
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -468,11 +519,25 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       },
     })
     // 偏心道轉向（有動才寫）：none = 該行向關閉、其餘 = 開啟並指定轉向
+    const singleBayModeApplies =
+      (editRoad.bayF !== 'none') !== (editRoad.bayB !== 'none')
     const writeBay = (key: string, v: string, v0: string) => {
-      if (v === v0) return
+      const modeChanged = singleBayModeApplies && v !== 'none'
+        && editRoad.baySingleMode !== editRoad.baySingleMode0
+      // 單邊模式必須把未使用端明確寫成 present:0。只靠畫面上的 none 不夠：
+      // 若該端沒有 journal 覆寫，refreshBays 會依自動左轉配對再次生成，造成
+      // 第一次儲存短暫變成雙邊使用、第二次關閉才生效。
+      const lockUnusedEnd = singleBayModeApplies && v === 'none'
+      if (v === v0 && !modeChanged && !lockUnusedEnd) return
       core.journalRef.current = appendRecord(core.journalRef.current, {
         op: 'set', target: { type: 'turn_bay', key },
-        fields: v === 'none' ? { present: 0 } : { present: 1, turns: v },
+        fields: v === 'none'
+          ? { present: 0 }
+          : {
+            present: 1,
+            turns: v,
+            ...(singleBayModeApplies ? { single_mode: editRoad.baySingleMode } : {}),
+          },
       })
     }
     const bayKeyF = `way/${editRoad.osmId}@node/${editRoad.nodeLast}`
@@ -481,19 +546,63 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       writeBay(bayKeyF, editRoad.bayF, editRoad.bayF0)
       writeBay(bayKeyB, editRoad.bayB, editRoad.bayB0)
     }
-    // 機車停等格涵蓋車道數（有動才寫）：lanes = 涵蓋數，0 = 關閉
-    const writeMotoBox = (nodeId: number, back: boolean, v: number, v0: number) => {
-      if (v === v0) return
+    // 路口末端右轉專用道：只是末端分流，不改整段基本車道數。
+    const writeRightLane = (
+      nodeId: number, back: boolean, enabled: boolean, enabled0: boolean,
+      lenM: number, lenM0: number,
+    ) => {
+      if (enabled === enabled0 && lenM === lenM0) return
       core.journalRef.current = appendRecord(core.journalRef.current, {
-        op: 'set', target: { type: 'moto_box', key: `way/${editRoad.osmId}@node/${nodeId}${back ? '~b' : ''}~m` },
-        fields: { lanes: v },
+        op: 'set',
+        target: {
+          type: 'right_lane',
+          key: `way/${editRoad.osmId}@node/${nodeId}${back ? '~b' : ''}~r`,
+        },
+        fields: { present: enabled ? 1 : 0, len_m: lenM },
       })
     }
-    writeMotoBox(editRoad.nodeLast, false, editRoad.motoBoxF, editRoad.motoBoxF0)
+    writeRightLane(
+      editRoad.nodeLast, false, editRoad.rightLaneF, editRoad.rightLaneF0,
+      editRoad.rightLaneLenF, editRoad.rightLaneLenF0)
     if (editRoad.oneway === 'no') {
-      writeMotoBox(editRoad.nodeFirst, true, editRoad.motoBoxB, editRoad.motoBoxB0)
+      writeRightLane(
+        editRoad.nodeFirst, true, editRoad.rightLaneB, editRoad.rightLaneB0,
+        editRoad.rightLaneLenB, editRoad.rightLaneLenB0)
     }
-    applyToRoads(core.roadsRef.current, foldJournal(core.journalRef.current))
+    // 機車停等格以左→右的起訖車道保存；lanes 同時保留供舊版相容。
+    const writeMotoBox = (
+      nodeId: number, back: boolean, v: number, v0: number,
+      start: number, end: number, start0: number, end0: number,
+    ) => {
+      if (v === v0 && start === start0 && end === end0) return
+      core.journalRef.current = appendRecord(core.journalRef.current, {
+        op: 'set',
+        target: {
+          type: 'moto_box',
+          key: `way/${editRoad.osmId}@node/${nodeId}${back ? '~b' : ''}~m`,
+        },
+        fields: v > 0
+          ? { lanes: Math.max(0, end - start), start_lane: start, end_lane: end }
+          : { lanes: 0, start_lane: 0, end_lane: 0 },
+      })
+    }
+    writeMotoBox(
+      editRoad.nodeLast, false, editRoad.motoBoxF, editRoad.motoBoxF0,
+      editRoad.motoBoxStartF, editRoad.motoBoxEndF,
+      editRoad.motoBoxStartF0, editRoad.motoBoxEndF0,
+    )
+    if (editRoad.oneway === 'no') {
+      writeMotoBox(
+        editRoad.nodeFirst, true, editRoad.motoBoxB, editRoad.motoBoxB0,
+        editRoad.motoBoxStartB, editRoad.motoBoxEndB,
+        editRoad.motoBoxStartB0, editRoad.motoBoxEndB0,
+      )
+    }
+    // 本次只變更一個 OSM block，不需要把完整 journal 重套到所有道路。
+    const changedRoads = core.roadsRef.current.filter((road) =>
+      road.properties.osm_id === editRoad.osmId
+      && road.properties.blockNode === editRoad.blockNode)
+    applyToRoads(changedRoads, foldJournal(core.journalRef.current))
     // 編輯即所見：路寬與車道線立即重繪（bay 橫向位置依斷面寬，也要跟著動）
     core.redrawRoads()
     core.refreshBays()

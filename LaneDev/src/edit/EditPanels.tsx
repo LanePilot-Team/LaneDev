@@ -18,6 +18,84 @@ const resizeDirectionMarks = (marks: (LaneMark | null)[], oldCars: number, newCa
   return [...resizeLaneMarks(marks.slice(0, oldCars), newCars), ...(moto ? [motoMark] : [])]
 }
 
+const ARROW_OPTION_LABEL: Record<string, string> = {
+  through: '↑',
+  left: '↰',
+  right: '↱',
+  'left;through': '↰↑',
+  'through;right': '↑↱',
+  'through+right': '↑＋↱',
+  'left;right': '↰↱',
+  reverse: '↩',
+}
+
+/** 箭頭樣式直接下拉選取，不再逐次循環。 */
+function ArrowStyleSelect({ value, onChange, label }: {
+  value: string
+  onChange: (value: string) => void
+  label: string
+}) {
+  return (
+    <select
+      className="lane-pick arrow-style-select"
+      value={value}
+      aria-label={label}
+      title={label}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {TURN_CYCLE.map((option) => (
+        <option key={option} value={option}>
+          {ARROW_OPTION_LABEL[option] ?? TURN_EDIT_GLYPH[option] ?? option}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function MotoBoxRangeEditor({ label, enabled, start, end, min, slots, laneLabel, onChange }: {
+  label: string
+  enabled: boolean
+  start: number
+  end: number
+  min: number
+  slots: number
+  laneLabel: (index: number) => string
+  onChange: (enabled: boolean, start: number, end: number) => void
+}) {
+  const safeStart = Math.max(min, Math.min(Math.max(min, slots - 1), start))
+  const safeEnd = Math.max(safeStart + 1, Math.min(slots, end))
+  return (
+    <div className="lane-mark-group">
+      <div className="edit-row">
+        <span>{label}機車停等格</span>
+        <button className={`mini${enabled ? ' on' : ''}`}
+          onClick={() => onChange(!enabled, safeStart, safeEnd)}>
+          {enabled ? '已開啟' : '關閉'}
+        </button>
+      </div>
+      {enabled && slots > 0 && (
+        <div className="edit-row" style={{ flexWrap: 'wrap' }}>
+          <span>涵蓋範圍</span>
+          <select value={safeStart}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              onChange(true, next, Math.max(next + 1, safeEnd))
+            }}>
+            {Array.from({ length: Math.max(0, slots - min) }, (_, i) => min + i)
+              .map((i) => <option key={i} value={i}>從 {laneLabel(i)}</option>)}
+          </select>
+          <span>至</span>
+          <select value={safeEnd}
+            onChange={(e) => onChange(true, safeStart, Number(e.target.value))}>
+            {Array.from({ length: Math.max(0, slots - safeStart) }, (_, i) => safeStart + i + 1)
+              .map((i) => <option key={i} value={i}>{laneLabel(i - 1)}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 地面規則選取列（點選加入/移除；選取順序 = 從路口入口沿行進方向排列） */
 function LaneMarkEditor({ label, marks, carLanes, hasMoto, onChange }: {
   label: string; marks: (LaneMark | null)[]; carLanes: number; hasMoto: boolean
@@ -277,18 +355,40 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         </div>
       )}
       {editRoad.oneway === 'no' && editRoad.centerKind !== 'island' && editRoad.centerM > 0 && (
-        <div className="edit-row">
-          <span>中央偏心道用途</span>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, bayF: BAY_TURN_CYCLE[(BAY_TURN_CYCLE.indexOf(er.bayF) + 1) % BAY_TURN_CYCLE.length],
-          }))}>{editRoad.fwdLabel} {BAY_TURN_GLYPH[editRoad.bayF] ?? '無'}</button>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, bayB: BAY_TURN_CYCLE[(BAY_TURN_CYCLE.indexOf(er.bayB) + 1) % BAY_TURN_CYCLE.length],
-          }))}>{editRoad.bwdLabel} {BAY_TURN_GLYPH[editRoad.bayB] ?? '無'}</button>
-        </div>
+        <>
+          <div className="edit-row">
+            <span>中央偏心道用途</span>
+            <button className="mini" onClick={() => setEditRoad((er) => er && ({
+              ...er, bayF: BAY_TURN_CYCLE[(BAY_TURN_CYCLE.indexOf(er.bayF) + 1) % BAY_TURN_CYCLE.length],
+            }))}>{editRoad.fwdLabel} {BAY_TURN_GLYPH[editRoad.bayF] ?? '無'}</button>
+            <button className="mini" onClick={() => setEditRoad((er) => er && ({
+              ...er, bayB: BAY_TURN_CYCLE[(BAY_TURN_CYCLE.indexOf(er.bayB) + 1) % BAY_TURN_CYCLE.length],
+            }))}>{editRoad.bwdLabel} {BAY_TURN_GLYPH[editRoad.bayB] ?? '無'}</button>
+          </div>
+          {editRoad.bayF !== 'none' && editRoad.bayB !== 'none' ? (
+            <div className="edit-row">
+              <span>偏心道格式</span>
+              <b>雙邊使用</b>
+            </div>
+          ) : (editRoad.bayF !== 'none' || editRoad.bayB !== 'none') && (
+            <div className="edit-row" style={{ alignItems: 'stretch' }}>
+              <span>偏心道格式</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                <button className={`mini${editRoad.baySingleMode === 'capped' ? ' on' : ''}`}
+                  onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'capped' }))}>
+                  單邊使用，另一端封口
+                </button>
+                <button className={`mini${editRoad.baySingleMode === 'ignore' ? ' on' : ''}`}
+                  onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'ignore' }))}>
+                  單邊使用，另一端完全忽略
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       <div className="edit-row">
-        <span><b className="row-title">{editRoad.fwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span>
+        <span><b className="row-title">{editRoad.fwdLabel}車道箭頭</b></span>
         <button
           className={`mini${editRoad.arrowDisplayF ? ' on' : ''}`}
           onClick={() => setEditRoad((er) => er && ({ ...er, arrowDisplayF: !er.arrowDisplayF }))}
@@ -296,12 +396,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       </div>
       <div className="edit-lanes">
         {editRoad.turnLanes.map((v, i) => (
-          <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
-            if (!er) return er
-            const next = [...er.turnLanes]
-            next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
-            return { ...er, turnLanes: next }
-          })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+          <ArrowStyleSelect key={i} value={v} label={`${editRoad.fwdLabel}第 ${i + 1} 車道箭頭`}
+            onChange={(value) => setEditRoad((er) => {
+              if (!er) return er
+              const next = [...er.turnLanes]
+              next[i] = value
+              return { ...er, turnLanes: next }
+            })} />
         ))}
       </div>
       {editRoad.segmentLengthM >= 50 && editRoad.bayF !== 'none' && (
@@ -319,12 +420,14 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           {editRoad.startArrowDisplayF && (
             <div className="edit-lanes">
               {editRoad.startTurnLanes.map((v, i) => (
-                <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
-                  if (!er) return er
-                  const next = [...er.startTurnLanes]
-                  next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
-                  return { ...er, startTurnLanes: next }
-                })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+                <ArrowStyleSelect key={i} value={v}
+                  label={`${editRoad.fwdLabel}道路開頭第 ${i + 1} 車道箭頭`}
+                  onChange={(value) => setEditRoad((er) => {
+                    if (!er) return er
+                    const next = [...er.startTurnLanes]
+                    next[i] = value
+                    return { ...er, startTurnLanes: next }
+                  })} />
               ))}
             </div>
           )}
@@ -333,7 +436,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       {editRoad.oneway === 'no' && (
         <>
           <div className="edit-row">
-            <span><b className="row-title">{editRoad.bwdLabel}車道箭頭</b>依該方向駕駛視角，由左至右排列；點擊圖示切換。</span>
+            <span><b className="row-title">{editRoad.bwdLabel}車道箭頭</b></span>
             <button
               className={`mini${editRoad.arrowDisplayB ? ' on' : ''}`}
               onClick={() => setEditRoad((er) => er && ({ ...er, arrowDisplayB: !er.arrowDisplayB }))}
@@ -341,12 +444,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </div>
           <div className="edit-lanes">
             {editRoad.turnLanesB.map((v, i) => (
-              <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
-                if (!er) return er
-                const next = [...er.turnLanesB]
-                next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
-                return { ...er, turnLanesB: next }
-              })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+              <ArrowStyleSelect key={i} value={v} label={`${editRoad.bwdLabel}第 ${i + 1} 車道箭頭`}
+                onChange={(value) => setEditRoad((er) => {
+                  if (!er) return er
+                  const next = [...er.turnLanesB]
+                  next[i] = value
+                  return { ...er, turnLanesB: next }
+                })} />
             ))}
           </div>
           {editRoad.segmentLengthM >= 50 && editRoad.bayB !== 'none' && (
@@ -364,12 +468,14 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               {editRoad.startArrowDisplayB && (
                 <div className="edit-lanes">
                   {editRoad.startTurnLanesB.map((v, i) => (
-                    <button key={i} className="lane-pick" onClick={() => setEditRoad((er) => {
-                      if (!er) return er
-                      const next = [...er.startTurnLanesB]
-                      next[i] = TURN_CYCLE[(TURN_CYCLE.indexOf(v) + 1) % TURN_CYCLE.length]
-                      return { ...er, startTurnLanesB: next }
-                    })}>{TURN_EDIT_GLYPH[v] ?? '↑'}</button>
+                    <ArrowStyleSelect key={i} value={v}
+                      label={`${editRoad.bwdLabel}道路開頭第 ${i + 1} 車道箭頭`}
+                      onChange={(value) => setEditRoad((er) => {
+                        if (!er) return er
+                        const next = [...er.startTurnLanesB]
+                        next[i] = value
+                        return { ...er, startTurnLanesB: next }
+                      })} />
                   ))}
                 </div>
               )}
@@ -377,31 +483,98 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           )}
         </>
       )}
-      {editRoad.motoBoxMaxF > 0 && (
+      <div className="edit-row">
+        <span>
+          <b className="row-title">{editRoad.fwdLabel}路口前右轉專用道</b>
+          僅在末端展寬，不改變整段基本車道數。
+        </span>
+        <button className={`mini${editRoad.rightLaneF ? ' on' : ''}`}
+          onClick={() => setEditRoad((er) => er && ({
+            ...er,
+            rightLaneF: !er.rightLaneF,
+            motoBoxSlotsF: Math.max(1, er.motoBoxSlotsF + (er.rightLaneF ? -1 : 1)),
+            motoBoxEndF: er.rightLaneF
+              ? Math.min(er.motoBoxEndF, er.motoBoxSlotsF - 1)
+              : er.motoBoxEndF,
+          }))}>
+          {editRoad.rightLaneF ? '已新增' : '不新增'}
+        </button>
+        {editRoad.rightLaneF && <>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, rightLaneLenF: Math.max(10, er.rightLaneLenF - 5),
+          }))}>−5m</button>
+          <b>{editRoad.rightLaneLenF}m</b>
+          <button className="mini" onClick={() => setEditRoad((er) => er && ({
+            ...er, rightLaneLenF: Math.min(60, er.rightLaneLenF + 5),
+          }))}>＋5m</button>
+        </>}
+      </div>
+      {editRoad.oneway === 'no' && (
         <div className="edit-row">
-          <span>{editRoad.fwdLabel}機車停等格</span>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, motoBoxF: Math.max(0, er.motoBoxF - 1),
-          }))}>−</button>
-          <b>{editRoad.motoBoxF === 0 ? '關閉' : `外側 ${editRoad.motoBoxF} 道`}</b>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, motoBoxF: Math.min(er.motoBoxMaxF, er.motoBoxF + 1),
-          }))}>＋</button>
+          <span><b className="row-title">{editRoad.bwdLabel}路口前右轉專用道</b></span>
+          <button className={`mini${editRoad.rightLaneB ? ' on' : ''}`}
+            onClick={() => setEditRoad((er) => er && ({
+              ...er,
+              rightLaneB: !er.rightLaneB,
+              motoBoxSlotsB: Math.max(1, er.motoBoxSlotsB + (er.rightLaneB ? -1 : 1)),
+              motoBoxEndB: er.rightLaneB
+                ? Math.min(er.motoBoxEndB, er.motoBoxSlotsB - 1)
+                : er.motoBoxEndB,
+            }))}>
+            {editRoad.rightLaneB ? '已新增' : '不新增'}
+          </button>
+          {editRoad.rightLaneB && <>
+            <button className="mini" onClick={() => setEditRoad((er) => er && ({
+              ...er, rightLaneLenB: Math.max(10, er.rightLaneLenB - 5),
+            }))}>−5m</button>
+            <b>{editRoad.rightLaneLenB}m</b>
+            <button className="mini" onClick={() => setEditRoad((er) => er && ({
+              ...er, rightLaneLenB: Math.min(60, er.rightLaneLenB + 5),
+            }))}>＋5m</button>
+          </>}
         </div>
+      )}
+      {editRoad.motoBoxMaxF > 0 && (
+        <MotoBoxRangeEditor
+          label={editRoad.fwdLabel}
+          enabled={editRoad.motoBoxF > 0}
+          start={editRoad.motoBoxStartF}
+          end={editRoad.motoBoxEndF}
+          min={editRoad.motoBoxMinF}
+          slots={editRoad.motoBoxSlotsF}
+          laneLabel={(i) => i < editRoad.f
+            ? `汽車道 ${i + 1}`
+            : i === editRoad.f && editRoad.motoF ? '機車道' : '右轉專用道'}
+          onChange={(enabled, start, end) => setEditRoad((er) => er && ({
+            ...er,
+            motoBoxF: enabled ? Math.max(1, end - start) : 0,
+            motoBoxStartF: start,
+            motoBoxEndF: end,
+          }))}
+        />
       )}
       {editRoad.oneway === 'no' && editRoad.motoBoxMaxB > 0 && (
-        <div className="edit-row">
-          <span>{editRoad.bwdLabel}機車停等格</span>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, motoBoxB: Math.max(0, er.motoBoxB - 1),
-          }))}>−</button>
-          <b>{editRoad.motoBoxB === 0 ? '關閉' : `外側 ${editRoad.motoBoxB} 道`}</b>
-          <button className="mini" onClick={() => setEditRoad((er) => er && ({
-            ...er, motoBoxB: Math.min(er.motoBoxMaxB, er.motoBoxB + 1),
-          }))}>＋</button>
-        </div>
+        <MotoBoxRangeEditor
+          label={editRoad.bwdLabel}
+          enabled={editRoad.motoBoxB > 0}
+          start={editRoad.motoBoxStartB}
+          end={editRoad.motoBoxEndB}
+          min={editRoad.motoBoxMinB}
+          slots={editRoad.motoBoxSlotsB}
+          laneLabel={(i) => i < editRoad.b
+            ? `汽車道 ${i + 1}`
+            : i === editRoad.b && editRoad.motoB ? '機車道' : '右轉專用道'}
+          onChange={(enabled, start, end) => setEditRoad((er) => er && ({
+            ...er,
+            motoBoxB: enabled ? Math.max(1, end - start) : 0,
+            motoBoxStartB: start,
+            motoBoxEndB: end,
+          }))}
+        />
       )}
-      <div className="edit-help">停等格自最外側車道往內涵蓋；禁行機車車道不可涵蓋，上限已依現況鎖定。</div>
+      <div className="edit-help">
+        車道依駕駛視角由左至右編號；可避開最右側右轉專用道。禁行機車車道仍不可納入。
+      </div>
       </section>
 
       <section className="edit-section">

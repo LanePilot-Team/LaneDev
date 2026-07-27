@@ -21,12 +21,13 @@ export interface EnhancementRecord {
    * road     key = "way/24275091"（整條 way 覆寫，舊格式）
    *          或   "way/24275091@b/123456"（區塊覆寫：way 依路口切塊後，
    *          @b/ 後為區塊第一個 node id；套用時區塊級蓋過 way 級）
-   * turn_bay key = "way/W@node/N"（偏心左轉道覆寫，見 路上元件擴充設計.md §1.3）
+   * turn_bay key = "way/W@node/N"（偏心左轉道覆寫；single_mode=capped/ignore
+   *          控制單邊使用時另一端封口或完全忽略，見 路上元件擴充設計.md §1.3）
    * twin_island key = "twin/A-B"（顯式配對分隔島覆寫：w 島寬 / present 開關）
    * right_lane key = "way/W@node/N[~b]~r"（路口前右轉附加車道：present/len_m/width_m；
    *          與 turn_bay 同格式加 ~r 尾碼——foldJournal 依 key 折疊，尾碼避免鍵碰撞）
-   * moto_box key = "way/W@node/N[~b]~m"（機車停等格：present 開關 / lanes 涵蓋車道數，
-   *          自最外側往內算；不可越過禁行機車車道，超出自動夾回）
+   * moto_box key = "way/W@node/N[~b]~m"（機車停等格：lanes 相容舊格式；
+   *          start_lane/end_lane 為駕駛視角左→右的連續車道範圍，不可越過禁行機車車道）
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
   target: {
@@ -38,6 +39,26 @@ export interface EnhancementRecord {
 
 const JOURNAL_KEY = 'navsim-journal-v1'
 export const AUTHOR = 'rex' // TODO: 多人協作時做成設定
+let pendingJournal: EnhancementRecord[] | null = null
+let journalFlushQueued = false
+
+/**
+ * 一次儲存可能連續追加多筆紀錄；等本輪同步工作結束後，只持久化最後版本，
+ * 避免每一筆都重新序列化完整 journal 與靜態 editor database。
+ */
+function queueJournalPersistence(journal: EnhancementRecord[]) {
+  pendingJournal = journal
+  if (journalFlushQueued) return
+  journalFlushQueued = true
+  queueMicrotask(() => {
+    journalFlushQueued = false
+    const latest = pendingJournal
+    pendingJournal = null
+    if (!latest) return
+    if (hasStaticRoadDatabase()) updateStaticEditor({ journal: latest })
+    else localStorage.setItem(JOURNAL_KEY, JSON.stringify(latest))
+  })
+}
 
 export function loadJournal(): EnhancementRecord[] {
   if (hasStaticRoadDatabase()) return staticJournal()
@@ -59,8 +80,7 @@ export function appendRecord(
     ts: new Date().toISOString(),
     author,
   }]
-  localStorage.setItem(JOURNAL_KEY, JSON.stringify(next))
-  updateStaticEditor({ journal: next })
+  queueJournalPersistence(next)
   return next
 }
 

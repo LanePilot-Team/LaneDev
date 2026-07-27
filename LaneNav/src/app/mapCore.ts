@@ -313,13 +313,15 @@ export function useMapCore(
     rightLanesRef.current = buildRightLanes(graphRef.current, journalRef.current)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
-    const stopLines = buildStopLines(graphRef.current, baysRef.current, rightLanesRef.current)
+    const stopLines = buildStopLines(
+      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
       graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
-      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs)
+      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
+      journalRef.current)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
@@ -533,7 +535,7 @@ export function useMapCore(
       // 遷移在過濾之前：remapJournalNodes 會回存整份 journal（含 lanepilot 紀錄）
       journalRef.current = journalOff
         ? []
-        : remapJournalNodes(loadJournal(), nodeRemap).filter((r) => r.author !== 'lanepilot')
+        : remapJournalNodes(loadJournal(), nodeRemap)
       applyToRoads(roads, foldJournal(journalRef.current))
       // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
       roadsRef.current = roads.filter((road) => !road.properties.deleted)
@@ -562,7 +564,9 @@ export function useMapCore(
       // Rebuild LanePilot lane profiles from the canonical annotations, then
       // append browser-made records last so the effective value is exactly what
       // the editor shows. Persist the combined result into the same database.
-      if (!journalOff) {
+      // 正常情況直接使用靜態資料庫內已轉換完成的 LanePilot journal。
+      // 僅相容舊資料庫：沒有任何匯入紀錄時才做一次性轉換。
+      if (!journalOff && !journalRef.current.some((r) => r.author === 'lanepilot')) {
         try {
           const canonicalAnnotations = staticAnnotations()
           if (canonicalAnnotations.length) {
@@ -597,7 +601,9 @@ export function useMapCore(
       // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
       // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
       // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。
-      if (!location.search.includes('lpzones=off')) {
+      // 已寫進唯一靜態資料來源的待轉區不必每次由 annotations 重新配對。
+      if (!location.search.includes('lpzones=off')
+        && !zonesRef.current.some((z) => z.id.startsWith('zone-lp-'))) {
         try {
           const canonicalAnnotations = staticAnnotations()
           const annotationText =

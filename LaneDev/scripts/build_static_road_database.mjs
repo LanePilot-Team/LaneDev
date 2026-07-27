@@ -4,10 +4,12 @@ import { resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
 const data = resolve(root, 'public/data')
 const lanePilot = resolve(data, 'lanepilot')
-const regions = [
+const allRegions = [
   { area_id: 'area/4212599', name: '楠梓區', file: 'area_4212599.segments.jsonl' },
   { area_id: 'area/4212533', name: '左營區', file: 'area_4212533.segments.jsonl' },
 ]
+const nanzihOnly = process.argv.includes('--nanzih-only')
+const regions = nanzihOnly ? allRegions.slice(0, 1) : allRegions
 
 function parseJsonl(text) {
   return text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line))
@@ -43,12 +45,10 @@ for (const segment of segments) {
   })
 }
 
-const segmentKeys = new Set(
-  segments.map((record) => record.object_identity?.nav_segment_key).filter(Boolean),
-)
-const annotations = parseJsonl(
-  await readFile(resolve(lanePilot, 'annotations.jsonl'), 'utf8'),
-).filter((record) => segmentKeys.has(record.object_identity?.nav_segment_key))
+// annotations.jsonl 已在匯入階段具體化為 editor.journal 與 waiting_zones。
+// 執行時不再需要重複攜帶近 9 MB 的原始標註；唯一生效來源仍是同一份
+// road_database.json 內的 segments + editor。
+const annotations = []
 
 let existingEditor = null
 try {
@@ -57,6 +57,23 @@ try {
   ).editor
 } catch {
   // First build has no canonical database yet.
+}
+
+if (existingEditor && nanzihOnly) {
+  const allowedWays = new Set(segments.map((segment) =>
+    Number(segment.object_identity?.osm_way_id ?? segment.osm_id)).filter(Number.isFinite))
+  const allowedNodes = new Set(segments.flatMap((segment) =>
+    Array.isArray(segment.node_refs) ? segment.node_refs.map(Number) : []))
+  existingEditor = {
+    ...existingEditor,
+    journal: existingEditor.journal.filter((record) => {
+      const wayIds = [...String(record.target?.key ?? '').matchAll(/way\/(-?\d+)/g)]
+        .map((match) => Number(match[1]))
+      return wayIds.length === 0 || wayIds.every((wayId) => allowedWays.has(wayId))
+    }),
+    waiting_zones: existingEditor.waiting_zones.filter((zone) =>
+      allowedNodes.has(Number(zone.intersectionId))),
+  }
 }
 
 let journal = []

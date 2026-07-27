@@ -1,6 +1,6 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
 import type { Profile } from '../core/graph'
-import { exportEnhancements } from '../core/enhancements'
+import { exportEnhancements, getAuthor, setAuthor, stampAuthor } from '../core/enhancements'
 import { makeZoneCtx, planZone } from '../core/zones'
 import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
@@ -90,7 +90,16 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
               : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
       {!editWarn && (
         <button className="mini"
-          onClick={() => exportEnhancements(core.journalRef.current, core.zonesRef.current, core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current)}>
+          onClick={() => {
+            // 署名預設空白：匯出當下才問，帶入上次填的值（Enter 直接沿用）。
+            const input = prompt('標註者署名（寫進匯出檔，並補上未署名的紀錄）', getAuthor())
+            if (input === null) return // 取消 = 不匯出
+            const author = input.trim()
+            setAuthor(author)
+            core.journalRef.current = stampAuthor(core.journalRef.current, author)
+            exportEnhancements(core.journalRef.current, core.zonesRef.current,
+              core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current, author)
+          }}>
           匯出 ({core.journalRef.current.length + zoneCount + vehicleCount})
         </button>
       )}

@@ -130,7 +130,7 @@ src/App.tsx              模式機＋點擊分派＋畫面組裝（薄 wiring）
 - 無 `turn:lanes` 真值的車道列是推薦值；無 `lanes` tag 用等級預設（primary 4／secondary 3／其他 2）。
 - 橋頭 shard 預設不載——Demo 路線東端（楠梓車站）會缺路。
 - LanePilot 車道標註（author=lanepilot）預設過濾不套用（實驗期決策）；待轉區則自動吃入。
-- journal 作者寫死 `rex`（`core/enhancements.ts` AUTHOR），多人協作時要做成設定。
+- journal 署名預設空白，於「匯出」時填寫（存 localStorage 沿用）；尚無帳號體系，署名不可驗證。
 - headless 截圖偶發白屏（GPU 合成問題），實機正常；效能基準以 production build 為準。
 
 ## 資料授權

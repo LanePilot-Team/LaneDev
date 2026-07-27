@@ -38,7 +38,34 @@ export interface EnhancementRecord {
 }
 
 const JOURNAL_KEY = 'navsim-journal-v1'
-export const AUTHOR = 'rex' // TODO: 多人協作時做成設定
+const AUTHOR_KEY = 'navsim-author'
+
+/** 標註者署名：**預設空白**（不再寫死單一作者）。使用者在「匯出」時填寫，
+ * 存 localStorage 供下次沿用。空字串 = 尚未署名，匯出時會補進未署名的紀錄。 */
+export function getAuthor(): string {
+  try {
+    return localStorage.getItem(AUTHOR_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function setAuthor(name: string) {
+  try {
+    localStorage.setItem(AUTHOR_KEY, name)
+  } catch { /* 隱私模式寫不進去就算了 */ }
+}
+
+/** 補上署名並回存：只填 author 空白的紀錄，不動已有作者
+ * （seed / lanepilot / 已署名的別人），append-only 的可追溯性不受影響。 */
+export function stampAuthor(
+  journal: EnhancementRecord[], author: string,
+): EnhancementRecord[] {
+  if (!author) return journal
+  const next = journal.map((r) => (r.author ? r : { ...r, author }))
+  localStorage.setItem(JOURNAL_KEY, JSON.stringify(next))
+  return next
+}
 
 export function loadJournal(): EnhancementRecord[] {
   try {
@@ -51,7 +78,7 @@ export function loadJournal(): EnhancementRecord[] {
 export function appendRecord(
   journal: EnhancementRecord[],
   rec: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>,
-  author: string = AUTHOR, // 匯入 LanePilot 標註時標記來源
+  author: string = getAuthor(), // 匯入 LanePilot 標註時標記來源
 ): EnhancementRecord[] {
   const next = [...journal, {
     ...rec,
@@ -188,11 +215,12 @@ export function applyToRoads(
 export function exportEnhancements(
   journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
   bays: TurnBay[] = [], rightLanes: RightLane[] = [],
+  author: string = getAuthor(), // 匯出當下由使用者填寫；未填則留空
 ) {
   const payload = {
     format: 'navsim-enhancement-v0.5',
     exported_at: new Date().toISOString(),
-    author: AUTHOR,
+    author,
     journal,
     latest: Object.fromEntries(foldJournal(journal)),
     waiting_zones: zones.map((z) => ({

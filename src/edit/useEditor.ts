@@ -6,6 +6,9 @@ import type { Profile, TurnOption } from '../core/graph'
 import {
   appendRecord, applyToRoads, checkRoadMerge, foldJournal,
 } from '../core/enhancements'
+import {
+  buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
+} from '../core/channelization'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -15,7 +18,7 @@ import {
   buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
 } from '../core/roads'
 import { groundMarkingPolygons } from '../core/groundMarkings'
-import { mergeStaticRoadSegments } from '../core/staticDatabase'
+import { mergeStaticRoadSegments, updateStaticEditor } from '../core/staticDatabase'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -145,6 +148,8 @@ export interface Editor {
   deleteNewRoad: (osmId: number) => void
   deleteRoadSegment: () => void
   overrideBay: (key: string, fields: Record<string, string | number>) => void
+  overrideChannelization: (parentKey: string, fields: Record<string, string | number>) => void
+  saveOffsetTurnBayReview: (parentKey: string, fields: Record<string, string | number>) => void
   overrideRightLane: (key: string, fields: Record<string, string | number>) => void
   deleteVehicle: (id: string) => void
   clearVehicles: () => void
@@ -866,6 +871,34 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       op: 'set', target: { type: 'turn_bay', key }, fields,
     })
     core.refreshBays()
+    updateStaticEditor({
+      journal: core.journalRef.current,
+      offset_turn_bay_markings: buildOffsetTurnBayMarkings(core.journalRef.current, core.baysRef.current),
+    })
+    setBayTick((t) => t + 1)
+  }
+
+  function overrideChannelization(parentKey: string, fields: Record<string, string | number>) {
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set', target: { type: 'channelization', key: channelizationKey(parentKey) }, fields,
+    })
+    core.refreshBays()
+    updateStaticEditor({
+      journal: core.journalRef.current,
+      offset_turn_bay_markings: buildOffsetTurnBayMarkings(core.journalRef.current, core.baysRef.current),
+    })
+    setBayTick((t) => t + 1)
+  }
+
+  function saveOffsetTurnBayReview(parentKey: string, fields: Record<string, string | number>) {
+    core.journalRef.current = appendRecord(core.journalRef.current, {
+      op: 'set', target: { type: 'approach_marking_review', key: reviewKey(parentKey) }, fields,
+    })
+    core.refreshBays()
+    updateStaticEditor({
+      journal: core.journalRef.current,
+      offset_turn_bay_markings: buildOffsetTurnBayMarkings(core.journalRef.current, core.baysRef.current),
+    })
     setBayTick((t) => t + 1)
   }
 
@@ -937,7 +970,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
-    overrideBay, overrideRightLane, overrideTwin,
+    overrideBay, overrideChannelization, saveOffsetTurnBayReview, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,
     undoDraftVertex, cancelDraftRoad, finishDraftRoad,
     selNewRoad, setSelNewRoad, deleteNewRoad,

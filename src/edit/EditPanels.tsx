@@ -1,5 +1,5 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { Profile } from '../core/graph'
 import { exportEnhancements, getAuthor, setAuthor, stampAuthor } from '../core/enhancements'
 import { makeZoneCtx, markZoneDeleted, planZone } from '../core/zones'
@@ -9,6 +9,9 @@ import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore } from '../app/mapCore'
 import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext'
 import type { LaneMark } from '../core/roads'
+import {
+  buildOffsetTurnBayMarkings, type OffsetTurnBayMarkingRecord,
+} from '../core/channelization'
 import {
   flushStaticEditorSave, getStaticSaveSnapshot, subscribeStaticSaveState,
 } from '../core/staticDatabase'
@@ -1057,6 +1060,65 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
 }
 
 /** 側面板：路口偏心左轉道 + 右轉附加車道（開/關/參數，journal 覆寫） */
+function OffsetTurnBayMarkingEditor({
+  marking, onSaveChannelization, onSaveReview,
+}: {
+  marking: OffsetTurnBayMarkingRecord
+  onSaveChannelization: (fields: Record<string, string | number>) => void
+  onSaveReview: (fields: Record<string, string | number>) => void
+}) {
+  const [mode, setMode] = useState(marking.channelization.state)
+  const [closure, setClosure] = useState(marking.channelization.closure ?? 'unused-side')
+  const [start, setStart] = useState(String(marking.channelization.s_start_m ?? 0))
+  const [end, setEnd] = useState(String(marking.channelization.s_end_m ?? 0))
+  const [startWidth, setStartWidth] = useState(String(marking.channelization.width_start_m ?? 0.3))
+  const [endWidth, setEndWidth] = useState(String(marking.channelization.width_end_m ?? marking.offset_bay.width_m))
+  const [status, setStatus] = useState(marking.review.status)
+  const [evidenceUrl, setEvidenceUrl] = useState(marking.review.evidence_url ?? '')
+  const [note, setNote] = useState(marking.review.note ?? '')
+
+  const saveChannelization = () => {
+    if (mode === 'disabled') { onSaveChannelization({ mode: 'disabled' }); return }
+    if (mode === 'auto') { onSaveChannelization({ mode: 'auto', closure }); return }
+    const values = [Number(start), Number(end), Number(startWidth), Number(endWidth)]
+    if (!values.every(Number.isFinite) || values[1] <= values[0] || values[2] < 0 || values[3] <= 0) return
+    onSaveChannelization({
+      mode: 'override', closure, s_start_m: values[0], s_end_m: values[1],
+      width_start_m: values[2], width_end_m: values[3], style: 'taiwan-yellow-hatch-v1',
+    })
+  }
+
+  return (
+    <div className="sp-stop channelization-editor" style={{ flexWrap: 'wrap', gap: 6 }}>
+      <b style={{ width: '100%' }}>槽化帶與人工回查</b>
+      <button className={`mini${mode === 'auto' ? ' on' : ''}`} onClick={() => setMode('auto')}>自動判定</button>
+      <button className={`mini${mode === 'override' ? ' on' : ''}`} onClick={() => setMode('override')}>人工覆寫</button>
+      <button className={`mini${mode === 'disabled' ? ' on' : ''}`} onClick={() => setMode('disabled')}>停用槽化帶</button>
+      {mode !== 'disabled' && <label>封閉
+        <select value={closure} onChange={(event) => setClosure(event.target.value as 'none' | 'unused-side')}>
+          <option value="unused-side">未使用側封閉</option><option value="none">不畫槽化帶</option>
+        </select>
+      </label>}
+      {mode === 'override' && <div className="channelization-fields">
+        <label>起點 m<input type="number" value={start} onChange={(event) => setStart(event.target.value)} /></label>
+        <label>終點 m<input type="number" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+        <label>起點寬 m<input type="number" min="0" step="0.1" value={startWidth} onChange={(event) => setStartWidth(event.target.value)} /></label>
+        <label>終點寬 m<input type="number" min="0.1" step="0.1" value={endWidth} onChange={(event) => setEndWidth(event.target.value)} /></label>
+      </div>}
+      <button className="mini go" onClick={saveChannelization}>儲存槽化帶</button>
+      <label>審核
+        <select value={status} onChange={(event) => setStatus(event.target.value as OffsetTurnBayMarkingRecord['review']['status'])}>
+          <option value="unreviewed">未審核</option><option value="reviewed">已審閱</option>
+          <option value="verified">已核實</option><option value="needs_review">需再確認</option>
+        </select>
+      </label>
+      <input aria-label="實景證據連結" placeholder="實景證據連結" value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} />
+      <input aria-label="人工回查備註" placeholder="人工回查備註" value={note} onChange={(event) => setNote(event.target.value)} />
+      <button className="mini" onClick={() => onSaveReview({ status, evidence_url: evidenceUrl, note })}>儲存回查</button>
+    </div>
+  )
+}
+
 export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const { bayPanel, setBayPanel } = editor
   if (!bayPanel) return null
@@ -1066,6 +1128,7 @@ export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const rlCands = core.graphRef.current
     ? rightLaneCandidatesAt(core.graphRef.current, core.journalRef.current, core.rightLanesRef.current, bayPanel.nodeId)
     : []
+  const markings = buildOffsetTurnBayMarkings(core.journalRef.current, core.baysRef.current)
   return (
     <div className="side-panel">
       <div className="sp-head">
@@ -1107,6 +1170,17 @@ export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
           )}
         </div>
       ))}
+      {cands.filter((candidate) => candidate.bay).map((candidate) => {
+        const marking = markings.find((item) => item.key === candidate.key)
+        return marking ? (
+          <OffsetTurnBayMarkingEditor
+            key={`${candidate.key}:channelization`}
+            marking={marking}
+            onSaveChannelization={(fields) => editor.overrideChannelization(candidate.key, fields)}
+            onSaveReview={(fields) => editor.saveOffsetTurnBayReview(candidate.key, fields)}
+          />
+        ) : null
+      })}
       <div className="road-src" style={{ marginTop: 10 }}>
         右轉附加車道（路口前最外車道外側加寬）：
       </div>

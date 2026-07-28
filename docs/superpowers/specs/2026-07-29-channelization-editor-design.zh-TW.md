@@ -26,7 +26,7 @@
 
 ```ts
 {
-  target: { type: 'channelization', key: 'way/W@node/N[~b]#channel' },
+  target: { type: 'channelization', key: 'way/W@node/N[~b]#channelization' },
   fields: {
     present: 1,
     mode: 'auto' | 'override' | 'disabled',
@@ -44,15 +44,15 @@
 
 `s_start_m`、`s_end_m` 是沿所選道路區塊的公尺里程；寬度在兩端之間線性變化。因此直線、彎道、不同縮放與不同投影下都能得到穩定的漸寬／漸窄槽化面。
 
-自動候選只在所屬 `turn_bay` 有效時才會產生，並會先正規化成相同形狀。人工 `override` 取代該自動候選；`disabled` 停用它但保留歷程。若要新增槽化帶，必須先以既有偏心道控制項新增或開啟其母偏心道。
+自動候選只在所屬 `turn_bay` 有效時才會產生，並會先正規化成相同形狀。人工 `override` 取代該自動候選；`disabled` 停用它但保留歷程。若要新增槽化帶，必須先以既有偏心道控制項新增或開啟其母偏心道。證據與審核異動使用獨立的 `target.type = 'approach_marking_review'` 鍵 `way/W@node/N[~b]#review`。
 
 ## 統一人工回查紀錄
 
-每一個具有偏心道或其附屬槽化帶的道路進入方向，均建立並保存一筆 `ApproachMarkingRecord`（路口進入方向標線紀錄）。其穩定鍵由既有道路區塊／進入方向鍵（例如 `way/W@node/N[~b]`）加上 `travel_direction` 構成；路口 node 與方向也會以欄位明確保存，方便查詢。它是供人工回查的折疊聚合資料，不是第二份繪圖指令歷程：
+每一個具有偏心道或其附屬槽化帶的道路進入方向，均建立並保存一筆 `ApproachMarkingRecord`（路口進入方向標線紀錄）。其穩定鍵沿用既有 `turn_bay` 道路區塊／進入方向鍵（例如 `way/W@node/N[~b]`）；必要時保留的 `~b` 變體會區分鏡像的另一進入方向。路口 node 與可讀的行進方向也會以欄位明確保存，方便查詢。它是供人工回查的折疊聚合資料，不是第二份繪圖指令歷程：
 
 ```ts
 {
-  key: 'way/W@node/N[~b]#dir/forward',
+  key: 'way/W@node/N[~b]',
   approach: { road_block_key, intersection_node_id, travel_direction },
   offset_bay: { state: 'none' | 'active', turns, source, bay_len_m, taper_len_m, width_m },
   channelization: {
@@ -66,7 +66,7 @@
 }
 ```
 
-不會新增另一份獨立檔案。既有靜態 `road_database.json` 會增加 `approach_markings` 折疊索引，供日後人工回查；`editor.journal` 仍是唯一的附加式寫入歷程。既有 `turn_bay` 項目維持不變；新增的 `channelization` 項目保存幾何狀態，`approach_marking_review` 項目保存證據／審核異動。每次儲存／匯出時，以同一穩定鍵折疊各類最新項目，產生且只產生一筆 `approach_markings` 紀錄；索引由 journal 重新生成，不可獨立修改，因此不會悄悄與原始歷程不同步。偏心道面板會顯示這筆紀錄。
+不會新增另一份獨立檔案。既有靜態 `road_database.json` 的 `editor` 區塊會增加 `editor.approach_markings` 折疊索引，供日後人工回查，並與既有的附加式 `editor.journal` 並存。既有 `turn_bay` 項目維持不變；`#channelization` 與 `#review` 後綴讓新增的幾何、證據／審核項目在 journal 折疊時不會互相覆蓋。每次儲存／匯出時，以母進入方向鍵將各類最新子項目組合，產生且只產生一筆 `editor.approach_markings` 紀錄；索引由 journal 重新生成，不可獨立修改，因此不會悄悄與原始歷程不同步。偏心道面板會顯示這筆紀錄。
 
 ## 繪製樣式：`taiwan-yellow-hatch-v1`
 
@@ -117,4 +117,4 @@
 - 既有偏心道測試：不得重複產生斜紋，導航／偏心道語意不得改變。
 - 在隔離功能分支執行建置與目標測試。
 - 視覺審閱：A、B、C 三處的改動前／改動後／人工編輯圖。
-- 證據審閱：每筆被接受的偏心道或附屬槽化帶，在匯出與靜態 `approach_markings` 索引中只出現一次，並具有清楚的審核狀態、可追溯證據或明確的缺少證據註記。
+- 證據審閱：每筆被接受的偏心道或附屬槽化帶，在匯出與靜態 `editor.approach_markings` 索引中只出現一次，並具有清楚的審核狀態、可追溯證據或明確的缺少證據註記。

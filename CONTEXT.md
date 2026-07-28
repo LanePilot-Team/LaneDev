@@ -2,7 +2,7 @@
 
 ## 路口進入方向標線紀錄 / Approach Marking Record
 
-一筆可人工回查的路口進入方向標線聚合資料。以既有道路區塊／進入方向鍵加上行進方向穩定識別，並明確保存路口 node，收納該方向的偏心道、附屬槽化帶、實景證據與審核狀態。它不是繪圖指令歷程；現有 `editor.journal` 的最新折疊結果才是其內容，並在同一份 `road_database.json` 輸出為 `approach_markings` 索引。
+一筆可人工回查的路口進入方向標線聚合資料。以既有道路區塊／進入方向鍵（保留 `~b` 變體）穩定識別，並明確保存路口 node 與行進方向，收納該方向的偏心道、附屬槽化帶、實景證據與審核狀態。它不是繪圖指令歷程；現有 `editor.journal` 的最新折疊結果才是其內容，並在同一份 `road_database.json` 的 `editor.approach_markings` 輸出為索引。
 
 ## 偏心道 / Offset Turn Bay
 

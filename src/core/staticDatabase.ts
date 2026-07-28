@@ -1,10 +1,12 @@
 import { asset } from './asset'
 import type { EnhancementRecord } from './enhancements'
+import type { OffsetTurnBayMarkingRecord } from './channelization'
 import type { Zone } from './zones'
 
 export interface StaticEditorState {
   updated_at: string
   journal: EnhancementRecord[]
+  offset_turn_bay_markings: OffsetTurnBayMarkingRecord[]
   waiting_zones: Zone[]
   deleted_waiting_zone_ids: string[]
 }
@@ -56,6 +58,7 @@ export const subscribeStaticSaveState = (listener: () => void) => {
 const emptyEditor = (): StaticEditorState => ({
   updated_at: '',
   journal: [],
+  offset_turn_bay_markings: [],
   waiting_zones: [],
   deleted_waiting_zone_ids: [],
 })
@@ -76,6 +79,7 @@ export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
     throw new Error('唯一靜態道路資料庫沒有可用路段')
   }
   database.editor ??= emptyEditor()
+  database.editor.offset_turn_bay_markings ??= []
   persistedEditorUpdatedAt = database.editor.updated_at || ''
 
   // 只在瀏覽器資料明確較新時遷移；網頁人工修改永遠優先於舊靜態快照。

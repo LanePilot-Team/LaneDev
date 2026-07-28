@@ -11,6 +11,7 @@ import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
 import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
+import { buildOffsetTurnBayMarkings } from './channelization'
 
 export interface EnhancementRecord {
   seq: number
@@ -31,8 +32,8 @@ export interface EnhancementRecord {
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
   target: {
-    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane'
-      | 'moto_box' | 'new_road'
+    type: 'road' | 'road_merge' | 'turn_bay' | 'channelization' | 'approach_marking_review'
+      | 'twin_island' | 'right_lane' | 'moto_box' | 'new_road'
     key: string
   }
   fields?: Record<string, string | number>
@@ -425,6 +426,7 @@ export function exportEnhancements(
     author,
     journal,
     latest: Object.fromEntries(foldJournal(journal)),
+    offset_turn_bay_markings: buildOffsetTurnBayMarkings(journal, bays),
     waiting_zones: zones.map((z) => ({
       id: z.id,
       intersection_osm_node: z.intersectionId,

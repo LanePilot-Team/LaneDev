@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
+  buildHatchDistances, buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
+  resolveChannelization,
 } from './channelization.ts'
 
 const parent = 'way/7@node/9'
@@ -59,4 +60,14 @@ test('disabled channelization stays reviewable and produces no active geometry',
     record('channelization', channelizationKey(parent), { mode: 'disabled' }, 1),
   ], [bay])
   assert.deepEqual(actual.channelization, { state: 'disabled' })
+})
+
+test('hatch distances retain the same 1.25 m pitch for narrow and wide tapered regions', () => {
+  assert.deepEqual(buildHatchDistances(0.3, 5.4), [1.25, 2.5, 3.75, 5])
+  assert.deepEqual(buildHatchDistances(0.3, 9.1), [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75])
+})
+
+test('single capped bay defaults to an unused-side closure but ignore produces none', () => {
+  assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'capped' }, []).closure, 'unused-side')
+  assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'ignore' }, []), null)
 })

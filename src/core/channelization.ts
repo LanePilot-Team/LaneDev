@@ -3,6 +3,14 @@ import type { TurnBay } from './turnbays'
 
 export type ChannelizationState = 'none' | 'auto' | 'override' | 'disabled'
 
+export const TAIWAN_YELLOW_HATCH_V1 = {
+  style: 'taiwan-yellow-hatch-v1' as const,
+  stripeWidthM: 0.18,
+  stripePitchM: 1.25,
+  insetM: 0.30,
+  minLengthM: 3,
+}
+
 export interface OffsetTurnBayMarkingRecord {
   key: string
   offset_bay: {
@@ -36,6 +44,15 @@ export interface OffsetTurnBayMarkingRecord {
 export const channelizationKey = (parentKey: string) => `${parentKey}#channelization`
 export const reviewKey = (parentKey: string) => `${parentKey}#review`
 export const parentBayKey = (key: string) => key.replace(/#(?:channelization|review)$/, '')
+
+export function buildHatchDistances(startM: number, endM: number, pitchM = TAIWAN_YELLOW_HATCH_V1.stripePitchM): number[] {
+  if (!(endM > startM) || !(pitchM > 0)) return []
+  const out: number[] = []
+  for (let distance = Math.ceil(startM / pitchM) * pitchM;
+    distance <= endM - TAIWAN_YELLOW_HATCH_V1.insetM + 1e-6;
+    distance += pitchM) out.push(Number(distance.toFixed(6)))
+  return out
+}
 
 function latestFields(journal: EnhancementRecord[], key: string): Record<string, string | number> | undefined {
   let fields: Record<string, string | number> | undefined
@@ -76,6 +93,46 @@ function channelizationFrom(fields: Record<string, string | number> | undefined)
     ...(typeof values.width_end_m === 'number' ? { width_end_m: values.width_end_m } : {}),
     ...(values.style === 'taiwan-yellow-hatch-v1' ? { style: values.style } : {}),
   }
+}
+
+export interface EffectiveChannelization {
+  state: 'auto' | 'override'
+  closure: 'none' | 'unused-side'
+  sStartM?: number
+  sEndM?: number
+  widthStartM?: number
+  widthEndM?: number
+  style: 'taiwan-yellow-hatch-v1'
+}
+
+export function resolveChannelization(
+  parentKey: string,
+  bay: Pick<TurnBay, 'singleMode' | 'paired'>,
+  journal: EnhancementRecord[],
+): EffectiveChannelization | null {
+  if (bay.paired || bay.singleMode === 'ignore') return null
+  const fields = latestFields(journal, channelizationKey(parentKey))
+  const channelization = channelizationFrom(fields)
+  if (channelization.state === 'disabled') return null
+  if (channelization.state === 'override') {
+    return {
+      state: 'override',
+      closure: channelization.closure ?? 'unused-side',
+      ...(channelization.s_start_m !== undefined ? { sStartM: channelization.s_start_m } : {}),
+      ...(channelization.s_end_m !== undefined ? { sEndM: channelization.s_end_m } : {}),
+      ...(channelization.width_start_m !== undefined ? { widthStartM: channelization.width_start_m } : {}),
+      ...(channelization.width_end_m !== undefined ? { widthEndM: channelization.width_end_m } : {}),
+      style: channelization.style ?? TAIWAN_YELLOW_HATCH_V1.style,
+    }
+  }
+  if (channelization.state === 'auto' || bay.singleMode === 'capped') {
+    return {
+      state: channelization.state === 'auto' ? 'auto' : 'auto',
+      closure: channelization.closure ?? 'unused-side',
+      style: channelization.style ?? TAIWAN_YELLOW_HATCH_V1.style,
+    }
+  }
+  return null
 }
 
 export function buildOffsetTurnBayMarkings(

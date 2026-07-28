@@ -1,0 +1,369 @@
+* { box-sizing: border-box; margin: 0; }
+html, body, #root { height: 100%; }
+body {
+  font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.app { position: relative; height: 100%; }
+.map { position: absolute; inset: 0; }
+
+.loading {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgba(233, 237, 242, 0.9); font-size: 18px; color: #3d4a5c;
+  z-index: 30;
+}
+
+/* ── 頂部導航看板（高德式）── */
+.banner {
+  position: absolute; top: 12px; left: 50%; z-index: 20;
+  width: 88%; max-width: 480px; transform: translateX(-50%);
+  border-radius: 16px; padding: 14px 16px 12px;
+  transition: background 0.3s, color 0.3s;
+}
+/* 顏色分級（照 mvp）：遠=藍、近=橘紅、兩段式=黃底黑字 */
+.banner-far {
+  background: linear-gradient(180deg, #0f6be0, #1058b8);
+  color: #fff; box-shadow: 0 6px 24px rgba(16, 88, 184, 0.4);
+}
+.banner-near {
+  background: linear-gradient(180deg, #ff6a3d, #f4511e);
+  color: #fff; box-shadow: 0 6px 24px rgba(244, 81, 30, 0.45);
+}
+.banner-two-stage {
+  background: #ffd600;
+  color: #111;
+  box-shadow: 0 6px 24px rgba(255, 214, 0, 0.5);
+}
+.banner-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.man-arrow { width: 52px; height: 56px; flex: none; }
+.banner-dist { flex: 1; min-width: 0; }
+.banner-dist b {
+  display: block; white-space: nowrap;
+  font-size: 26px; font-weight: 800; letter-spacing: 0.5px;
+}
+.banner-dist span { display: block; font-size: 15px; opacity: 0.92; margin-top: 2px; }
+
+.lane-preview {
+  margin: 10px -6px -4px;
+  padding: 10px 10px 7px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #0f6be0, #1058b8);
+  color: #fff;
+}
+.lane-preview-row {
+  display: grid;
+  grid-template-columns: repeat(var(--lane-count), minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+}
+.lane-preview-cell { min-width: 0; display: grid; place-items: center; }
+.lane-preview-arrow {
+  display: block;
+  width: min(70%, 42px);
+  max-width: 100%;
+  height: 42px;
+  object-fit: contain;
+}
+.lane-preview-note {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.82);
+}
+.lane-preview-empty {
+  min-height: 54px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.two-stage-sign {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+@media (max-width: 360px) {
+  .banner { padding: 10px 10px 9px; }
+  .banner-main { gap: 8px; }
+  .man-arrow { width: 40px; height: 44px; }
+  .banner-dist b { font-size: 20px; letter-spacing: 0; }
+  .banner-dist span { font-size: 12px; }
+  .banner-then { display: none !important; }
+  .two-stage-sign { width: 38px; height: 38px; }
+  .lane-preview { margin-top: 8px; padding-inline: 7px; }
+  .lane-preview-arrow { height: 36px; }
+}
+
+/* ── 速度圓標 ── */
+.speed-badge {
+  position: absolute; left: 14px; bottom: 92px; z-index: 20;
+  width: 66px; height: 66px; border-radius: 50%;
+  background: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  display: grid; place-items: center; text-align: center;
+  padding-top: 4px;
+}
+.speed-num { font-size: 24px; font-weight: 800; color: #1058b8; line-height: 1; }
+.speed-unit { font-size: 11px; color: #8a94a3; }
+
+/* ── 工具列 ── */
+.toolbar {
+  position: absolute; top: 12px; right: 12px; z-index: 20;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toolbar button {
+  border: none; border-radius: 10px; padding: 10px 14px;
+  background: #fff; color: #3d4a5c; font-size: 14px; font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); cursor: pointer;
+}
+.toolbar button.on { background: #1058b8; color: #fff; }
+
+/* ── 提示列 ── */
+.hint {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 20; background: rgba(23, 32, 48, 0.88); color: #fff;
+  border-radius: 999px; padding: 10px 18px; font-size: 14px;
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+}
+.hint.warn { background: rgba(190, 50, 50, 0.92); }
+.mini {
+  border: none; border-radius: 999px; padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.18); color: #fff;
+  font-size: 13px; cursor: pointer;
+}
+.mini.go { background: #22c55e; font-weight: 700; }
+.mini.on { background: #3b82f6; font-weight: 700; }
+.tool-toggle { display: flex; gap: 4px; margin-right: 4px; }
+.zone-custom {
+  width: 100%; min-width: 0; box-sizing: border-box;
+  margin-top: 8px; padding: 10px;
+  border-radius: 10px; background: #f4f7fb; color: #3d4a5c;
+  display: grid; gap: 8px;
+}
+.zone-custom label {
+  min-width: 0;
+  display: grid; grid-template-columns: minmax(92px, 112px) minmax(0, 1fr);
+  align-items: center; gap: 8px;
+}
+.zone-custom select, .zone-custom input { width: 100%; min-width: 0; box-sizing: border-box; }
+.zone-item { flex-wrap: wrap; align-items: flex-start; overflow: hidden; }
+.zone-item > .sp-pos { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.zone-item.selected-zone {
+  background: #eef5ff;
+  outline: 2px solid #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  animation: zone-selected-pulse .55s ease-out;
+}
+@keyframes zone-selected-pulse {
+  from { box-shadow: 0 0 0 9px rgba(59, 130, 246, 0.32); }
+  to { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14); }
+}
+.zone-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+
+/* ── 右側面板（路線規劃 / 車道編輯 / 車輛）── */
+.side-panel {
+  position: absolute; top: 12px; right: 12px; z-index: 25;
+  width: 360px; max-width: calc(100vw - 56px); max-height: calc(100% - 24px); overflow-y: auto;
+  background: #fff; border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.22);
+}
+.side-panel.lane-editor { width: 430px; padding: 16px 18px 18px; }
+.sp-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 16px; color: #24303f; margin-bottom: 8px;
+}
+.sp-head > div { flex: 1; min-width: 0; }
+.sp-head b { display: block; }
+.sp-kicker { display: block; color: #7a8494; font-size: 11px; font-weight: 700; letter-spacing: .08em; margin-bottom: 2px; }
+.sp-profile { font-size: 18px; }
+.sp-close {
+  border: none; background: #eef1f5; color: #3d4a5c;
+  width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.sp-stop {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 8px; border-radius: 10px; margin: 4px -4px;
+  font-size: 13px; color: #3d4a5c;
+}
+.sp-stop.active { background: #eef4ff; outline: 1.5px solid #93b8f5; }
+.sp-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
+.sp-label { font-weight: 700; min-width: 52px; }
+.sp-pos { flex: 1; color: #7a8494; font-size: 12px; }
+.sp-done { color: #22c55e; font-size: 12.5px; font-weight: 700; flex: none; }
+.sp-add {
+  width: 100%; margin-top: 6px; padding: 8px;
+  border: 1.5px dashed #c8d2df; border-radius: 10px; background: none;
+  color: #1058b8; font-size: 13.5px; cursor: pointer;
+}
+.sp-error {
+  margin-top: 10px; padding: 8px 10px; border-radius: 8px;
+  background: #fdecea; color: #b3261e; font-size: 13px;
+}
+.sp-summary {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid #eef1f5;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; color: #3d4a5c;
+}
+.sp-summary b { font-size: 17px; color: #24303f; }
+.side-panel .mini { background: #eef1f5; color: #24303f; }
+.side-panel .mini.go { background: #22c55e; color: #fff; }
+.side-panel .mini.on { background: #3b82f6; color: #fff; }
+.side-panel .mini.warn-btn { background: #ef4444; color: #fff; }
+.side-panel .edit-row {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px;
+  font-size: 13.5px; color: #3d4a5c;
+}
+.side-panel .edit-row > span:first-child { flex: 1; min-width: 150px; }
+.side-panel .edit-row > button, .side-panel .edit-row > b { flex: none; }
+.side-panel .edit-row b { font-size: 18px; min-width: 20px; text-align: center; }
+.side-panel .edit-row .row-title { display: block; min-width: 0; text-align: left; font-size: 13.5px; margin-bottom: 2px; }
+.side-panel .road-src { margin-bottom: 4px; }
+.road-danger-zone {
+  margin-top: 14px; padding-top: 8px; border-top: 1px solid #eef1f5;
+  text-align: right;
+}
+.road-delete-link {
+  border: 0; padding: 3px 2px; background: transparent;
+  color: #9a6f73; font-size: 11px; cursor: pointer;
+  text-decoration: underline; text-decoration-color: transparent;
+}
+.road-delete-link:hover {
+  color: #b3261e; text-decoration-color: currentColor;
+}
+.edit-lanes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.edit-notice { margin: 10px 0 2px; padding: 9px 11px; border-radius: 9px; background: #eef4ff; color: #31557f; font-size: 12.5px; line-height: 1.45; }
+.edit-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e7ebf0; }
+.edit-section h3 { margin: 0 0 3px; color: #24303f; font-size: 14px; }
+.edit-section p, .edit-help { margin: 0; color: #7a8494; font-size: 12px; line-height: 1.45; }
+.edit-help { margin-top: 8px; }
+.edit-actions { position: sticky; bottom: -18px; display: flex; justify-content: flex-end; gap: 8px; margin: 16px -18px -18px; padding: 12px 18px; background: rgba(255,255,255,.96); border-top: 1px solid #e7ebf0; }
+.edit-actions .mini.go { padding-inline: 18px; }
+.lane-mark-group { margin-top: 10px; }
+.lane-mark-row { display: grid; grid-template-columns: 74px minmax(130px, 1fr) minmax(120px, 1fr) 34px; gap: 7px; align-items: center; margin-top: 7px; }
+.lane-mark-row b { font-size: 12px; color: #465166; }
+.lane-mark-row select, .lane-mark-text { min-width: 0; border: 1px solid #d9e0e9; border-radius: 9px; padding: 7px 8px; background: #f8fafc; color: #24303f; }
+.lane-mark-row input[type="color"] { width: 34px; height: 34px; padding: 2px; border: 1px solid #d9e0e9; border-radius: 8px; background: #fff; }
+.lane-pick {
+  width: 40px; height: 44px; border-radius: 8px;
+  border: 1.5px solid #c8d2df; background: #f7f9fc;
+  font-size: 19px; font-weight: 700; color: #1058b8; cursor: pointer;
+}
+.lane-pick:hover { border-color: #3b82f6; }
+.arrow-style-select {
+  width: 58px;
+  min-width: 58px;
+  padding: 0 18px 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ── 路段資訊卡 ── */
+.road-card {
+  position: absolute; bottom: 24px; left: 14px; z-index: 20;
+  background: #fff; border-radius: 14px; padding: 14px 40px 12px 16px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18); max-width: 300px;
+}
+.road-card .mini {
+  position: absolute; top: 8px; right: 8px;
+  background: #eef1f5; color: #3d4a5c;
+}
+.road-name { font-size: 17px; font-weight: 700; color: #24303f; }
+.road-attrs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 6px; }
+.road-attrs span {
+  background: #eef3fb; color: #1058b8; border-radius: 6px;
+  padding: 2px 8px; font-size: 12.5px;
+}
+.road-src { font-size: 11.5px; color: #99a3b1; }
+
+/* ── 底部資訊列 ── */
+.bottom-bar {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 20;
+  background: #fff; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.12);
+  border-radius: 18px 18px 0 0;
+}
+.trip { flex: 1; text-align: center; }
+.trip b { font-size: 19px; color: #24303f; margin-right: 10px; }
+.trip span { font-size: 14px; color: #7a8494; }
+.trip .trip-road {
+  display: block; margin-top: 2px;
+  font-size: 13px; font-weight: 700; color: #3d4a5c;
+}
+.end-btn, .mult-btn {
+  border: none; border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.end-btn { background: #f1f3f6; color: #3d4a5c; }
+.mult-btn { background: #eef3fb; color: #1058b8; min-width: 52px; }
+/* 模擬到達後的「再跑一次」：主動作色，與結束/變速鈕並排 */
+.replay-btn {
+  border: none; border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  background: #1058b8; color: #fff;
+}
+.lane-btn {
+  border: none; border-radius: 10px; padding: 10px 16px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  background: #eef3fb; color: #1058b8;
+}
+
+/* 路口決策：不照指引走，改走同一路口的其他道路（觸發 reroute 用） */
+.decision-row {
+  position: absolute; bottom: 84px; left: 0; right: 0; z-index: 20;
+  display: flex; justify-content: center; gap: 10px;
+}
+.decision-btn {
+  border: none; border-radius: 10px; padding: 10px 14px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  background: #fff3cd; color: #7a5b00; box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12);
+}
+
+/* 連動指示：下一個動作距離很近時的預告 */
+.banner-then {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 停靠點拖曳排序 */
+.sp-grip { cursor: grab; color: #9aa4ae; font-size: 13px; letter-spacing: -3px; user-select: none; flex: none; }
+.sp-stop { cursor: grab; }
+.sp-stop:active { cursor: grabbing; }
+.sp-stop.drag-over { box-shadow: inset 0 3px 0 #4a86e8; }
+
+/* 匯入地圖結果訊息 */
+.import-msg {
+  font-size: 12.5px;
+  color: #2b4a7a;
+  background: #eef4ff;
+  border: 1px solid #c7d9f5;
+  border-radius: 8px;
+  padding: 3px 10px;
+  max-width: 420px;
+}
+
+/* ── 規劃面板：車種切換 ── */
+.sp-vehicle { display: flex; gap: 6px; margin-bottom: 8px; }
+.sp-vehicle .mini { flex: 1; padding: 7px 0; font-size: 13.5px; }
+
+/* ── 規劃面板：轉彎步驟清單（重用導航指引文案；兩段式黃底同看板色系）── */
+.mlist { margin-top: 10px; padding-top: 8px; border-top: 1px solid #eef1f5; }
+.mlist-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px; border-radius: 10px; margin: 2px -4px;
+  color: #3d4a5c;
+}
+.mlist-item .man-arrow { width: 28px; height: 30px; color: #1565c0; }
+.mlist-item.two-stage { background: #ffd600; color: #111; }
+.mlist-item.two-stage .man-arrow { color: #111; }
+.mlist-text { display: flex; flex-direction: column; min-width: 0; }
+.mlist-dist { font-size: 11.5px; color: #7a8494; }
+.mlist-item.two-stage .mlist-dist { color: rgba(0, 0, 0, 0.55); }
+.mlist-act { font-size: 13px; font-weight: 600; }

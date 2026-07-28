@@ -46,9 +46,9 @@ Add `target.type = 'channelization'`. A record is anchored to a road block and i
 
 An automatic candidate is emitted only when its owning `turn_bay` is effective. It uses the same normalized shape internally. A manual record with `override` replaces that automatic candidate; `disabled` suppresses it without deleting history. Creating a channelization area first requires creating or enabling its parent turn bay through the existing offset-bay controls. Evidence and review changes use the separate `target.type = 'approach_marking_review'` key `way/W@node/N[~b]#review`.
 
-## Unified review record
+## Unified offset-turn-bay marking record
 
-Expose and persist one `ApproachMarkingRecord` for every road approach that has an offset bay or a bay-owned channelization area. Its stable key is the existing `turn_bay` road-block/approach key (for example `way/W@node/N[~b]`); the retained `~b` variant distinguishes the mirrored approach where applicable. The node and human-readable travel direction are also stored as explicit fields for querying. It is a folded, review-oriented aggregate rather than a second command history:
+Expose and persist one `OffsetTurnBayMarkingRecord` for every road approach that has an offset turn bay. Its optional `channelization` child describes only a bay-owned channelization area. Its stable key is the existing `turn_bay` road-block/approach key (for example `way/W@node/N[~b]`); the retained `~b` variant distinguishes the mirrored approach where applicable. The node and human-readable travel direction are also stored as explicit fields for querying. It is a folded, review-oriented aggregate rather than a second command history:
 
 ```ts
 {
@@ -66,7 +66,7 @@ Expose and persist one `ApproachMarkingRecord` for every road approach that has 
 }
 ```
 
-This does not create a separate file. The existing static `road_database.json` gains `editor.approach_markings`, a folded index for later manual review, alongside the existing `editor.journal` append-only write history. Existing `turn_bay` entries remain unchanged; the `#channelization` and `#review` suffixes keep new geometry and review records distinct during journal folding. Save/export groups each parent approach key with its latest child records into exactly one `editor.approach_markings` record, so the index is regenerated from the journal rather than independently edited and cannot silently diverge. The editor exposes that record in the offset-bay panel.
+This does not create a separate file. The existing static `road_database.json` gains `editor.offset_turn_bay_markings`, a folded index for later manual review, alongside the existing `editor.journal` append-only write history. Existing `turn_bay` entries remain unchanged; the `#channelization` and `#review` suffixes keep new geometry and review records distinct during journal folding. Save/export groups each parent approach key with its latest child records into exactly one `editor.offset_turn_bay_markings` record, so the index is regenerated from the journal rather than independently edited and cannot silently diverge. The editor exposes that record in the offset-bay panel.
 
 ## Rendering profile: `taiwan-yellow-hatch-v1`
 
@@ -97,7 +97,7 @@ Add a `槽化帶` section to the existing `偏心道` editor panel; it is unavai
 - Editors can accept an automatic candidate, disable it, or create an override for that same bay.
 - An override uses road-relative start/end handles and endpoint-width controls; interaction snaps to the parent road block.
 - Editors can choose closure type. `unused-side` shows the capped red-line-equivalent geometry; `none` intentionally draws no hatch area.
-- The same panel shows the linked `ApproachMarkingRecord`, including evidence link, review status, reviewer, timestamp, confidence, and note. Editors can update those review fields without changing geometry.
+- The same panel shows the linked `OffsetTurnBayMarkingRecord`, including evidence link, review status, reviewer, timestamp, confidence, and note. Editors can update those review fields without changing geometry.
 - Save, export, static-database persistence, and journal folding treat `channelization` like other enhancement types.
 
 ## Acceptance cases and visual evidence
@@ -117,4 +117,4 @@ For each case, preserve an unmodified baseline screenshot and an after screensho
 - Existing turn-bay tests: no duplicate hatch lines and unchanged routing/bay semantics.
 - Build and targeted tests pass on the isolated feature branch.
 - Visual review: before/after/manual captures for A, B, and C.
-- Evidence review: every accepted offset bay or bay-owned channelization area appears once in the exported and static `editor.approach_markings` index, with a clear review status and traceable evidence or an explicit missing-evidence note.
+- Evidence review: every accepted offset bay appears once in the exported and static `editor.offset_turn_bay_markings` index, with a clear review status and traceable evidence or an explicit missing-evidence note.

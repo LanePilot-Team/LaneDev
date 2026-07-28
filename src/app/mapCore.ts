@@ -7,6 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
+import { asset } from '../core/asset'
 import {
   buildDividers, buildRoadSurfaces, roadsFromGeoJSON, type RoadFeature,
 } from '../core/roads'
@@ -21,6 +22,7 @@ import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
+import { newRoadsFromFolded } from '../core/newroads'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
   buildLeftTurnWaitingAreas,
@@ -42,6 +44,10 @@ import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlu
 import {
   loadStaticRoadDatabase, staticAnnotations, staticSegments, updateStaticEditor,
 } from '../core/staticDatabase'
+import {
+  buildLaneGuidanceIndex, remapLaneGuidanceRecords,
+  type LaneGuidanceIndex, type LaneGuidanceRecord,
+} from '../core/laneGuidance'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -191,6 +197,32 @@ async function loadDefaultRoads() {
 }
 
 /** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
+async function loadLaneGuidanceRecords(): Promise<LaneGuidanceRecord[]> {
+  try {
+    const response = await fetch(asset('/data/lanepilot/lane-guidance.json'))
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const records: unknown = await response.json()
+    if (!Array.isArray(records)) throw new Error('根節點不是陣列')
+    return records as LaneGuidanceRecord[]
+  } catch (error) {
+    console.warn('車道標註索引載入失敗，改用 OSM／系統推測', error)
+    return []
+  }
+}
+
+function guidanceIndexForRoads(
+  records: LaneGuidanceRecord[],
+  roads: RoadFeature[],
+  nodeRemap: Map<number, number>,
+  wayRemap: Map<number, DropRemap>,
+): LaneGuidanceIndex {
+  return buildLaneGuidanceIndex(remapLaneGuidanceRecords(records, {
+    existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
+    nodeRemap,
+    wayRemap,
+  }))
+}
+
 export interface MapCore {
   mapRef: RefObject<MLMap | null>
   roadsRef: RefObject<RoadFeature[]>
@@ -259,6 +291,8 @@ export function useMapCore(
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
+  const laneGuidanceRecordsRef = useRef<LaneGuidanceRecord[]>([])
+  const laneGuidanceIndexRef = useRef<LaneGuidanceIndex>(buildLaneGuidanceIndex([]))
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -381,7 +415,10 @@ export function useMapCore(
   const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
     roadsRef.current = roads
     redrawRoads()
-    graphRef.current = new RoadGraph(roads)
+    laneGuidanceIndexRef.current = guidanceIndexForRoads(
+      laneGuidanceRecordsRef.current, roads, nodeRemapRef.current, wayRemapRef.current,
+    )
+    graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
     rebuildElevation(roads)
@@ -447,10 +484,11 @@ export function useMapCore(
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
-      const [roadsRaw, buildingsRaw] = await Promise.all([
+      const [roadsRaw, buildingsRaw, laneGuidanceRecords] = await Promise.all([
         loadDefaultRoads(),
-        fetch('/data/nanzih_buildings_height.geojson').then((r) => r.json()) as
+        fetch(asset('/data/nanzih_buildings_height.geojson')).then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
+        loadLaneGuidanceRecords(),
       ])
       // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
       // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
@@ -531,6 +569,10 @@ export function useMapCore(
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
       wayRemapRef.current = wayRemap
+      laneGuidanceRecordsRef.current = laneGuidanceRecords
+      laneGuidanceIndexRef.current = guidanceIndexForRoads(
+        laneGuidanceRecords, roads, nodeRemap, wayRemap,
+      )
       // 除錯開關：?journal=off 完全不套標註（連 seed 都不載），看純 OSM 原始狀態。
       // 同學的 LanePilot annotation（author=lanepilot）實驗期間一律不套。
       const journalOff = location.search.includes('journal=off')
@@ -538,13 +580,15 @@ export function useMapCore(
       journalRef.current = journalOff
         ? []
         : remapJournalNodes(loadJournal(), nodeRemap)
-      applyToRoads(roads, foldJournal(journalRef.current))
+      const folded = foldJournal(journalRef.current)
+      const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
+      applyToRoads(roadsAll, folded)
       // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
-      roadsRef.current = roads.filter((road) => !road.properties.deleted)
+      roadsRef.current = roadsAll.filter((road) => !road.properties.deleted)
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roadsRef.current)
+      graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -592,7 +636,7 @@ export function useMapCore(
               }))
               updateStaticEditor({ journal: journalRef.current })
               applyToRoads(roadsRef.current, foldJournal(journalRef.current))
-              graphRef.current = new RoadGraph(roadsRef.current)
+              graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
               intersectionsRef.current = graphRef.current.intersections()
             }
           }
@@ -623,7 +667,7 @@ export function useMapCore(
               const res = zonesFromAnnotations({
                 records: parsed.records,
                 graph: graphRef.current,
-                roads,
+                roads: roadsAll,
                 nodeRemap, wayRemap,
                 rawWays: rawWaysRef.current,
                 existing: manual,
@@ -649,7 +693,7 @@ export function useMapCore(
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer
       setActiveElevatedLayer(eLayer) // usePlanner/useDrive 畫路線絲帶用（模組單例）
-      rebuildElevation(roads)
+      rebuildElevation(roadsAll)
       map.addLayer(eLayer.asLayer())
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer
       // 真 3D 車輛模型圖層（three.js）

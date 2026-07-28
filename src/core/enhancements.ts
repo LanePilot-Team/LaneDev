@@ -31,14 +31,34 @@ export interface EnhancementRecord {
    * 之後擴充：'median' | 'sign' 等（禁止左轉/迴轉見計畫書 B-11）
    */
   target: {
-    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane' | 'moto_box'
+    type: 'road' | 'road_merge' | 'turn_bay' | 'twin_island' | 'right_lane'
+      | 'moto_box' | 'new_road'
     key: string
   }
   fields?: Record<string, string | number>
 }
 
 const JOURNAL_KEY = 'navsim-journal-v1'
-export const AUTHOR = 'rex' // TODO: 多人協作時做成設定
+const AUTHOR_KEY = 'navsim-author'
+
+export function getAuthor(): string {
+  try { return localStorage.getItem(AUTHOR_KEY) ?? 'unknown' }
+  catch { return 'unknown' }
+}
+
+export function setAuthor(name: string) {
+  try { localStorage.setItem(AUTHOR_KEY, name || 'unknown') }
+  catch { /* 無儲存空間時仍可繼續編輯 */ }
+}
+
+export function stampAuthor(
+  journal: EnhancementRecord[], author: string,
+): EnhancementRecord[] {
+  if (!author) return journal
+  const next = journal.map((record) => record.author ? record : { ...record, author })
+  queueJournalPersistence(next)
+  return next
+}
 let pendingJournal: EnhancementRecord[] | null = null
 let journalFlushQueued = false
 
@@ -72,7 +92,7 @@ export function loadJournal(): EnhancementRecord[] {
 export function appendRecord(
   journal: EnhancementRecord[],
   rec: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>,
-  author: string = AUTHOR, // 匯入 LanePilot 標註時標記來源
+  author: string = getAuthor(), // 公開 main 預設 unknown；本機可設為 anna
 ): EnhancementRecord[] {
   const next = [...journal, {
     ...rec,
@@ -380,11 +400,12 @@ export function journalForMergedRoads(journal: EnhancementRecord[]): Enhancement
 export function exportEnhancements(
   journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
   bays: TurnBay[] = [], rightLanes: RightLane[] = [],
+  author: string = getAuthor(),
 ) {
   const payload = {
     format: 'navsim-enhancement-v0.5',
     exported_at: new Date().toISOString(),
-    author: AUTHOR,
+    author,
     journal,
     latest: Object.fromEntries(foldJournal(journal)),
     waiting_zones: zones.map((z) => ({

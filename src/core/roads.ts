@@ -97,6 +97,9 @@ export interface RoadProps {
   /** 區塊識別：way 依路口切塊後，區塊第一個 node id（journal 區塊鍵 way/W@b/N 用）。
    * 未切塊（無中間路口）時 = nodes[0]。 */
   blockNode: number
+  /** 唯一靜態資料庫中的精確 segment 身分；同一 osm_id 可有多筆 split。 */
+  navSegmentKey: string
+  splitIndex: number
   /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
   deleted?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
@@ -234,6 +237,8 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       turnLanes,
       turnLanesB,
       blockNode: nodes[0] ?? 0,
+      navSegmentKey: String(p.nav_segment_key ?? `way/${Number(p.osm_id)}`),
+      splitIndex: Number.isFinite(Number(p.split_index)) ? Number(p.split_index) : 0,
       reversed,
       nodes,
     }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, checkRoadMerge, foldJournal, migrateJournalForStaticMerge,
+  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
 } from '../core/enhancements'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
@@ -390,12 +390,24 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
           const joinNode = check.primaryAt === 'start'
             ? firstNodes[0]
             : firstNodes[firstNodes.length - 1]
-          void mergeStaticRoadSegments(check.primaryKey, check.secondaryKey, joinNode)
+          void mergeStaticRoadSegments(
+            {
+              osmId: first.properties.osm_id,
+              navSegmentKey: first.properties.navSegmentKey,
+              splitIndex: first.properties.splitIndex,
+              blockNode: first.properties.blockNode,
+            },
+            {
+              osmId: road.properties.osm_id,
+              navSegmentKey: road.properties.navSegmentKey,
+              splitIndex: road.properties.splitIndex,
+              blockNode: road.properties.blockNode,
+            },
+            joinNode,
+          )
             .then(() => {
               // 資料庫已改寫：live journal 的區塊鍵/元件鍵跟著遷移再重載，
               // 否則舊鍵指向已消失的區塊，覆寫會靜默失效。
-              core.journalRef.current = migrateJournalForStaticMerge(
-                core.journalRef.current, check.primaryKey, check.secondaryKey)
               window.location.reload()
             })
             .catch((error) => {

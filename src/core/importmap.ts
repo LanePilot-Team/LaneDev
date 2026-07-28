@@ -68,6 +68,8 @@ function segmentFeature(rec: Record<string, unknown>): Feature<LineString> | nul
     geometry,
     properties: {
       osm_id: (identity!.source_osm as Record<string, unknown>).osm_id,
+      nav_segment_key: String(identity?.nav_segment_key ?? ''),
+      split_index: Number(identity?.split_index ?? 0),
       name: tags.name ?? (laneNav.road_name as string | undefined),
       highway: tags.highway ?? (laneNav.road_class as string | undefined),
       oneway: tags.oneway,

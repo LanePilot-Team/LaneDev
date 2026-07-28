@@ -1,59 +1,183 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import {
+  copyFile, mkdir, readFile, readdir, rename, unlink, writeFile,
+} from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-// 攤平後只有單一專案（LaneNav 鏡像已移除），資料目錄即本專案 public/
 const databasePath = resolve('public/data/road_database.json')
+const backupDirectory = resolve('.lanedev-backups')
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024
-const MAX_MERGE_BYTES = 16 * 1024
+const MAX_MERGE_BYTES = 32 * 1024
+const MAX_BACKUPS = 3
+
+const isLocalWrite = (req: any) => {
+  const remote = String(req.socket?.remoteAddress ?? '')
+  const origin = String(req.headers?.origin ?? '')
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
+    && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+}
+
+const readBody = (req: any, limit: number) => new Promise<any>((resolveBody, reject) => {
+  const chunks: Buffer[] = []
+  let size = 0
+  req.on('data', (chunk: Buffer) => {
+    size += chunk.length
+    if (size <= limit) chunks.push(Buffer.from(chunk))
+  })
+  req.on('end', () => {
+    if (size > limit) return reject(new Error('Payload is too large'))
+    try { resolveBody(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }
+    catch { reject(new Error('Invalid JSON payload')) }
+  })
+})
+
+const atomicWrite = async (database: any) => {
+  const temporaryPath = `${databasePath}.tmp`
+  await writeFile(temporaryPath, `${JSON.stringify(database)}\n`, 'utf8')
+  await rename(temporaryPath, databasePath)
+}
+
+async function createMergeBackup() {
+  await mkdir(backupDirectory, { recursive: true })
+  const name = `road_database.before-merge-${Date.now()}.json`
+  await copyFile(databasePath, resolve(backupDirectory, name))
+  const backups = (await readdir(backupDirectory))
+    .filter((file) => file.startsWith('road_database.before-merge-') && file.endsWith('.json'))
+    .sort()
+  for (const file of backups.slice(0, Math.max(0, backups.length - MAX_BACKUPS))) {
+    await unlink(resolve(backupDirectory, file))
+  }
+}
+
+const segmentOsmId = (record: any) => Number(
+  record?.object_identity?.source_osm?.osm_id
+  ?? String(record?.object_identity?.nav_segment_key ?? '').match(/^way\/(-?\d+)/)?.[1],
+)
+
+const segmentIdentityMatches = (record: any, identity: any) => {
+  const objectIdentity = record?.object_identity ?? {}
+  return segmentOsmId(record) === Number(identity?.osmId)
+    && String(objectIdentity.nav_segment_key ?? '') === String(identity?.navSegmentKey ?? '')
+    && Number(objectIdentity.split_index ?? 0) === Number(identity?.splitIndex ?? 0)
+    && Array.isArray(record?.node_refs)
+    && record.node_refs.some((node: unknown) => Number(node) === Number(identity?.blockNode))
+}
+
+const replaceWayInKey = (key: string, fromWay: number, toWay: number) =>
+  key.replace(new RegExp(`^way/${fromWay}(?=@|$)`), `way/${toWay}`)
+
+function migrateEditorForMerge(
+  editor: any,
+  primaryId: number,
+  secondaryId: number,
+  joinNode: number,
+) {
+  editor ??= {}
+  const journal = Array.isArray(editor.journal) ? editor.journal : []
+  const primaryFields: Record<string, string | number> = {}
+  for (const record of journal) {
+    if (record.op === 'set' && record.target?.type === 'road'
+      && (record.target.key === `way/${primaryId}`
+        || record.target.key.startsWith(`way/${primaryId}@b/`))) {
+      Object.assign(primaryFields, record.fields ?? {})
+    }
+  }
+
+  const migrated = journal.flatMap((record: any) => {
+    const key = String(record.target?.key ?? '')
+    if (record.target?.type === 'road_merge'
+      && (key.includes(`way/${primaryId}@`) || key.includes(`way/${secondaryId}@`))) return []
+    if (key.includes(`@node/${joinNode}`) || key.includes(`@b/${joinNode}`)) return []
+    if (record.target?.type === 'road'
+      && (key === `way/${primaryId}` || key.startsWith(`way/${primaryId}@b/`)
+        || key === `way/${secondaryId}` || key.startsWith(`way/${secondaryId}@b/`))) return []
+    if (secondaryId !== primaryId && key.startsWith(`way/${secondaryId}@`)) {
+      return [{
+        ...record,
+        target: { ...record.target, key: replaceWayInKey(key, secondaryId, primaryId) },
+      }]
+    }
+    return [record]
+  })
+  if (Object.keys(primaryFields).length) {
+    migrated.push({
+      op: 'set',
+      target: { type: 'road', key: `way/${primaryId}` },
+      fields: primaryFields,
+      author: 'unknown',
+      ts: new Date().toISOString(),
+    })
+  }
+  editor.journal = migrated.map((record: any, index: number) => ({ ...record, seq: index + 1 }))
+
+  const zones = Array.isArray(editor.waiting_zones) ? editor.waiting_zones : []
+  const removedZoneIds = zones
+    .filter((zone: any) => Number(zone.intersectionId) === joinNode)
+    .map((zone: any) => String(zone.id))
+  editor.waiting_zones = zones.filter((zone: any) => Number(zone.intersectionId) !== joinNode)
+  editor.deleted_waiting_zone_ids = [
+    ...new Set([
+      ...(Array.isArray(editor.deleted_waiting_zone_ids)
+        ? editor.deleted_waiting_zone_ids.map(String) : []),
+      ...removedZoneIds,
+    ]),
+  ]
+  editor.updated_at = new Date().toISOString()
+  return editor
+}
 
 function staticRoadDatabaseWriter() {
   return {
     name: 'lanedev-static-road-database-writer',
     configureServer(server: any) {
-      server.middlewares.use('/api/static-road-database/merge', (req: any, res: any) => {
-        const remote = String(req.socket?.remoteAddress ?? '')
-        const origin = String(req.headers?.origin ?? '')
-        const localRequest = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
-        const localOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-        if (req.method !== 'PUT' || !localRequest || !localOrigin) {
-          res.statusCode = localRequest ? 405 : 403
+      server.middlewares.use('/api/static-road-database/merge', async (req: any, res: any) => {
+        if (req.method !== 'PUT' || !isLocalWrite(req)) {
+          res.statusCode = isLocalWrite(req) ? 405 : 403
           res.end('Static database writes are only allowed from this computer.')
           return
         }
-        const chunks: Buffer[] = []
-        let size = 0
-        req.on('data', (chunk: Buffer) => {
-          size += chunk.length
-          if (size <= MAX_MERGE_BYTES) chunks.push(Buffer.from(chunk))
-        })
-        req.on('end', async () => {
-          try {
-            if (size > MAX_MERGE_BYTES) throw new Error('Merge payload is too large')
-            const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-            const primaryMatch = String(payload.primary ?? '').match(/^way\/(-?\d+)@b\/(-?\d+)$/)
-            const secondaryMatch = String(payload.secondary ?? '').match(/^way\/(-?\d+)@b\/(-?\d+)$/)
-            if (!primaryMatch || !secondaryMatch
-              || String(payload.primary) === String(payload.secondary)) {
-              throw new Error('Invalid road merge keys')
-            }
-            const primaryId = Number(primaryMatch[1])
-            const secondaryId = Number(secondaryMatch[1])
-            const sameWay = primaryId === secondaryId
-            const originalText = await readFile(databasePath, 'utf8')
-            const database = JSON.parse(originalText)
-            const wayIdOf = (record: any) => Number(
-              record?.object_identity?.source_osm?.osm_id
-              ?? String(record?.object_identity?.nav_segment_key ?? '').replace(/^way\//, ''),
+        try {
+          const payload = await readBody(req, MAX_MERGE_BYTES)
+          const joinNode = Number(payload.joinNode)
+          if (!Number.isFinite(joinNode)) throw new Error('Invalid join node')
+          const originalText = await readFile(databasePath, 'utf8')
+          const database = JSON.parse(originalText)
+          const primaryIndex = database.segments.findIndex(
+            (record: any) => segmentIdentityMatches(record, payload.primary),
+          )
+          const secondaryIndex = database.segments.findIndex(
+            (record: any) => segmentIdentityMatches(record, payload.secondary),
+          )
+          if (primaryIndex < 0 || secondaryIndex < 0) {
+            throw new Error('找不到精確的靜態道路分段，請重新載入後再捏合')
+          }
+          const primary = database.segments[primaryIndex]
+          const secondary = database.segments[secondaryIndex]
+          const primaryId = segmentOsmId(primary)
+          const secondaryId = segmentOsmId(secondary)
+          const sameSegment = primaryIndex === secondaryIndex
+          const syntheticNode = -900_000_000_000 - Math.abs(primaryId) * 10_000
+            - Math.abs(joinNode % 10_000)
+
+          if (sameSegment) {
+            const joinIndex = primary.node_refs.findIndex(
+              (node: unknown) => Number(node) === joinNode,
             )
-            const primary = database.segments.find((record: any) => wayIdOf(record) === primaryId)
-            const secondary = sameWay
-              ? primary
-              : database.segments.find((record: any) => wayIdOf(record) === secondaryId)
-            if (!primary || !secondary) throw new Error('Road segment was not found')
+            if (joinIndex <= 0 || joinIndex >= primary.node_refs.length - 1) {
+              throw new Error('選取區塊沒有共用可忽略的內部 OSM 節點')
+            }
+            primary.node_refs[joinIndex] = syntheticNode
+          } else {
             const a = primary.geometry?.coordinates
-            if (!Array.isArray(a) || a.length < 2) throw new Error('Invalid road geometry')
+            const b0 = secondary.geometry?.coordinates
+            const aNodes = [...(primary.node_refs ?? [])]
+            const bNodes0 = [...(secondary.node_refs ?? [])]
+            if (!Array.isArray(a) || !Array.isArray(b0)
+              || a.length < 2 || b0.length < 2
+              || a.length !== aNodes.length || b0.length !== bNodes0.length) {
+              throw new Error('道路幾何與節點資料不完整')
+            }
             const distanceM = (x: number[], y: number[]) => {
               const lat = ((x[1] + y[1]) / 2) * Math.PI / 180
               return Math.hypot(
@@ -61,165 +185,100 @@ function staticRoadDatabaseWriter() {
                 (x[1] - y[1]) * 110540,
               )
             }
-            const aNodes0 = Array.isArray(primary.node_refs) ? primary.node_refs : []
-            const syntheticBase = -900_000_000_000 - Math.abs(primaryId) * 10_000
-            if (sameWay) {
-              const joinNode = Number(payload.joinNode)
-              const joinIndex = aNodes0.findIndex((node: unknown) => Number(node) === joinNode)
-              if (!Number.isFinite(joinNode) || joinIndex <= 0 || joinIndex >= aNodes0.length - 1) {
-                throw new Error('Selected blocks do not share an internal OSM node')
-              }
-              primary.node_refs = aNodes0.map((node: number, index: number) =>
-                index === joinIndex ? syntheticBase - index : node)
+            const joins = [
+              { p: 'start', s: 'start', d: distanceM(a[0], b0[0]) },
+              { p: 'start', s: 'end', d: distanceM(a[0], b0.at(-1)) },
+              { p: 'end', s: 'start', d: distanceM(a.at(-1), b0[0]) },
+              { p: 'end', s: 'end', d: distanceM(a.at(-1), b0.at(-1)) },
+            ].sort((x, y) => x.d - y.d)
+            const join = joins[0]
+            if (join.d > 5) throw new Error(`道路端點相距 ${join.d.toFixed(1)}m，無法安全捏合`)
+            const b = join.s === 'start' ? [...b0] : [...b0].reverse()
+            const bNodes = join.s === 'start' ? bNodes0 : bNodes0.reverse()
+            let coordinates: number[][]
+            let nodeRefs: number[]
+            if (join.p === 'end') {
+              coordinates = [...a, ...b.slice(1)]
+              nodeRefs = [...aNodes, ...bNodes.slice(1)]
+              nodeRefs[aNodes.length - 1] = syntheticNode
             } else {
-              const b0 = secondary.geometry?.coordinates
-              if (!Array.isArray(b0) || b0.length < 2) throw new Error('Invalid road geometry')
-              const pairs = [
-                { p: 'start', s: 'start', d: distanceM(a[0], b0[0]) },
-                { p: 'start', s: 'end', d: distanceM(a[0], b0[b0.length - 1]) },
-                { p: 'end', s: 'start', d: distanceM(a[a.length - 1], b0[0]) },
-                { p: 'end', s: 'end', d: distanceM(a[a.length - 1], b0[b0.length - 1]) },
-              ].sort((x, y) => x.d - y.d)
-              const join = pairs[0]
-              if (join.d > 5) throw new Error(`Road endpoints are ${join.d.toFixed(1)}m apart`)
-              const bNodes0 = Array.isArray(secondary.node_refs) ? secondary.node_refs : []
-              const b = join.s === 'start' ? [...b0] : [...b0].reverse()
-              const bNodes = join.s === 'start' ? [...bNodes0] : [...bNodes0].reverse()
-              let coordinates: number[][]
-              let nodeRefs: number[]
-              if (join.p === 'end') {
-                coordinates = [...a, ...b.slice(1)]
-                nodeRefs = [...aNodes0, ...bNodes.slice(1)]
-              } else {
-                coordinates = [...b.slice(1).reverse(), ...a]
-                nodeRefs = [...bNodes.slice(1).reverse(), ...aNodes0]
-              }
-              nodeRefs = coordinates.map((_, index) => {
-                if (index === 0) return Number(nodeRefs[0])
-                if (index === coordinates.length - 1) return Number(nodeRefs[nodeRefs.length - 1])
-                return syntheticBase - index
-              })
-              primary.geometry.coordinates = coordinates
-              primary.node_refs = nodeRefs
-              database.archived_segments ??= []
-              database.archived_segments.push({
-                archived_at: new Date().toISOString(),
-                reason: `merged_into_way/${primaryId}`,
-                segment: secondary,
-              })
-              database.segments = database.segments.filter(
-                (record: any) => wayIdOf(record) !== secondaryId,
-              )
+              coordinates = [...b.slice(1).reverse(), ...a]
+              nodeRefs = [...bNodes.slice(1).reverse(), ...aNodes]
+              nodeRefs[bNodes.length - 1] = syntheticNode
             }
+            primary.geometry.coordinates = coordinates
+            primary.node_refs = nodeRefs
+            database.segments.splice(secondaryIndex, 1)
+          }
 
-            const journal = Array.isArray(database.editor?.journal) ? database.editor.journal : []
-            const masterFields: Record<string, string | number> = {}
-            for (const record of journal) {
-              if (record.op !== 'set' || record.target?.type !== 'road') continue
-              if (record.target.key === `way/${primaryId}`
-                || record.target.key === String(payload.primary)) {
-                Object.assign(masterFields, record.fields ?? {})
-              }
-            }
-            const migrated = journal.flatMap((record: any) => {
-              const key = String(record.target?.key ?? '')
-              if (record.target?.type === 'road_merge'
-                && (key.includes(`way/${primaryId}@`) || key.includes(`way/${secondaryId}@`))) return []
-              if (record.target?.type === 'road'
-                && (key === `way/${primaryId}` || key.startsWith(`way/${primaryId}@b/`)
-                  || key === `way/${secondaryId}` || key.startsWith(`way/${secondaryId}@b/`))) return []
-              if (key.startsWith(`way/${secondaryId}@`)) {
+          database.editor = migrateEditorForMerge(
+            database.editor, primaryId, secondaryId, joinNode,
+          )
+          if (secondaryId !== primaryId && Array.isArray(database.annotations)) {
+            database.annotations = database.annotations.flatMap((annotation: any) => {
+              const identity = annotation?.object_identity ?? {}
+              const key = String(identity.nav_segment_key ?? '')
+              const context = String(identity.context_scope ?? '')
+              if (context.includes(`node/${joinNode}`)) return []
+              if (key === `way/${secondaryId}`) {
                 return [{
-                  ...record,
-                  target: {
-                    ...record.target,
-                    key: key.replace(`way/${secondaryId}@`, `way/${primaryId}@`),
+                  ...annotation,
+                  object_identity: {
+                    ...identity,
+                    nav_segment_key: `way/${primaryId}`,
                   },
                 }]
               }
-              return [record]
+              return [annotation]
             })
-            if (Object.keys(masterFields).length) {
-              migrated.push({
-                op: 'set',
-                target: { type: 'road', key: `way/${primaryId}` },
-                fields: masterFields,
-                author: 'rex',
-                ts: new Date().toISOString(),
-              })
-            }
-            database.editor.journal = migrated.map((record: any, index: number) => ({
-              ...record,
-              seq: index + 1,
-            }))
-            database.editor.updated_at = new Date().toISOString()
-            database.updated_at = database.editor.updated_at
-            const backupPath = `${databasePath}.before-merge-${Date.now()}.bak`
-            await writeFile(backupPath, originalText, 'utf8')
-            const temporaryPath = `${databasePath}.tmp`
-            await writeFile(temporaryPath, `${JSON.stringify(database)}\n`, 'utf8')
-            await rename(temporaryPath, databasePath)
-            res.statusCode = 204
-            res.end()
-          } catch (error) {
-            console.error('Failed to merge static road segments', error)
-            res.statusCode = 400
-            res.end(error instanceof Error ? error.message : 'Failed to merge road segments')
           }
-        })
+          database.updated_at = database.editor.updated_at
+          await createMergeBackup()
+          await atomicWrite(database)
+          res.statusCode = 204
+          res.end()
+        } catch (error) {
+          console.error('Failed to merge static road segments', error)
+          res.statusCode = 400
+          res.end(error instanceof Error ? error.message : 'Failed to merge road segments')
+        }
       })
-      server.middlewares.use('/api/static-road-database/editor', (req: any, res: any) => {
-        const remote = String(req.socket?.remoteAddress ?? '')
-        const origin = String(req.headers?.origin ?? '')
-        const localRequest = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
-        const localOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-        if (req.method !== 'PUT' || !localRequest || !localOrigin) {
-          res.statusCode = localRequest ? 405 : 403
+
+      server.middlewares.use('/api/static-road-database/editor', async (req: any, res: any) => {
+        if (req.method !== 'PUT' || !isLocalWrite(req)) {
+          res.statusCode = isLocalWrite(req) ? 405 : 403
           res.end('Static database writes are only allowed from this computer.')
           return
         }
-        const chunks: Buffer[] = []
-        let size = 0
-        req.on('data', (chunk: Buffer) => {
-          size += chunk.length
-          if (size <= MAX_EDITOR_BYTES) chunks.push(Buffer.from(chunk))
-        })
-        req.on('end', async () => {
-          try {
-            if (size > MAX_EDITOR_BYTES) throw new Error('Editor payload is too large')
-            const editor = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-            if (!Array.isArray(editor.journal) ||
-                !Array.isArray(editor.waiting_zones) ||
-                !Array.isArray(editor.deleted_waiting_zone_ids)) {
-              throw new Error('Invalid editor payload')
-            }
-            const database = JSON.parse(await readFile(databasePath, 'utf8'))
-            database.editor = editor
-            database.updated_at = new Date().toISOString()
-            const temporaryPath = `${databasePath}.tmp`
-            await writeFile(temporaryPath, `${JSON.stringify(database)}\n`, 'utf8')
-            await rename(temporaryPath, databasePath)
-            res.statusCode = 204
-            res.end()
-          } catch (error) {
-            console.error('Failed to update static road database', error)
-            res.statusCode = 500
-            res.end('Failed to update static road database')
+        try {
+          const editor = await readBody(req, MAX_EDITOR_BYTES)
+          if (!Array.isArray(editor.journal)
+            || !Array.isArray(editor.waiting_zones)
+            || !Array.isArray(editor.deleted_waiting_zone_ids)) {
+            throw new Error('Invalid editor payload')
           }
-        })
+          const database = JSON.parse(await readFile(databasePath, 'utf8'))
+          database.editor = editor
+          database.updated_at = new Date().toISOString()
+          await atomicWrite(database)
+          res.statusCode = 204
+          res.end()
+        } catch (error) {
+          console.error('Failed to update static road database', error)
+          res.statusCode = 500
+          res.end('Failed to update static road database')
+        }
       })
     },
   }
 }
 
-// build 時走 /LaneDev/（GitHub Pages project site 子路徑）；dev 維持 /。
-// preview 沿用 build 的 base，本地驗證要開 http://localhost:4173/LaneDev/
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/LaneDev/' : '/',
   plugins: [react(), staticRoadDatabaseWriter()],
   server: {
-    host: true, // 手機測試走 Tailscale
+    host: true,
     port: 5190,
-    allowedHosts: true, // 允許 Tailscale MagicDNS 主機名（不只 IP）連線
+    allowedHosts: true,
   },
 }))

@@ -339,19 +339,26 @@ export function buildStyle(): StyleSpecification {
 
       {
         // 路面印字（禁行機車等）：roadtext.ts 生成點位，朝向 = 行進方向。
-        // 尺寸與 makeIcons 的 roadTextImage 約定：4 字 × 80px/字 ↔ 10m 長
+        // 主字寬 1.4m，加上同色描邊後約 1.48m；維持在使用者指定的 1.6m
+        // 上限內，粗度取原版與上一版之間的中間值。
         id: 'road-text', type: 'symbol', source: 'roadtext', minzoom: 16,
         layout: {
           'text-field': ['get', 'label'],
           'text-font': ['Noto Sans CJK TC Regular'],
-          'text-size': widthMeters(1.15),
+          'text-size': widthMeters(1.4),
           'text-writing-mode': ['vertical'],
           'text-letter-spacing': 0.12,
           'text-rotate': ['get', 'brg'],
           'text-rotation-alignment': 'map',
           'text-allow-overlap': true,
         },
-        paint: { 'text-color': ['get', 'color'], 'text-opacity': 0.92 },
+        paint: {
+          'text-color': ['get', 'color'],
+          'text-opacity': 0.96,
+          'text-halo-color': ['get', 'color'],
+          'text-halo-width': widthMeters(0.04),
+          'text-halo-blur': 0,
+        },
       },
 
       // ── 單行道方向箭頭 ──

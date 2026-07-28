@@ -56,7 +56,41 @@ const SNAPPED_INTERSECTION_NODES = [
 export function collapseKnownIntersections(
   roads: RoadFeature[], nodeRemap: Map<number, number>,
 ) {
-  for (const [keep, drop] of COLLAPSED_INTERSECTION_NODES) {
+  // 舊版「捏合」會把主路上的交會 node 改成負數，造成側街完全斷線。
+  // 若負節點和另一條道路的真實正節點位於完全相同的位置，即可安全判定
+  // 它是舊捏合留下的斷點。恢復共用 node，並在主路記錄單向入口限制：
+  // forward 可右轉進入側街，backward 不可跨線左轉。
+  const coordinateKey = (coord: [number, number]) =>
+    `${coord[0].toFixed(7)},${coord[1].toFixed(7)}`
+  const positiveNodesAt = new Map<string, Set<number>>()
+  for (const road of roads) {
+    road.properties.nodes.forEach((node, index) => {
+      if (node <= 0) return
+      const key = coordinateKey(road.geometry.coordinates[index] as [number, number])
+      const nodes = positiveNodesAt.get(key) ?? new Set<number>()
+      nodes.add(node)
+      positiveNodesAt.set(key, nodes)
+    })
+  }
+  const legacyPairs: [number, number][] = []
+  for (const road of roads) {
+    const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
+    road.properties.nodes.forEach((node, index) => {
+      if (node >= 0) return
+      const key = coordinateKey(road.geometry.coordinates[index] as [number, number])
+      const matches = [...(positiveNodesAt.get(key) ?? [])]
+      // 多個不同真實 node 疊在同一座標時無法安全判定，不自動合併。
+      if (matches.length !== 1) return
+      legacyPairs.push([matches[0], node])
+      restricted.add(matches[0])
+    })
+    road.properties.oneSideEntryNodes = restricted.size ? [...restricted] : undefined
+  }
+
+  const pairs = [...COLLAPSED_INTERSECTION_NODES, ...legacyPairs]
+    .filter(([keep, drop], index, all) =>
+      all.findIndex(([k, d]) => k === keep && d === drop) === index)
+  for (const [keep, drop] of pairs) {
     const points: [number, number][] = []
     for (const r of roads) {
       r.properties.nodes.forEach((n, i) => {

@@ -85,6 +85,7 @@ function segmentFeature(rec: Record<string, unknown>): Feature<LineString> | nul
       lanes_backward: tags['lanes:backward'],
       turn_lanes: tags['turn:lanes'],
       turn_lanes_forward: tags['turn:lanes:forward'],
+      one_side_entry_nodes: laneNav.one_side_entry_nodes,
       nodes: nodeRefs ?? [],
     },
   }

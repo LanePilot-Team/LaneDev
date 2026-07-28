@@ -64,6 +64,15 @@ const segmentIdentityMatches = (record: any, identity: any) => {
     && record.node_refs.some((node: unknown) => Number(node) === Number(identity?.blockNode))
 }
 
+const uniqueSyntheticNode = (seed: number, existing: unknown[]) => {
+  const used = new Set(existing.map((node) => Number(node)))
+  let candidate = seed
+  // 連續捏合時 joinNode 可能本身就是相同公式產生的負節點；必須再往下取新值，
+  // 否則 API 雖成功，靜態拓撲實際完全沒變。
+  while (used.has(candidate)) candidate--
+  return candidate
+}
+
 const replaceWayInKey = (key: string, fromWay: number, toWay: number) =>
   key.replace(new RegExp(`^way/${fromWay}(?=@|$)`), `way/${toWay}`)
 
@@ -127,6 +136,46 @@ function migrateEditorForMerge(
   return editor
 }
 
+/** 同一條畫面道路的兩個區塊捏合：只收斂被選取的兩筆 road 設定。
+ * 不碰路口元件、待轉區或同 way 的其他區塊，避免內部節點忽略擴散成整條路覆寫。 */
+function migrateEditorForInternalMerge(
+  editor: any,
+  wayId: number,
+  primaryBlockNode: number,
+  secondaryBlockNode: number,
+) {
+  editor ??= {}
+  const journal = Array.isArray(editor.journal) ? editor.journal : []
+  const primaryKey = `way/${wayId}@b/${primaryBlockNode}`
+  const secondaryKey = `way/${wayId}@b/${secondaryBlockNode}`
+  const mergedFields: Record<string, string | number> = {}
+  // 次段先、保留段後：欄位衝突時以首先選取的保留段樣式為準。
+  for (const wantedKey of [secondaryKey, primaryKey]) {
+    for (const record of journal) {
+      if (record.op === 'set' && record.target?.type === 'road'
+        && record.target?.key === wantedKey) {
+        Object.assign(mergedFields, record.fields ?? {})
+      }
+    }
+  }
+  const migrated = journal.filter((record: any) => {
+    const key = String(record.target?.key ?? '')
+    return !(record.target?.type === 'road' && (key === primaryKey || key === secondaryKey))
+  })
+  if (Object.keys(mergedFields).length) {
+    migrated.push({
+      op: 'set',
+      target: { type: 'road', key: primaryKey },
+      fields: mergedFields,
+      author: 'unknown',
+      ts: new Date().toISOString(),
+    })
+  }
+  editor.journal = migrated.map((record: any, index: number) => ({ ...record, seq: index + 1 }))
+  editor.updated_at = new Date().toISOString()
+  return editor
+}
+
 function staticRoadDatabaseWriter() {
   return {
     name: 'lanedev-static-road-database-writer',
@@ -143,6 +192,48 @@ function staticRoadDatabaseWriter() {
           if (!Number.isFinite(joinNode)) throw new Error('Invalid join node')
           const originalText = await readFile(databasePath, 'utf8')
           const database = JSON.parse(originalText)
+          const internalCarrierIndex = payload.internalCarrier?.internalOnly
+            ? database.segments.findIndex(
+              (record: any) => segmentIdentityMatches(record, payload.internalCarrier),
+            )
+            : -1
+          if (payload.internalCarrier?.internalOnly) {
+            if (internalCarrierIndex < 0) {
+              throw new Error('找不到承載中間路口的原始靜態道路分段，請重新載入後再捏合')
+            }
+            const carrier = database.segments[internalCarrierIndex]
+            const joinIndex = carrier.node_refs.findIndex(
+              (node: unknown) => Number(node) === joinNode,
+            )
+            if (joinIndex <= 0 || joinIndex >= carrier.node_refs.length - 1) {
+              throw new Error('選取區塊沒有共用可忽略的內部 OSM 節點')
+            }
+            const logicalPrimaryId = Number(payload.primary?.osmId)
+            const logicalSecondaryId = Number(payload.secondary?.osmId)
+            carrier.lane_nav_tags ??= {}
+            const restricted = new Set<number>(
+              (carrier.lane_nav_tags.one_side_entry_nodes ?? []).map(Number),
+            )
+            restricted.add(joinNode)
+            carrier.lane_nav_tags.one_side_entry_nodes = [...restricted]
+            database.editor = migrateEditorForInternalMerge(
+              database.editor,
+              logicalPrimaryId,
+              Number(payload.primary?.blockNode),
+              Number(payload.secondary?.blockNode),
+            )
+            database.updated_at = new Date().toISOString()
+            await createMergeBackup()
+            await atomicWrite(database)
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({
+              ok: true,
+              operation: 'ignore_internal_junction',
+              carrier: payload.internalCarrier,
+            }))
+            return
+          }
           const primaryIndex = database.segments.findIndex(
             (record: any) => segmentIdentityMatches(record, payload.primary),
           )
@@ -157,8 +248,12 @@ function staticRoadDatabaseWriter() {
           const primaryId = segmentOsmId(primary)
           const secondaryId = segmentOsmId(secondary)
           const sameSegment = primaryIndex === secondaryIndex
-          const syntheticNode = -900_000_000_000 - Math.abs(primaryId) * 10_000
-            - Math.abs(joinNode % 10_000)
+          primary.lane_nav_tags ??= {}
+          const restricted = new Set<number>(
+            (primary.lane_nav_tags.one_side_entry_nodes ?? []).map(Number),
+          )
+          restricted.add(joinNode)
+          primary.lane_nav_tags.one_side_entry_nodes = [...restricted]
 
           if (sameSegment) {
             const joinIndex = primary.node_refs.findIndex(
@@ -167,7 +262,8 @@ function staticRoadDatabaseWriter() {
             if (joinIndex <= 0 || joinIndex >= primary.node_refs.length - 1) {
               throw new Error('選取區塊沒有共用可忽略的內部 OSM 節點')
             }
-            primary.node_refs[joinIndex] = syntheticNode
+            // 保留實際交會節點；樣式連續由合併後的單一 segment 負責，
+            // 導航則以 one_side_entry_nodes 限制對向左轉。
           } else {
             const a = primary.geometry?.coordinates
             const b0 = secondary.geometry?.coordinates
@@ -200,11 +296,11 @@ function staticRoadDatabaseWriter() {
             if (join.p === 'end') {
               coordinates = [...a, ...b.slice(1)]
               nodeRefs = [...aNodes, ...bNodes.slice(1)]
-              nodeRefs[aNodes.length - 1] = syntheticNode
+              nodeRefs[aNodes.length - 1] = joinNode
             } else {
               coordinates = [...b.slice(1).reverse(), ...a]
               nodeRefs = [...bNodes.slice(1).reverse(), ...aNodes]
-              nodeRefs[bNodes.length - 1] = syntheticNode
+              nodeRefs[bNodes.length - 1] = joinNode
             }
             primary.geometry.coordinates = coordinates
             primary.node_refs = nodeRefs
@@ -219,7 +315,6 @@ function staticRoadDatabaseWriter() {
               const identity = annotation?.object_identity ?? {}
               const key = String(identity.nav_segment_key ?? '')
               const context = String(identity.context_scope ?? '')
-              if (context.includes(`node/${joinNode}`)) return []
               if (key === `way/${secondaryId}`) {
                 return [{
                   ...annotation,
@@ -251,18 +346,27 @@ function staticRoadDatabaseWriter() {
           return
         }
         try {
-          const editor = await readBody(req, MAX_EDITOR_BYTES)
+          const payload = await readBody(req, MAX_EDITOR_BYTES)
+          const editor = payload?.editor
+          const baseUpdatedAt = String(payload?.base_updated_at ?? '')
           if (!Array.isArray(editor.journal)
             || !Array.isArray(editor.waiting_zones)
             || !Array.isArray(editor.deleted_waiting_zone_ids)) {
             throw new Error('Invalid editor payload')
           }
           const database = JSON.parse(await readFile(databasePath, 'utf8'))
+          const currentUpdatedAt = String(database.editor?.updated_at ?? '')
+          if (baseUpdatedAt !== currentUpdatedAt) {
+            res.statusCode = 409
+            res.end('儲存衝突：靜態資料庫已被捏合或其他頁籤更新，請重新整理後再編輯')
+            return
+          }
           database.editor = editor
           database.updated_at = new Date().toISOString()
           await atomicWrite(database)
-          res.statusCode = 204
-          res.end()
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true, updated_at: editor.updated_at }))
         } catch (error) {
           console.error('Failed to update static road database', error)
           res.statusCode = 500

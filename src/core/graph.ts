@@ -3,7 +3,7 @@
 // 起終點吸附：不再 snap 到路口節點，而是吸到「任意路段的最近頂點」，
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
 import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
-import { MOTO_LANE_M, type RoadFeature } from './roads'
+import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
@@ -51,6 +51,27 @@ export function carAllowed(r: RoadFeature, back: boolean): boolean {
 /** 車種通行檢查（方向敏感：雙向道可以只有單向被編輯成 0 汽車車道） */
 function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
   return profile === 'moto' ? motoAllowed(r, back) : carAllowed(r, back)
+}
+
+/**
+ * 捏合道路的中間路口仍保留拓撲，但只允許主路正向轉入側街。
+ * 對向（back）可沿主路直行，唯獨不可跨越主路左轉進入其他 road。
+ * 側街駛出不受此規則影響。
+ */
+export function oneSideEntryTransitionAllowed(
+  incomingRoad: RoadFeature | undefined,
+  incomingBack: boolean,
+  outgoingRoad: RoadFeature,
+  nodeId: number,
+): boolean {
+  if (!incomingRoad || !incomingBack) return true
+  if (!incomingRoad.properties.oneSideEntryNodes?.includes(nodeId)) return true
+  return outgoingRoad.properties.osm_id === incomingRoad.properties.osm_id
+}
+
+function transitionAllowed(incoming: Edge | undefined, outgoing: Edge, nodeId: number): boolean {
+  if (!incoming || !incoming.back) return true
+  return oneSideEntryTransitionAllowed(incoming.road, incoming.back, outgoing.road, nodeId)
 }
 
 interface Edge {
@@ -198,11 +219,15 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   if (p.oneway === 'yes') {
     const L0 = p.lanesForward // 可為 0（純機車道路體）
     const L = Math.max(1, L0)
-    const sep = p.motoF ? p.motoSepF || 0 : 0 // 快慢分隔帶：機車道再外移
-    const total = L0 * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + sep : 0)
+    const motoCount = p.motoCountF
+    const sep = motoCount > 0 ? p.motoSepF || 0 : 0 // 快慢分隔帶：機車道再外移
+    const total = L0 * LANE_WIDTH_M
+      + (motoCount > 0 ? motoCount * MOTO_LANE_M + sep : 0)
     const base = -total / 2
     const lane = (k: number) => base + (k - 0.5) * LANE_WIDTH_M
-    const moto = p.motoF ? base + L0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(L)
+    const moto = motoCount > 0
+      ? base + L0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
+      : lane(L)
     const car = (k: number) => (L0 > 0 ? lane(k) : moto) // 0 車道時所有偏移落在機車道
     if (profile === 'moto') {
       if (p.motoF) return { cruise: moto, left: moto, right: moto }
@@ -215,13 +240,16 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
   }
   const f0 = e.back ? p.lanesBackward : p.lanesForward
   const f = Math.max(1, f0)
-  const m = e.back ? p.motoB : p.motoF
+  const motoCount = e.back ? p.motoCountB : p.motoCountF
+  const m = motoCount > 0
   const sep = m ? (e.back ? p.motoSepB : p.motoSepF) || 0 : 0
   // 分向線位置（行進 frame）＋中央帶：車道整體外移
   const dv = 0
   const c = dv + (p.centerM || 0) / 2
   const lane = (k: number) => c + (k - 0.5) * LANE_WIDTH_M
-  const moto = m ? c + f0 * LANE_WIDTH_M + sep + MOTO_LANE_M / 2 : lane(f)
+  const moto = m
+    ? c + f0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
+    : lane(f)
   const car = (k: number) => (f0 > 0 ? lane(k) : moto)
   if (profile === 'moto') {
     if (m) return { cruise: moto, left: moto, right: moto }
@@ -566,8 +594,14 @@ export class RoadGraph {
         return {
           coords: e.coords, road: e.road, back: e.back,
           fromNode: e.from, toNode: e.to,
-          startSetbackM: w0 > 0 ? w0 / 2 + clearanceM : 0,
-          endSetbackM: w1 > 0 ? w1 / 2 + clearanceM : 0,
+          startSetbackM: Math.max(
+            w0 > 0 ? w0 / 2 + clearanceM : 0,
+            manualMarkingSetbackM(e.road, e.from),
+          ),
+          endSetbackM: Math.max(
+            w1 > 0 ? w1 / 2 + clearanceM : 0,
+            manualMarkingSetbackM(e.road, e.to),
+          ),
         }
       })
   }
@@ -772,6 +806,7 @@ export class RoadGraph {
       for (const e of this.adj.get(cur) ?? []) {
         if (closed.has(e.to)) continue
         if (!edgeAllowed(e.road, e.back, profile)) continue
+        if (!transitionAllowed(cameFrom.get(cur) ?? startPart.get(cur), e, cur)) continue
         const tentative = g.get(cur)! + e.timeS
         if (tentative < (g.get(e.to) ?? Infinity)) {
           g.set(e.to, tentative)

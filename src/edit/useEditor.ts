@@ -65,6 +65,7 @@ export interface EditRoadState {
   /** 區塊識別（way 依路口切塊）：編輯只影響這個路口到路口的區塊 */
   blockNode: number
   f: number; b: number; motoF: boolean; motoB: boolean
+  motoCountF: number; motoCountB: number
   /** 快慢分隔帶寬（公尺；0 = 機車道白線、>0 = 實體島） */
   motoSepF: number; motoSepB: number
   motoEntryIconF: boolean; motoEntryIconB: boolean
@@ -77,6 +78,7 @@ export interface EditRoadState {
   segmentLengthM: number
   roadMarkingMode: 'all' | 'center' | 'none'
   centerM: number; centerKind: 'hatch' | 'island'
+  islandBayMode: boolean
   centerExtendStart: boolean; centerExtendEnd: boolean
   /** 路寬微調（公尺，可負；對稱加減在斷面兩側，車道線不動） */
   extraM: number
@@ -84,6 +86,8 @@ export interface EditRoadState {
   fwdLabel: string; bwdLabel: string
   turnLanes: string[]
   turnLanesB: string[]
+  motoTurnLanesF: string[]
+  motoTurnLanesB: string[]
   /** 區塊兩端 node（偏心道 journal 鍵用：順向 bay 在 nodeLast、逆向在 nodeFirst） */
   nodeFirst: number; nodeLast: number
   /** 兩向偏心道轉向（BAY_TURN_CYCLE 值）；*0 = 開面板時的初值，儲存只寫差異 */
@@ -288,10 +292,13 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         lanes: editRoad.f + (editRoad.oneway === 'yes' ? 0 : editRoad.b),
         motoF: editRoad.motoF,
         motoB: editRoad.oneway === 'yes' ? false : editRoad.motoB,
+        motoCountF: editRoad.motoCountF,
+        motoCountB: editRoad.oneway === 'yes' ? 0 : editRoad.motoCountB,
         motoSepF: editRoad.motoF ? editRoad.motoSepF : 0,
         motoSepB: editRoad.oneway === 'yes' || !editRoad.motoB ? 0 : editRoad.motoSepB,
         centerM: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
         centerKind: editRoad.centerKind,
+        islandBayMode: editRoad.islandBayMode,
         centerExtendStart: editRoad.centerExtendStart,
         centerExtendEnd: editRoad.centerExtendEnd,
         extraM: editRoad.extraM,
@@ -308,6 +315,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         startTurnLanesB: editRoad.startTurnLanesB,
         turnLanes: editRoad.turnLanes,
         turnLanesB: editRoad.turnLanesB,
+        motoTurnLanesF: editRoad.motoTurnLanesF,
+        motoTurnLanesB: editRoad.motoTurnLanesB,
         laneMarksF: editRoad.laneMarksF,
         laneMarksB: editRoad.laneMarksB,
       },
@@ -380,7 +389,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             `確定將這兩段「${first.properties.name ?? '未命名道路'}」捏合為同一路段嗎？\n\n`
             + `保留：${check.primaryKey}\n合併：${check.secondaryKey}\n\n`
             + '此操作會直接改寫唯一靜態 OSM：第二段將退出活躍路網，'
-            + '中間路口連接會取消，整段共用第一段的道路與偏心道樣式。'
+            + '整段共用第一段的道路與偏心道樣式。中間路口節點仍會保留；'
+            + '主路正向可右轉進入側街，對向不得跨線左轉進入。'
           )
           if (!ok) return
           mergeFirstRef.current = null
@@ -390,6 +400,13 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
           const joinNode = check.primaryAt === 'start'
             ? firstNodes[0]
             : firstNodes[firstNodes.length - 1]
+          const sameLogicalSegment = first.properties.osm_id === road.properties.osm_id
+            && first.properties.navSegmentKey === road.properties.navSegmentKey
+            && first.properties.splitIndex === road.properties.splitIndex
+          const carrier = sameLogicalSegment
+            ? first.properties.sourceSegments.find((source) => source.nodeRefs.includes(joinNode))
+              ?? road.properties.sourceSegments.find((source) => source.nodeRefs.includes(joinNode))
+            : undefined
           void mergeStaticRoadSegments(
             {
               osmId: first.properties.osm_id,
@@ -404,6 +421,13 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
               blockNode: road.properties.blockNode,
             },
             joinNode,
+            carrier ? {
+              osmId: carrier.osmId,
+              navSegmentKey: carrier.navSegmentKey,
+              splitIndex: carrier.splitIndex,
+              blockNode: joinNode,
+              internalOnly: true,
+            } : undefined,
           )
             .then(() => {
               // 資料庫已改寫：live journal 的區塊鍵/元件鍵跟著遷移再重載，
@@ -455,14 +479,17 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const rulesB = p2.oneway === 'no'
         ? (p2.rulesB ?? (p2.motorcycle === 'no' ? ['no_moto'] : []))
         : []
-      const legacyMarks = (rules: string[], lanes: number, moto: boolean) => {
+      const legacyMarks = (rules: string[], lanes: number, motoCount: number) => {
         const mark = rules.includes('no_moto') ? { text: '禁行機車', color: '#facc15' } : null
-        return [...Array.from({ length: lanes }, () => mark), ...(moto ? [null] : [])]
+        return [...Array.from({ length: lanes }, () => mark),
+          ...Array.from({ length: motoCount }, () => null)]
       }
-      const laneMarksF = resizeLaneMarks(p2.laneMarksF ?? legacyMarks(rulesF, p2.lanesForward, p2.motoF),
-        p2.lanesForward + (p2.motoF ? 1 : 0))
-      const laneMarksB = resizeLaneMarks(p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoB),
-        p2.lanesBackward + (p2.motoB ? 1 : 0))
+      const laneMarksF = resizeLaneMarks(
+        p2.laneMarksF ?? legacyMarks(rulesF, p2.lanesForward, p2.motoCountF),
+        p2.lanesForward + p2.motoCountF)
+      const laneMarksB = resizeLaneMarks(
+        p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoCountB),
+        p2.lanesBackward + p2.motoCountB)
       // 機車停等格現況（refreshBays 已把 folded journal 反映在 motoBoxesRef）
       const mbOf = (dirKey: string) =>
         core.motoBoxesRef.current.find((m) => m.dir === dirKey)
@@ -499,6 +526,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         blockNode: p2.blockNode,
         f: p2.lanesForward, b: p2.lanesBackward,
         motoF: p2.motoF, motoB: p2.motoB,
+        motoCountF: p2.motoCountF, motoCountB: p2.motoCountB,
         motoSepF: p2.motoSepF || 0, motoSepB: p2.motoSepB || 0,
         motoEntryIconF: !!p2.motoEntryIconF,
         motoEntryIconB: !!p2.motoEntryIconB,
@@ -522,12 +550,15 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         centerM: p2.centerM || 0,
         extraM: p2.extraM || 0,
         centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
+        islandBayMode: !!p2.islandBayMode,
         centerExtendStart: !!p2.centerExtendStart,
         centerExtendEnd: !!p2.centerExtendEnd,
         canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
         fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
         turnLanes: resizeTurnLanes(tl, p2.lanesForward),
         turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
+        motoTurnLanesF: resizeTurnLanes(p2.motoTurnLanesF ?? [], p2.motoCountF),
+        motoTurnLanesB: resizeTurnLanes(p2.motoTurnLanesB ?? [], p2.motoCountB),
         nodeFirst, nodeLast,
         bayF, bayB, bayF0: bayF, bayB0: bayB,
         baySingleMode, baySingleMode0: baySingleMode,
@@ -543,8 +574,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         motoBoxEndF0: mbF?.endLane ?? inferredF.end,
         motoBoxStartB0: mbB?.startLane ?? inferredB.start,
         motoBoxEndB0: mbB?.endLane ?? inferredB.end,
-        motoBoxSlotsF: p2.lanesForward + (p2.motoF ? 1 : 0) + (rlF ? 1 : 0),
-        motoBoxSlotsB: p2.lanesBackward + (p2.motoB ? 1 : 0) + (rlB ? 1 : 0),
+        motoBoxSlotsF: p2.lanesForward + p2.motoCountF + (rlF ? 1 : 0),
+        motoBoxSlotsB: p2.lanesBackward + p2.motoCountB + (rlB ? 1 : 0),
         motoBoxMinF: inferredF.start,
         motoBoxMinB: inferredB.start,
         rightLaneF: !!rlF, rightLaneB: !!rlB,
@@ -650,8 +681,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         lanes_backward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
         shared_lane: editRoad.oneway === 'no' && editRoad.f + editRoad.b === 1
           && !editRoad.motoF && !editRoad.motoB ? 1 : 0,
-        moto_forward: editRoad.motoF ? 1 : 0,
-        moto_backward: editRoad.oneway === 'yes' ? 0 : (editRoad.motoB ? 1 : 0),
+        moto_forward: editRoad.motoCountF,
+        moto_backward: editRoad.oneway === 'yes' ? 0 : editRoad.motoCountB,
         moto_sep_f: editRoad.motoF ? editRoad.motoSepF : 0,
         moto_sep_b: editRoad.oneway === 'yes' || !editRoad.motoB ? 0 : editRoad.motoSepB,
         moto_entry_icon_f: editRoad.motoEntryIconF ? 1 : 0,
@@ -675,14 +706,17 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         road_marking_mode: editRoad.roadMarkingMode,
         center_m: editRoad.oneway === 'yes' ? 0 : editRoad.centerM,
         center_kind: editRoad.centerKind,
+        island_bay_mode: editRoad.islandBayMode ? 1 : 0,
         center_extend_start: editRoad.centerExtendStart ? 1 : 0,
         center_extend_end: editRoad.centerExtendEnd ? 1 : 0,
         extra_width_m: editRoad.extraM,
         turn_lanes: editRoad.turnLanes.join('|'),
+        moto_turn_lanes_forward: editRoad.motoTurnLanesF.join('|'),
         lane_marks_forward: JSON.stringify(editRoad.laneMarksF),
         ...(editRoad.oneway === 'no'
           ? {
             turn_lanes_backward: editRoad.turnLanesB.join('|'),
+            moto_turn_lanes_backward: editRoad.motoTurnLanesB.join('|'),
             lane_marks_backward: JSON.stringify(editRoad.laneMarksB),
           }
           : {}),

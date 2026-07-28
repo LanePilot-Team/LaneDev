@@ -24,8 +24,31 @@ const DEFAULTS = { bay_len_m: 30, taper_len_m: 15, width_m: 3.0, turns: 'left|ut
 const MIN_BAY = 30
 const MIN_DEFORM = 14
 const HATCH_TARGET = 20
+/** 「中央帶＋路口左轉道」只在接近路口時開口，不瓜分整個中央帶長度。 */
+const ISLAND_BAY_LEN_M = 18
+const ISLAND_BAY_TAPER_M = 10
 /** 與 centerM=0 的純雙黃線一致：中心線左右各 0.18m。 */
 const DOUBLE_YELLOW_HALF_GAP_M = 0.18
+
+/**
+ * Place a perpendicular road-end marking behind the whole skewed junction mouth.
+ * `axisDistance` is the current centre-line setback and `skew * offset` describes
+ * the junction boundary at each lateral offset.  Never advance beyond the
+ * centre-line setback; only retreat enough that every point stays upstream.
+ */
+function perpendicularEndDistance(
+  axisDistance: number,
+  skew: number,
+  innerOffset: number,
+  outerOffset: number,
+  clearanceM = 0,
+): number {
+  return axisDistance + Math.min(
+    0,
+    skew * innerOffset,
+    skew * outerOffset,
+  ) - clearanceM
+}
 
 export interface TurnBay {
   key: string // way/W@node/N（反向行進加 ~b 尾碼），journal target key
@@ -91,8 +114,19 @@ function foldBayOverrides(journal: EnhancementRecord[]): Map<string, Record<stri
   return out
 }
 
-const scopeFn = (r: { properties: { coupletMerged?: boolean; centerKind?: string } }) =>
-  !!r.properties.coupletMerged && r.properties.centerKind === 'hatch'
+/**
+ * 加昌路／加昌路857巷西側這一個 block 的實際配置是東向由中央實體島
+ * 切出左轉儲車道。這是現地單一例外，不放進編輯工具或一般自動判斷。
+ */
+const scopeFn = (r: {
+  properties: {
+    coupletMerged?: boolean
+    centerKind?: string
+    islandBayMode?: boolean
+  }
+}) =>
+  (!!r.properties.coupletMerged && r.properties.centerKind === 'hatch')
+  || (r.properties.centerKind === 'island' && !!r.properties.islandBayMode)
 
 /** 該路有任一行向的轉向真值（人工編輯或 OSM turn:lanes）——地面箭頭/停止線 scope 用 */
 const hasTl = (r: { properties: { turnLanes?: string[]; turnLanesB?: string[] } }) =>
@@ -217,6 +251,10 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
    * 「偏心道左轉、內側車道全直行」，兩者是獨立車道 */
   const wantBay = (a: BayAnchor): boolean => {
     const o = over.get(anchorKey(a))
+    if (a.road.properties.centerKind === 'island'
+      && a.road.properties.islandBayMode) {
+      return !!o && Number(o.present) === 1
+    }
     if (o) return Number(o.present) !== 0 // 人工開/關（帶參數的覆寫視為開）
     if (!a.hasLeftPair) return false
     // 中央帶要放得下預設 3m 寬的 bay 才自動生成——泛用合併段的間距反推帶寬
@@ -249,6 +287,17 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
     const ba = amap.get(`way/${p.osm_id}@node/${e.fromNode}~b`)
     const n = (fa && wantBay(fa) ? 1 : 0) + (ba && wantBay(ba) ? 1 : 0)
     if (n === 0) continue
+    if (p.centerKind === 'island' && p.islandBayMode) {
+      if (fa) tryMake(fa, {
+        bayLen: ISLAND_BAY_LEN_M,
+        taperLen: ISLAND_BAY_TAPER_M,
+      }, n === 2)
+      if (ba) tryMake(ba, {
+        bayLen: ISLAND_BAY_LEN_M,
+        taperLen: ISLAND_BAY_TAPER_M,
+      }, n === 2)
+      continue
+    }
     const cum = cumulative(e.coords)
     const L = cum[cum.length - 1] - e.startSetbackM - e.endSetbackM // 兩端停止線間
     let taper = DEFAULTS.taper_len_m
@@ -985,8 +1034,12 @@ export function buildLaneArrows(
   motoBoxDirs: Set<string> = new Set(),
   journal: EnhancementRecord[] = [],
 ): GroundArrow[] {
-  const bayKeys = new Set(bays.map((b) => `${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`))
-  const rlKeys = new Set(rightLanes.map((r) => `${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`))
+  const bayMap = new Map(bays.map((b) =>
+    [`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b]))
+  const rlMap = new Map(rightLanes.map((r) =>
+    [`${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`, r]))
+  const bayKeys = new Set(bayMap.keys())
+  const rlKeys = new Set(rlMap.keys())
   const out: GroundArrow[] = []
   for (const e of stopLineEdges(graph, (r) =>
     scopeFn(r) || hasTl(r) || isMajorStopRoad(r))) {
@@ -999,8 +1052,10 @@ export function buildLaneArrows(
     const explicit = tlRaw?.map(canonTurn)
     const hasExplicit = !!explicit?.some(Boolean)
     const laneMarks = (p.oneway === 'yes' || !e.back) ? p.laneMarksF : p.laneMarksB
-    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
-    const hasMotoLeftLane = !!moto &&
+    const motoCount = p.oneway === 'yes'
+      ? p.motoCountF : e.back ? p.motoCountB : p.motoCountF
+    const moto = motoCount > 0
+    const hasMotoLeftLane = motoCount === 1 &&
       laneMarks?.[lanes]?.text.trim() === '機車左轉專用'
     // 非實驗範圍：實際幹道／集散道用路口拓撲推薦值（下方 kinds 分支）；
     // 其餘（小巷）只在有轉向真值時畫
@@ -1020,7 +1075,21 @@ export function buildLaneArrows(
     // 有機車停等格的行向再退 MOTO_BOX_ARROW_PUSH_M，讓格子夾在箭頭與停止線之間
     const boxPush = motoBoxDirs.has(`${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`)
       ? MOTO_BOX_ARROW_PUSH_M : 0
-    const d = total - arrowSetback - 4 - boxPush
+    // 箭頭必須以「實際畫出的垂直停止線」為基準，而不是原始 setback。
+    // 斜交路口的停止線會整體後移；若仍用原 setback，線就會穿過箭頭前端。
+    const span = laneSpanM(p, e.back)
+    const dv = 0
+    const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
+    const bay = bayMap.get(directionKey)
+    const rl = rlMap.get(directionKey)
+    const inner = bay
+      ? (bay.kind === 'center' ? dv - (p.centerM || 0) / 2 : base - bay.widthM)
+      : base
+    const outer = base + span + (rl ? rl.widthM : 0)
+    const stopSkew = crossSkew(graph, e.road, e.toNode, endBrg)
+    const stopAxisD = perpendicularEndDistance(
+      total - arrowSetback, stopSkew, inner, outer, 0.2)
+    const d = stopAxisD - 4 - boxPush
     // 自動標線仍要求完整的 6m 緩衝；人工已儲存箭頭設定時，允許短 OSM
     // 分段使用較緊湊的配置。典型案例是「益群橋 → 短藍田路 → 援中路」，
     // 道路本身連續，但 OSM 在橋名切換處把進口切成約二十公尺的小段。
@@ -1044,21 +1113,39 @@ export function buildLaneArrows(
     }
     // 車道基準（行進 frame）：單行道 = 車道塊左緣（不含路寬微調）；雙向 = 分向線 + 中央帶半寬
     // 雙向道路以 OSM 軸作中央分向基準；非對稱寬度由路面向多車道側展開。
-    const dv = 0
-    const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     if (showExit) {
-      const { brg } = pointAlong(e.coords, cum, d)
-      // 箭頭列對齊交會道路：每車道依橫向位置縱向平移，整排與停止線平行
-      const sk = crossSkew(graph, e.road, e.toNode, brg)
+      // 停止線已統一垂直進入車道；箭頭列也必須共用同一縱向基準。
+      // 舊版依斜交路口用 skew 把各車道箭頭前後錯開，極斜路口會將外側箭頭
+      // 推到停止線上（例如 way/280277096 東向）。固定 d 可保留約 4m 淨距。
       for (let k = 0; k < lanes; k++) {
         if (!moves[k]) continue
         const off = base + (k + 0.5) * LANE_WIDTH_M
-        const dk = Math.max(e.startSetbackM + 4, Math.min(total - 1, d + sk * off))
+        const dk = Math.max(e.startSetbackM + 4, Math.min(total - arrowSetback - 3, d))
         out.push({
           pos: offsetAt(e.coords, cum, dk, off),
           brg: pointAlong(e.coords, cum, dk).brg,
           icon: ARROW_ICON[moves[k]] ?? 'lane-arrow-through',
         })
+      }
+      // 多機車道才畫各自的路口箭頭；單一機車道維持既有無箭頭樣式。
+      if (motoCount >= 2) {
+        const motoMovesRaw = (p.oneway === 'yes' || !e.back)
+          ? p.motoTurnLanesF : p.motoTurnLanesB
+        const motoMoves = Array.from({ length: motoCount }, (_, k) =>
+          canonTurn(motoMovesRaw?.[k] ?? 'through'))
+        const sep = p.oneway === 'yes'
+          ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
+        for (let k = 0; k < motoCount; k++) {
+          const move = motoMoves[k]
+          if (!move) continue
+          const off = base + lanes * LANE_WIDTH_M + sep + (k + 0.5) * MOTO_LANE_M
+          const dk = Math.max(e.startSetbackM + 4, Math.min(total - arrowSetback - 3, d))
+          out.push({
+            pos: offsetAt(e.coords, cum, dk, off),
+            brg: pointAlong(e.coords, cum, dk).brg,
+            icon: ARROW_ICON[move] ?? 'lane-arrow-through',
+          })
+        }
       }
     }
     // 「機車左轉專用」是獨立於汽車車道箭頭的道路語意：在最外側機車道、
@@ -1350,8 +1437,9 @@ export function buildStopLines(
     const outer = base + span + (rl ? rl.widthM : 0)
     // 對齊交會道路：兩端點依橫向位置縱向平移，線與交叉路平行（斜交路口不歪）
     const sk = crossSkew(graph, e.road, e.toNode, pointAlong(e.coords, cum, d).brg)
+    const perpendicularD = perpendicularEndDistance(d, sk, inner, outer, 0.2)
     const pt = (o: number) => offsetAt(
-      e.coords, cum, Math.min(total, Math.max(0, d + sk * o)), o)
+      e.coords, cum, Math.min(total, Math.max(0, perpendicularD)), o)
     out.push({
       color: 'stop', style: 'stop', ownerKey: dirKey,
       coords: [pt(inner + 0.15), pt(outer - 0.15)],
@@ -1459,8 +1547,9 @@ export function buildLeftTurnWaitingAreas(
 export const MOTO_BOX_DEPTH_M = 3.0
 /** 前緣與停止線中心的縱向間隔（停止線寬 0.45m，留 ~0.5m 淨空） */
 const MOTO_BOX_GAP_M = 0.7
-/** 有停等格的行向，車道箭頭中心再往後退讓的量（buildLaneArrows 用） */
-export const MOTO_BOX_ARROW_PUSH_M = 2.5
+/** 有停等格的行向，車道箭頭中心再往後退讓的量（buildLaneArrows 用）。
+ * 格深 3m + 1.2m 圖示淨空；不可只用舊版 2.5m，否則長箭頭在斜路口仍壓入格內。 */
+export const MOTO_BOX_ARROW_PUSH_M = MOTO_BOX_DEPTH_M + 1.2
 /** 內緣（貼中央側）避讓量：kL=0 緊鄰雙黃/中央帶時多留淨空，不碰雙黃線 */
 const MOTO_BOX_INNER_CLEAR_M = 0.45
 /** 內緣位於車道分隔線時的避讓量 */
@@ -1697,7 +1786,11 @@ export function buildMotoBoxes(
     if (!scopeFn(e.road) && !hasTl(e.road) && !rl
       && !isMajorStopRoad(e.road) && !explicitlyEnabled) continue
     const slot = slotOf(e)
-    if (!slot.eligible || (!slot.fitsLengthwise && !explicitlyEnabled)) continue
+    // 人工明確啟用的停等格優先於自動候選篩選。像斜交路口或經過靜態
+    // 捏合的 block，endSetback/intersection 判定可能不足，但既有合法車道
+    // 與後續幾何邊界檢查仍會阻止無寬度、越界或放不下的方框。
+    if ((!slot.eligible && !explicitlyEnabled)
+      || (!slot.fitsLengthwise && !explicitlyEnabled)) continue
     // 自動模式不跨快慢分隔島；人工明確指定時由人工判斷現場狀況。
     if (slot.sepIsland && !explicitlyEnabled) continue
     const { maxLanes, firstLegalLane } = slot
@@ -1709,8 +1802,10 @@ export function buildMotoBoxes(
     seen.add(dir)
     // 新格式用左→右的 [start_lane,end_lane) 指定任意連續範圍；舊格式 lanes
     // 仍相容，解讀為合法汽車道最外側 N 道。右轉附加道不再預設納入停等格。
-    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
-    const motoSlots = moto ? 1 : 0
+    const motoSlots = p.oneway === 'yes'
+      ? p.motoCountF
+      : e.back ? p.motoCountB : p.motoCountF
+    const moto = motoSlots > 0
     const slotCount = lanes + motoSlots + (rl ? 1 : 0)
     let startLane = firstLegalLane
     let endLane = lanes + motoSlots
@@ -1730,19 +1825,28 @@ export function buildMotoBoxes(
     }
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const d1 = total - e.endSetbackM - MOTO_BOX_GAP_M
-    const d0 = d1 - MOTO_BOX_DEPTH_M
+    const stopAxisD = total - e.endSetbackM
     const dv = 0
     const base = p.oneway === 'yes' ? -span / 2 : dv + (p.centerM || 0) / 2
     // 內緣淨空：緊鄰中央多留避雙黃線；附加右轉道位於既有斷面外側。
     const innerClear = startLane === 0 ? MOTO_BOX_INNER_CLEAR_M : MOTO_BOX_LANE_CLEAR_M
     const laneBoundary = (index: number) => {
       if (index <= lanes) return base + index * LANE_WIDTH_M
-      if (moto && index === lanes + 1) return base + span
+      if (moto && index <= lanes + motoSlots) {
+        const sep = e.back ? (p.motoSepB || 0) : (p.motoSepF || 0)
+        return base + lanes * LANE_WIDTH_M + sep
+          + (index - lanes) * MOTO_LANE_M
+      }
       return base + span + (rl ? (index - lanes - motoSlots) * rl.widthM : 0)
     }
     const inner = laneBoundary(startLane) + innerClear
     const outer = laneBoundary(endLane) - 0.15
+    const stopBrg = pointAlong(e.coords, cum, stopAxisD).brg
+    const sk = crossSkew(graph, e.road, e.toNode, stopBrg)
+    const perpendicularStopD = perpendicularEndDistance(
+      stopAxisD, sk, inner, outer, 0.2)
+    const d1 = perpendicularStopD - MOTO_BOX_GAP_M
+    const d0 = d1 - MOTO_BOX_DEPTH_M
     // 太窄：記錄候選但不渲染（ring=null；縱向長度已由 slot.eligible 先擋）
     const longitudinalClearance = explicitlyEnabled ? 0.75 : 4
     if (d0 < e.startSetbackM + longitudinalClearance || outer - inner < 1.2) {
@@ -1752,12 +1856,11 @@ export function buildMotoBoxes(
     // 行向直線退 MOTO_BOX_DEPTH_M（不沿折線走——急彎內側沿線退會讓外側塌陷；
     // 斜交大時前角被端點夾住也不影響格深）
     const brg1 = pointAlong(e.coords, cum, d1).brg
-    const sk = crossSkew(graph, e.road, e.toNode, brg1)
     const rad1 = (brg1 * Math.PI) / 180
     const backE = -Math.sin(rad1) * MOTO_BOX_DEPTH_M
     const backN = -Math.cos(rad1) * MOTO_BOX_DEPTH_M
     const corner = (o: number) => {
-      const front = offsetAt(e.coords, cum, Math.min(total, Math.max(0, d1 + sk * o)), o)
+      const front = offsetAt(e.coords, cum, Math.min(total, Math.max(0, d1)), o)
       return { front, rear: offsetMeters(front, backE, backN) }
     }
     const ci = corner(inner)

@@ -171,6 +171,30 @@ export function mergeCouplets(
   if (drop.length === 0) return roads
   const dropSet = new Set(drop)
 
+  // 保留被吸收側的精確靜態來源。畫面上的 keep way 之後可能包含 drop way 的
+  // 路口 node；靜態捏合必須能循此 provenance 找回真正承載該 node 的 segment。
+  // 只把確實沿線配對的 drop 掛到對應 keep，避免用路名做模糊回查。
+  for (const k of keep) {
+    const kc = k.geometry.coordinates as [number, number][]
+    const paired = drop.filter((d) => {
+      const dc = d.geometry.coordinates as [number, number][]
+      let near = 0
+      for (const point of dc) if (projectToLine(point, kc).d < PAIR_MAX_M) near++
+      return near / dc.length >= 0.6
+    })
+    const all = [
+      ...(k.properties.sourceSegments ?? []),
+      ...paired.flatMap((d) => d.properties.sourceSegments ?? []),
+    ]
+    const seen = new Set<string>()
+    k.properties.sourceSegments = all.filter((source) => {
+      const key = `${source.osmId}|${source.navSegmentKey}|${source.splitIndex}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
   // 1.6) 夾心防呆：合併後的中線若壓在「別條路」上（例：德民新橋機車道成對
   // 分列汽車橋兩側，中線正好落在汽車橋正中），代表這對線夾著別的路，
   // 不是一對車道——整條路放棄合併。取最長且有配對的 keep way 抽樣中點檢查。
@@ -237,6 +261,8 @@ export function mergeCouplets(
     p.lanesBackward = section.lanesB
     p.motoF = section.motoF ?? p.motoF
     p.motoB = section.motoB ?? p.motoB
+    if (section.motoF !== undefined) p.motoCountF = section.motoF ? 1 : 0
+    if (section.motoB !== undefined) p.motoCountB = section.motoB ? 1 : 0
     p.motoSepF = section.motoSepF ?? p.motoSepF
     p.motoSepB = section.motoSepB ?? p.motoSepB
     p.centerKind = section.centerKind ?? 'hatch'

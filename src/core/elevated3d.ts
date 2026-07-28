@@ -822,7 +822,8 @@ export class ElevatedLayer {
         }
         if (p.oneway === 'yes') {
           if (p.roadMarkingMode === 'all') {
-            const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + (p.motoSepF || 0) : 0)
+            const total = f * LANE_WIDTH_M
+              + (p.motoCountF > 0 ? p.motoCountF * MOTO_LANE_M + (p.motoSepF || 0) : 0)
             const left = -total / 2
             for (let k = 1; k < f; k++) {
               marks.push({ off: left + k * LANE_WIDTH_M, color: 'white', dash: true })

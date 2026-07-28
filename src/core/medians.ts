@@ -9,7 +9,7 @@
 import type { Feature, FeatureCollection } from 'geojson'
 import { buffer, difference, featureCollection, lineString, polygon } from '@turf/turf'
 import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT, LANE_WIDTH_M } from './geo'
-import { laneSpanM, type RoadFeature } from './roads'
+import { laneSpanM, manualMarkingSetbackM, type RoadFeature } from './roads'
 import type { RoadGraph } from './graph'
 import type { EnhancementRecord } from './enhancements'
 import { offsetAt, subtract, type TurnBay } from './turnbays'
@@ -315,7 +315,15 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
     if (!moto || sep <= 0 || lanes <= 0) continue // 0 車道（純機車道）無快慢界線
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const { s0, s1 } = islandSetbacks(graph, e, total)
+    const setbacks = islandSetbacks(graph, e, total)
+    // 「中央線延伸至圓形端頭」也控制快慢車道分隔島；實體中央島由
+    // buildCenterIslands 管理，刻意不套用這項設定。
+    const extendFrom = (e.back ? p.centerExtendEnd : p.centerExtendStart)
+      && manualMarkingSetbackM(e.road, e.fromNode) === 0
+    const extendTo = (e.back ? p.centerExtendStart : p.centerExtendEnd)
+      && manualMarkingSetbackM(e.road, e.toNode) === 0
+    const s0 = extendFrom ? 0 : setbacks.s0
+    const s1 = extendTo ? total : setbacks.s1
     if (s1 - s0 < MIN_ISLAND_M) continue
     const dv = 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
@@ -325,6 +333,30 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
     ds.push(s1)
     const left = ds.map((d) => offsetAt(e.coords, cum, d, inner))
     const right = ds.map((d) => offsetAt(e.coords, cum, d, inner + sep))
+    // 道路面端頭是圓形 buffer。依分隔島外側距道路面中心的橫向距離，
+    // 算出仍位於圓頭內的最大縱向延伸，避免島面突出路面。
+    const surfaceCenterOff = p.oneway === 'no' ? -(p.divOffM || 0) : 0
+    const lateral = Math.max(
+      Math.abs(inner - surfaceCenterOff),
+      Math.abs(inner + sep - surfaceCenterOff),
+    )
+    const radius = p.width_m / 2
+    const tipExtension = Math.min(6, Math.sqrt(Math.max(0, radius * radius - lateral * lateral)))
+    const extendPoint = (pt: [number, number], brg: number) => offsetMeters(
+      pt,
+      Math.sin(brg * Math.PI / 180) * tipExtension,
+      Math.cos(brg * Math.PI / 180) * tipExtension,
+    )
+    if (tipExtension > 0.05 && extendFrom) {
+      const outward = bearing(e.coords[1], e.coords[0])
+      left.unshift(extendPoint(left[0], outward))
+      right.unshift(extendPoint(right[0], outward))
+    }
+    if (tipExtension > 0.05 && extendTo) {
+      const outward = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
+      left.push(extendPoint(left[left.length - 1], outward))
+      right.push(extendPoint(right[right.length - 1], outward))
+    }
     out.push({
       key: `median/way/${p.osm_id}/S${e.back ? 'b' : 'f'}-${e.fromNode}`,
       polygon: [...left, ...[...right].reverse(), left[0]],
@@ -351,12 +383,94 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
     const p = e.road.properties
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const { s0, s1 } = islandSetbacks(graph, e, total)
+    const setbacks = islandSetbacks(graph, e, total)
+    const extendFrom = p.centerExtendStart
+      && manualMarkingSetbackM(e.road, e.fromNode) === 0
+    const extendTo = p.centerExtendEnd
+      && manualMarkingSetbackM(e.road, e.toNode) === 0
+    const s0 = extendFrom ? 0 : setbacks.s0
+    const s1 = extendTo ? total : setbacks.s1
     if (s1 - s0 < MIN_ISLAND_M) continue
     const dv = 0
     const c = p.centerM / 2
+    const radius = p.width_m / 2
+    const tipExtension = Math.min(6, Math.sqrt(Math.max(0, radius * radius - c * c)))
+    const extendPoint = (pt: [number, number], brg: number) => offsetMeters(
+      pt,
+      Math.sin(brg * Math.PI / 180) * tipExtension,
+      Math.cos(brg * Math.PI / 180) * tipExtension,
+    )
+    const extendIslandEnds = (
+      left: [number, number][], right: [number, number][],
+      atStart: boolean, atEnd: boolean,
+    ) => {
+      if (tipExtension > 0.05 && atStart) {
+        const outward = bearing(e.coords[1], e.coords[0])
+        left.unshift(extendPoint(left[0], outward))
+        right.unshift(extendPoint(right[0], outward))
+      }
+      if (tipExtension > 0.05 && atEnd) {
+        const outward = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
+        left.push(extendPoint(left[left.length - 1], outward))
+        right.push(extendPoint(right[right.length - 1], outward))
+      }
+    }
     const fwdBay = bayMap.get(`${p.osm_id}@${e.toNode}`)
     const bwdBay = bayMap.get(`${p.osm_id}@${e.fromNode}~b`)
+    if (p.islandBayMode && (fwdBay || bwdBay)) {
+      // 此模式的尖端直接對齊各方向停止線；一般分隔島額外預留的
+      // 0.8m 路口淨空不套用在削尖端，避免島尖過早消失。
+      const shapeStart = bwdBay ? total - bwdBay.endM : s0
+      const shapeEnd = fwdBay ? fwdBay.endM : s1
+      const breaks = [shapeStart, shapeEnd]
+      if (fwdBay) breaks.push(fwdBay.d0M, fwdBay.endM)
+      if (bwdBay) breaks.push(total - bwdBay.endM, total - bwdBay.d0M)
+      const ds: number[] = []
+      const sorted = [...new Set(breaks
+        .map((d) => Math.max(shapeStart, Math.min(shapeEnd, d))))
+      ].sort((a, b) => a - b)
+      for (let index = 0; index < sorted.length - 1; index++) {
+        const from = sorted[index]
+        const to = sorted[index + 1]
+        for (let d = from; d < to; d += 2) ds.push(d)
+      }
+      ds.push(sorted[sorted.length - 1])
+
+      const smooth = (value: number) => {
+        const t = Math.max(0, Math.min(1, value))
+        return t * t * (3 - 2 * t)
+      }
+      const offsetsAt = (d: number): [number, number] => {
+        let left = -c
+        let right = c
+        // 順向左轉道：中央帶靠順向車道的一側逐漸退向另一側，
+        // 尖端落在順向停止線。
+        if (fwdBay && d >= fwdBay.d0M) {
+          const t = smooth(
+            (d - fwdBay.d0M) / Math.max(0.1, fwdBay.endM - fwdBay.d0M))
+          right = c - 2 * c * t
+        }
+        // 逆向左轉道沿道路座標反向削尖；在逆向停止線為尖端，
+        // 往道路中段逐漸恢復完整中央帶寬。
+        if (bwdBay) {
+          const start = total - bwdBay.endM
+          const end = total - bwdBay.d0M
+          if (d <= end) {
+            const t = smooth((d - start) / Math.max(0.1, end - start))
+            left = c - 2 * c * t
+          }
+        }
+        return [left, right]
+      }
+      const left = ds.map((d) => offsetAt(e.coords, cum, d, offsetsAt(d)[0]))
+      const right = ds.map((d) => offsetAt(e.coords, cum, d, offsetsAt(d)[1]))
+      extendIslandEnds(left, right, extendFrom && !bwdBay, extendTo && !fwdBay)
+      const ring = [...left, ...[...right].reverse(), left[0]]
+      if (ring.length >= 4) {
+        out.push({ key: `median/way/${p.osm_id}/A0`, polygon: ring })
+      }
+      continue
+    }
     let ivs: [number, number][] = [[s0, s1]]
     if (fwdBay) ivs = ivs.flatMap((iv) => subtract(iv, [fwdBay.d0M, fwdBay.endM]))
     if (bwdBay) ivs = ivs.flatMap((iv) => subtract(iv, [total - bwdBay.endM, total - bwdBay.d0M]))
@@ -368,6 +482,11 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
       ds.push(b)
       const left = ds.map((d) => offsetAt(e.coords, cum, d, dv - c))
       const right = ds.map((d) => offsetAt(e.coords, cum, d, dv + c))
+      extendIslandEnds(
+        left, right,
+        extendFrom && Math.abs(a) < 0.01,
+        extendTo && Math.abs(b - total) < 0.01,
+      )
       out.push({
         key: `median/way/${p.osm_id}/A${k++}`,
         polygon: [...left, ...[...right].reverse(), left[0]],

@@ -17,6 +17,30 @@ export interface LaneMark {
   color: string
 }
 
+export interface RoadSourceSegment {
+  osmId: number
+  navSegmentKey: string
+  splitIndex: number
+  nodeRefs: number[]
+}
+
+/**
+ * 少數 OSM 分岔段的中心軸會在實際分流前先與主路重疊。道路面仍需保持連通，
+ * 但車道線、箭頭、停止線與路面文字必須等支路完全離開主路後才開始。
+ */
+export function manualMarkingSetbackM(
+  road: RoadFeature, nodeId: number,
+): number {
+  const p = road.properties
+  const hasSourceWay = (osmId: number) => p.osm_id === osmId
+    || p.sourceSegments.some((segment) => segment.osmId === osmId)
+  if (hasSourceWay(30074958) && p.blockNode === -3582192277538
+    && nodeId === p.nodes[0]) return 45
+  if (hasSourceWay(256795162) && p.blockNode === 2624297542
+    && nodeId === p.nodes[0]) return 28
+  return 0
+}
+
 export interface RoadProps {
   osm_id: number
   name?: string
@@ -26,6 +50,9 @@ export interface RoadProps {
   lanesBackward: number
   motoF: boolean // 順向機車道
   motoB: boolean // 逆向機車道
+  /** 各方向機車道數；motoF/B 保留作既有布林判斷並永遠與 count>0 同步。 */
+  motoCountF: number
+  motoCountB: number
   /** 快慢分隔帶寬（公尺，預設 0）：汽車車道與機車道之間的實體島空間，
    * 該向有機車道才有意義（journal moto_sep_f/b；主慢分離 couplet 合併預設 1.0）。
    * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
@@ -48,12 +75,16 @@ export interface RoadProps {
   /** 路段開頭箭頭，與路口出口箭頭分開設定（駕駛視角左→右）。 */
   startTurnLanes?: string[]
   startTurnLanesB?: string[]
+  /** 捏合後仍保留的側街入口；主路 forward 可轉入，backward 不可跨線左轉。 */
+  oneSideEntryNodes?: number[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */
   centerM: number
   /** 中央帶內容：hatch = 槽化線（可切偏心道）｜island = 實體分隔島（journal center_kind） */
   centerKind: 'hatch' | 'island'
+  /** 實體中央帶只在接近路口時切出偏心左轉儲車道。 */
+  islandBayMode: boolean
   centerExtendStart: boolean
   centerExtendEnd: boolean
   /** couplet 合併產生的路段——中央帶編輯只對這類路段開放 */
@@ -94,12 +125,18 @@ export interface RoadProps {
   laneMarksB?: (LaneMark | null)[]
   turnLanes?: string[] // 順向每車道轉向（左→右）
   turnLanesB?: string[] // 逆向每車道轉向（逆向駕駛視角左→右）
+  /** 多機車道的路口箭頭；只有 count>=2 時繪製。 */
+  motoTurnLanesF?: string[]
+  motoTurnLanesB?: string[]
   /** 區塊識別：way 依路口切塊後，區塊第一個 node id（journal 區塊鍵 way/W@b/N 用）。
    * 未切塊（無中間路口）時 = nodes[0]。 */
   blockNode: number
   /** 唯一靜態資料庫中的精確 segment 身分；同一 osm_id 可有多筆 split。 */
   navSegmentKey: string
   splitIndex: number
+  /** 前處理（尤其 couplet 攤平）前的靜態 segment 來源。
+   * 編輯器用它精確定位畫面節點實際屬於哪一筆靜態 OSM，禁止以同名道路猜測。 */
+  sourceSegments: RoadSourceSegment[]
   /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
   deleted?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
@@ -122,6 +159,11 @@ const DEFAULT_LANES: Record<string, number> = {
 
 /** 由 f/b/moto 重算總車道數與斷面寬（編輯後也要呼叫） */
 export function computeDerived(p: RoadProps) {
+  p.motoCountF = Math.max(0, Math.round(p.motoCountF ?? (p.motoF ? 1 : 0)))
+  p.motoCountB = p.oneway === 'yes'
+    ? 0 : Math.max(0, Math.round(p.motoCountB ?? (p.motoB ? 1 : 0)))
+  p.motoF = p.motoCountF > 0
+  p.motoB = p.motoCountB > 0
   if (p.sharedLane && p.oneway === 'no') {
     // lanesForward/Backward 保留為 1，讓 A* 兩個方向都可通行；幾何只算一條共用車道。
     p.lanes = 1
@@ -132,14 +174,15 @@ export function computeDerived(p: RoadProps) {
   p.lanes = p.lanesForward + p.lanesBackward
   const laneSpan =
     LANE_WIDTH_M * (p.lanesForward + p.lanesBackward) +
-    MOTO_LANE_M * ((p.motoF ? 1 : 0) + (p.motoB ? 1 : 0)) +
+    MOTO_LANE_M * (p.motoCountF + p.motoCountB) +
     (p.motoF ? p.motoSepF || 0 : 0) + (p.motoB ? p.motoSepB || 0 : 0) +
     (p.centerM || 0)
   // 路寬微調對稱加減在兩側，車道塊維持置中（下限 2m，避免負微調把路面壓沒）
   p.width_m = Math.max(2, laneSpan + (p.extraM || 0))
   // 分向線位置 = -車道塊寬/2 + 逆向側寬 + 中央帶一半（對稱斷面 = 0；不含路寬微調）
   p.divOffM = p.oneway === 'yes' ? 0 :
-    LANE_WIDTH_M * p.lanesBackward + (p.motoB ? MOTO_LANE_M + (p.motoSepB || 0) : 0) +
+    LANE_WIDTH_M * p.lanesBackward + p.motoCountB * MOTO_LANE_M
+      + (p.motoB ? p.motoSepB || 0 : 0) +
     (p.centerM || 0) / 2 - laneSpan / 2
 }
 
@@ -148,9 +191,9 @@ export function computeDerived(p: RoadProps) {
 export function laneSpanM(p: RoadProps, back: boolean): number {
   if (p.sharedLane && p.oneway === 'no') return LANE_WIDTH_M
   const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
-  const moto = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
+  const motoCount = p.oneway === 'yes' ? p.motoCountF : back ? p.motoCountB : p.motoCountF
   const sep = p.oneway === 'yes' ? p.motoSepF : back ? p.motoSepB : p.motoSepF
-  return lanes * LANE_WIDTH_M + (moto ? MOTO_LANE_M + (sep || 0) : 0)
+  return lanes * LANE_WIDTH_M + motoCount * MOTO_LANE_M + (motoCount > 0 ? sep || 0 : 0)
 }
 
 export async function loadRoads(url: string): Promise<RoadFeature[]> {
@@ -200,6 +243,8 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       lanesBackward,
       motoF: false, // OSM 幾乎不標機車道，靠 Enhancement 補
       motoB: false,
+      motoCountF: 0,
+      motoCountB: 0,
       motoSepF: 0,
       motoSepB: 0,
       motoEntryIconF: false,
@@ -216,9 +261,21 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       leftWaitAreaB: false,
       startTurnLanes: undefined,
       startTurnLanesB: undefined,
+      oneSideEntryNodes: (() => {
+        const raw = p.one_side_entry_nodes
+        if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite)
+        if (typeof raw === 'string' && raw) {
+          try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite)
+          } catch { /* malformed optional extension: ignore */ }
+        }
+        return undefined
+      })(),
       roadMarkingMode: 'all',
       centerM: 0,
       centerKind: 'hatch',
+      islandBayMode: false,
       centerExtendStart: false,
       centerExtendEnd: false,
       extraM: 0,
@@ -239,9 +296,16 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       blockNode: nodes[0] ?? 0,
       navSegmentKey: String(p.nav_segment_key ?? `way/${Number(p.osm_id)}`),
       splitIndex: Number.isFinite(Number(p.split_index)) ? Number(p.split_index) : 0,
+      sourceSegments: [],
       reversed,
       nodes,
     }
+    props.sourceSegments = [{
+      osmId: props.osm_id,
+      navSegmentKey: props.navSegmentKey,
+      splitIndex: props.splitIndex,
+      nodeRefs: [...nodes],
+    }]
     computeDerived(props)
     out.push({
       type: 'Feature',
@@ -463,8 +527,10 @@ function sliceByDist(
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
   // 複合／分離式主路在 OSM 可能只以單側窄 way 與支路共點，通用半寬會低估路口範圍。
   // 僅增加標線退界，不裁道路面，也不改變導航拓樸。
-  const specialEndTrim = (wayId: number, nodeId: number) =>
-    wayId === 676539849 && nodeId === 1400036263 ? 14 : 0
+  const specialEndTrim = (road: RoadFeature, nodeId: number) => {
+    const fixed = road.properties.osm_id === 676539849 && nodeId === 1400036263 ? 14 : 0
+    return Math.max(fixed, manualMarkingSetbackM(road, nodeId))
+  }
   // 節點 → 佔用道路（切塊後交叉路在路口節點必有端點/中間點落在這裡）
   const nodeUse = new Map<number, RoadFeature[]>()
   for (const r of roads) {
@@ -514,6 +580,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   let curId = 0
   let roadMarkingMode: RoadProps['roadMarkingMode'] = 'all'
   let axisShift = 0
+  let roadHalfWidth = 0
   let centerExtendStart = false
   let centerExtendEnd = false
   let centerTipExtensionM = 0
@@ -524,10 +591,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     let cs = cs0
     if (cum) {
       const from = !isCenterLine || !centerExtendStart
-        ? (info0.trim > 0 ? info0.trim + info0.sk * off + 0.5 : 0)
+        ? (info0.trim > 0 ? info0.trim + Math.abs(info0.sk) * roadHalfWidth + 0.5 : 0)
         : 0
       const to = !isCenterLine || !centerExtendEnd
-        ? (info1.trim > 0 ? L - info1.trim + info1.sk * off - 0.5 : L)
+        ? (info1.trim > 0 ? L - info1.trim - Math.abs(info1.sk) * roadHalfWidth - 0.5 : L)
         : L
       const sliced = sliceByDist(cs0, cum, Math.max(0, from), Math.min(L, to))
       if (!sliced) return // 這條分隔線全在路口框內
@@ -572,6 +639,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     curId = p.osm_id
     roadMarkingMode = p.roadMarkingMode
     axisShift = p.oneway === 'no' ? -(p.divOffM || 0) : 0
+    roadHalfWidth = p.width_m / 2
     centerExtendStart = p.oneway === 'no' && p.centerExtendStart
     centerExtendEnd = p.oneway === 'no' && p.centerExtendEnd
     centerTipExtensionM = Math.max(1, p.width_m / 2)
@@ -587,8 +655,11 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     if (ns.length === cs0.length && ns.length >= 2) {
       info0 = endInfo(ns[0], road, bearing(cs0[0], cs0[1]))
       info1 = endInfo(ns[ns.length - 1], road, bearing(cs0[cs0.length - 2], cs0[cs0.length - 1]))
-      info0 = { ...info0, trim: Math.max(info0.trim, specialEndTrim(p.osm_id, ns[0])) }
-      info1 = { ...info1, trim: Math.max(info1.trim, specialEndTrim(p.osm_id, ns[ns.length - 1])) }
+      info0 = { ...info0, trim: Math.max(info0.trim, specialEndTrim(road, ns[0])) }
+      info1 = { ...info1, trim: Math.max(info1.trim, specialEndTrim(road, ns[ns.length - 1])) }
+      // 人工指定「整段標線延後」時優先於中央線延伸到圓頭的顯示選項。
+      if (manualMarkingSetbackM(road, ns[0]) > 0) centerExtendStart = false
+      if (manualMarkingSetbackM(road, ns[ns.length - 1]) > 0) centerExtendEnd = false
       if (info0.trim > 0 || info1.trim > 0) {
         cum = cumulative(cs0)
         L = cum[cum.length - 1]
@@ -600,11 +671,14 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     const sepB = p.motoB ? p.motoSepB || 0 : 0
     if (p.oneway === 'yes') {
       // 單行道：斷面置中
-      const total = f * LANE_WIDTH_M + (p.motoF ? MOTO_LANE_M + sepF : 0)
+      const total = f * LANE_WIDTH_M + p.motoCountF * MOTO_LANE_M + sepF
       const left = -total / 2
       for (let k = 1; k < f; k++) push(RIGHT * (left + k * LANE_WIDTH_M), 'lane')
       // 0 車道時機車道左界 = 斷面左緣，不需分隔線
       if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
+      for (let k = 1; k < p.motoCountF; k++) {
+        push(RIGHT * (left + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M), 'lane')
+      }
     } else {
       const b = p.lanesBackward
       const c = (p.centerM || 0) / 2 // 中央帶：兩向車道外移一半
@@ -621,9 +695,85 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       }
       for (let k = 1; k < f; k++) push(RIGHT * (dv + c + k * LANE_WIDTH_M), 'lane')
       if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (dv + c + f * LANE_WIDTH_M), 'moto')
+      for (let k = 1; k < p.motoCountF; k++) {
+        push(RIGHT * (dv + c + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M), 'lane')
+      }
       for (let k = 1; k < b; k++) push(RIGHT * (dv - c - k * LANE_WIDTH_M), 'lane')
       if (p.motoB && b > 0 && sepB === 0) push(RIGHT * (dv - c - b * LANE_WIDTH_M), 'moto')
+      for (let k = 1; k < p.motoCountB; k++) {
+        push(RIGHT * (dv - c - b * LANE_WIDTH_M - sepB - k * MOTO_LANE_M), 'lane')
+      }
     }
+  }
+
+  // 加昌路 block 533725078 的逆向最外側車道會續接到短機車分流
+  // way/42680534。一般路口收邊只會把兩條道路各自畫到端點，視覺上會讓
+  // 最外側車道縮回主路內；在兩者之間補一段平滑的雙側白線，讓車道真正
+  // 由主路外側切入機車道。此為單一路口人工幾何，不改其他機車道斷面。
+  const main = roads.find((road) =>
+    road.properties.blockNode === 533725078
+    && (road.properties.osm_id === 230216178
+      || road.properties.sourceSegments.some((s) => s.osmId === 230216178)))
+  const connector = roads.find((road) =>
+    road.properties.osm_id === 42680534
+    || road.properties.sourceSegments.some((s) => s.osmId === 42680534))
+  if (main && connector && main.properties.roadMarkingMode === 'all') {
+    try {
+      const mainCoords = main.geometry.coordinates as [number, number][]
+      const mainNodeIndex = main.properties.nodes.indexOf(533725078)
+      const connectorNodeIndex = connector.properties.nodes.indexOf(533725078)
+      if (mainNodeIndex >= 0 && connectorNodeIndex >= 0
+        && mainCoords.length >= 2 && connector.geometry.coordinates.length >= 2) {
+        const mainFromNode = mainNodeIndex === 0
+          ? mainCoords
+          : [...mainCoords].reverse()
+        const mainAxis: Feature<LineString> = {
+          type: 'Feature', properties: {},
+          geometry: { type: 'LineString', coordinates: mainFromNode },
+        }
+        const p = main.properties
+        const reverseOuterLaneCenter = -(
+          (p.centerM || 0) / 2
+          + (Math.max(1, p.lanesBackward) - 0.5) * LANE_WIDTH_M
+        )
+        const shiftedMain = lineOffset(mainAxis, reverseOuterLaneCenter, { units: 'meters' })
+        const shiftedCoords = shiftedMain.geometry.coordinates as [number, number][]
+        const shiftedCum = cumulative(shiftedCoords)
+        const start = pointAlong(
+          shiftedCoords, shiftedCum,
+          Math.min(32, shiftedCum[shiftedCum.length - 1]),
+        ).pos
+        const control = shiftedCoords[0]
+        const connectorCoords = connector.geometry.coordinates as [number, number][]
+        const connectorFromNode = connectorNodeIndex === 0
+          ? connectorCoords
+          : [...connectorCoords].reverse()
+        const connectorCum = cumulative(connectorFromNode)
+        const end = pointAlong(
+          connectorFromNode, connectorCum,
+          Math.min(18, connectorCum[connectorCum.length - 1]),
+        ).pos
+        const centerCurve: [number, number][] = Array.from({ length: 13 }, (_, i) => {
+          const t = i / 12
+          const u = 1 - t
+          return [
+            u * u * start[0] + 2 * u * t * control[0] + t * t * end[0],
+            u * u * start[1] + 2 * u * t * control[1] + t * t * end[1],
+          ]
+        })
+        const curve: Feature<LineString> = {
+          type: 'Feature', properties: {},
+          geometry: { type: 'LineString', coordinates: centerCurve },
+        }
+        for (const side of [-1.15, 1.15]) {
+          const boundary = lineOffset(curve, side, { units: 'meters' })
+          features.push({
+            type: 'Feature', geometry: boundary.geometry,
+            properties: { kind: 'moto', osm_id: main.properties.osm_id },
+          })
+        }
+      }
+    } catch { /* 特殊接線幾何退化時維持一般路面，不影響其餘道路 */ }
   }
   return { type: 'FeatureCollection', features }
 }

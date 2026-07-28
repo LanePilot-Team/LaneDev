@@ -42,12 +42,12 @@ const JOURNAL_KEY = 'navsim-journal-v1'
 const AUTHOR_KEY = 'navsim-author'
 
 export function getAuthor(): string {
-  try { return localStorage.getItem(AUTHOR_KEY) ?? 'unknown' }
-  catch { return 'unknown' }
+  try { return localStorage.getItem(AUTHOR_KEY) ?? 'anna' }
+  catch { return 'anna' }
 }
 
 export function setAuthor(name: string) {
-  try { localStorage.setItem(AUTHOR_KEY, name || 'unknown') }
+  try { localStorage.setItem(AUTHOR_KEY, name || 'anna') }
   catch { /* 無儲存空間時仍可繼續編輯 */ }
 }
 
@@ -173,8 +173,15 @@ export function applyToRoads(
     if (fields.shared_lane !== undefined) {
       p.sharedLane = p.oneway === 'no' && Number(fields.shared_lane) > 0
     }
-    if (fields.moto_forward !== undefined) p.motoF = Number(fields.moto_forward) > 0
-    if (fields.moto_backward !== undefined) p.motoB = p.oneway === 'yes' ? false : Number(fields.moto_backward) > 0
+    if (fields.moto_forward !== undefined) {
+      p.motoCountF = Math.max(0, Math.round(Number(fields.moto_forward) || 0))
+      p.motoF = p.motoCountF > 0
+    }
+    if (fields.moto_backward !== undefined) {
+      p.motoCountB = p.oneway === 'yes'
+        ? 0 : Math.max(0, Math.round(Number(fields.moto_backward) || 0))
+      p.motoB = p.motoCountB > 0
+    }
     if (fields.moto_entry_icon_f !== undefined) p.motoEntryIconF = Number(fields.moto_entry_icon_f) > 0
     if (fields.moto_entry_icon_b !== undefined) p.motoEntryIconB = Number(fields.moto_entry_icon_b) > 0
     if (fields.moto_text_diamond_f !== undefined) p.motoTextDiamondF = Number(fields.moto_text_diamond_f) > 0
@@ -218,6 +225,13 @@ export function applyToRoads(
     if (fields.turn_lanes_backward !== undefined) {
       p.turnLanesB = p.oneway === 'yes' ? undefined : String(fields.turn_lanes_backward).split('|')
     }
+    if (fields.moto_turn_lanes_forward !== undefined) {
+      p.motoTurnLanesF = String(fields.moto_turn_lanes_forward).split('|')
+    }
+    if (fields.moto_turn_lanes_backward !== undefined) {
+      p.motoTurnLanesB = p.oneway === 'yes'
+        ? undefined : String(fields.moto_turn_lanes_backward).split('|')
+    }
     if (fields.motorcycle !== undefined) p.motorcycle = String(fields.motorcycle) // 'no' = 禁行機車
     if (fields.rules_forward !== undefined) {
       const v = String(fields.rules_forward)
@@ -242,6 +256,9 @@ export function applyToRoads(
     }
     if (fields.center_m !== undefined) p.centerM = Math.max(0, Number(fields.center_m)) // 中央帶（偏心道/槽化/島）
     if (fields.center_kind !== undefined) p.centerKind = fields.center_kind === 'island' ? 'island' : 'hatch'
+    if (fields.island_bay_mode !== undefined) {
+      p.islandBayMode = Number(fields.island_bay_mode) > 0
+    }
     if (fields.center_extend_start !== undefined) {
       p.centerExtendStart = Number(fields.center_extend_start) > 0
     }

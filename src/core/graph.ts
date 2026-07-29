@@ -4,6 +4,7 @@
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
 import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
 import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads'
+import { oneSideEntryTransitionAllowed } from './oneSideEntry'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
@@ -53,25 +54,12 @@ function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
   return profile === 'moto' ? motoAllowed(r, back) : carAllowed(r, back)
 }
 
-/**
- * 捏合道路的中間路口仍保留拓撲，但只允許主路正向轉入側街。
- * 對向（back）可沿主路直行，唯獨不可跨越主路左轉進入其他 road。
- * 側街駛出不受此規則影響。
- */
-export function oneSideEntryTransitionAllowed(
-  incomingRoad: RoadFeature | undefined,
-  incomingBack: boolean,
-  outgoingRoad: RoadFeature,
-  nodeId: number,
-): boolean {
-  if (!incomingRoad || !incomingBack) return true
-  if (!incomingRoad.properties.oneSideEntryNodes?.includes(nodeId)) return true
-  return outgoingRoad.properties.osm_id === incomingRoad.properties.osm_id
-}
+export { oneSideEntryTransitionAllowed }
 
 function transitionAllowed(incoming: Edge | undefined, outgoing: Edge, nodeId: number): boolean {
-  if (!incoming || !incoming.back) return true
-  return oneSideEntryTransitionAllowed(incoming.road, incoming.back, outgoing.road, nodeId)
+  if (!incoming) return true
+  return oneSideEntryTransitionAllowed(
+    incoming.road, incoming.back, outgoing.road, outgoing.back, nodeId)
 }
 
 interface Edge {
@@ -331,10 +319,15 @@ export class RoadGraph {
     endSetbackM: number
   } | null>()
 
+  // 明確欄位宣告，不用 constructor parameter property：node --test 的
+  // strip-only 型別剝除不支援 parameter property，會讓整個檔案無法被測試載入。
+  private laneGuidanceIndex: LaneGuidanceIndex
+
   constructor(
     roads: RoadFeature[],
-    private laneGuidanceIndex: LaneGuidanceIndex = buildLaneGuidanceIndex([]),
+    laneGuidanceIndex: LaneGuidanceIndex = buildLaneGuidanceIndex([]),
   ) {
+    this.laneGuidanceIndex = laneGuidanceIndex
     const usage = new Map<number, number>()
     for (const r of roads) {
       const nodes = r.properties.nodes

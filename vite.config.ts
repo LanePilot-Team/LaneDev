@@ -9,7 +9,7 @@ const databasePath = resolve('public/data/road_database.json')
 const backupDirectory = resolve('.lanedev-backups')
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024
 const MAX_MERGE_BYTES = 32 * 1024
-const MAX_BACKUPS = 3
+const MAX_BACKUPS = 1 // 唯一版本 + 一份上版本備份，不留多份互相搶優先權的資料集
 
 const isLocalWrite = (req: any) => {
   const remote = String(req.socket?.remoteAddress ?? '')
@@ -76,62 +76,65 @@ const uniqueSyntheticNode = (seed: number, existing: unknown[]) => {
 const replaceWayInKey = (key: string, fromWay: number, toWay: number) =>
   key.replace(new RegExp(`^way/${fromWay}(?=@|$)`), `way/${toWay}`)
 
-function migrateEditorForMerge(
+/**
+ * 捏合後遷移 editor。journal 是 append-only 的歷程，遷移只准改鍵、不准刪紀錄。
+ *
+ * 舊版會（a）丟掉任何鍵提到接點的紀錄，（b）把 primary／secondary 兩條 way 的所有
+ * 區塊級 road 紀錄整批刪除、壓平成一筆 way 級紀錄。後果是掛在接點那一塊的
+ * `deleted:1` 直接蒸發（使用者刪掉的路段自己復活）、次 way 的區塊設定全數遺失，
+ * 而且整條路被迫吃同一組車道設定。捏合對 couplet 道路又常常是 no-op，等於白白
+ * 拿真實資料去換一個沒發生的合併。
+ */
+export function migrateEditorForMerge(
   editor: any,
   primaryId: number,
   secondaryId: number,
-  joinNode: number,
+  primaryBlockNode: number,
+  secondaryBlockNode: number,
 ) {
   editor ??= {}
   const journal = Array.isArray(editor.journal) ? editor.journal : []
-  const primaryFields: Record<string, string | number> = {}
-  for (const record of journal) {
-    if (record.op === 'set' && record.target?.type === 'road'
-      && (record.target.key === `way/${primaryId}`
-        || record.target.key.startsWith(`way/${primaryId}@b/`))) {
-      Object.assign(primaryFields, record.fields ?? {})
+  // 次分段被 splice 出 segments 後，它的鍵要改掛到保留 way；同分段捏合則不必。
+  const absorbed = secondaryId !== primaryId
+  const primaryKey = `way/${primaryId}@b/${primaryBlockNode}`
+  const secondaryKey = `way/${secondaryId}@b/${secondaryBlockNode}`
+
+  // 被選取的兩個區塊合而為一：次段先、保留段後，欄位衝突時以首先選取的保留段為準。
+  // 與 migrateEditorForInternalMerge 同一套規則。
+  const mergedFields: Record<string, string | number> = {}
+  for (const wantedKey of [secondaryKey, primaryKey]) {
+    for (const record of journal) {
+      if (record.op === 'set' && record.target?.type === 'road'
+        && String(record.target?.key ?? '') === wantedKey) {
+        Object.assign(mergedFields, record.fields ?? {})
+      }
     }
   }
 
-  const migrated = journal.flatMap((record: any) => {
+  const migrated = journal.map((record: any) => {
     const key = String(record.target?.key ?? '')
-    if (record.target?.type === 'road_merge'
-      && (key.includes(`way/${primaryId}@`) || key.includes(`way/${secondaryId}@`))) return []
-    if (key.includes(`@node/${joinNode}`) || key.includes(`@b/${joinNode}`)) return []
-    if (record.target?.type === 'road'
-      && (key === `way/${primaryId}` || key.startsWith(`way/${primaryId}@b/`)
-        || key === `way/${secondaryId}` || key.startsWith(`way/${secondaryId}@b/`))) return []
-    if (secondaryId !== primaryId && key.startsWith(`way/${secondaryId}@`)) {
-      return [{
-        ...record,
-        target: { ...record.target, key: replaceWayInKey(key, secondaryId, primaryId) },
-      }]
+    if (!absorbed || !key.startsWith(`way/${secondaryId}@`)) return record
+    return {
+      ...record,
+      target: { ...record.target, key: replaceWayInKey(key, secondaryId, primaryId) },
     }
-    return [record]
   })
-  if (Object.keys(primaryFields).length) {
+  // 合併結果補在最後（foldJournal 取最後值）。原始兩筆保留不動：捏合後只有一個
+  // 區塊鍵會是活的，另一個變孤兒也還躺在歷程裡，之後可以重新指回去或還原。
+  if (Object.keys(mergedFields).length) {
     migrated.push({
       op: 'set',
-      target: { type: 'road', key: `way/${primaryId}` },
-      fields: primaryFields,
+      target: { type: 'road', key: primaryKey },
+      fields: mergedFields,
       author: 'unknown',
       ts: new Date().toISOString(),
     })
   }
   editor.journal = migrated.map((record: any, index: number) => ({ ...record, seq: index + 1 }))
 
-  const zones = Array.isArray(editor.waiting_zones) ? editor.waiting_zones : []
-  const removedZoneIds = zones
-    .filter((zone: any) => Number(zone.intersectionId) === joinNode)
-    .map((zone: any) => String(zone.id))
-  editor.waiting_zones = zones.filter((zone: any) => Number(zone.intersectionId) !== joinNode)
-  editor.deleted_waiting_zone_ids = [
-    ...new Set([
-      ...(Array.isArray(editor.deleted_waiting_zone_ids)
-        ? editor.deleted_waiting_zone_ids.map(String) : []),
-      ...removedZoneIds,
-    ]),
-  ]
+  // 接點上的待轉區同樣不刪。捏合常常是 no-op（couplet 道路尤其），刪掉就是拿真實
+  // 資料換一個沒發生的合併；而路口真的消失時，mapCore 載入待轉區本來就會用
+  // nodeRemap ＋ 30 公尺內最近路口吸附補救，留著比刪掉安全。
   editor.updated_at = new Date().toISOString()
   return editor
 }
@@ -158,10 +161,10 @@ function migrateEditorForInternalMerge(
       }
     }
   }
-  const migrated = journal.filter((record: any) => {
-    const key = String(record.target?.key ?? '')
-    return !(record.target?.type === 'road' && (key === primaryKey || key === secondaryKey))
-  })
+  // 歷程保持 append-only：原始兩個區塊紀錄不可刪除。靜態幾何捏合後只有
+  // primaryKey 會繼續生效，最後追加的收斂紀錄負責提供完整樣式；保留舊紀錄
+  // 才能避免 deleted、自訂標線等人工資訊因捏合而永久遺失。
+  const migrated = [...journal]
   if (Object.keys(mergedFields).length) {
     migrated.push({
       op: 'set',
@@ -308,7 +311,8 @@ function staticRoadDatabaseWriter() {
           }
 
           database.editor = migrateEditorForMerge(
-            database.editor, primaryId, secondaryId, joinNode,
+            database.editor, primaryId, secondaryId,
+            Number(payload.primary?.blockNode), Number(payload.secondary?.blockNode),
           )
           if (secondaryId !== primaryId && Array.isArray(database.annotations)) {
             database.annotations = database.annotations.flatMap((annotation: any) => {

@@ -520,15 +520,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             </div>
           ) : (editRoad.bayF !== 'none' || editRoad.bayB !== 'none') && (
             <div className="edit-row" style={{ alignItems: 'stretch' }}>
-              <span>偏心道格式</span>
+              <span>
+                <b className="row-title">中央帶單邊槽化</b><br />
+                封頂三角形的側別與寬度由中央帶決定；舊版槽化資料為唯讀，僅可檢視或停用。
+              </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                 <button className={`mini${editRoad.baySingleMode === 'capped' ? ' on' : ''}`}
                   onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'capped' }))}>
-                  單邊使用，另一端封口
+                  繪製封頂槽化三角形
                 </button>
                 <button className={`mini${editRoad.baySingleMode === 'ignore' ? ' on' : ''}`}
                   onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'ignore' }))}>
-                  單邊使用，另一端完全忽略
+                  不繪製槽化三角形
                 </button>
               </div>
             </div>
@@ -1067,45 +1070,22 @@ function OffsetTurnBayMarkingEditor({
   onSaveChannelization: (fields: Record<string, string | number>) => void
   onSaveReview: (fields: Record<string, string | number>) => void
 }) {
-  const [mode, setMode] = useState(marking.channelization.state)
-  const [closure, setClosure] = useState(marking.channelization.closure ?? 'unused-side')
-  const [start, setStart] = useState(String(marking.channelization.s_start_m ?? 0))
-  const [end, setEnd] = useState(String(marking.channelization.s_end_m ?? 0))
-  const [startWidth, setStartWidth] = useState(String(marking.channelization.width_start_m ?? 0.3))
-  const [endWidth, setEndWidth] = useState(String(marking.channelization.width_end_m ?? marking.offset_bay.width_m))
   const [status, setStatus] = useState(marking.review.status)
   const [evidenceUrl, setEvidenceUrl] = useState(marking.review.evidence_url ?? '')
   const [note, setNote] = useState(marking.review.note ?? '')
 
-  const saveChannelization = () => {
-    if (mode === 'disabled') { onSaveChannelization({ mode: 'disabled' }); return }
-    if (mode === 'auto') { onSaveChannelization({ mode: 'auto', closure }); return }
-    const values = [Number(start), Number(end), Number(startWidth), Number(endWidth)]
-    if (!values.every(Number.isFinite) || values[1] <= values[0] || values[2] < 0 || values[3] <= 0) return
-    onSaveChannelization({
-      mode: 'override', closure, s_start_m: values[0], s_end_m: values[1],
-      width_start_m: values[2], width_end_m: values[3], style: 'taiwan-yellow-hatch-v1',
-    })
-  }
+  const disabled = marking.channelization.state === 'disabled'
 
   return (
     <div className="sp-stop channelization-editor" style={{ flexWrap: 'wrap', gap: 6 }}>
       <b style={{ width: '100%' }}>槽化帶與人工回查</b>
-      <button className={`mini${mode === 'auto' ? ' on' : ''}`} onClick={() => setMode('auto')}>自動判定</button>
-      <button className={`mini${mode === 'override' ? ' on' : ''}`} onClick={() => setMode('override')}>人工覆寫</button>
-      <button className={`mini${mode === 'disabled' ? ' on' : ''}`} onClick={() => setMode('disabled')}>停用槽化帶</button>
-      {mode !== 'disabled' && <label>封閉
-        <select value={closure} onChange={(event) => setClosure(event.target.value as 'none' | 'unused-side')}>
-          <option value="unused-side">未使用側封閉</option><option value="none">不畫槽化帶</option>
-        </select>
-      </label>}
-      {mode === 'override' && <div className="channelization-fields">
-        <label>起點 m<input type="number" value={start} onChange={(event) => setStart(event.target.value)} /></label>
-        <label>終點 m<input type="number" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
-        <label>起點寬 m<input type="number" min="0" step="0.1" value={startWidth} onChange={(event) => setStartWidth(event.target.value)} /></label>
-        <label>終點寬 m<input type="number" min="0.1" step="0.1" value={endWidth} onChange={(event) => setEndWidth(event.target.value)} /></label>
-      </div>}
-      <button className="mini go" onClick={saveChannelization}>儲存槽化帶</button>
+      <span style={{ width: '100%' }}>
+        槽化三角形由中央帶設定決定（唯讀）。舊版槽化資料不能變更側別、範圍或寬度。
+      </span>
+      <button className={`mini${disabled ? ' on' : ''}`}
+        onClick={() => onSaveChannelization({ mode: disabled ? 'auto' : 'disabled' })}>
+        {disabled ? '恢復中央帶槽化' : '停用槽化帶'}
+      </button>
       <label>審核
         <select value={status} onChange={(event) => setStatus(event.target.value as OffsetTurnBayMarkingRecord['review']['status'])}>
           <option value="unreviewed">未審核</option><option value="reviewed">已審閱</option>

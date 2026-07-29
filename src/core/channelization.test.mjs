@@ -40,7 +40,7 @@ const fixtureCrossBearing = 100
 const fixtureSkew = skewFromCross(0, fixtureCrossBearing)
 const fixtureCenterHalfM = 1.5
 
-function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' } = {}) {
+function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped', journal = [] } = {}) {
   const road = {
     type: 'Feature',
     geometry: { type: 'LineString', coordinates: [fixtureStart, fixtureEnd] },
@@ -92,8 +92,23 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' }
     arrows: [],
     lines: [],
   }
-  return buildChannelization(graph, [bay])
+  return buildChannelization(graph, [bay], journal)
 }
+
+function stylesAndOwners(lines) {
+  return lines.map(({ style, ownerKey }) => ({ style, ownerKey }))
+}
+
+const manualCentralBandJournal = [
+  record('channelization', 'way/7@node/2#channelization', {
+    mode: 'override',
+    closure: 'unused-side',
+    s_start_m: 3,
+    s_end_m: 8,
+    width_start_m: 0.1,
+    width_end_m: 0.2,
+  }, 1),
+]
 
 function distanceAlongFixture(coord) {
   return haversine(fixtureStart, [fixtureStart[0], coord[1]])
@@ -154,6 +169,14 @@ test('hatch distances retain the same 1.25 m pitch for narrow and wide tapered r
 test('single capped bay defaults to an unused-side closure but ignore produces none', () => {
   assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'capped' }, []).closure, 'unused-side')
   assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'ignore' }, []), null)
+})
+
+test('equivalent manual and inferred capped settings have the same marking styles', () => {
+  const inferred = buildFixtureChannelization({ singleMode: 'capped', forwardBay: true })
+  const manual = buildFixtureChannelization({
+    singleMode: 'capped', forwardBay: true, journal: manualCentralBandJournal,
+  })
+  assert.deepEqual(stylesAndOwners(manual), stylesAndOwners(inferred))
 })
 
 test('capped triangle range retains its forward boundaries and fixed offset', () => {

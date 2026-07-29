@@ -787,20 +787,11 @@ export function buildChannelization(
       const triangleMovingOff = (d: number) => triangle?.movingAt(toUnusedApproachM(d)) ?? fixedOff
       const triangleFixedOff = triangle?.fixedOffsetM ?? fixedOff
 
-      const boundaryOff = (d: number) => {
-        const moving = triangleMovingOff(d)
-        if (channelization?.widthStartM === undefined || channelization.widthEndM === undefined) return triangleFixedOff
-        const from = channelization.sStartM ?? triangle?.startM ?? tipApproachM
-        const to = channelization.sEndM ?? triangle?.endM ?? movingCapApproachM
-        const t = Math.max(0, Math.min(1,
-          (toUnusedApproachM(d) - from) / Math.max(1e-6, to - from)))
-        const requestedWidth = channelization.widthStartM
-          + (channelization.widthEndM - channelization.widthStartM) * t
-        return moving + Math.sign(triangleFixedOff - moving)
-          * Math.min(Math.abs(triangleFixedOff - moving), requestedWidth)
-      }
+      // Capped triangle geometry belongs solely to the central-band turn-bay setting.
+      // Legacy channelization records may disable it, but cannot move either side or width.
+      const boundaryOff = (_d: number) => triangleFixedOff
 
-      if (triangle && channelization?.closure === 'unused-side'
+      if (triangle && activeBay.singleMode === 'capped' && channelization
         && wedgeTo - wedgeFrom >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
         const movingOutlineFrom = onlyFwdBay ? movingCapRoadM : tipRoadM
         const movingOutlineTo = onlyFwdBay ? tipRoadM : movingCapRoadM

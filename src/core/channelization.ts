@@ -141,22 +141,11 @@ export function resolveChannelization(
   const fields = latestFields(journal, channelizationKey(parentKey))
   const channelization = channelizationFrom(fields)
   if (channelization.state === 'disabled') return null
-  if (channelization.state === 'override') {
+  if (bay.singleMode === 'capped') {
     return {
-      state: 'override',
-      closure: channelization.closure ?? 'unused-side',
-      ...(channelization.s_start_m !== undefined ? { sStartM: channelization.s_start_m } : {}),
-      ...(channelization.s_end_m !== undefined ? { sEndM: channelization.s_end_m } : {}),
-      ...(channelization.width_start_m !== undefined ? { widthStartM: channelization.width_start_m } : {}),
-      ...(channelization.width_end_m !== undefined ? { widthEndM: channelization.width_end_m } : {}),
-      style: channelization.style ?? TAIWAN_YELLOW_HATCH_V1.style,
-    }
-  }
-  if (channelization.state === 'auto' || bay.singleMode === 'capped') {
-    return {
-      state: channelization.state === 'auto' ? 'auto' : 'auto',
-      closure: channelization.closure ?? 'unused-side',
-      style: channelization.style ?? TAIWAN_YELLOW_HATCH_V1.style,
+      state: 'auto',
+      closure: 'unused-side',
+      style: TAIWAN_YELLOW_HATCH_V1.style,
     }
   }
   return null

@@ -878,7 +878,8 @@ export function buildChannelization(
     }
 
     let hatchCount = 0
-    for (const d of activeBayKey ? buildHatchDistances(hs, he) : []) {
+    const shouldPaintCentralHatch = p.centerKind === 'hatch'
+    for (const d of shouldPaintCentralHatch ? buildHatchDistances(hs, he) : []) {
       const d2 = Math.min(he - TAIWAN_YELLOW_HATCH_V1.insetM,
         d + TAIWAN_YELLOW_HATCH_V1.stripePitchM)
       if (d2 <= d) continue

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 import {
   buildCappedTriangleRange, buildHatchDistances, buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
-  resolveChannelization, singleBayUnusedSideOffsets,
+  resolveChannelization, singleBayUnusedSideOffsets, TAIWAN_YELLOW_HATCH_V1,
 } from './channelization.ts'
 import { haversine, skewFromCross } from './geo.ts'
 
@@ -40,23 +40,32 @@ const fixtureCrossBearing = 100
 const fixtureSkew = skewFromCross(0, fixtureCrossBearing)
 const fixtureCenterHalfM = 1.5
 
-function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped', journal = [] } = {}) {
+function buildFixtureChannelization({
+  forwardBay = true,
+  singleMode = 'capped',
+  journal = [],
+  withBay = true,
+  centerM = 3,
+  centerKind = 'hatch',
+  end = fixtureEnd,
+} = {}) {
+  const totalM = haversine(fixtureStart, end)
   const road = {
     type: 'Feature',
-    geometry: { type: 'LineString', coordinates: [fixtureStart, fixtureEnd] },
+    geometry: { type: 'LineString', coordinates: [fixtureStart, end] },
     properties: {
       osm_id: 7,
       highway: 'primary',
       roadMarkingMode: 'all',
-      centerM: 3,
-      centerKind: 'hatch',
+      centerM,
+      centerKind,
       islandBayMode: false,
       coupletMerged: true,
       oneway: 'no',
     },
   }
   const edge = {
-    coords: [fixtureStart, fixtureEnd],
+    coords: [fixtureStart, end],
     road,
     back: false,
     fromNode: 1,
@@ -82,7 +91,7 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped', 
     offM: 0,
     d0M: 30,
     bayStartM: 45,
-    endM: fixtureTotalM - fixtureSetbackM,
+    endM: totalM - fixtureSetbackM,
     setbackM: fixtureSetbackM,
     back: !forwardBay,
     paired: false,
@@ -92,7 +101,7 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped', 
     arrows: [],
     lines: [],
   }
-  return buildChannelization(graph, [bay], journal)
+  return buildChannelization(graph, withBay ? [bay] : [], journal)
 }
 
 function stylesAndOwners(lines) {
@@ -164,6 +173,57 @@ test('disabled channelization stays reviewable and produces no active geometry',
 test('hatch distances retain the same 1.25 m pitch for narrow and wide tapered regions', () => {
   assert.deepEqual(buildHatchDistances(0.3, 5.4), [1.25, 2.5, 3.75, 5])
   assert.deepEqual(buildHatchDistances(0.3, 9.1), [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75])
+})
+
+test('a hatch central band without turn bays fills its valid central range', () => {
+  const hatches = buildFixtureChannelization({ withBay: false, centerM: 3.2 })
+    .filter((line) => line.style === 'channel-hatch')
+
+  assert.ok(hatches.length > 2)
+  const stations = hatches.map((line) => distanceAlongFixture(line.coords[0]))
+  for (let i = 1; i < stations.length; i++) {
+    assert.ok(Math.abs(
+      stations[i] - stations[i - 1] - TAIWAN_YELLOW_HATCH_V1.stripePitchM,
+    ) < 0.02)
+  }
+})
+
+test('pure central hatches keep stations across widths and extend count across lengths', () => {
+  const narrow = buildFixtureChannelization({ withBay: false, centerM: 1.6 })
+    .filter((line) => line.style === 'channel-hatch')
+  const wide = buildFixtureChannelization({ withBay: false, centerM: 4.8 })
+    .filter((line) => line.style === 'channel-hatch')
+  const longer = buildFixtureChannelization({
+    withBay: false,
+    centerM: 4.8,
+    end: [fixtureStart[0], 22.72144],
+  }).filter((line) => line.style === 'channel-hatch')
+
+  assert.deepEqual(
+    narrow.map((line) => +distanceAlongFixture(line.coords[0]).toFixed(2)),
+    wide.map((line) => +distanceAlongFixture(line.coords[0]).toFixed(2)),
+  )
+  assert.ok(wide.every((line, i) =>
+    haversine(line.coords[0], line.coords[1])
+      > haversine(narrow[i].coords[0], narrow[i].coords[1])))
+  assert.ok(longer.length > wide.length)
+  assert.deepEqual(
+    longer.slice(0, wide.length).map((line) => +distanceAlongFixture(line.coords[0]).toFixed(2)),
+    wide.map((line) => +distanceAlongFixture(line.coords[0]).toFixed(2)),
+  )
+})
+
+test('zero-width and physical-island central bands produce no pure hatches', () => {
+  const zeroWidth = buildFixtureChannelization({ withBay: false, centerM: 0 })
+    .filter((line) => line.style === 'channel-hatch')
+  const island = buildFixtureChannelization({
+    withBay: false,
+    centerM: 3.2,
+    centerKind: 'island',
+  }).filter((line) => line.style === 'channel-hatch')
+
+  assert.equal(zeroWidth.length, 0)
+  assert.equal(island.length, 0)
 })
 
 test('single capped bay defaults to an unused-side closure but ignore produces none', () => {

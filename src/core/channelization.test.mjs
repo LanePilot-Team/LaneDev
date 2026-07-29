@@ -230,11 +230,12 @@ test('a backward capped bay mirrors the unused approach triangle in the road fra
   assert.ok(backwardOutlines.every((line) =>
     Math.abs(Math.min(...line.coords.map(distanceAlongFixture)) - backwardTipM) < 0.2))
 
-  const forwardSide = lateralOffsetFromFixture(endpointNearestStation(forwardOutlines[0], 30))
+  const forwardSide = lateralOffsetFromFixture(endpointNearestStation(forwardOutlines[0], 45))
   const backwardSide = lateralOffsetFromFixture(
     endpointNearestStation(backwardOutlines[0], backwardTipM),
   )
-  assert.ok(forwardSide * backwardSide < 0)
+  assert.ok(forwardSide < -fixtureCenterHalfM + 0.1)
+  assert.ok(backwardSide > fixtureCenterHalfM - 0.1)
 })
 
 for (const forwardBay of [true, false]) {
@@ -285,14 +286,14 @@ for (const forwardBay of [true, false]) {
 
 test('single forward bay closes the opposite side of its left-turn lane', () => {
   assert.deepEqual(singleBayUnusedSideOffsets('forward', 1.5), {
-    movingStart: 1.5,
-    unusedBoundary: -1.5,
+    movingStart: -1.5,
+    unusedBoundary: 1.5,
   })
 })
 
 test('single backward bay mirrors the unused-side closure', () => {
   assert.deepEqual(singleBayUnusedSideOffsets('backward', 1.5), {
-    movingStart: -1.5,
-    unusedBoundary: 1.5,
+    movingStart: 1.5,
+    unusedBoundary: -1.5,
   })
 })

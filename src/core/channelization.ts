@@ -68,8 +68,8 @@ export function singleBayUnusedSideOffsets(
   direction: 'forward' | 'backward', c: number, dv = 0,
 ) {
   return direction === 'forward'
-    ? { movingStart: dv + c, unusedBoundary: dv - c }
-    : { movingStart: dv - c, unusedBoundary: dv + c }
+    ? { movingStart: dv - c, unusedBoundary: dv + c }
+    : { movingStart: dv + c, unusedBoundary: dv - c }
 }
 
 export function buildHatchDistances(startM: number, endM: number, pitchM = TAIWAN_YELLOW_HATCH_V1.stripePitchM): number[] {

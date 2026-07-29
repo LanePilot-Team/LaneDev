@@ -204,15 +204,15 @@ test('capped triangle range rejects reversed boundaries', () => {
   }), null)
 })
 
-test('a forward capped bay triangle spans the unused approach stop boundary to its taper tip', () => {
+test('a forward capped bay triangle spans the unused stop line to the full lane split', () => {
   const outlines = buildFixtureChannelization({ forwardBay: true })
     .filter((line) => line.style === 'single-bay-unused')
   assert.equal(outlines.length, 2)
 
-  const tipCoords = outlines.map((line) => endpointNearestStation(line, 30))
+  const tipCoords = outlines.map((line) => endpointNearestStation(line, 45))
   assert.ok(haversine(tipCoords[0], tipCoords[1]) < 0.05)
   assert.ok(outlines.every((line) =>
-    Math.abs(Math.max(...line.coords.map(distanceAlongFixture)) - 30) < 0.2))
+    Math.abs(Math.max(...line.coords.map(distanceAlongFixture)) - 45) < 0.2))
 })
 
 test('a backward capped bay mirrors the unused approach triangle in the road frame', () => {
@@ -223,7 +223,7 @@ test('a backward capped bay mirrors the unused approach triangle in the road fra
   assert.equal(forwardOutlines.length, 2)
   assert.equal(backwardOutlines.length, 2)
 
-  const backwardTipM = fixtureTotalM - 30
+  const backwardTipM = fixtureTotalM - 45
   const backwardTipCoords = backwardOutlines
     .map((line) => endpointNearestStation(line, backwardTipM))
   assert.ok(haversine(backwardTipCoords[0], backwardTipCoords[1]) < 0.05)
@@ -276,7 +276,7 @@ for (const forwardBay of [true, false]) {
       for (const coord of line.coords) {
         const stationM = distanceAlongFixture(coord)
         const lateralM = lateralOffsetFromFixture(coord)
-        assert.ok(forwardBay ? stationM < 30 : stationM > fixtureTotalM - 30)
+        assert.ok(forwardBay ? stationM < 45 : stationM > fixtureTotalM - 45)
         assert.ok(lateralM > -fixtureCenterHalfM && lateralM < fixtureCenterHalfM)
       }
     }

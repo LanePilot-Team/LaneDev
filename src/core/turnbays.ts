@@ -759,7 +759,11 @@ export function buildChannelization(
       const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - 0.5)
       const movingCapRoadM = onlyFwdBay ? clippedStart(capOff) : clippedEnd(capOff)
       const fixedCapRoadM = onlyFwdBay ? clippedStart(fixedOff) : clippedEnd(fixedOff)
-      const tipRoadM = onlyFwdBay ? activeBay.d0M : total - activeBay.d0M
+      // The closed wedge reaches the point where the full-width turn lane
+      // separates from the original lane line.  d0M is merely the beginning
+      // of the short automatic taper and made the marking collapse into a
+      // small triangle beside the stop line.
+      const tipRoadM = onlyFwdBay ? activeBay.bayStartM : total - activeBay.bayStartM
       const toUnusedApproachM = (roadM: number) => onlyFwdBay ? total - roadM : roadM
       const tipApproachM = toUnusedApproachM(tipRoadM)
       const movingCapApproachM = toUnusedApproachM(movingCapRoadM)

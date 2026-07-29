@@ -356,6 +356,12 @@ export function applyRoadMerges(roads: RoadFeature[], journal: EnhancementRecord
     const bNodes = check.secondaryAt === 'start'
       ? [...secondary.properties.nodes]
       : [...secondary.properties.nodes].reverse()
+    // 接點不是「完全不連接路口」——RoadGraph 仍會在共用節點切邊，側街照樣接得上。
+    // 改成單向進入：主路正向可右轉進入側街，對向不得跨線左轉，要繞到正向才行。
+    // 必須在改寫 nodes 之前取，接合後接點就變成內部節點了。
+    const joinNode = check.primaryAt === 'end'
+      ? primary.properties.nodes[primary.properties.nodes.length - 1]
+      : primary.properties.nodes[0]
     if (check.primaryAt === 'end') {
       primary.geometry.coordinates = [...a, ...b.slice(1)]
       primary.properties.nodes = [...primary.properties.nodes, ...bNodes.slice(1)]
@@ -363,6 +369,11 @@ export function applyRoadMerges(roads: RoadFeature[], journal: EnhancementRecord
       primary.geometry.coordinates = [...b.slice(1).reverse(), ...a]
       primary.properties.nodes = [...bNodes.slice(1).reverse(), ...primary.properties.nodes]
     }
+    const restricted = new Set(primary.properties.oneSideEntryNodes ?? [])
+    restricted.add(joinNode)
+    // 次段自己的限制也一併帶過來（連續捏合時前一次的接點不能掉）
+    for (const node of secondary.properties.oneSideEntryNodes ?? []) restricted.add(node)
+    primary.properties.oneSideEntryNodes = [...restricted]
     const secondaryIndex = roads.indexOf(secondary)
     if (secondaryIndex >= 0) roads.splice(secondaryIndex, 1)
     merged++

@@ -19,7 +19,8 @@ import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
 } from '../core/zones'
 import {
-  loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
+  loadJournal, foldJournal, applyToRoads, remapJournalNodes, applyRoadMerges,
+  journalForMergedRoads, type EnhancementRecord,
 } from '../core/enhancements'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
@@ -344,25 +345,28 @@ export function useMapCore(
   /** 重算偏心左轉道（路網/車道數/journal 變動後都要跑：bay 的橫向位置依斷面寬推導） */
   const refreshBays = useCallback(() => {
     if (!mapRef.current || !graphRef.current) return
-    baysRef.current = buildTurnBays(graphRef.current, journalRef.current)
-    rightLanesRef.current = buildRightLanes(graphRef.current, journalRef.current)
+    // 捏合後次路段的 way id 已退出畫面，掛在它上面的偏心道／右轉道／停等格要改
+    // 讀主路段的鍵。原始歷程不動，這裡只是計算用的視圖。
+    const journal = journalForMergedRoads(journalRef.current)
+    baysRef.current = buildTurnBays(graphRef.current, journal)
+    rightLanesRef.current = buildRightLanes(graphRef.current, journal)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = buildChannelization(graphRef.current, baysRef.current)
     const stopLines = buildStopLines(
-      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
+      graphRef.current, baysRef.current, rightLanesRef.current, journal)
     const leftWaitAreas = buildLeftTurnWaitingAreas(graphRef.current, baysRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
-      graphRef.current, baysRef.current, rightLanesRef.current, journalRef.current)
+      graphRef.current, baysRef.current, rightLanesRef.current, journal)
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
       graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
-      journalRef.current)
+      journal)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
-      ...buildMotoLaneEntryIcons(graphRef.current, journalRef.current).features,
+      ...buildMotoLaneEntryIcons(graphRef.current, journal).features,
       ...buildUnusedLaneGores(graphRef.current, baysRef.current).features)
     const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
     src('turnbays').setData(groundMarkingPolygons(
@@ -583,6 +587,11 @@ export function useMapCore(
       const folded = foldJournal(journalRef.current)
       const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
       applyToRoads(roadsAll, folded)
+      // 捏合＝journal 紀錄，每次載入才在記憶體內接合；靜態 OSM 一個位元組都不動，
+      // 所以重建 segments 也炸不到它。必須排在 applyToRoads 之後：checkRoadMerge
+      // 要比對兩段的車道配置，那是人工覆寫套用後才成立的。
+      const mergedCount = applyRoadMerges(roadsAll, journalRef.current)
+      if (mergedCount > 0) console.info(`journal 捏合：接合 ${mergedCount} 組路段`)
       // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
       roadsRef.current = roadsAll.filter((road) => !road.properties.deleted)
       redrawRoads()

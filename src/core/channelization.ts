@@ -11,6 +11,21 @@ export const TAIWAN_YELLOW_HATCH_V1 = {
   minLengthM: 3,
 }
 
+export function buildCappedTriangleRange(input: {
+  taperStartM: number
+  stopBoundaryM: number
+  movingAt: (distanceM: number) => number
+  fixedOffsetM: number
+}) {
+  if (input.stopBoundaryM - input.taperStartM < TAIWAN_YELLOW_HATCH_V1.minLengthM) return null
+  return {
+    startM: input.taperStartM,
+    endM: input.stopBoundaryM,
+    movingAt: input.movingAt,
+    fixedOffsetM: input.fixedOffsetM,
+  }
+}
+
 export interface OffsetTurnBayMarkingRecord {
   key: string
   offset_bay: {

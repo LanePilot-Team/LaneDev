@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildHatchDistances, buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
-  resolveChannelization,
+  buildCappedTriangleRange, buildHatchDistances, buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
+  resolveChannelization, singleBayUnusedSideOffsets,
 } from './channelization.ts'
 
 const parent = 'way/7@node/9'
@@ -70,4 +70,43 @@ test('hatch distances retain the same 1.25 m pitch for narrow and wide tapered r
 test('single capped bay defaults to an unused-side closure but ignore produces none', () => {
   assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'capped' }, []).closure, 'unused-side')
   assert.equal(resolveChannelization(parent, { ...bay, singleMode: 'ignore' }, []), null)
+})
+
+test('capped triangle range retains its forward boundaries and fixed offset', () => {
+  const movingAt = (distanceM) => distanceM / 9
+
+  assert.deepEqual(buildCappedTriangleRange({
+    taperStartM: 18,
+    stopBoundaryM: 54,
+    movingAt,
+    fixedOffsetM: -1.6,
+  }), {
+    startM: 18,
+    endM: 54,
+    movingAt,
+    fixedOffsetM: -1.6,
+  })
+})
+
+test('capped triangle range rejects reversed boundaries', () => {
+  assert.equal(buildCappedTriangleRange({
+    taperStartM: 54,
+    stopBoundaryM: 18,
+    movingAt: () => 0,
+    fixedOffsetM: 1.6,
+  }), null)
+})
+
+test('single forward bay closes the opposite side of its left-turn lane', () => {
+  assert.deepEqual(singleBayUnusedSideOffsets('forward', 1.5), {
+    movingStart: 1.5,
+    unusedBoundary: -1.5,
+  })
+})
+
+test('single backward bay mirrors the unused-side closure', () => {
+  assert.deepEqual(singleBayUnusedSideOffsets('backward', 1.5), {
+    movingStart: -1.5,
+    unusedBoundary: 1.5,
+  })
 })

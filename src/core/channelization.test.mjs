@@ -5,7 +5,7 @@ import {
   buildCappedTriangleRange, buildHatchDistances, buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
   resolveChannelization, singleBayUnusedSideOffsets,
 } from './channelization.ts'
-import { haversine } from './geo.ts'
+import { haversine, skewFromCross } from './geo.ts'
 
 const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
 const { buildChannelization } = await vite.ssrLoadModule('/src/core/turnbays.ts')
@@ -35,6 +35,10 @@ const record = (type, key, fields, seq) => ({
 const fixtureStart = [120.3, 22.72]
 const fixtureEnd = [120.3, 22.72108]
 const fixtureTotalM = haversine(fixtureStart, fixtureEnd)
+const fixtureSetbackM = 12
+const fixtureCrossBearing = 100
+const fixtureSkew = skewFromCross(0, fixtureCrossBearing)
+const fixtureCenterHalfM = 1.5
 
 function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' } = {}) {
   const road = {
@@ -57,12 +61,12 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' }
     back: false,
     fromNode: 1,
     toNode: 2,
-    startSetbackM: 0,
-    endSetbackM: 12,
+    startSetbackM: fixtureSetbackM,
+    endSetbackM: fixtureSetbackM,
   }
   const graph = {
     scopeEdges: (scope) => scope(road) ? [edge] : [],
-    crossOrientationAt: () => null,
+    crossOrientationAt: () => fixtureCrossBearing,
   }
   const bay = {
     key: forwardBay ? 'way/7@node/2' : 'way/7@node/1~b',
@@ -76,10 +80,10 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' }
     turns: 'left',
     source: 'manual',
     offM: 0,
-    d0M: 20,
-    bayStartM: 35,
-    endM: 65,
-    setbackM: 12,
+    d0M: 30,
+    bayStartM: 45,
+    endM: fixtureTotalM - fixtureSetbackM,
+    setbackM: fixtureSetbackM,
     back: !forwardBay,
     paired: false,
     singleMode,
@@ -93,6 +97,17 @@ function buildFixtureChannelization({ forwardBay = true, singleMode = 'capped' }
 
 function distanceAlongFixture(coord) {
   return haversine(fixtureStart, [fixtureStart[0], coord[1]])
+}
+
+function lateralOffsetFromFixture(coord) {
+  const magnitude = haversine([fixtureStart[0], coord[1]], coord)
+  return Math.sign(coord[0] - fixtureStart[0]) * magnitude
+}
+
+function endpointNearestStation(line, stationM) {
+  return line.coords.reduce((nearest, coord) =>
+    Math.abs(distanceAlongFixture(coord) - stationM)
+      < Math.abs(distanceAlongFixture(nearest) - stationM) ? coord : nearest)
 }
 
 test('one offset bay creates one review index record even without channelization', () => {
@@ -166,54 +181,84 @@ test('capped triangle range rejects reversed boundaries', () => {
   }), null)
 })
 
-test('a forward capped bay triangle spans its taper split to the pre-stop-line boundary', () => {
-  const lines = buildFixtureChannelization({ forwardBay: true })
-  const outline = lines.find((line) => line.style === 'single-bay-unused')
-  assert.ok(outline)
+test('a forward capped bay triangle spans the unused approach stop boundary to its taper tip', () => {
+  const outlines = buildFixtureChannelization({ forwardBay: true })
+    .filter((line) => line.style === 'single-bay-unused')
+  assert.equal(outlines.length, 2)
 
-  const distances = outline.coords.map(distanceAlongFixture)
-  assert.ok(Math.abs(Math.min(...distances) - 20) < 0.2)
-  assert.ok(Math.abs(Math.max(...distances) - (fixtureTotalM - 12)) < 0.2)
+  const tipCoords = outlines.map((line) => endpointNearestStation(line, 30))
+  assert.ok(haversine(tipCoords[0], tipCoords[1]) < 0.05)
+  assert.ok(outlines.every((line) =>
+    Math.abs(Math.max(...line.coords.map(distanceAlongFixture)) - 30) < 0.2))
 })
 
-test('a backward capped bay mirrors the triangle in the road frame', () => {
-  const forwardOutline = buildFixtureChannelization({ forwardBay: true })
-    .find((line) => line.style === 'single-bay-unused')
-  const backwardOutline = buildFixtureChannelization({ forwardBay: false })
-    .find((line) => line.style === 'single-bay-unused')
-  assert.ok(forwardOutline)
-  assert.ok(backwardOutline)
+test('a backward capped bay mirrors the unused approach triangle in the road frame', () => {
+  const forwardOutlines = buildFixtureChannelization({ forwardBay: true })
+    .filter((line) => line.style === 'single-bay-unused')
+  const backwardOutlines = buildFixtureChannelization({ forwardBay: false })
+    .filter((line) => line.style === 'single-bay-unused')
+  assert.equal(forwardOutlines.length, 2)
+  assert.equal(backwardOutlines.length, 2)
 
-  const distances = backwardOutline.coords.map(distanceAlongFixture)
-  assert.ok(Math.abs(Math.min(...distances) - 12) < 0.2)
-  assert.ok(Math.abs(Math.max(...distances) - (fixtureTotalM - 20)) < 0.2)
+  const backwardTipM = fixtureTotalM - 30
+  const backwardTipCoords = backwardOutlines
+    .map((line) => endpointNearestStation(line, backwardTipM))
+  assert.ok(haversine(backwardTipCoords[0], backwardTipCoords[1]) < 0.05)
+  assert.ok(backwardOutlines.every((line) =>
+    Math.abs(Math.min(...line.coords.map(distanceAlongFixture)) - backwardTipM) < 0.2))
 
-  const forwardSide = forwardOutline.coords[0][0] - fixtureStart[0]
-  const backwardSide = backwardOutline.coords[0][0] - fixtureStart[0]
+  const forwardSide = lateralOffsetFromFixture(endpointNearestStation(forwardOutlines[0], 30))
+  const backwardSide = lateralOffsetFromFixture(
+    endpointNearestStation(backwardOutlines[0], backwardTipM),
+  )
   assert.ok(forwardSide * backwardSide < 0)
 })
 
-test('capped bay hatches retain v1 pitch and cap only the stop side', () => {
-  const lines = buildFixtureChannelization({ forwardBay: true })
-  const hatches = lines.filter((line) => line.style === 'channel-hatch')
-  assert.ok(hatches.length > 2)
+for (const forwardBay of [true, false]) {
+  const direction = forwardBay ? 'forward' : 'backward'
+  test(`${direction} capped bay cap is nonzero and follows both skew-clipped boundaries`, () => {
+    const caps = buildFixtureChannelization({ forwardBay })
+      .filter((line) => line.style === 'channel-cap')
+    assert.equal(caps.length, 1)
+    assert.ok(haversine(caps[0].coords[0], caps[0].coords[1]) > 2.5)
 
-  const hatchStations = hatches.map((line) => distanceAlongFixture(line.coords[0]))
-  for (let i = 1; i < hatchStations.length; i++) {
-    assert.ok(Math.abs((hatchStations[i] - hatchStations[i - 1]) - 1.25) < 0.02)
-  }
-  for (const line of hatches) {
-    for (const coord of line.coords) {
-      const distance = distanceAlongFixture(coord)
-      assert.ok(distance >= 20 - 0.2)
-      assert.ok(distance <= fixtureTotalM - 12 + 0.2)
+    const rawBoundaryM = forwardBay
+      ? fixtureSetbackM
+      : fixtureTotalM - fixtureSetbackM
+    const offsets = forwardBay
+      ? [-fixtureCenterHalfM, fixtureCenterHalfM]
+      : [fixtureCenterHalfM, -fixtureCenterHalfM]
+    const expectedStations = offsets.map((offsetM) => forwardBay
+      ? fixtureSetbackM + fixtureSkew * offsetM + 0.5
+      : fixtureTotalM - fixtureSetbackM + fixtureSkew * offsetM - 0.5)
+      .sort((a, b) => a - b)
+    const actualStations = caps[0].coords.map(distanceAlongFixture).sort((a, b) => a - b)
+
+    assert.ok(Math.abs(actualStations[0] - expectedStations[0]) < 0.2)
+    assert.ok(Math.abs(actualStations[1] - expectedStations[1]) < 0.2)
+    assert.ok(actualStations.every((stationM) => Math.abs(stationM - rawBoundaryM) > 0.2))
+  })
+
+  test(`${direction} capped bay hatches keep v1 pitch and stay outside the traversable bay`, () => {
+    const hatches = buildFixtureChannelization({ forwardBay })
+      .filter((line) => line.style === 'channel-hatch')
+    assert.ok(hatches.length > 2)
+
+    const hatchStations = hatches.map((line) => distanceAlongFixture(line.coords[0]))
+    for (let i = 1; i < hatchStations.length; i++) {
+      assert.ok(Math.abs((hatchStations[i] - hatchStations[i - 1]) - 1.25) < 0.02)
     }
-  }
-
-  const caps = lines.filter((line) => line.style === 'channel-cap')
-  assert.equal(caps.length, 1)
-  assert.ok(Math.abs(distanceAlongFixture(caps[0].coords[0]) - (fixtureTotalM - 12)) < 0.2)
-})
+    for (const line of hatches) {
+      assert.ok(haversine(line.coords[0], line.coords[1]) >= 0.3)
+      for (const coord of line.coords) {
+        const stationM = distanceAlongFixture(coord)
+        const lateralM = lateralOffsetFromFixture(coord)
+        assert.ok(forwardBay ? stationM < 30 : stationM > fixtureTotalM - 30)
+        assert.ok(lateralM > -fixtureCenterHalfM && lateralM < fixtureCenterHalfM)
+      }
+    }
+  })
+}
 
 test('single forward bay closes the opposite side of its left-turn lane', () => {
   assert.deepEqual(singleBayUnusedSideOffsets('forward', 1.5), {

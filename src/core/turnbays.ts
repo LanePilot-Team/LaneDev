@@ -749,52 +749,51 @@ export function buildChannelization(
         ? resolveChannelization(activeBayKey, singleBay, journal)
         : null
       const smooth = (t: number) => t * t * (3 - 2 * t)
-      let fixedOff: number
-      let movingOff: (d: number) => number
-      let relativeDistance: (d: number) => number
-
-      if (onlyFwdBay) {
-        fixedOff = singleBayUnusedSideOffsets('forward', c, dv).unusedBoundary
-        relativeDistance = (d) => d
-        movingOff = (d: number) => {
-          const t = Math.max(0, Math.min(1,
-            (d - fwdBay!.d0M) / Math.max(1e-6, fwdBay!.bayStartM - fwdBay!.d0M)))
-          return dv + c - smooth(t) * 2 * c
-        }
-      } else {
-        fixedOff = singleBayUnusedSideOffsets('backward', c, dv).unusedBoundary
-        relativeDistance = (d) => total - d
-        movingOff = (d: number) => {
-          const reverseD = total - d
-          const t = Math.max(0, Math.min(1,
-            (reverseD - bwdBay!.d0M) / Math.max(1e-6, bwdBay!.bayStartM - bwdBay!.d0M)))
-          return dv - c + smooth(t) * 2 * c
-        }
-      }
       const activeBay = singleBay!
+      const sideOffsets = singleBayUnusedSideOffsets(
+        onlyFwdBay ? 'forward' : 'backward', c, dv,
+      )
+      const fixedOff = sideOffsets.movingStart
+      const capOff = sideOffsets.unusedBoundary
+      const clippedStart = (off: number) => Math.max(0, s0 + sk0 * off + 0.5)
+      const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - 0.5)
+      const movingCapRoadM = onlyFwdBay ? clippedStart(capOff) : clippedEnd(capOff)
+      const fixedCapRoadM = onlyFwdBay ? clippedStart(fixedOff) : clippedEnd(fixedOff)
+      const tipRoadM = onlyFwdBay ? activeBay.d0M : total - activeBay.d0M
+      const toUnusedApproachM = (roadM: number) => onlyFwdBay ? total - roadM : roadM
+      const tipApproachM = toUnusedApproachM(tipRoadM)
+      const movingCapApproachM = toUnusedApproachM(movingCapRoadM)
+      const movingAt = (approachM: number) => {
+        const t = Math.max(0, Math.min(1,
+          (approachM - tipApproachM) / Math.max(1e-6, movingCapApproachM - tipApproachM)))
+        return fixedOff + smooth(t) * (capOff - fixedOff)
+      }
       const triangle = buildCappedTriangleRange({
-        taperStartM: activeBay.d0M,
-        stopBoundaryM: total - activeBay.setbackM,
-        movingAt: onlyFwdBay ? movingOff : (d) => movingOff(total - d),
+        taperStartM: tipApproachM,
+        stopBoundaryM: movingCapApproachM,
+        movingAt,
         fixedOffsetM: fixedOff,
       })
       const wedgeFrom = triangle
-        ? Math.max(s0, onlyFwdBay ? triangle.startM : total - triangle.endM)
+        ? Math.max(s0, onlyFwdBay
+          ? Math.max(movingCapRoadM, fixedCapRoadM)
+          : tipRoadM)
         : 0
       const wedgeTo = triangle
-        ? Math.min(s1, onlyFwdBay ? triangle.endM : total - triangle.startM)
+        ? Math.min(s1, onlyFwdBay
+          ? tipRoadM
+          : Math.min(movingCapRoadM, fixedCapRoadM))
         : 0
-      const triangleMovingOff = (d: number) => triangle
-        ? (onlyFwdBay ? triangle.movingAt(d) : triangle.movingAt(total - d))
-        : movingOff(d)
+      const triangleMovingOff = (d: number) => triangle?.movingAt(toUnusedApproachM(d)) ?? fixedOff
       const triangleFixedOff = triangle?.fixedOffsetM ?? fixedOff
 
       const boundaryOff = (d: number) => {
         const moving = triangleMovingOff(d)
         if (channelization?.widthStartM === undefined || channelization.widthEndM === undefined) return triangleFixedOff
-        const from = channelization.sStartM ?? (onlyFwdBay ? fwdBay!.d0M : bwdBay!.d0M)
-        const to = channelization.sEndM ?? (onlyFwdBay ? fwdBay!.endM : bwdBay!.endM)
-        const t = Math.max(0, Math.min(1, (relativeDistance(d) - from) / Math.max(1e-6, to - from)))
+        const from = channelization.sStartM ?? triangle?.startM ?? tipApproachM
+        const to = channelization.sEndM ?? triangle?.endM ?? movingCapApproachM
+        const t = Math.max(0, Math.min(1,
+          (toUnusedApproachM(d) - from) / Math.max(1e-6, to - from)))
         const requestedWidth = channelization.widthStartM
           + (channelization.widthEndM - channelization.widthStartM) * t
         return moving + Math.sign(triangleFixedOff - moving)
@@ -803,12 +802,26 @@ export function buildChannelization(
 
       if (triangle && channelization?.closure === 'unused-side'
         && wedgeTo - wedgeFrom >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
-        out.push({
-          color: 'yellow',
-          style: 'single-bay-unused',
-          ownerKey: activeBayKey,
-          coords: sampleDs(wedgeFrom, wedgeTo, 2.5).map((d) => offsetAt(e.coords, cum, d, boundaryOff(d))),
-        })
+        const movingOutlineFrom = onlyFwdBay ? movingCapRoadM : tipRoadM
+        const movingOutlineTo = onlyFwdBay ? tipRoadM : movingCapRoadM
+        const fixedOutlineFrom = onlyFwdBay ? fixedCapRoadM : tipRoadM
+        const fixedOutlineTo = onlyFwdBay ? tipRoadM : fixedCapRoadM
+        out.push(
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(movingOutlineFrom, movingOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, triangleMovingOff(d))),
+          },
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(fixedOutlineFrom, fixedOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, triangleFixedOff)),
+          },
+        )
         for (const d of buildHatchDistances(wedgeFrom, wedgeTo)) {
           const d2 = Math.min(wedgeTo - TAIWAN_YELLOW_HATCH_V1.insetM,
             d + TAIWAN_YELLOW_HATCH_V1.stripePitchM)
@@ -816,7 +829,9 @@ export function buildChannelization(
           const moving = triangleMovingOff(d)
           const boundary = boundaryOff(d)
           const side = Math.sign(boundary - moving)
-          if (Math.abs(boundary - moving) < TAIWAN_YELLOW_HATCH_V1.insetM) continue
+          if (Math.abs(boundary - moving) < TAIWAN_YELLOW_HATCH_V1.insetM * 2
+            || Math.abs(boundaryOff(d2) - triangleMovingOff(d2))
+              < TAIWAN_YELLOW_HATCH_V1.insetM * 2) continue
           out.push({
             color: 'yellow',
             style: 'channel-hatch',
@@ -827,7 +842,6 @@ export function buildChannelization(
             ],
           })
         }
-        const capD = onlyFwdBay ? wedgeTo : wedgeFrom
         const cappedKey = `${activeBayKey}:stop`
         if (!cappedBayKeys.has(cappedKey)) {
           cappedBayKeys.add(cappedKey)
@@ -836,8 +850,8 @@ export function buildChannelization(
             style: 'channel-cap',
             ownerKey: activeBayKey,
             coords: [
-              offsetAt(e.coords, cum, capD, triangleMovingOff(capD)),
-              offsetAt(e.coords, cum, capD, boundaryOff(capD)),
+              offsetAt(e.coords, cum, movingCapRoadM, capOff),
+              offsetAt(e.coords, cum, fixedCapRoadM, triangleFixedOff),
             ],
           })
         }

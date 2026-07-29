@@ -13,7 +13,7 @@ import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
 import {
-  buildHatchDistances, resolveChannelization, TAIWAN_YELLOW_HATCH_V1,
+  buildHatchDistances, resolveChannelization, singleBayUnusedSideOffsets, TAIWAN_YELLOW_HATCH_V1,
 } from './channelization'
 
 // 生成範圍（2026-07-15 起不再限路名）：所有 couplet 合併、中央帶為槽化的路段。
@@ -245,7 +245,8 @@ const anchorKey = (a: BayAnchor) => `way/${a.wayId}@node/${a.nodeId}${a.back ? '
 export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): TurnBay[] {
   const over = foldBayOverrides(journal)
   const out: TurnBay[] = []
-  const anchors = graph.bayAnchors(scopeFn)
+  // Candidates remain available for manual confirmation outside the automatic scope.
+  const anchors = graph.bayAnchors(() => true)
   const amap = new Map(anchors.map((a) => [anchorKey(a), a]))
   const handled = new Set<string>()
 
@@ -259,6 +260,7 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
       return !!o && Number(o.present) === 1
     }
     if (o) return Number(o.present) !== 0 // 人工開/關（帶參數的覆寫視為開）
+    if (!scopeFn(a.road)) return false
     if (!a.hasLeftPair) return false
     // 中央帶要放得下預設 3m 寬的 bay 才自動生成——泛用合併段的間距反推帶寬
     // 常只有 0.6~2m，硬畫會爆出路體；窄帶實地真有偏心道就用面板人工開啟
@@ -617,10 +619,15 @@ export function buildChannelization(
   for (const b of bays) bayMap.set(`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b)
   const out: PaintLine[] = []
   const cappedBayKeys = new Set<string>()
+  const manuallyIncludedWays = new Set(
+    bays.filter((bay) => bay.source === 'manual' && bay.kind === 'center').map((bay) => bay.wayId),
+  )
 
   // 繪圖線需對所有真交叉道路淨空（含 6.4m 小路），並多留 2m 路口邊界。
   // 偏心道、停止線仍沿用原本 ≥7m 的判定，避免改變交通語意。
-  for (const e of graph.scopeEdges(scopeFn, 0, 2)) {
+  for (const e of graph.scopeEdges(
+    (road) => scopeFn(road) || manuallyIncludedWays.has(road.properties.osm_id), 0, 2,
+  )) {
     const p = e.road.properties
     if (p.roadMarkingMode === 'none') continue
     const cum = cumulative(e.coords)
@@ -750,7 +757,7 @@ export function buildChannelization(
       if (onlyFwdBay) {
         wedgeFrom = Math.max(s0, channelization?.sStartM ?? fwdBay!.d0M)
         wedgeTo = Math.min(s1, channelization?.sEndM ?? fwdBay!.endM)
-        fixedOff = dv + c
+        fixedOff = singleBayUnusedSideOffsets('forward', c, dv).unusedBoundary
         relativeDistance = (d) => d
         movingOff = (d: number) => {
           const t = Math.max(0, Math.min(1,
@@ -760,7 +767,7 @@ export function buildChannelization(
       } else {
         wedgeFrom = Math.max(s0, total - (channelization?.sEndM ?? bwdBay!.endM))
         wedgeTo = Math.min(s1, total - (channelization?.sStartM ?? bwdBay!.d0M))
-        fixedOff = dv - c
+        fixedOff = singleBayUnusedSideOffsets('backward', c, dv).unusedBoundary
         relativeDistance = (d) => total - d
         movingOff = (d: number) => {
           const reverseD = total - d
@@ -1932,7 +1939,7 @@ export function bayCandidatesAt(
   graph: RoadGraph, journal: EnhancementRecord[], bays: TurnBay[], nodeId: number,
 ): BayCandidate[] {
   const over = foldBayOverrides(journal)
-  return graph.bayAnchors(scopeFn)
+  return graph.bayAnchors(() => true)
     .filter((a) => a.nodeId === nodeId)
     .map((a) => {
       const key = `way/${a.wayId}@node/${a.nodeId}${a.back ? '~b' : ''}`

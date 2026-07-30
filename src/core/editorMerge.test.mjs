@@ -131,3 +131,20 @@ test('備援壞掉或全空時，檔案原樣保留', () => {
   assert.equal(editor.journal.length, 1)
   assert.equal(recovered, 0)
 })
+
+test('槽化帶衍生索引以檔案為準，不接受瀏覽器驗收快照覆寫', () => {
+  const fileMarking = { key: 'way/1@node/2', review: { status: 'verified' } }
+  const browserMarking = { key: 'way/9@node/8', review: { status: 'unreviewed' } }
+  const file = {
+    updated_at: '', journal: [], waiting_zones: [], deleted_waiting_zone_ids: [],
+    offset_turn_bay_markings: [fileMarking],
+  }
+  const browser = {
+    journal: [], waiting_zones: [], deleted_waiting_zone_ids: [],
+    offset_turn_bay_markings: [browserMarking],
+  }
+
+  const { editor } = uniteEditors(file, browser)
+
+  assert.deepEqual(editor.offset_turn_bay_markings, [fileMarking])
+})

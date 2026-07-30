@@ -61,6 +61,8 @@ export function uniteEditors(
     editor: {
       updated_at: fileEditor.updated_at,
       journal,
+      offset_turn_bay_markings: Array.isArray(fileEditor.offset_turn_bay_markings)
+        ? fileEditor.offset_turn_bay_markings : [],
       waiting_zones: waitingZones,
       deleted_waiting_zone_ids: deletedIds,
     },

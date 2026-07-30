@@ -12,6 +12,10 @@ import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, s
 import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
+import {
+  buildCappedTriangleRange, buildHatchDistances, resolveChannelization,
+  singleBayUnusedSideOffsets, TAIWAN_YELLOW_HATCH_V1,
+} from './channelization'
 
 // 生成範圍（2026-07-15 起不再限路名）：所有 couplet 合併、中央帶為槽化的路段。
 // 「查不到就假設有」政策跟著放大到全部合併路——實地沒有的 bay 用面板關（present:0）。
@@ -242,7 +246,8 @@ const anchorKey = (a: BayAnchor) => `way/${a.wayId}@node/${a.nodeId}${a.back ? '
 export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): TurnBay[] {
   const over = foldBayOverrides(journal)
   const out: TurnBay[] = []
-  const anchors = graph.bayAnchors(scopeFn)
+  // Candidates remain available for manual confirmation outside the automatic scope.
+  const anchors = graph.bayAnchors(() => true)
   const amap = new Map(anchors.map((a) => [anchorKey(a), a]))
   const handled = new Set<string>()
 
@@ -256,6 +261,7 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
       return !!o && Number(o.present) === 1
     }
     if (o) return Number(o.present) !== 0 // 人工開/關（帶參數的覆寫視為開）
+    if (!scopeFn(a.road)) return false
     if (!a.hasLeftPair) return false
     // 中央帶要放得下預設 3m 寬的 bay 才自動生成——泛用合併段的間距反推帶寬
     // 常只有 0.6~2m，硬畫會爆出路體；窄帶實地真有偏心道就用面板人工開啟
@@ -607,15 +613,22 @@ export function buildUnusedLaneGores(
  * 中央帶標線（黃）：兩側 ±c 雙黃邊界（bay 開口處讓位）＋ 無 bay 區間的斜紋槽化。
  * 單行道舊分支：左緣整段黃線，畫到 bay 漸變段起點銜接。
  */
-export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLine[] {
+export function buildChannelization(
+  graph: RoadGraph, bays: TurnBay[], journal: EnhancementRecord[] = [],
+): PaintLine[] {
   const bayMap = new Map<string, TurnBay>()
   for (const b of bays) bayMap.set(`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b)
   const out: PaintLine[] = []
   const cappedBayKeys = new Set<string>()
+  const manuallyIncludedWays = new Set(
+    bays.filter((bay) => bay.source === 'manual' && bay.kind === 'center').map((bay) => bay.wayId),
+  )
 
   // 繪圖線需對所有真交叉道路淨空（含 6.4m 小路），並多留 2m 路口邊界。
   // 偏心道、停止線仍沿用原本 ≥7m 的判定，避免改變交通語意。
-  for (const e of graph.scopeEdges(scopeFn, 0, 2)) {
+  for (const e of graph.scopeEdges(
+    (road) => scopeFn(road) || manuallyIncludedWays.has(road.properties.osm_id), 0, 2,
+  )) {
     const p = e.road.properties
     if (p.roadMarkingMode === 'none') continue
     const cum = cumulative(e.coords)
@@ -665,7 +678,7 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       )
       continue
     }
-    if (paired || onlyFwdBay || onlyBwdBay) {
+    if (paired) {
       // 所有偏心左轉道共用同一套平順 S 型雙黃線。
       // 單向使用時，未使用方向維持原車道配置較久，到接近偏心道口才換位。
       let bendFrom: number
@@ -732,160 +745,108 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     }
     const activeBayKey = (fwdBay ?? bwdBay)?.key
     if (onlyFwdBay || onlyBwdBay) {
-      if (onlyFwdBay) {
-        pushDoubleSegs(
-          out, e, cum, dv - c,
-          clip([[fwdBay!.bayStartM, s1]], dv - c),
-          'single-bay-used', activeBayKey,
-        )
-      } else {
-        pushDoubleSegs(
-          out, e, cum, dv + c,
-          clip([[s0, total - bwdBay!.bayStartM]], dv + c),
-          'single-bay-used', activeBayKey,
-        )
-      }
-      continue
-    }
-    if (onlyFwdBay || onlyBwdBay) {
-      const hatchRange: [number, number] = [hs, he]
-      pushSegs(out, e, cum, dv + c, [hatchRange], 'single-bay-unused', activeBayKey)
-      pushSegs(out, e, cum, dv - c, [hatchRange], 'single-bay-unused', activeBayKey)
-      if (onlyFwdBay) {
-        pushDoubleSegs(
-          out, e, cum, dv - c,
-          clip([[fwdBay!.bayStartM, s1]], dv - c),
-          'single-bay-used', activeBayKey,
-        )
-      } else {
-        pushDoubleSegs(
-          out, e, cum, dv + c,
-          clip([[s0, total - bwdBay!.bayStartM]], dv + c),
-          'single-bay-used', activeBayKey,
-        )
-      }
-      let unusedHatches = 0
-      for (let d = hs + 1.5; d + 2.2 < he; d += 4) {
-        out.push({
-          color: 'yellow',
-          style: 'channel-hatch',
-          ownerKey: activeBayKey,
-          coords: [
-            offsetAt(e.coords, cum, d, dv - c + 0.25),
-            offsetAt(e.coords, cum, d + 2.2, dv + c - 0.25),
-          ],
-        })
-        unusedHatches++
-      }
-      if (he - hs >= 3 && unusedHatches === 0) {
-        const margin = 0.4
-        out.push({
-          color: 'yellow',
-          style: 'channel-hatch',
-          ownerKey: activeBayKey,
-          coords: [
-            offsetAt(e.coords, cum, hs + margin, dv - c + 0.25),
-            offsetAt(e.coords, cum, he - margin, dv + c - 0.25),
-          ],
-        })
-      }
-      if (he - hs >= 3) {
-        for (const [capSide, capD] of [['start', hs], ['end', he]] as const) {
-          const cappedKey = `${activeBayKey}:${capSide}`
-          if (cappedBayKeys.has(cappedKey)) continue
-          cappedBayKeys.add(cappedKey)
-          out.push({
-            color: 'yellow',
-            style: 'channel-cap',
-            ownerKey: activeBayKey,
-            coords: [
-              offsetAt(e.coords, cum, capD, dv - c),
-              offsetAt(e.coords, cum, capD, dv + c),
-            ],
-          })
-        }
-      }
-      continue
-    }
-    if (onlyFwdBay || onlyBwdBay) {
+      const channelization = activeBayKey && singleBay
+        ? resolveChannelization(activeBayKey, singleBay, journal)
+        : null
       const smooth = (t: number) => t * t * (3 - 2 * t)
-      let wedgeFrom: number
-      let wedgeTo: number
-      let fixedOff: number
-      let movingOff: (d: number) => number
-
-      if (onlyFwdBay) {
-        wedgeFrom = Math.max(s0, fwdBay!.d0M)
-        wedgeTo = Math.min(s1, fwdBay!.endM)
-        fixedOff = dv + c
-        movingOff = (d: number) => {
-          const t = Math.max(0, Math.min(1,
-            (d - fwdBay!.d0M) / Math.max(1e-6, fwdBay!.bayStartM - fwdBay!.d0M)))
-          return dv + c - smooth(t) * 2 * c
-        }
-      } else {
-        wedgeFrom = Math.max(s0, total - bwdBay!.endM)
-        wedgeTo = Math.min(s1, total - bwdBay!.d0M)
-        fixedOff = dv - c
-        movingOff = (d: number) => {
-          const reverseD = total - d
-          const t = Math.max(0, Math.min(1,
-            (reverseD - bwdBay!.d0M) / Math.max(1e-6, bwdBay!.bayStartM - bwdBay!.d0M)))
-          return dv - c + smooth(t) * 2 * c
-        }
+      const activeBay = singleBay!
+      const sideOffsets = singleBayUnusedSideOffsets(
+        onlyFwdBay ? 'forward' : 'backward', c, dv,
+      )
+      const fixedOff = sideOffsets.movingStart
+      const capOff = sideOffsets.unusedBoundary
+      const clippedStart = (off: number) => Math.max(0, s0 + sk0 * off + 0.5)
+      const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - 0.5)
+      const movingCapRoadM = onlyFwdBay ? clippedStart(capOff) : clippedEnd(capOff)
+      const fixedCapRoadM = onlyFwdBay ? clippedStart(fixedOff) : clippedEnd(fixedOff)
+      // The closed wedge reaches the point where the full-width turn lane
+      // separates from the original lane line.  d0M is merely the beginning
+      // of the short automatic taper and made the marking collapse into a
+      // small triangle beside the stop line.
+      const tipRoadM = onlyFwdBay ? activeBay.bayStartM : total - activeBay.bayStartM
+      const toUnusedApproachM = (roadM: number) => onlyFwdBay ? total - roadM : roadM
+      const tipApproachM = toUnusedApproachM(tipRoadM)
+      const movingCapApproachM = toUnusedApproachM(movingCapRoadM)
+      const movingAt = (approachM: number) => {
+        const t = Math.max(0, Math.min(1,
+          (approachM - tipApproachM) / Math.max(1e-6, movingCapApproachM - tipApproachM)))
+        return fixedOff + smooth(t) * (capOff - fixedOff)
       }
+      const triangle = buildCappedTriangleRange({
+        taperStartM: tipApproachM,
+        stopBoundaryM: movingCapApproachM,
+        movingAt,
+        fixedOffsetM: fixedOff,
+      })
+      const wedgeFrom = triangle
+        ? Math.max(s0, onlyFwdBay
+          ? Math.max(movingCapRoadM, fixedCapRoadM)
+          : tipRoadM)
+        : 0
+      const wedgeTo = triangle
+        ? Math.min(s1, onlyFwdBay
+          ? tipRoadM
+          : Math.min(movingCapRoadM, fixedCapRoadM))
+        : 0
+      const triangleMovingOff = (d: number) => triangle?.movingAt(toUnusedApproachM(d)) ?? fixedOff
+      const triangleFixedOff = triangle?.fixedOffsetM ?? fixedOff
 
-      if (wedgeTo - wedgeFrom >= 3) {
-        out.push({
-          color: 'yellow',
-          style: 'single-bay-unused',
-          ownerKey: activeBayKey,
-          coords: lineAt(e, cum, wedgeFrom, wedgeTo, fixedOff),
-        })
-        let wedgeHatches = 0
-        for (let d = wedgeFrom + 1.2; d + 1.8 < wedgeTo; d += 3.5) {
-          const d2 = d + 1.8
-          const moving = movingOff(d)
-          const side = Math.sign(fixedOff - moving)
-          if (Math.abs(fixedOff - moving) < 0.45) continue
+      // Capped triangle geometry belongs solely to the central-band turn-bay setting.
+      // Legacy channelization records may disable it, but cannot move either side or width.
+      const boundaryOff = (_d: number) => triangleFixedOff
+
+      if (triangle && activeBay.singleMode === 'capped' && channelization
+        && wedgeTo - wedgeFrom >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
+        const movingOutlineFrom = onlyFwdBay ? movingCapRoadM : tipRoadM
+        const movingOutlineTo = onlyFwdBay ? tipRoadM : movingCapRoadM
+        const fixedOutlineFrom = onlyFwdBay ? fixedCapRoadM : tipRoadM
+        const fixedOutlineTo = onlyFwdBay ? tipRoadM : fixedCapRoadM
+        out.push(
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(movingOutlineFrom, movingOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, triangleMovingOff(d))),
+          },
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(fixedOutlineFrom, fixedOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, triangleFixedOff)),
+          },
+        )
+        for (const d of buildHatchDistances(wedgeFrom, wedgeTo)) {
+          const d2 = Math.min(wedgeTo - TAIWAN_YELLOW_HATCH_V1.insetM,
+            d + TAIWAN_YELLOW_HATCH_V1.stripePitchM)
+          if (d2 <= d) continue
+          const moving = triangleMovingOff(d)
+          const boundary = boundaryOff(d)
+          const side = Math.sign(boundary - moving)
+          if (Math.abs(boundary - moving) < TAIWAN_YELLOW_HATCH_V1.insetM * 2
+            || Math.abs(boundaryOff(d2) - triangleMovingOff(d2))
+              < TAIWAN_YELLOW_HATCH_V1.insetM * 2) continue
           out.push({
             color: 'yellow',
             style: 'channel-hatch',
             ownerKey: activeBayKey,
             coords: [
-              offsetAt(e.coords, cum, d, moving + side * 0.2),
-              offsetAt(e.coords, cum, d2, fixedOff - side * 0.2),
+              offsetAt(e.coords, cum, d, moving + side * TAIWAN_YELLOW_HATCH_V1.insetM),
+              offsetAt(e.coords, cum, d2, boundaryOff(d2) - side * TAIWAN_YELLOW_HATCH_V1.insetM),
             ],
           })
-          wedgeHatches++
         }
-        if (wedgeHatches === 0) {
-          const d = (wedgeFrom + wedgeTo) / 2
-          const moving = movingOff(d)
-          const side = Math.sign(fixedOff - moving)
-          if (Math.abs(fixedOff - moving) >= 0.45) {
-            out.push({
-              color: 'yellow',
-              style: 'channel-hatch',
-              ownerKey: activeBayKey,
-              coords: [
-                offsetAt(e.coords, cum, d - 0.35, moving + side * 0.2),
-                offsetAt(e.coords, cum, d + 0.35, fixedOff - side * 0.2),
-              ],
-            })
-          }
-        }
-        for (const [capSide, capD] of [['start', wedgeFrom], ['end', wedgeTo]] as const) {
-          const cappedKey = `${activeBayKey}:${capSide}`
-          if (cappedBayKeys.has(cappedKey)) continue
+        const cappedKey = `${activeBayKey}:stop`
+        if (!cappedBayKeys.has(cappedKey)) {
           cappedBayKeys.add(cappedKey)
           out.push({
             color: 'yellow',
             style: 'channel-cap',
             ownerKey: activeBayKey,
             coords: [
-              offsetAt(e.coords, cum, capD, movingOff(capD)),
-              offsetAt(e.coords, cum, capD, fixedOff),
+              offsetAt(e.coords, cum, movingCapRoadM, capOff),
+              offsetAt(e.coords, cum, fixedCapRoadM, triangleFixedOff),
             ],
           })
         }
@@ -917,17 +878,46 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     }
 
     let hatchCount = 0
-    for (let d = hs + 1.5; d + 2.2 < he; d += 4) {
+    const shouldPaintCentralHatch = p.centerKind === 'hatch'
+    const isPureCentralHatch = shouldPaintCentralHatch && !fwdBay && !bwdBay
+    const usableWidthM = Math.max(0,
+      2 * c - 2 * TAIWAN_YELLOW_HATCH_V1.insetM)
+    const referenceUsableWidthM = TAIWAN_YELLOW_HATCH_V1.referenceBandWidthM
+      - 2 * TAIWAN_YELLOW_HATCH_V1.insetM
+    const stripeRunM = isPureCentralHatch
+      ? usableWidthM * TAIWAN_YELLOW_HATCH_V1.stripePitchM / referenceUsableWidthM
+      : TAIWAN_YELLOW_HATCH_V1.stripePitchM
+    for (const d of shouldPaintCentralHatch ? buildHatchDistances(hs, he) : []) {
+      const d2 = Math.min(he - TAIWAN_YELLOW_HATCH_V1.insetM,
+        d + stripeRunM)
+      if (d2 <= d) continue
+      const startOff = dv - c + TAIWAN_YELLOW_HATCH_V1.insetM
+      const fullEndOff = dv + c - TAIWAN_YELLOW_HATCH_V1.insetM
+      const endOff = isPureCentralHatch
+        ? startOff + (fullEndOff - startOff) * ((d2 - d) / stripeRunM)
+        : fullEndOff
       out.push({
         color: 'yellow',
         style: 'channel-hatch',
         ownerKey: (fwdBay ?? bwdBay)?.key,
         coords: [
-          offsetAt(e.coords, cum, d, dv - c + 0.25),
-          offsetAt(e.coords, cum, d + 2.2, dv + c - 0.25),
+          offsetAt(e.coords, cum, d, startOff),
+          offsetAt(e.coords, cum, d2, endOff),
         ],
       })
       hatchCount++
+    }
+    if (isPureCentralHatch && he - hs >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
+      for (const capD of [hs, he]) {
+        out.push({
+          color: 'yellow',
+          style: 'channel-cap',
+          coords: [
+            offsetAt(e.coords, cum, capD, dv - c),
+            offsetAt(e.coords, cum, capD, dv + c),
+          ],
+        })
+      }
     }
     // 很短的單端未使用段（3~3.7m）也至少放入一道自適應斜紋；
     // 不可因固定 2.2m 斜紋加邊距後放不下，就只剩外框而沒有槽化內容。
@@ -1997,7 +1987,7 @@ export function bayCandidatesAt(
   graph: RoadGraph, journal: EnhancementRecord[], bays: TurnBay[], nodeId: number,
 ): BayCandidate[] {
   const over = foldBayOverrides(journal)
-  return graph.bayAnchors(scopeFn)
+  return graph.bayAnchors(() => true)
     .filter((a) => a.nodeId === nodeId)
     .map((a) => {
       const key = `way/${a.wayId}@node/${a.nodeId}${a.back ? '~b' : ''}`

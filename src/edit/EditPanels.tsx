@@ -1,5 +1,5 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { Profile } from '../core/graph'
 import { exportEnhancements, getAuthor, setAuthor, stampAuthor } from '../core/enhancements'
 import { makeZoneCtx, markZoneDeleted, planZone } from '../core/zones'
@@ -9,6 +9,9 @@ import type { PlacedVehicle } from '../core/vehicles'
 import type { MapCore } from '../app/mapCore'
 import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext'
 import type { LaneMark } from '../core/roads'
+import {
+  buildOffsetTurnBayMarkings, type OffsetTurnBayMarkingRecord,
+} from '../core/channelization'
 import {
   flushStaticEditorSave, getStaticSaveSnapshot, subscribeStaticSaveState,
 } from '../core/staticDatabase'
@@ -517,15 +520,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             </div>
           ) : (editRoad.bayF !== 'none' || editRoad.bayB !== 'none') && (
             <div className="edit-row" style={{ alignItems: 'stretch' }}>
-              <span>偏心道格式</span>
+              <span>
+                <b className="row-title">中央帶單邊槽化</b><br />
+                封頂三角形的側別與寬度由中央帶決定；舊版槽化資料為唯讀，僅可檢視或停用。
+              </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                 <button className={`mini${editRoad.baySingleMode === 'capped' ? ' on' : ''}`}
                   onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'capped' }))}>
-                  單邊使用，另一端封口
+                  繪製封頂槽化三角形
                 </button>
                 <button className={`mini${editRoad.baySingleMode === 'ignore' ? ' on' : ''}`}
                   onClick={() => setEditRoad((er) => er && ({ ...er, baySingleMode: 'ignore' }))}>
-                  單邊使用，另一端完全忽略
+                  不繪製槽化三角形
                 </button>
               </div>
             </div>
@@ -1057,6 +1063,42 @@ export function ZonePanel({ core, editor }: { core: MapCore; editor: Editor }) {
 }
 
 /** 側面板：路口偏心左轉道 + 右轉附加車道（開/關/參數，journal 覆寫） */
+function OffsetTurnBayMarkingEditor({
+  marking, onSaveChannelization, onSaveReview,
+}: {
+  marking: OffsetTurnBayMarkingRecord
+  onSaveChannelization: (fields: Record<string, string | number>) => void
+  onSaveReview: (fields: Record<string, string | number>) => void
+}) {
+  const [status, setStatus] = useState(marking.review.status)
+  const [evidenceUrl, setEvidenceUrl] = useState(marking.review.evidence_url ?? '')
+  const [note, setNote] = useState(marking.review.note ?? '')
+
+  const disabled = marking.channelization.state === 'disabled'
+
+  return (
+    <div className="sp-stop channelization-editor" style={{ flexWrap: 'wrap', gap: 6 }}>
+      <b style={{ width: '100%' }}>槽化帶與人工回查</b>
+      <span style={{ width: '100%' }}>
+        槽化三角形由中央帶設定決定（唯讀）。舊版槽化資料不能變更側別、範圍或寬度。
+      </span>
+      <button className={`mini${disabled ? ' on' : ''}`}
+        onClick={() => onSaveChannelization({ mode: disabled ? 'auto' : 'disabled' })}>
+        {disabled ? '恢復中央帶槽化' : '停用槽化帶'}
+      </button>
+      <label>審核
+        <select value={status} onChange={(event) => setStatus(event.target.value as OffsetTurnBayMarkingRecord['review']['status'])}>
+          <option value="unreviewed">未審核</option><option value="reviewed">已審閱</option>
+          <option value="verified">已核實</option><option value="needs_review">需再確認</option>
+        </select>
+      </label>
+      <input aria-label="實景證據連結" placeholder="實景證據連結" value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} />
+      <input aria-label="人工回查備註" placeholder="人工回查備註" value={note} onChange={(event) => setNote(event.target.value)} />
+      <button className="mini" onClick={() => onSaveReview({ status, evidence_url: evidenceUrl, note })}>儲存回查</button>
+    </div>
+  )
+}
+
 export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const { bayPanel, setBayPanel } = editor
   if (!bayPanel) return null
@@ -1066,6 +1108,7 @@ export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
   const rlCands = core.graphRef.current
     ? rightLaneCandidatesAt(core.graphRef.current, core.journalRef.current, core.rightLanesRef.current, bayPanel.nodeId)
     : []
+  const markings = buildOffsetTurnBayMarkings(core.journalRef.current, core.baysRef.current)
   return (
     <div className="side-panel">
       <div className="sp-head">
@@ -1107,6 +1150,17 @@ export function BayPanel({ core, editor }: { core: MapCore; editor: Editor }) {
           )}
         </div>
       ))}
+      {cands.filter((candidate) => candidate.bay).map((candidate) => {
+        const marking = markings.find((item) => item.key === candidate.key)
+        return marking ? (
+          <OffsetTurnBayMarkingEditor
+            key={`${candidate.key}:channelization`}
+            marking={marking}
+            onSaveChannelization={(fields) => editor.overrideChannelization(candidate.key, fields)}
+            onSaveReview={(fields) => editor.saveOffsetTurnBayReview(candidate.key, fields)}
+          />
+        ) : null
+      })}
       <div className="road-src" style={{ marginTop: 10 }}>
         右轉附加車道（路口前最外車道外側加寬）：
       </div>

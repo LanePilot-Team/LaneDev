@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
+  appendRecord, applyRoadMerges, applyToRoads, checkRoadMerge, foldJournal,
 } from '../core/enhancements'
 import {
   buildOffsetTurnBayMarkings, channelizationKey, reviewKey,
@@ -18,7 +18,7 @@ import {
   buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
 } from '../core/roads'
 import { groundMarkingPolygons } from '../core/groundMarkings'
-import { mergeStaticRoadSegments, updateStaticEditor } from '../core/staticDatabase'
+import { updateStaticEditor } from '../core/staticDatabase'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -393,55 +393,35 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
           const ok = window.confirm(
             `確定將這兩段「${first.properties.name ?? '未命名道路'}」捏合為同一路段嗎？\n\n`
             + `保留：${check.primaryKey}\n合併：${check.secondaryKey}\n\n`
-            + '此操作會直接改寫唯一靜態 OSM：第二段將退出活躍路網，'
-            + '整段共用第一段的道路與偏心道樣式。中間路口節點仍會保留；'
-            + '主路正向可右轉進入側街，對向不得跨線左轉進入。'
+            + '此操作只寫一筆可逆的 journal 紀錄，不會改動靜態 OSM：'
+            + '第二段將退出活躍路網，整段共用第一段的道路與偏心道樣式。'
+            + '中間接點退化成 T 字路口——主路正向可進出側街，對向不得與側街互動。'
           )
           if (!ok) return
           mergeFirstRef.current = null
           setEditRoad(null)
-          warn('正在改寫唯一靜態道路資料庫…')
-          const firstNodes = first.properties.nodes
-          const joinNode = check.primaryAt === 'start'
-            ? firstNodes[0]
-            : firstNodes[firstNodes.length - 1]
-          const sameLogicalSegment = first.properties.osm_id === road.properties.osm_id
-            && first.properties.navSegmentKey === road.properties.navSegmentKey
-            && first.properties.splitIndex === road.properties.splitIndex
-          const carrier = sameLogicalSegment
-            ? first.properties.sourceSegments.find((source) => source.nodeRefs.includes(joinNode))
-              ?? road.properties.sourceSegments.find((source) => source.nodeRefs.includes(joinNode))
-            : undefined
-          void mergeStaticRoadSegments(
-            {
-              osmId: first.properties.osm_id,
-              navSegmentKey: first.properties.navSegmentKey,
-              splitIndex: first.properties.splitIndex,
-              blockNode: first.properties.blockNode,
+          // 捏合 = journal 紀錄，跟車道標記走同一條儲存路徑。靜態 OSM 完全不動，
+          // 所以重建 segments 炸不到它；區塊鍵也不會因為接點改名而變成孤兒。
+          core.journalRef.current = appendRecord(core.journalRef.current, {
+            op: 'set',
+            target: {
+              type: 'road_merge',
+              key: `merge/${check.primaryKey}+${check.secondaryKey}`,
             },
-            {
-              osmId: road.properties.osm_id,
-              navSegmentKey: road.properties.navSegmentKey,
-              splitIndex: road.properties.splitIndex,
-              blockNode: road.properties.blockNode,
+            fields: {
+              primary: check.primaryKey,
+              secondary: check.secondaryKey,
+              // 次段的節點清單：journalForMergedRoads 用它把路口元件的鍵
+              // 精準改掛到主段，不必整條次 way 一起搬。
+              secondary_nodes: JSON.stringify(road.properties.nodes),
             },
-            joinNode,
-            carrier ? {
-              osmId: carrier.osmId,
-              navSegmentKey: carrier.navSegmentKey,
-              splitIndex: carrier.splitIndex,
-              blockNode: joinNode,
-              internalOnly: true,
-            } : undefined,
-          )
-            .then(() => {
-              // 資料庫已改寫：live journal 的區塊鍵/元件鍵跟著遷移再重載，
-              // 否則舊鍵指向已消失的區塊，覆寫會靜默失效。
-              window.location.reload()
-            })
-            .catch((error) => {
-              warn(`靜態 OSM 捏合失敗：${error instanceof Error ? error.message : String(error)}`)
-            })
+          })
+          if (applyRoadMerges(core.roadsRef.current, core.journalRef.current) > 0) {
+            core.replaceBaseMap(core.roadsRef.current)
+            warn('已捏合為同一路段（可在歷程中還原）')
+          } else {
+            warn('捏合紀錄已寫入，但這兩段目前接不起來——請重新整理後確認')
+          }
           return
         }
       } else {

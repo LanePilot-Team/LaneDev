@@ -1,4 +1,5 @@
 import { asset } from './asset'
+import { uniteEditors } from './editorMerge'
 import type { EnhancementRecord } from './enhancements'
 import type { OffsetTurnBayMarkingRecord } from './channelization'
 import type { Zone } from './zones'
@@ -70,6 +71,20 @@ function mirrorEditorToBrowser(editor: StaticEditorState) {
   localStorage.setItem(LOCAL_UPDATED_KEY, editor.updated_at)
 }
 
+function readBrowserEditor(): Partial<StaticEditorState> {
+  const parse = <T>(key: string, fallback: T): T => {
+    try {
+      const raw = localStorage.getItem(key)
+      return raw ? JSON.parse(raw) as T : fallback
+    } catch { return fallback }
+  }
+  return {
+    journal: parse<EnhancementRecord[]>('navsim-journal-v1', []),
+    waiting_zones: parse<Zone[]>('navsim-zones-v2', []),
+    deleted_waiting_zone_ids: parse<string[]>('navsim-zones-deleted-v1', []),
+  }
+}
+
 export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
   if (database) return database
   const response = await fetch(DATABASE_URL, { cache: 'no-store' })
@@ -82,28 +97,15 @@ export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
   database.editor.offset_turn_bay_markings ??= []
   persistedEditorUpdatedAt = database.editor.updated_at || ''
 
-  // 只在瀏覽器資料明確較新時遷移；網頁人工修改永遠優先於舊靜態快照。
-  const localUpdatedAt = localStorage.getItem(LOCAL_UPDATED_KEY)
-  const localJournal = localStorage.getItem('navsim-journal-v1')
-  const localZones = localStorage.getItem('navsim-zones-v2')
-  const localDeleted = localStorage.getItem('navsim-zones-deleted-v1')
-  const hasLocal = Boolean(localJournal || localZones || localDeleted)
-  const localIsNewer = localUpdatedAt
-    ? localUpdatedAt > (database.editor.updated_at || '')
-    : hasLocal && !database.editor.updated_at
-  if (localIsNewer) {
-    try {
-      if (localJournal) database.editor.journal = JSON.parse(localJournal)
-      if (localZones) database.editor.waiting_zones = JSON.parse(localZones)
-      if (localDeleted) database.editor.deleted_waiting_zone_ids = JSON.parse(localDeleted)
-      database.editor.updated_at = localUpdatedAt || new Date().toISOString()
-      scheduleStaticEditorSave(0)
-    } catch {
-      mirrorEditorToBrowser(database.editor)
-    }
-  } else {
-    mirrorEditorToBrowser(database.editor)
+  const { editor, recovered } = uniteEditors(database.editor, readBrowserEditor())
+  database.editor = editor
+  if (recovered > 0) {
+    // 只有「檔案裡沒有、瀏覽器裡有」的紀錄才需要回寫；檔案本身永遠不會被縮減。
+    console.info(`從瀏覽器備援救回 ${recovered} 筆未寫入檔案的編輯`)
+    database.editor.updated_at = new Date().toISOString()
+    scheduleStaticEditorSave(0)
   }
+  mirrorEditorToBrowser(database.editor)
   return database
 }
 

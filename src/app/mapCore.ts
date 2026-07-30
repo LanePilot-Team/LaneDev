@@ -26,6 +26,7 @@ import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimp
 import { newRoadsFromFolded } from '../core/newroads'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
+  buildSpecifiedWhiteMotoHatch,
   buildLeftTurnWaitingAreas,
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
@@ -351,7 +352,10 @@ export function useMapCore(
     baysRef.current = buildTurnBays(graphRef.current, journal)
     rightLanesRef.current = buildRightLanes(graphRef.current, journal)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
-    const channel = buildChannelization(graphRef.current, baysRef.current)
+    const channel = [
+      ...buildChannelization(graphRef.current, baysRef.current),
+      ...buildSpecifiedWhiteMotoHatch(graphRef.current),
+    ]
     const stopLines = buildStopLines(
       graphRef.current, baysRef.current, rightLanesRef.current, journal)
     const leftWaitAreas = buildLeftTurnWaitingAreas(graphRef.current, baysRef.current)

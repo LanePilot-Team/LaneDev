@@ -12,6 +12,7 @@
     "test:editor-merge": "node --test src/core/editorMerge.test.mjs",
     "test:one-side-entry": "node --test src/core/oneSideEntry.test.mjs",
     "test:merged-junctions": "node --test src/core/mergedJunctions.test.mjs",
+    "test:segment-dedupe": "node --test scripts/segment_dedupe.test.mjs",
     "audit:journal-merge": "node scripts/run_offline.mjs scripts/journal_merge_audit.ts",
     "audit:one-side-entry": "node scripts/run_offline.mjs scripts/one_side_entry_audit.ts",
     "audit:orphans": "node scripts/run_offline.mjs scripts/orphan_audit.ts",
@@ -24,7 +25,8 @@
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py",
-    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions"
+    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe",
+    "build:candidate": "node scripts/build_static_road_database.mjs"
   },
   "dependencies": {
     "@turf/turf": "^7.3.5",

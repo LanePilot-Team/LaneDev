@@ -319,6 +319,9 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
   })
   for (const e of edges) {
     const p = e.road.properties
+    // 現地單一例外：這一段快慢分隔是白色槽化帶，不是實體綠化島。
+    // 白色槽化標線由 turnbays.buildSpecifiedWhiteMotoHatch 繪製。
+    if (p.osm_id === 126247880 && p.blockNode === 258785735) continue
     const lanes = p.oneway === 'yes' || !e.back ? p.lanesForward : p.lanesBackward
     const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
     const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0

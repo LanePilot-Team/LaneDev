@@ -53,6 +53,21 @@ const SNAPPED_INTERSECTION_NODES = [
   7477787914, // 德民路 × 惠都街
 ]
 
+/**
+ * 釘回原始 OSM 座標的路口節點：[lng, lat]。
+ *
+ * couplet 合併會把共用節點搬到兩條單行道的中線上。多數路口無妨，但主線在路口
+ * 附近轉向時，被搬走的起點會在那裡扯出一個折角——路口整體也離開了實際位置。
+ * 這裡把節點釘回 OSM 原值；共用它的道路一起回去，所以彼此不會產生新的錯位。
+ *
+ * 德民路 × 海專路：合併把節點往南拉了 10.77m，德民路第一段從 14.8m@58° 變成
+ * 24.7m@24°（轉折 34°，其餘 10 個節點都在 5° 以內）。四條路（德民路 256044039／
+ * 286066491、海專路 286066494／286066495）共用此節點，一起釘回即可。
+ */
+const PINNED_ORIGINAL_NODES: Record<number, [number, number]> = {
+  265748817: [120.3105336, 22.7266391], // 德民路 × 海專路
+}
+
 export function collapseKnownIntersections(
   roads: RoadFeature[], nodeRemap: Map<number, number>,
 ) {
@@ -130,6 +145,15 @@ export function collapseKnownIntersections(
     for (const r of roads) {
       r.properties.nodes.forEach((n, i) => {
         if (n === node) r.geometry.coordinates[i] = [...anchor!] as [number, number]
+      })
+    }
+  }
+  // 釘回原始 OSM 座標：所有持有該節點的道路一起移動，不會製造新的錯位。
+  for (const [id, pos] of Object.entries(PINNED_ORIGINAL_NODES)) {
+    const node = Number(id)
+    for (const r of roads) {
+      r.properties.nodes.forEach((n, i) => {
+        if (n === node) r.geometry.coordinates[i] = [...pos] as [number, number]
       })
     }
   }

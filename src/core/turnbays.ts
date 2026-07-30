@@ -954,6 +954,74 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
   return out
 }
 
+/**
+ * 現地單一例外：way/126247880@b/258785735 的快慢分隔為白色槽化帶。
+ *
+ * 僅使用現有中央黃色槽化帶的間距、內縮、寬度自適應與兩端封口規格，
+ * 不推導其他道路，也不提供編輯工具。
+ */
+export function buildSpecifiedWhiteMotoHatch(graph: RoadGraph): PaintLine[] {
+  const out: PaintLine[] = []
+  for (const e of graph.scopeEdges((road) =>
+    road.properties.osm_id === 126247880
+      && road.properties.blockNode === 258785735, 0, 2)) {
+    const p = e.road.properties
+    if (p.roadMarkingMode === 'none') continue
+    const lanes = p.oneway === 'yes' || !e.back ? p.lanesForward : p.lanesBackward
+    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
+    const sep = (p.oneway === 'yes'
+      ? p.motoSepF
+      : e.back ? p.motoSepB : p.motoSepF) || 0
+    if (!moto || lanes < 1 || sep <= 0) continue
+
+    const cum = cumulative(e.coords)
+    const total = cum[cum.length - 1]
+    const s0 = Math.min(e.startSetbackM, total)
+    const s1 = Math.max(0, total - e.endSetbackM)
+    if (s1 - s0 < TAIWAN_YELLOW_HATCH_V1.minLengthM) continue
+
+    const base = p.oneway === 'yes'
+      ? -laneSpanM(p, false) / 2
+      : (p.centerM || 0) / 2
+    const inner = base + lanes * LANE_WIDTH_M
+    const outer = inner + sep
+    out.push(
+      { color: 'white', style: 'single-bay-unused', coords: lineAt(e, cum, s0, s1, inner) },
+      { color: 'white', style: 'single-bay-unused', coords: lineAt(e, cum, s0, s1, outer) },
+    )
+
+    const inset = Math.min(TAIWAN_YELLOW_HATCH_V1.insetM, sep * 0.22)
+    const usableWidthM = Math.max(0, sep - 2 * inset)
+    const referenceUsableWidthM = TAIWAN_YELLOW_HATCH_V1.referenceBandWidthM
+      - 2 * TAIWAN_YELLOW_HATCH_V1.insetM
+    const stripeRunM = usableWidthM
+      * TAIWAN_YELLOW_HATCH_V1.stripePitchM / referenceUsableWidthM
+    for (const d of buildHatchDistances(s0, s1)) {
+      const d2 = Math.min(s1 - inset, d + stripeRunM)
+      if (d2 <= d) continue
+      out.push({
+        color: 'white',
+        style: 'channel-hatch',
+        coords: [
+          offsetAt(e.coords, cum, d, inner + inset),
+          offsetAt(e.coords, cum, d2, outer - inset),
+        ],
+      })
+    }
+    for (const capD of [s0, s1]) {
+      out.push({
+        color: 'white',
+        style: 'channel-cap',
+        coords: [
+          offsetAt(e.coords, cum, capD, inner),
+          offsetAt(e.coords, cum, capD, outer),
+        ],
+      })
+    }
+  }
+  return out
+}
+
 function lineAt(e: ScopeEdge, cum: number[], from: number, to: number, off: number): [number, number][] {
   return sampleDs(from, to, 6).map((d) => offsetAt(e.coords, cum, d, off))
 }

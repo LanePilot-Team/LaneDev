@@ -153,3 +153,5 @@ for (const j of junctions.slice(0, Number(arg('limit', '5')))) {
 }
 
 console.log(fails === 0 ? '✅ 抽查的接點繪製符合捏合語意' : `❌ ${fails} 項不符`)
+// 其他九支稽核都有設離開碼；少了這行，CI 會把 ❌ 誤判成成功。
+process.exitCode = fails === 0 ? 0 : 1

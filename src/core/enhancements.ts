@@ -157,6 +157,13 @@ export function applyToRoads(
     const fields = { ...wayFields, ...blockFields }
     n++
     const p = r.properties
+    // 單雙向必須最先套用：底下每一個逆向屬性（lanesBackward／turnLanesB／
+    // laneMarksB／motoSepB／leftWaitAreaB…）都閘在 p.oneway === 'yes' 後面，
+    // 晚一步套就會把使用者剛設的逆向車道靜默歸零。OSM 把實地雙向路標成單行的
+    // 情況不少（軍校路 way/383642188），沒有這個欄位就完全改不回來。
+    if (fields.oneway !== undefined) {
+      p.oneway = String(fields.oneway) === 'yes' ? 'yes' : 'no'
+    }
     if (fields.lanes !== undefined || fields.lanes_forward !== undefined ||
       fields.lanes_backward !== undefined) p.sharedLane = false
     // 0 = 該向純機車道（無汽車車道），編輯面板保證 0 時必有機車道
@@ -335,19 +342,124 @@ export function checkRoadMerge(primary: RoadFeature, secondary: RoadFeature): Ro
 }
 
 /**
- * 套用已確認的可逆合併紀錄。原始靜態 OSM 不會被刪除；
+ * 重播既有捏合紀錄時的「幾何可行性」檢查。
+ *
+ * 與 checkRoadMerge 的差別是**刻意不再審查名稱／等級／車道配置**。捏合當下已經
+ * 由人工確認過，重播時再審一次會造成致命後果：使用者一旦編輯合併後的路段，覆寫
+ * 只寫進保留段的區塊鍵，次段仍留著舊值 → 兩段配置不同 → 下次 F5 時捏合被靜默
+ * 略過、路段裂回去。實測 2026-07-29 就是這樣讓同一組捏合被重做三次。
+ *
+ * 人工紀錄擁有最高優先權：只要兩段端點真的相接，就照著重播。
+ */
+export function replayRoadMerge(primary: RoadFeature, secondary: RoadFeature): RoadMergeCheck {
+  const result: RoadMergeCheck = {
+    ok: false,
+    primaryKey: roadBlockKey(primary),
+    secondaryKey: roadBlockKey(secondary),
+    primaryAt: 'end',
+    secondaryAt: 'start',
+  }
+  if (primary === secondary) return { ...result, reason: '兩段已是同一個區塊' }
+  const a = primary.geometry.coordinates as [number, number][]
+  const b = secondary.geometry.coordinates as [number, number][]
+  if (a.length < 2 || b.length < 2) return { ...result, reason: '道路幾何點不足' }
+  const pairs = [
+    { primaryAt: 'start' as const, secondaryAt: 'start' as const, d: haversine(a[0], b[0]) },
+    { primaryAt: 'start' as const, secondaryAt: 'end' as const, d: haversine(a[0], b[b.length - 1]) },
+    { primaryAt: 'end' as const, secondaryAt: 'start' as const, d: haversine(a[a.length - 1], b[0]) },
+    { primaryAt: 'end' as const, secondaryAt: 'end' as const, d: haversine(a[a.length - 1], b[b.length - 1]) },
+  ].sort((x, y) => x.d - y.d)
+  const join = pairs[0]
+  result.primaryAt = join.primaryAt
+  result.secondaryAt = join.secondaryAt
+  // 只擋「根本沒相接」的情況，避免把不相干的兩段接成亂七八糟的幾何
+  if (join.d > 5) return { ...result, reason: `兩段端點未相接（相距 ${join.d.toFixed(1)} 公尺）` }
+  return { ...result, ok: true }
+}
+
+/**
+ * 依區塊鍵找回區塊。找不到精確鍵時退而求其次：找「含有那個 blockNode」的同 way
+ * 區塊。區塊鍵的 N 是區塊第一個節點，只要區塊邊界移動（底圖重建、相鄰路段增刪）
+ * 就會換人做，精確比對會讓捏合紀錄整筆失效。
+ */
+function findMergeBlock(roads: RoadFeature[], key: string): RoadFeature | undefined {
+  const exact = roads.find((r) => roadBlockKey(r) === key)
+  if (exact) return exact
+  const m = key.match(/^way\/(-?\d+)@b\/(-?\d+)$/)
+  if (!m) return undefined
+  const wayId = Number(m[1])
+  const blockNode = Number(m[2])
+  return roads.find((r) => r.properties.osm_id === wayId
+    && r.properties.nodes.includes(blockNode))
+}
+
+/**
+ * 套用已確認的合併紀錄。原始靜態 OSM 不會被改；
  * 每次載入時才在記憶體內接合，並重建道路與導航圖。
  */
+/** 破碎短段的判定：長度上限、視為「疊在裡面」的橫向距離、取樣點命中比例 */
+const STUB_MAX_LEN_M = 25
+const STUB_INSIDE_M = 12
+const STUB_INSIDE_RATIO = 0.9
+
+const polylineLengthM = (cs: [number, number][]) =>
+  cs.slice(1).reduce((s, c, i) => s + haversine(cs[i], c), 0)
+
+/**
+ * 捏合完成後，隱藏同一條 way 上「幾乎整段疊在合併路段裡」的破碎短段。
+ *
+ * OSM 常在路口附近留下幾公尺長的重複小段。它們各自存在時樣式一致，看不太出來；
+ * 但一旦把區塊捏合起來、再統一改樣式，改動只寫進保留段的區塊鍵，這些小段仍維持
+ * 舊樣式疊在上面，畫面就出現交叉白線與雙重黃線。
+ *
+ * 只在捏合的路上做，未捏合的道路完全不掃——這是使用者實際遇到的範圍，也避免對
+ * 全圖一萬多個區塊做距離運算。純記憶體隱藏、不寫 journal：取消捏合就自然復原。
+ * 使用者自己在那個區塊設過覆寫的一律不動，那是人工資料而不是 OSM 殘留。
+ */
+function suppressOverlappedStubs(
+  roads: RoadFeature[], merged: RoadFeature,
+  folded: Map<string, Record<string, string | number>>,
+): number {
+  const mc = merged.geometry.coordinates as [number, number][]
+  let hidden = 0
+  for (const r of roads) {
+    if (r === merged || r.properties.deleted) continue
+    if (r.properties.osm_id !== merged.properties.osm_id) continue
+    if (folded.has(roadBlockKey(r))) continue // 人工設定過，尊重它
+    const cs = r.geometry.coordinates as [number, number][]
+    if (cs.length < 2 || polylineLengthM(cs) > STUB_MAX_LEN_M) continue
+    let inside = 0
+    for (const p of cs) {
+      let best = Infinity
+      for (const q of mc) best = Math.min(best, haversine(p, q))
+      if (best < STUB_INSIDE_M) inside++
+    }
+    if (inside / cs.length < STUB_INSIDE_RATIO) continue
+    r.properties.deleted = true
+    hidden++
+  }
+  return hidden
+}
+
 export function applyRoadMerges(roads: RoadFeature[], journal: EnhancementRecord[]): number {
   let merged = 0
+  let hiddenStubs = 0
+  const folded0 = foldJournal(journal)
   for (const [key, fields] of foldJournal(journal)) {
     if (!key.startsWith('merge/')) continue
-    const primary = roads.find((r) => roadBlockKey(r) === String(fields.primary ?? ''))
-    const secondary = roads.find((r) => roadBlockKey(r) === String(fields.secondary ?? ''))
-    if (!primary || !secondary) continue
-    const check = checkRoadMerge(primary, secondary)
+    const primary = findMergeBlock(roads, String(fields.primary ?? ''))
+    const secondary = findMergeBlock(roads, String(fields.secondary ?? ''))
+    // 人工紀錄不得靜默失效：找不到區塊一定要出聲，否則使用者只會看到捏合莫名消失
+    if (!primary || !secondary) {
+      console.warn(`捏合紀錄 ${key} 找不到區塊`
+        + `（保留段 ${primary ? 'ok' : String(fields.primary)}`
+        + `／次段 ${secondary ? 'ok' : String(fields.secondary)}）——請重新捏合一次`)
+      continue
+    }
+    if (primary === secondary) continue // 兩鍵指到同一塊 = 已經合併過，不重複套用
+    const check = replayRoadMerge(primary, secondary)
     if (!check.ok) {
-      console.warn(`略過不安全的路段合併 ${key}：${check.reason}`)
+      console.warn(`略過無法重播的路段合併 ${key}：${check.reason}`)
       continue
     }
     const a = primary.geometry.coordinates as [number, number][]
@@ -377,6 +489,11 @@ export function applyRoadMerges(roads: RoadFeature[], journal: EnhancementRecord
     const secondaryIndex = roads.indexOf(secondary)
     if (secondaryIndex >= 0) roads.splice(secondaryIndex, 1)
     merged++
+    // 接合後才做：要拿合併完的完整幾何去比對，才涵蓋得到次段那一側的破碎小段
+    hiddenStubs += suppressOverlappedStubs(roads, primary, folded0)
+  }
+  if (hiddenStubs > 0) {
+    console.info(`捏合路段上隱藏了 ${hiddenStubs} 個與之重疊的 OSM 破碎小段`)
   }
   return merged
 }

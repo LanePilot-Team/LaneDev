@@ -486,7 +486,9 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         const edge = back ? backwardEdge : forwardEdge
         if (!motoBoxSlot || !edge) return { max: 0, start: 0, end: 0 }
         const slot = motoBoxSlot(edge)
-        if (!slot.eligible || slot.sepIsland) return { max: 0, start: 0, end: 0 }
+        // 快慢分隔島只影響自動產生；人工編輯仍應能選擇是否繪製停等格。
+        // buildMotoBoxes 會以明確的 moto_box journal 設定覆蓋自動篩選。
+        if (!slot.eligible) return { max: 0, start: 0, end: 0 }
         const lanes = p2.oneway === 'yes'
           ? p2.lanesForward : back ? p2.lanesBackward : p2.lanesForward
         const moto = p2.oneway === 'yes' ? p2.motoF : back ? p2.motoB : p2.motoF

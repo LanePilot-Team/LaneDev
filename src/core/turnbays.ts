@@ -12,6 +12,12 @@ import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, s
 import { laneSpanM, MOTO_LANE_M } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
+import {
+  buildCappedTriangleRange,
+  buildHatchDistances,
+  singleBayUnusedSideOffsets,
+  TAIWAN_YELLOW_HATCH_V1,
+} from './channelizationStyle'
 
 // 生成範圍（2026-07-15 起不再限路名）：所有 couplet 合併、中央帶為槽化的路段。
 // 「查不到就假設有」政策跟著放大到全部合併路——實地沒有的 bay 用面板關（present:0）。
@@ -250,6 +256,10 @@ export function buildTurnBays(graph: RoadGraph, journal: EnhancementRecord[]): T
    * > 左轉配對自動判斷。不看一般車道的轉向真值——實地常見
    * 「偏心道左轉、內側車道全直行」，兩者是獨立車道 */
   const wantBay = (a: BayAnchor): boolean => {
+    // 捏合主路在 oneSideEntryNodes 必須視覺連續；該節點只保留導航的
+    // 單側入口語意，不生成偏心道或槽化開口。
+    if (a.road.properties.oneSideEntryNodes?.includes(a.nodeId)
+      && graph.hasDistinctRoadAt(a.nodeId, a.road)) return false
     const o = over.get(anchorKey(a))
     if (a.road.properties.centerKind === 'island'
       && a.road.properties.islandBayMode) {
@@ -620,12 +630,18 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     if (p.roadMarkingMode === 'none') continue
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const s0 = Math.min(e.startSetbackM, total)
-    const s1 = Math.max(0, total - e.endSetbackM)
+    const mergeThroughStart = (p.oneSideEntryNodes?.includes(e.fromNode) ?? false)
+      && graph.hasDistinctRoadAt(e.fromNode, e.road)
+    const mergeThroughEnd = (p.oneSideEntryNodes?.includes(e.toNode) ?? false)
+      && graph.hasDistinctRoadAt(e.toNode, e.road)
+    const s0 = mergeThroughStart ? 0 : Math.min(e.startSetbackM, total)
+    const s1 = mergeThroughEnd ? total : Math.max(0, total - e.endSetbackM)
     if (s1 - s0 < 3) continue
     // 兩端的停止線斜線係數（裁切點 = s0/s1 + 橫向偏移×sk ∓ 0.5，收邊平行交叉路）
-    const sk1 = crossSkew(graph, e.road, e.toNode, pointAlong(e.coords, cum, Math.max(0, total - 2)).brg)
-    const sk0 = crossSkew(graph, e.road, e.fromNode, pointAlong(e.coords, cum, Math.min(2, total)).brg)
+    const sk1 = mergeThroughEnd
+      ? 0 : crossSkew(graph, e.road, e.toNode, pointAlong(e.coords, cum, Math.max(0, total - 2)).brg)
+    const sk0 = mergeThroughStart
+      ? 0 : crossSkew(graph, e.road, e.fromNode, pointAlong(e.coords, cum, Math.min(2, total)).brg)
 
     if (p.oneway === 'yes') {
       // 單行道：左緣（中央側）黃線，有 bay 則畫到漸變段起點
@@ -665,7 +681,7 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       )
       continue
     }
-    if (paired || onlyFwdBay || onlyBwdBay) {
+    if (paired) {
       // 所有偏心左轉道共用同一套平順 S 型雙黃線。
       // 單向使用時，未使用方向維持原車道配置較久，到接近偏心道口才換位。
       let bendFrom: number
@@ -732,160 +748,106 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     }
     const activeBayKey = (fwdBay ?? bwdBay)?.key
     if (onlyFwdBay || onlyBwdBay) {
-      if (onlyFwdBay) {
-        pushDoubleSegs(
-          out, e, cum, dv - c,
-          clip([[fwdBay!.bayStartM, s1]], dv - c),
-          'single-bay-used', activeBayKey,
-        )
-      } else {
-        pushDoubleSegs(
-          out, e, cum, dv + c,
-          clip([[s0, total - bwdBay!.bayStartM]], dv + c),
-          'single-bay-used', activeBayKey,
-        )
-      }
-      continue
-    }
-    if (onlyFwdBay || onlyBwdBay) {
-      const hatchRange: [number, number] = [hs, he]
-      pushSegs(out, e, cum, dv + c, [hatchRange], 'single-bay-unused', activeBayKey)
-      pushSegs(out, e, cum, dv - c, [hatchRange], 'single-bay-unused', activeBayKey)
-      if (onlyFwdBay) {
-        pushDoubleSegs(
-          out, e, cum, dv - c,
-          clip([[fwdBay!.bayStartM, s1]], dv - c),
-          'single-bay-used', activeBayKey,
-        )
-      } else {
-        pushDoubleSegs(
-          out, e, cum, dv + c,
-          clip([[s0, total - bwdBay!.bayStartM]], dv + c),
-          'single-bay-used', activeBayKey,
-        )
-      }
-      let unusedHatches = 0
-      for (let d = hs + 1.5; d + 2.2 < he; d += 4) {
-        out.push({
-          color: 'yellow',
-          style: 'channel-hatch',
-          ownerKey: activeBayKey,
-          coords: [
-            offsetAt(e.coords, cum, d, dv - c + 0.25),
-            offsetAt(e.coords, cum, d + 2.2, dv + c - 0.25),
-          ],
-        })
-        unusedHatches++
-      }
-      if (he - hs >= 3 && unusedHatches === 0) {
-        const margin = 0.4
-        out.push({
-          color: 'yellow',
-          style: 'channel-hatch',
-          ownerKey: activeBayKey,
-          coords: [
-            offsetAt(e.coords, cum, hs + margin, dv - c + 0.25),
-            offsetAt(e.coords, cum, he - margin, dv + c - 0.25),
-          ],
-        })
-      }
-      if (he - hs >= 3) {
-        for (const [capSide, capD] of [['start', hs], ['end', he]] as const) {
-          const cappedKey = `${activeBayKey}:${capSide}`
-          if (cappedBayKeys.has(cappedKey)) continue
-          cappedBayKeys.add(cappedKey)
-          out.push({
-            color: 'yellow',
-            style: 'channel-cap',
-            ownerKey: activeBayKey,
-            coords: [
-              offsetAt(e.coords, cum, capD, dv - c),
-              offsetAt(e.coords, cum, capD, dv + c),
-            ],
-          })
-        }
-      }
-      continue
-    }
-    if (onlyFwdBay || onlyBwdBay) {
       const smooth = (t: number) => t * t * (3 - 2 * t)
-      let wedgeFrom: number
-      let wedgeTo: number
-      let fixedOff: number
-      let movingOff: (d: number) => number
-
-      if (onlyFwdBay) {
-        wedgeFrom = Math.max(s0, fwdBay!.d0M)
-        wedgeTo = Math.min(s1, fwdBay!.endM)
-        fixedOff = dv + c
-        movingOff = (d: number) => {
-          const t = Math.max(0, Math.min(1,
-            (d - fwdBay!.d0M) / Math.max(1e-6, fwdBay!.bayStartM - fwdBay!.d0M)))
-          return dv + c - smooth(t) * 2 * c
-        }
-      } else {
-        wedgeFrom = Math.max(s0, total - bwdBay!.endM)
-        wedgeTo = Math.min(s1, total - bwdBay!.d0M)
-        fixedOff = dv - c
-        movingOff = (d: number) => {
-          const reverseD = total - d
-          const t = Math.max(0, Math.min(1,
-            (reverseD - bwdBay!.d0M) / Math.max(1e-6, bwdBay!.bayStartM - bwdBay!.d0M)))
-          return dv - c + smooth(t) * 2 * c
-        }
+      const activeBay = singleBay!
+      const sideOffsets = singleBayUnusedSideOffsets(
+        onlyFwdBay ? 'forward' : 'backward', c, dv,
+      )
+      const fixedOff = sideOffsets.movingStart
+      const capOff = sideOffsets.unusedBoundary
+      const clippedStart = (off: number) => Math.max(0, s0 + sk0 * off + 0.5)
+      const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - 0.5)
+      const movingCapRoadM = onlyFwdBay ? clippedStart(capOff) : clippedEnd(capOff)
+      const fixedCapRoadM = onlyFwdBay ? clippedStart(fixedOff) : clippedEnd(fixedOff)
+      const tipRoadM = onlyFwdBay ? activeBay.bayStartM : total - activeBay.bayStartM
+      const toUnusedApproachM = (roadM: number) => onlyFwdBay ? total - roadM : roadM
+      const tipApproachM = toUnusedApproachM(tipRoadM)
+      const movingCapApproachM = toUnusedApproachM(movingCapRoadM)
+      const movingAt = (approachM: number) => {
+        const t = Math.max(0, Math.min(1,
+          (approachM - tipApproachM)
+            / Math.max(1e-6, movingCapApproachM - tipApproachM)))
+        return fixedOff + smooth(t) * (capOff - fixedOff)
       }
+      const triangle = buildCappedTriangleRange({
+        taperStartM: tipApproachM,
+        stopBoundaryM: movingCapApproachM,
+        movingAt,
+        fixedOffsetM: fixedOff,
+      })
+      const wedgeFrom = triangle
+        ? Math.max(s0, onlyFwdBay
+          ? Math.max(movingCapRoadM, fixedCapRoadM)
+          : tipRoadM)
+        : 0
+      const wedgeTo = triangle
+        ? Math.min(s1, onlyFwdBay
+          ? tipRoadM
+          : Math.min(movingCapRoadM, fixedCapRoadM))
+        : 0
+      const movingOff = (d: number) =>
+        triangle?.movingAt(toUnusedApproachM(d)) ?? fixedOff
 
-      if (wedgeTo - wedgeFrom >= 3) {
-        out.push({
-          color: 'yellow',
-          style: 'single-bay-unused',
-          ownerKey: activeBayKey,
-          coords: lineAt(e, cum, wedgeFrom, wedgeTo, fixedOff),
-        })
-        let wedgeHatches = 0
-        for (let d = wedgeFrom + 1.2; d + 1.8 < wedgeTo; d += 3.5) {
-          const d2 = d + 1.8
-          const moving = movingOff(d)
-          const side = Math.sign(fixedOff - moving)
-          if (Math.abs(fixedOff - moving) < 0.45) continue
+      if (triangle && activeBay.singleMode === 'capped'
+        && wedgeTo - wedgeFrom >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
+        const movingOutlineFrom = onlyFwdBay ? movingCapRoadM : tipRoadM
+        const movingOutlineTo = onlyFwdBay ? tipRoadM : movingCapRoadM
+        const fixedOutlineFrom = onlyFwdBay ? fixedCapRoadM : tipRoadM
+        const fixedOutlineTo = onlyFwdBay ? tipRoadM : fixedCapRoadM
+        out.push(
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(movingOutlineFrom, movingOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, movingOff(d))),
+          },
+          {
+            color: 'yellow',
+            style: 'single-bay-unused',
+            ownerKey: activeBayKey,
+            coords: sampleDs(fixedOutlineFrom, fixedOutlineTo, 2.5)
+              .map((d) => offsetAt(e.coords, cum, d, fixedOff)),
+          },
+        )
+        for (const d of buildHatchDistances(wedgeFrom, wedgeTo)) {
+          const d2 = Math.min(
+            wedgeTo - TAIWAN_YELLOW_HATCH_V1.insetM,
+            d + TAIWAN_YELLOW_HATCH_V1.stripePitchM,
+          )
+          if (d2 <= d) continue
+          const side = Math.sign(fixedOff - movingOff(d))
+          if (
+            Math.abs(fixedOff - movingOff(d)) < TAIWAN_YELLOW_HATCH_V1.insetM * 2
+            || Math.abs(fixedOff - movingOff(d2))
+              < TAIWAN_YELLOW_HATCH_V1.insetM * 2
+          ) continue
           out.push({
             color: 'yellow',
             style: 'channel-hatch',
             ownerKey: activeBayKey,
             coords: [
-              offsetAt(e.coords, cum, d, moving + side * 0.2),
-              offsetAt(e.coords, cum, d2, fixedOff - side * 0.2),
+              offsetAt(
+                e.coords, cum, d,
+                movingOff(d) + side * TAIWAN_YELLOW_HATCH_V1.insetM,
+              ),
+              offsetAt(
+                e.coords, cum, d2,
+                fixedOff - side * TAIWAN_YELLOW_HATCH_V1.insetM,
+              ),
             ],
           })
-          wedgeHatches++
         }
-        if (wedgeHatches === 0) {
-          const d = (wedgeFrom + wedgeTo) / 2
-          const moving = movingOff(d)
-          const side = Math.sign(fixedOff - moving)
-          if (Math.abs(fixedOff - moving) >= 0.45) {
-            out.push({
-              color: 'yellow',
-              style: 'channel-hatch',
-              ownerKey: activeBayKey,
-              coords: [
-                offsetAt(e.coords, cum, d - 0.35, moving + side * 0.2),
-                offsetAt(e.coords, cum, d + 0.35, fixedOff - side * 0.2),
-              ],
-            })
-          }
-        }
-        for (const [capSide, capD] of [['start', wedgeFrom], ['end', wedgeTo]] as const) {
-          const cappedKey = `${activeBayKey}:${capSide}`
-          if (cappedBayKeys.has(cappedKey)) continue
+        const cappedKey = `${activeBayKey}:stop`
+        if (!cappedBayKeys.has(cappedKey)) {
           cappedBayKeys.add(cappedKey)
           out.push({
             color: 'yellow',
             style: 'channel-cap',
             ownerKey: activeBayKey,
             coords: [
-              offsetAt(e.coords, cum, capD, movingOff(capD)),
-              offsetAt(e.coords, cum, capD, fixedOff),
+              offsetAt(e.coords, cum, movingCapRoadM, capOff),
+              offsetAt(e.coords, cum, fixedCapRoadM, fixedOff),
             ],
           })
         }
@@ -904,12 +866,6 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
         )
       }
       continue
-      // 單方向偏心道：
-      // 這裡的「使用／未使用」是道路前後段，不是中央帶的左右邊界：
-      // - 沒有左轉功能的另一端，中央預留區以槽化斜紋鋪滿，兩側皆為單黃線。
-      // - 有左轉功能的一端，由 makeBay 的平滑雙黃漸變接到儲車段，再以雙黃線
-      //   沿儲車段延伸至停止線。
-      const hatchRange: [number, number] = [hs, he]
     } else {
       // 無偏心道或兩側皆有非成對人工設定時，沿用一般槽化邊界規則。
       paintBoundary(dv + c, clip(subtract([s0, s1], fwdOpen), dv + c))
@@ -917,17 +873,50 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     }
 
     let hatchCount = 0
-    for (let d = hs + 1.5; d + 2.2 < he; d += 4) {
+    const shouldPaintCentralHatch = p.centerKind === 'hatch'
+    const isPureCentralHatch = shouldPaintCentralHatch && !fwdBay && !bwdBay
+    const usableWidthM = Math.max(
+      0, 2 * c - 2 * TAIWAN_YELLOW_HATCH_V1.insetM,
+    )
+    const referenceUsableWidthM = TAIWAN_YELLOW_HATCH_V1.referenceBandWidthM
+      - 2 * TAIWAN_YELLOW_HATCH_V1.insetM
+    const stripeRunM = isPureCentralHatch
+      ? usableWidthM * TAIWAN_YELLOW_HATCH_V1.stripePitchM / referenceUsableWidthM
+      : TAIWAN_YELLOW_HATCH_V1.stripePitchM
+    for (const d of shouldPaintCentralHatch ? buildHatchDistances(hs, he) : []) {
+      const d2 = Math.min(
+        he - TAIWAN_YELLOW_HATCH_V1.insetM,
+        d + stripeRunM,
+      )
+      if (d2 <= d) continue
+      const startOff = dv - c + TAIWAN_YELLOW_HATCH_V1.insetM
+      const fullEndOff = dv + c - TAIWAN_YELLOW_HATCH_V1.insetM
+      const endOff = isPureCentralHatch
+        ? startOff + (fullEndOff - startOff) * ((d2 - d) / stripeRunM)
+        : fullEndOff
       out.push({
         color: 'yellow',
         style: 'channel-hatch',
         ownerKey: (fwdBay ?? bwdBay)?.key,
         coords: [
-          offsetAt(e.coords, cum, d, dv - c + 0.25),
-          offsetAt(e.coords, cum, d + 2.2, dv + c - 0.25),
+          offsetAt(e.coords, cum, d, startOff),
+          offsetAt(e.coords, cum, d2, endOff),
         ],
       })
       hatchCount++
+    }
+    if (isPureCentralHatch
+      && he - hs >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
+      for (const capD of [hs, he]) {
+        out.push({
+          color: 'yellow',
+          style: 'channel-cap',
+          coords: [
+            offsetAt(e.coords, cum, capD, dv - c),
+            offsetAt(e.coords, cum, capD, dv + c),
+          ],
+        })
+      }
     }
     // 很短的單端未使用段（3~3.7m）也至少放入一道自適應斜紋；
     // 不可因固定 2.2m 斜紋加邊距後放不下，就只剩外框而沒有槽化內容。
@@ -1034,6 +1023,14 @@ export function buildLaneArrows(
   motoBoxDirs: Set<string> = new Set(),
   journal: EnhancementRecord[] = [],
 ): GroundArrow[] {
+  const mergeEntryNodes = new Set<number>()
+  for (const edge of graph.scopeEdges(() => true, 0, 0)) {
+    for (const node of edge.road.properties.oneSideEntryNodes ?? []) {
+      mergeEntryNodes.add(node)
+    }
+  }
+  const mergeSideApproach = (road: ScopeEdge['road']) =>
+    road.properties.nodes.some((node) => mergeEntryNodes.has(node))
   const bayMap = new Map(bays.map((b) =>
     [`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b]))
   const rlMap = new Map(rightLanes.map((r) =>
@@ -1042,8 +1039,14 @@ export function buildLaneArrows(
   const rlKeys = new Set(rlMap.keys())
   const out: GroundArrow[] = []
   for (const e of stopLineEdges(graph, (r) =>
-    scopeFn(r) || hasTl(r) || isMajorStopRoad(r))) {
+    scopeFn(r) || hasTl(r) || isMajorStopRoad(r) || mergeSideApproach(r))) {
     const p = e.road.properties
+    if (p.oneSideEntryNodes?.includes(e.toNode)
+      && graph.hasDistinctRoadAt(e.toNode, e.road)) continue
+    const atMergeSideEntry = mergeEntryNodes.has(e.toNode)
+      && !p.oneSideEntryNodes?.includes(e.toNode)
+    if (!atMergeSideEntry && !scopeFn(e.road) && !hasTl(e.road)
+      && !isMajorStopRoad(e.road)) continue
     if (p.roadMarkingMode !== 'all') continue
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
     if (lanes < 1) continue
@@ -1391,6 +1394,14 @@ export function buildStopLines(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[],
   journal: EnhancementRecord[] = [],
 ): PaintLine[] {
+  const mergeEntryNodes = new Set<number>()
+  for (const edge of graph.scopeEdges(() => true, 0, 0)) {
+    for (const node of edge.road.properties.oneSideEntryNodes ?? []) {
+      mergeEntryNodes.add(node)
+    }
+  }
+  const mergeSideApproach = (road: ScopeEdge['road']) =>
+    road.properties.nodes.some((node) => mergeEntryNodes.has(node))
   const bayMap = new Map(bays.map((b) => [`${b.wayId}@${b.nodeId}${b.back ? '~b' : ''}`, b]))
   const rlMap = new Map(rightLanes.map((r) => [`${r.wayId}@${r.nodeId}${r.back ? '~b' : ''}`, r]))
   const rlWays = new Set(rightLanes.map((r) => r.wayId))
@@ -1401,8 +1412,12 @@ export function buildStopLines(
   const seen = new Set<string>()
   for (const e of stopLineEdges(graph, (r) =>
     scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id)
-      || isStopLineRoad(r) || isMajorStopRoad(r))) {
+      || isStopLineRoad(r) || isMajorStopRoad(r) || mergeSideApproach(r))) {
     const p = e.road.properties
+    // road_merge 的單側入口節點仍供導航使用，但承載它的主路在繪圖上
+    // 必須保持連續，不可於內部捏合點生成停止線。
+    if (p.oneSideEntryNodes?.includes(e.toNode)
+      && graph.hasDistinctRoadAt(e.toNode, e.road)) continue
     if (p.roadMarkingMode !== 'all') continue
     if ((e.back ? p.stopLineB : p.stopLineF) === false) continue
     const dirKey = `${p.osm_id}@${e.toNode}${e.back ? '~b' : ''}`
@@ -1410,7 +1425,9 @@ export function buildStopLines(
     const rl = rlMap.get(dirKey)
     // 與地面箭頭同一批行向；右轉道行向即使無箭頭真值也畫（有停止線才有意義）；
     // 實際幹道／集散道進入真路口也畫（2026-07-24 起，忽略小巷）
-    if (!scopeFn(e.road) && !hasTl(e.road) && !rl
+    const atMergeSideEntry = mergeEntryNodes.has(e.toNode)
+      && !p.oneSideEntryNodes?.includes(e.toNode)
+    if (!atMergeSideEntry && !scopeFn(e.road) && !hasTl(e.road) && !rl
       && !isStopLineRoad(e.road) && !isMajorStopRoad(e.road)) continue
     if (!inter.has(e.toNode)) continue // 純續接節點/死路端不畫
     if (e.endSetbackM <= 2) continue // 終點無交叉路不畫
@@ -1466,6 +1483,8 @@ export function buildLeftTurnWaitingAreas(
     return p.roadMarkingMode === 'all' && (p.leftWaitAreaF || p.leftWaitAreaB)
   })) {
     const p = edge.road.properties
+    if (p.oneSideEntryNodes?.includes(edge.toNode)
+      && graph.hasDistinctRoadAt(edge.toNode, edge.road)) continue
     const enabled = p.oneway === 'yes' || !edge.back ? p.leftWaitAreaF : p.leftWaitAreaB
     if (!enabled) continue
     const key = `${p.osm_id}@${edge.toNode}${edge.back ? '~b' : ''}`
@@ -1610,6 +1629,8 @@ export function buildMotoLaneEntryIcons(
   const seen = new Set<string>()
   for (const edge of graph.scopeEdges(scopeFn, 0, 2)) {
     const properties = edge.road.properties
+    if (properties.oneSideEntryNodes?.includes(edge.fromNode)
+      && graph.hasDistinctRoadAt(edge.fromNode, edge.road)) continue
     const hasMotoLane = properties.oneway === 'yes'
       ? properties.motoF
       : edge.back ? properties.motoB : properties.motoF
@@ -1703,6 +1724,8 @@ export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot
   const inter = new Set(graph.intersections().map((i) => i.id))
   return (e: ScopeEdge): MotoBoxSlot => {
     const p = e.road.properties
+    const mergeThrough = (p.oneSideEntryNodes?.includes(e.toNode) ?? false)
+      && graph.hasDistinctRoadAt(e.toNode, e.road)
     const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
     const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
     const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
@@ -1728,7 +1751,8 @@ export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot
     const fitsLengthwise =
       total - e.endSetbackM - MOTO_BOX_GAP_M - MOTO_BOX_DEPTH_M >= e.startSetbackM + 4
     return {
-      eligible: p.roadMarkingMode === 'all' && inter.has(e.toNode) && e.endSetbackM > 2
+      eligible: !mergeThrough && p.roadMarkingMode === 'all'
+        && inter.has(e.toNode) && e.endSetbackM > 2
         && lanes >= 1 && laneSpanM(p, e.back) > 0,
       maxLanes: lanes < 1 ? 0 : legalCarLanes + (moto ? 1 : 0),
       firstLegalLane: motoOnly ? lanes : autoKL,

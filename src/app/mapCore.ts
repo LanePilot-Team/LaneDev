@@ -9,7 +9,7 @@ import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
 import { asset } from '../core/asset'
 import {
-  buildDividers, buildRoadSurfaces, roadsFromGeoJSON, type RoadFeature,
+  buildDividers, buildRoadSurfaces, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
@@ -377,9 +377,10 @@ export function useMapCore(
     ) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
+    const renderRoads = roadsForRendering(roadsRef.current)
     src('medians').setData(mediansToGeoJSON([
-      ...buildMedians(roadsRef.current),
-      ...buildTwinIslands(roadsRef.current, journalRef.current),
+      ...buildMedians(renderRoads),
+      ...buildTwinIslands(renderRoads, journalRef.current),
       ...buildMotoSepIslands(graphRef.current),
       ...buildCenterIslands(graphRef.current, baysRef.current),
     ]) as never)
@@ -398,9 +399,10 @@ export function useMapCore(
   }, [])
 
   const redrawRoads = useCallback(() => {
-    src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(roadsRef.current) } as never)
-    src('roadSurfaces').setData(buildRoadSurfaces(roadsRef.current) as never)
-    const dividerFeatures = cleanIntersectionFeatures(buildDividers(roadsRef.current))
+    const renderRoads = roadsForRendering(roadsRef.current)
+    src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(renderRoads) } as never)
+    src('roadSurfaces').setData(buildRoadSurfaces(renderRoads) as never)
+    const dividerFeatures = cleanIntersectionFeatures(buildDividers(renderRoads))
     src('dividers').setData(groundMarkingPolygons(
       dividerFeatures,
       (p) => p?.kind === 'center' ? 0.3

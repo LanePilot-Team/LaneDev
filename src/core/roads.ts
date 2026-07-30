@@ -545,6 +545,13 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
    * 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，收邊線平行交叉路
    * ＝停止線的延長線）。trim=0 = 不收。 */
   const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
+    // 捏合主路只是經過側巷入口：主路所有標線保持連續，不將此節點
+    // 當成交叉路口退縮。側巷仍會在自己的 endInfo 中依主路寬度收邊。
+    const hasDistinctRoad = (nodeUse.get(n) ?? []).some((road) =>
+      road.properties.osm_id !== self.properties.osm_id)
+    if (self.properties.oneSideEntryNodes?.includes(n) && hasDistinctRoad) {
+      return { trim: 0, sk: 0 }
+    }
     let anyCross = false
     let w = 0
     let crossBrg: number | null = null
@@ -567,7 +574,14 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       }
     }
     if (!anyCross) return { trim: 0, sk: 0 }
-    return { trim: w / 2 + 2, sk: crossBrg === null ? 0 : skewFromCross(fwdBrg, crossBrg) }
+    const mergeCarrier = (nodeUse.get(n) ?? []).some((road) =>
+      road !== self && road.properties.oneSideEntryNodes?.includes(n))
+    // 一般路口沿用既有 2m 淨空；捏合側巷以主路實際半寬為邊界，
+    // 僅保留標線本身的 0.2m 收邊，不使用固定退縮距離。
+    return {
+      trim: w / 2 + (mergeCarrier ? 0.2 : 2),
+      sk: crossBrg === null ? 0 : skewFromCross(fwdBrg, crossBrg),
+    }
   }
 
   const ZERO = { trim: 0, sk: 0 }
@@ -776,6 +790,40 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
     } catch { /* 特殊接線幾何退化時維持一般路面，不影響其餘道路 */ }
   }
   return { type: 'FeatureCollection', features }
+}
+
+/**
+ * 僅供視覺輸出使用：行政區重疊資料可能留下同一 OSM way 的短副本。
+ * 保留導航與編輯用道路集合不變，只隱藏已被較長捏合段完整涵蓋的副本。
+ */
+export function roadsForRendering(roads: RoadFeature[]): RoadFeature[] {
+  const containsPath = (outer: number[], inner: number[]) => {
+    if (inner.length > outer.length) return false
+    const matches = (candidate: number[]) => {
+      for (let start = 0; start <= outer.length - candidate.length; start++) {
+        let equal = true
+        for (let index = 0; index < candidate.length; index++) {
+          if (outer[start + index] !== candidate[index]) { equal = false; break }
+        }
+        if (equal) return true
+      }
+      return false
+    }
+    return matches(inner) || matches([...inner].reverse())
+  }
+  const exactSeen = new Set<string>()
+  return roads.filter((road) => {
+    if (road.properties.deleted) return true
+    const exactKey = `${road.properties.osm_id}:${road.properties.nodes.join(',')}`
+    if (exactSeen.has(exactKey)) return false
+    exactSeen.add(exactKey)
+    return !roads.some((candidate) =>
+      candidate !== road
+      && !candidate.properties.deleted
+      && candidate.properties.osm_id === road.properties.osm_id
+      && candidate.properties.nodes.length > road.properties.nodes.length
+      && containsPath(candidate.properties.nodes, road.properties.nodes))
+  })
 }
 
 function intOr(v: unknown, dflt: number): number {

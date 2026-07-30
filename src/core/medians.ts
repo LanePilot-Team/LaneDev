@@ -279,6 +279,14 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
 
 /** 綠化帶專用路口退縮：只有該行向確實可左／右轉時，才為較窄的支路額外留口。 */
 function islandSetbacks(graph: RoadGraph, e: ReturnType<RoadGraph['scopeEdges']>[number], total: number) {
+  // road_merge 的 oneSideEntryNodes 對導航仍是可互動節點，但對承載它的主路
+  // 只是連續道路中的側街入口；中央島不可在此被當成完整路口切斷。
+  const mergeThroughStart =
+    (e.road.properties.oneSideEntryNodes?.includes(e.fromNode) ?? false)
+    && graph.hasDistinctRoadAt(e.fromNode, e.road)
+  const mergeThroughEnd =
+    (e.road.properties.oneSideEntryNodes?.includes(e.toNode) ?? false)
+    && graph.hasDistinctRoadAt(e.toNode, e.road)
   const startBrg = bearing(e.coords[1], e.coords[0])
   const endBrg = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
   const extra = (node: number, brg: number) => {
@@ -288,8 +296,10 @@ function islandSetbacks(graph: RoadGraph, e: ReturnType<RoadGraph['scopeEdges']>
     return w > 0 ? w / 2 + 2 : 0
   }
   return {
-    s0: Math.min(Math.max(e.startSetbackM, extra(e.fromNode, startBrg)), total),
-    s1: Math.max(0, total - Math.max(e.endSetbackM, extra(e.toNode, endBrg))),
+    s0: mergeThroughStart
+      ? 0 : Math.min(Math.max(e.startSetbackM, extra(e.fromNode, startBrg)), total),
+    s1: mergeThroughEnd
+      ? total : Math.max(0, total - Math.max(e.endSetbackM, extra(e.toNode, endBrg))),
   }
 }
 

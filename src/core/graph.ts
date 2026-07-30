@@ -360,6 +360,13 @@ export class RoadGraph {
     }
   }
 
+  /** 指定 oneSideEntry 節點是否真的接有另一條 OSM 道路。
+   * 單純把同一條路的兩個區塊捏合，不應被當成側巷路口。 */
+  hasDistinctRoadAt(nodeId: number, carrier: RoadFeature): boolean {
+    return (this.adj.get(nodeId) ?? []).some((edge) =>
+      edge.road.properties.osm_id !== carrier.properties.osm_id)
+  }
+
   private push(e: Edge) {
     if (!this.adj.has(e.from)) this.adj.set(e.from, [])
     this.adj.get(e.from)!.push(e)
@@ -562,6 +569,18 @@ export class RoadGraph {
     scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2,
     crossQualifies?: (r: RoadFeature) => boolean,
   ): ScopeEdge[] {
+    /** 捏合後保留的側巷入口：找出承載 oneSideEntryNodes 的主路寬度。
+     * 這個寬度同時是側巷道路與停止線的動態收邊基準；主路本身不套用。 */
+    const mergeCarrierWidth = (nodeId: number, self: Edge) => {
+      let width = 0
+      for (const edge of this.adj.get(nodeId) ?? []) {
+        if (edge === self || edge === self.twin) continue
+        if (edge.road.properties.osm_id === self.road.properties.osm_id) continue
+        if (!edge.road.properties.oneSideEntryNodes?.includes(nodeId)) continue
+        width = Math.max(width, edge.road.properties.width_m)
+      }
+      return width
+    }
     // 收邊只看「夠格的交叉路」：不同路（id 與路名都不同）且寬 ≥7m（≥2 車道）。
     // 小巷（residential 6.4m）交會不清標線也不生停止線——實際道路的車道線
     // 會直接越過巷口；同路續接區塊也不算（自寬會把收邊撐到半個路寬）。
@@ -584,15 +603,19 @@ export class RoadGraph {
       .map((e) => {
         const w0 = crossW(e.from, e)
         const w1 = crossW(e.to, e)
+        const mergeW0 = mergeCarrierWidth(e.from, e)
+        const mergeW1 = mergeCarrierWidth(e.to, e)
         return {
           coords: e.coords, road: e.road, back: e.back,
           fromNode: e.from, toNode: e.to,
           startSetbackM: Math.max(
-            w0 > 0 ? w0 / 2 + clearanceM : 0,
+            mergeW0 > 0 ? mergeW0 / 2 + 0.2
+              : w0 > 0 ? w0 / 2 + clearanceM : 0,
             manualMarkingSetbackM(e.road, e.from),
           ),
           endSetbackM: Math.max(
-            w1 > 0 ? w1 / 2 + clearanceM : 0,
+            mergeW1 > 0 ? mergeW1 / 2 + 0.2
+              : w1 > 0 ? w1 / 2 + clearanceM : 0,
             manualMarkingSetbackM(e.road, e.to),
           ),
         }

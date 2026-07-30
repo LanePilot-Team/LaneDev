@@ -61,11 +61,22 @@ const emptyEditor = (): StaticEditorState => ({
   deleted_waiting_zone_ids: [],
 })
 
+/**
+ * 鏡像到瀏覽器備援。**絕不可以讓它中斷呼叫端**：這裡若丟出例外（journal 只增不減，
+ * 遲早會撞上 localStorage 配額），updateStaticEditor 後面的 setSaveState 與
+ * scheduleStaticEditorSave 就都不會執行——這次編輯既沒進備援也沒排進存檔佇列，
+ * 而且畫面上不會有任何提示。備援失敗時，唯一來源的檔案寫入更要照常進行。
+ */
 function mirrorEditorToBrowser(editor: StaticEditorState) {
-  localStorage.setItem('navsim-journal-v1', JSON.stringify(editor.journal))
-  localStorage.setItem('navsim-zones-v2', JSON.stringify(editor.waiting_zones))
-  localStorage.setItem('navsim-zones-deleted-v1', JSON.stringify(editor.deleted_waiting_zone_ids))
-  localStorage.setItem(LOCAL_UPDATED_KEY, editor.updated_at)
+  try {
+    localStorage.setItem('navsim-journal-v1', JSON.stringify(editor.journal))
+    localStorage.setItem('navsim-zones-v2', JSON.stringify(editor.waiting_zones))
+    localStorage.setItem('navsim-zones-deleted-v1', JSON.stringify(editor.deleted_waiting_zone_ids))
+    localStorage.setItem(LOCAL_UPDATED_KEY, editor.updated_at)
+  } catch (error) {
+    console.error('瀏覽器備援寫入失敗（通常是 localStorage 配額用罄）；'
+      + '本次編輯仍會寫入唯一靜態資料庫，但關閉分頁前請確認存檔狀態為「已儲存」', error)
+  }
 }
 
 function readBrowserEditor(): Partial<StaticEditorState> {
@@ -148,17 +159,45 @@ export function scheduleStaticEditorSave(delayMs = 350) {
   }, delayMs)
 }
 
-async function persistCurrentEditor() {
-  if (!database) return
-  const snapshot = structuredClone(database.editor)
-  const response = await fetch('/api/static-road-database/editor', {
+const putEditor = (editor: StaticEditorState, baseUpdatedAt: string) =>
+  fetch('/api/static-road-database/editor', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      base_updated_at: persistedEditorUpdatedAt,
-      editor: snapshot,
-    }),
+    body: JSON.stringify({ base_updated_at: baseUpdatedAt, editor }),
   })
+
+/**
+ * 409 = 檔案在本分頁載入之後被別人動過（另一個分頁、或直接改檔）。
+ *
+ * 舊版直接把錯誤丟出去，使用者就卡在死結：存不了、又不敢重整（重整警告說變更
+ * 可能不會儲存）。但 uniteEditors 是**加法合併、只增不減**，所以衝突根本不需要
+ * 使用者介入——重新抓一次檔案、把本分頁還沒寫進去的紀錄併上去、用新的基準重存
+ * 即可，兩邊的資料都不會掉。
+ */
+async function resyncAndRetry(): Promise<Response | null> {
+  if (!database) return null
+  const fresh = await fetch(DATABASE_URL, { cache: 'no-store' })
+  if (!fresh.ok) return null
+  const latest = await fresh.json() as StaticRoadDatabase
+  const fileEditor = latest.editor ?? emptyEditor()
+  const { editor, recovered } = uniteEditors(fileEditor, database.editor)
+  database.editor = { ...editor, updated_at: new Date().toISOString() }
+  mirrorEditorToBrowser(database.editor)
+  console.info(`儲存衝突已自動合併：本分頁有 ${recovered} 筆紀錄是檔案裡沒有的，已一併寫入`)
+  return putEditor(database.editor, fileEditor.updated_at || '')
+}
+
+async function persistCurrentEditor() {
+  if (!database) return
+  let snapshot = structuredClone(database.editor)
+  let response = await putEditor(snapshot, persistedEditorUpdatedAt)
+  if (response.status === 409) {
+    const retried = await resyncAndRetry()
+    if (retried) {
+      response = retried
+      snapshot = structuredClone(database!.editor)
+    }
+  }
   if (!response.ok) {
     const detail = (await response.text()).trim()
     throw new Error(detail || `HTTP ${response.status}`)

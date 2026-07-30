@@ -15,9 +15,31 @@ function parseJsonl(text) {
   return text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line))
 }
 
-const segments = (await Promise.all(
+const loaded = (await Promise.all(
   regions.map(({ file }) => readFile(resolve(lanePilot, file), 'utf8').then(parseJsonl)),
 )).flat()
+
+// 跨區界的 way 會被兩份行政區 shard 各收錄一次（LanePilot 依行政區匯出，extract
+// 涵蓋到就收）。這裡過去是純串接、整條鏈上沒有任何唯一性檢查，於是同一條路進來
+// 兩份，切塊後放大成數百組重複區塊鍵，各自套用覆寫、各自畫中央帶 → 整段雙重黃線。
+// 身分 = nav_segment_key + split_index；保留先出現的（regions 順序 = 楠梓優先）。
+const segmentIdentity = (s) =>
+  `${s.object_identity?.nav_segment_key ?? s.osm_id}#${s.object_identity?.split_index ?? 0}`
+const seenSegments = new Set()
+const duplicateSegments = []
+const segments = []
+for (const s of loaded) {
+  const id = segmentIdentity(s)
+  if (seenSegments.has(id)) { duplicateSegments.push(id); continue }
+  seenSegments.add(id)
+  segments.push(s)
+}
+if (duplicateSegments.length) {
+  // 一定要出聲。靜默吃掉重複正是這個問題藏這麼久的原因。
+  console.warn(`[dedupe] 跨 shard 重複分段 ${duplicateSegments.length} 個已移除`
+    + `（${loaded.length} → ${segments.length}）`)
+  console.warn(`[dedupe] 例：${duplicateSegments.slice(0, 5).join(', ')}`)
+}
 
 // Some published district shards contain geometry but omit node_refs. LaneDev
 // needs one node id per coordinate for drawing, intersections and routing.
@@ -99,15 +121,15 @@ const output = {
   },
 }
 
-await writeFile(
-  resolve(data, 'road_database.json'),
-  `${JSON.stringify(output)}\n`,
-  'utf8',
-)
+// --out=<路徑> 讓評估用的重建產到暫存檔，不覆蓋唯一資料庫
+const outPath = process.argv.find((a) => a.startsWith('--out='))?.slice('--out='.length)
+  ?? resolve(data, 'road_database.json')
+await writeFile(outPath, `${JSON.stringify(output)}\n`, 'utf8')
 
 console.log(JSON.stringify({
-  output: resolve(data, 'road_database.json'),
+  output: outPath,
   segments: segments.length,
+  duplicatesRemoved: duplicateSegments.length,
   annotations: annotations.length,
   journal: journal.length,
 }, null, 2))

@@ -135,6 +135,28 @@ check('捏合沒有製造新的孤兒區塊鍵',
 check('沒有任何 deleted:1 變成孤兒',
   orphansAfter.filter(([, v]) => Number(v.deleted) > 0).length === 0)
 
+// ── 回歸：編輯合併後的路段不得讓捏合消失 ──────────────────────────────────
+// 覆寫只會寫進保留段的區塊鍵，次段仍留著舊值。舊版 applyRoadMerges 在載入時用
+// checkRoadMerge 重新審查「兩段車道配置必須相同」，於是使用者一改合併後路段的
+// 機車道／車道數，下次 F5 捏合就被靜默略過、路段裂回去（2026-07-29 實測：同一組
+// 捏合被迫重做三次）。重播只該驗幾何相接，不該再審配置。
+const editedJournal: EnhancementRecord[] = [...withMerge, {
+  seq: withMerge.length + 1,
+  ts: new Date(Date.now() + 1000).toISOString(),
+  author: 'audit',
+  op: 'set',
+  target: { type: 'road', key: primaryKey },
+  // 只改保留段：次段的 moto_forward 維持原樣，兩段配置必然不同
+  fields: { moto_forward: 1, moto_backward: 1, moto_sep_f: 0, moto_sep_b: 0 },
+}]
+const afterEdit = build(editedJournal)
+check('改了合併後路段的車道配置，捏合仍然生效',
+  afterEdit.merged === after.merged,
+  `捏合 ${after.merged} 組 → 編輯後 ${afterEdit.merged} 組`)
+check('編輯後保留段仍是單一區塊（沒有裂回去）',
+  new Set(afterEdit.active.map(blockKey)).has(primaryKey)
+  && !new Set(afterEdit.active.map(blockKey)).has(secondaryKey))
+
 // 路口元件的鍵視圖
 const view = journalForMergedRoads(withMerge)
 check('journalForMergedRoads 不改動原始歷程長度', view.length === withMerge.length,

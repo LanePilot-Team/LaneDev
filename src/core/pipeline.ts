@@ -60,8 +60,38 @@ export interface BasePrep {
   wayRemap: Map<number, DropRemap>
 }
 
+/**
+ * 跨區界的 way 會同時出現在兩份行政區 shard 裡（楠梓 3184＋左營 2351 = 5535，
+ * 其中 57 個分段兩邊都有），build_static_road_database.mjs 只是直接串接，於是
+ * 同一條路載入後就是兩個幾何完全相同的物件。切塊後放大成 410 組重複區塊鍵，
+ * 每一份各自套用 journal 覆寫、各自畫中央帶——畫面上就是整段雙重黃線與交叉斜紋。
+ *
+ * 就地移除，回傳移除筆數。必須排在 applyFixups 之前：後面每一個階段（couplet
+ * 合併、切塊、標線生成）都會把重複放大。
+ */
+function dedupeIdenticalWays(roads: RoadFeature[]): number {
+  const seen = new Map<string, string>()
+  let removed = 0
+  for (let i = roads.length - 1; i >= 0; i--) {
+    const r = roads[i]
+    const id = `${r.properties.osm_id}#${r.properties.splitIndex ?? 0}`
+    const shape = JSON.stringify(r.geometry.coordinates)
+    const prev = seen.get(id)
+    if (prev === undefined) { seen.set(id, shape); continue }
+    // 只丟幾何完全相同的那一份；同 id 但幾何不同是真的分段，不能動
+    if (prev !== shape) continue
+    roads.splice(i, 1)
+    removed++
+  }
+  return removed
+}
+
 /** 載入後的完整前處理。輸入會被就地修改，回傳切塊後的新陣列。 */
 export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
+  // 去重暫時停用：2026-07-29 實測會把軍校路整條移除、journal 孤兒 8→46、
+  // 並讓 7 筆 deleted:1 失效（被刪的路段復活）。判定條件顯然不只命中那 57 條
+  // 跨區重複，根因釐清前不可啟用。
+  void dedupeIdenticalWays
   applyFixups(raw)
   const nodeRemap = new Map<number, number>()
   const wayRemap = new Map<number, DropRemap>()

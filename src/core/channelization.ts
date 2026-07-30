@@ -9,6 +9,7 @@ export const TAIWAN_YELLOW_HATCH_V1 = {
   stripePitchM: 1.25,
   insetM: 0.30,
   minLengthM: 3,
+  referenceBandWidthM: 3.2,
 }
 
 export function buildCappedTriangleRange(input: {

@@ -134,6 +134,16 @@ function endpointNearestStation(line, stationM) {
       < Math.abs(distanceAlongFixture(nearest) - stationM) ? coord : nearest)
 }
 
+function hatchSlopeRatio(line) {
+  const longitudinalRunM = Math.abs(
+    distanceAlongFixture(line.coords[1]) - distanceAlongFixture(line.coords[0]),
+  )
+  const lateralRunM = Math.abs(
+    lateralOffsetFromFixture(line.coords[1]) - lateralOffsetFromFixture(line.coords[0]),
+  )
+  return longitudinalRunM / lateralRunM
+}
+
 test('one offset bay creates one review index record even without channelization', () => {
   assert.deepEqual(buildOffsetTurnBayMarkings([], [bay]), [{
     key: parent,
@@ -213,14 +223,44 @@ test('pure central hatches keep stations across widths and extend count across l
   )
 })
 
-test('zero-width and physical-island central bands produce no pure hatches', () => {
+test('a pure central hatch closes both ends with transverse caps', () => {
+  const caps = buildFixtureChannelization({ withBay: false, centerM: 3.2 })
+    .filter((line) => line.style === 'channel-cap')
+
+  assert.equal(caps.length, 2)
+  assert.ok(caps.every((line) =>
+    haversine(line.coords[0], line.coords[1]) > 3))
+  assert.ok(caps.every((line) =>
+    Math.abs(distanceAlongFixture(line.coords[0])
+      - distanceAlongFixture(line.coords[1])) < 0.05))
+
+  const capStations = caps
+    .map((line) => distanceAlongFixture(line.coords[0]))
+    .sort((a, b) => a - b)
+  assert.ok(capStations[1] - capStations[0] > fixtureTotalM - 30)
+})
+
+test('pure central hatches keep the accepted 3.2 m angle across widths', () => {
+  const expectedRatio = TAIWAN_YELLOW_HATCH_V1.stripePitchM
+    / (3.2 - 2 * TAIWAN_YELLOW_HATCH_V1.insetM)
+
+  for (const centerM of [1.6, 3.2, 4.8]) {
+    const hatches = buildFixtureChannelization({ withBay: false, centerM })
+      .filter((line) => line.style === 'channel-hatch')
+    assert.ok(hatches.length > 2)
+    assert.ok(hatches.every((line) =>
+      Math.abs(hatchSlopeRatio(line) - expectedRatio) < 0.02))
+  }
+})
+
+test('zero-width and physical-island central bands produce no pure hatch markings', () => {
   const zeroWidth = buildFixtureChannelization({ withBay: false, centerM: 0 })
-    .filter((line) => line.style === 'channel-hatch')
+    .filter((line) => line.style === 'channel-hatch' || line.style === 'channel-cap')
   const island = buildFixtureChannelization({
     withBay: false,
     centerM: 3.2,
     centerKind: 'island',
-  }).filter((line) => line.style === 'channel-hatch')
+  }).filter((line) => line.style === 'channel-hatch' || line.style === 'channel-cap')
 
   assert.equal(zeroWidth.length, 0)
   assert.equal(island.length, 0)

@@ -879,20 +879,45 @@ export function buildChannelization(
 
     let hatchCount = 0
     const shouldPaintCentralHatch = p.centerKind === 'hatch'
+    const isPureCentralHatch = shouldPaintCentralHatch && !fwdBay && !bwdBay
+    const usableWidthM = Math.max(0,
+      2 * c - 2 * TAIWAN_YELLOW_HATCH_V1.insetM)
+    const referenceUsableWidthM = TAIWAN_YELLOW_HATCH_V1.referenceBandWidthM
+      - 2 * TAIWAN_YELLOW_HATCH_V1.insetM
+    const stripeRunM = isPureCentralHatch
+      ? usableWidthM * TAIWAN_YELLOW_HATCH_V1.stripePitchM / referenceUsableWidthM
+      : TAIWAN_YELLOW_HATCH_V1.stripePitchM
     for (const d of shouldPaintCentralHatch ? buildHatchDistances(hs, he) : []) {
       const d2 = Math.min(he - TAIWAN_YELLOW_HATCH_V1.insetM,
-        d + TAIWAN_YELLOW_HATCH_V1.stripePitchM)
+        d + stripeRunM)
       if (d2 <= d) continue
+      const startOff = dv - c + TAIWAN_YELLOW_HATCH_V1.insetM
+      const fullEndOff = dv + c - TAIWAN_YELLOW_HATCH_V1.insetM
+      const endOff = isPureCentralHatch
+        ? startOff + (fullEndOff - startOff) * ((d2 - d) / stripeRunM)
+        : fullEndOff
       out.push({
         color: 'yellow',
         style: 'channel-hatch',
         ownerKey: (fwdBay ?? bwdBay)?.key,
         coords: [
-          offsetAt(e.coords, cum, d, dv - c + TAIWAN_YELLOW_HATCH_V1.insetM),
-          offsetAt(e.coords, cum, d2, dv + c - TAIWAN_YELLOW_HATCH_V1.insetM),
+          offsetAt(e.coords, cum, d, startOff),
+          offsetAt(e.coords, cum, d2, endOff),
         ],
       })
       hatchCount++
+    }
+    if (isPureCentralHatch && he - hs >= TAIWAN_YELLOW_HATCH_V1.minLengthM) {
+      for (const capD of [hs, he]) {
+        out.push({
+          color: 'yellow',
+          style: 'channel-cap',
+          coords: [
+            offsetAt(e.coords, cum, capD, dv - c),
+            offsetAt(e.coords, cum, capD, dv + c),
+          ],
+        })
+      }
     }
     // 很短的單端未使用段（3~3.7m）也至少放入一道自適應斜紋；
     // 不可因固定 2.2m 斜紋加邊距後放不下，就只剩外框而沒有槽化內容。

@@ -94,3 +94,54 @@ test('同節點不同進入邊保留獨立狀態，合法路徑不被較便宜�
   assert.deepEqual(route.spans.map((span) => span.road?.properties.osm_id),
     [10, 30, 40, 50])
 })
+
+const twoWayRoad = (osmId, nodes, coordinates, access = undefined) => {
+  const result = road(osmId, nodes, coordinates, access)
+  result.properties.oneway = 'no'
+  result.properties.lanes = 2
+  result.properties.lanesBackward = 1
+  return result
+}
+
+test('同一道路點在相反車道時不得悄悄改用另一方向', () => {
+  const eastWest = twoWayRoad(100, [1, 2], [[120, 22], [120.002, 22]])
+  const graph = new RoadGraph([eastWest])
+  const laneOffsetLat = 1.6 / 110540
+  const eastboundStart = [120.0002, 22 - laneOffsetLat]
+  const westboundGoal = [120.0018, 22 + laneOffsetLat]
+
+  const route = graph.route(eastboundStart, westboundGoal, 'car')
+
+  assert.ok(route, '可在道路端點迴轉後抵達對向終點')
+  assert.deepEqual(route.spans.map((span) => span.back), [false, true])
+  assert.ok(route.lengthM > 190, '不得用順向 edge 直接抵達對向車道')
+})
+
+test('側路不得從捏合節點跨越中央島接到主路另一側', () => {
+  const junction = [120, 22]
+  const access = [{ nodeId: 2, allowedBack: false }]
+  const mainSouth = twoWayRoad(100, [1, 2], [[120, 21.999], junction], access)
+  const mainNorth = twoWayRoad(100, [2, 3], [junction, [120, 22.001]], access)
+  const side = road(200, [4, 2], [[120.001, 22], junction])
+  const graph = new RoadGraph([mainSouth, mainNorth, side])
+  const mainLaneOffsetLng = 1.6 / (111320 * Math.cos(22 * Math.PI / 180))
+  const sideLaneOffsetLat = 1.6 / 110540
+  const sideStart = [120.0008, 22 + sideLaneOffsetLat]
+  const sameSideGoal = [120 + mainLaneOffsetLng, 22.0008]
+  const acrossMedianGoal = [120 - mainLaneOffsetLng, 22.0008]
+
+  const legal = graph.route(sideStart, sameSideGoal, 'car')
+  const acrossMedian = graph.route(sideStart, acrossMedianGoal, 'car')
+
+  assert.ok(legal, '側路應可右轉進入中央島同側的主路方向')
+  assert.deepEqual(legal.spans.map((span) => [span.road?.properties.osm_id, span.back]),
+    [[200, false], [100, false]])
+  assert.ok(acrossMedian, '可先沿合法方向行駛，再於其他位置迴轉抵達')
+  assert.deepEqual(
+    acrossMedian.spans.map((span) => [span.road?.properties.osm_id, span.back]),
+    [[200, false], [100, false], [100, true]],
+    '捏合節點只能先右轉進同側，不得直接接到跨中央島方向',
+  )
+  assert.ok(acrossMedian.lengthM > legal.lengthM,
+    '中央島另一側終點必須包含合法繞行，不得與同側終點同長')
+})

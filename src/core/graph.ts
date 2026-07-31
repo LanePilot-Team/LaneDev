@@ -74,6 +74,15 @@ interface Edge {
   twin?: Edge
 }
 
+interface DirectedLaneProjection {
+  edge: Edge
+  seg: number
+  t: number
+  pos: [number, number]
+  lanePos: [number, number]
+  bearing: number
+}
+
 export interface RouteResult {
   coords: [number, number][]
   cum: number[]
@@ -489,6 +498,47 @@ export class RoadGraph {
     return best
   }
 
+  /**
+   * 先投影到道路中心線，再比較該位置兩個方向的實際車道中心。
+   * route 必須保留這個有向結果；若之後只拿中心線位置重新接雙向 edge，
+   * 使用者點在對向車道時就會被悄悄改成另一方向。
+   */
+  private projectToDirectedLane(
+    p: [number, number], profile: Profile,
+  ): DirectedLaneProjection | null {
+    const hit = this.project(p, profile)
+    if (!hit) return null
+    const candidates: { edge: Edge; seg: number; t: number }[] = [{
+      edge: hit.edge, seg: hit.seg, t: hit.t,
+    }]
+    if (hit.edge.twin) candidates.push({
+      edge: hit.edge.twin,
+      seg: twinSeg(hit.edge, hit.seg),
+      t: 1 - hit.t,
+    })
+    let best: DirectedLaneProjection | null = null
+    let bestDistance = Infinity
+    for (const candidate of candidates) {
+      const { edge, seg, t } = candidate
+      if (!edgeAllowed(edge.road, edge.back, profile)) continue
+      const direction = bearing(edge.coords[seg], edge.coords[seg + 1])
+      const offset = laneOffsets(edge, profile).cruise
+      const radians = ((direction + 90) * Math.PI) / 180
+      const lanePos: [number, number] = [
+        hit.pos[0] + (offset * Math.sin(radians)) / (111320 * COS_LAT),
+        hit.pos[1] + (offset * Math.cos(radians)) / 110540,
+      ]
+      const distance = haversine(p, lanePos)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = {
+          edge, seg, t, pos: hit.pos, lanePos, bearing: direction,
+        }
+      }
+    }
+    return best
+  }
+
   /** 某路口所有可能的「左轉配對」（進入行向 × 左轉出口），供待轉區設定選單用 */
   leftTurnOptions(nodeId: number): TurnOption[] {
     const pos = this.nodePos.get(nodeId)
@@ -728,30 +778,14 @@ export class RoadGraph {
   /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者） */
   snapToLane(p: [number, number], type: Profile):
     { pos: [number, number]; bearing: number; road?: string } | null {
-    const hit = this.project(p, type)
+    const hit = this.projectToDirectedLane(p, type)
     if (!hit) return null
-    const cands: { e: Edge; seg: number }[] = [{ e: hit.edge, seg: hit.seg }]
-    if (hit.edge.twin) cands.push({ e: hit.edge.twin, seg: twinSeg(hit.edge, hit.seg) })
-    let best: { pos: [number, number]; bearing: number; road?: string } | null = null
-    let bestD = Infinity
-    for (const { e, seg } of cands) {
-      if (!edgeAllowed(e.road, e.back, type)) continue
-      const brg = bearing(e.coords[seg], e.coords[seg + 1])
-      const off = laneOffsets(e, type).cruise
-      const rad = ((brg + 90) * Math.PI) / 180
-      const pos: [number, number] = [
-        hit.pos[0] + (off * Math.sin(rad)) / (111320 * COS_LAT),
-        hit.pos[1] + (off * Math.cos(rad)) / 110540,
-      ]
-      const d = haversine(p, pos)
-      if (d < bestD) { bestD = d; best = { pos, bearing: brg, road: e.name } }
-    }
-    return best
+    return { pos: hit.lanePos, bearing: hit.bearing, road: hit.edge.name }
   }
 
   route(fromP: [number, number], toP: [number, number], profile: Profile = 'car'): RouteResult | null {
-    const sA = this.project(fromP, profile)
-    const sB = this.project(toP, profile)
+    const sA = this.projectToDirectedLane(fromP, profile)
+    const sB = this.projectToDirectedLane(toP, profile)
     if (!sA || !sB) return null
 
     // 同一條（順向）邊且順序正確 → 直接一段
@@ -769,7 +803,7 @@ export class RoadGraph {
       }
     }
 
-    // 起點入口：從投影點沿邊走到邊尾（兩個方向都試）
+    // 起點入口：只沿使用者實際點選的車道方向走到邊尾。
     const startEntries: { node: number; part: Edge }[] = []
     const addStart = (e: Edge, seg: number) => {
       if (!edgeAllowed(e.road, e.back, profile)) return
@@ -778,9 +812,8 @@ export class RoadGraph {
       else startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, [sA.pos, e.coords[e.coords.length - 1]], e.back) })
     }
     addStart(sA.edge, sA.seg)
-    if (sA.edge.twin) addStart(sA.edge.twin, twinSeg(sA.edge, sA.seg))
 
-    // 終點出口：從邊頭走到投影點
+    // 終點出口：只接受使用者實際點選的車道方向。
     const goalEntries: { node: number; part: Edge }[] = []
     const addGoal = (e: Edge, seg: number) => {
       if (!edgeAllowed(e.road, e.back, profile)) return
@@ -788,7 +821,6 @@ export class RoadGraph {
       if (cs.length >= 2) goalEntries.push({ node: e.from, part: makeEdge(e.road, e.from, -1, cs, e.back) })
     }
     addGoal(sB.edge, sB.seg)
-    if (sB.edge.twin) addGoal(sB.edge.twin, twinSeg(sB.edge, sB.seg))
     if (startEntries.length === 0 || goalEntries.length === 0) return null
 
     const goalPos = toP

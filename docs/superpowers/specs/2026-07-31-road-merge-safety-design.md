@@ -19,11 +19,11 @@ The intended operation is not “erase two roads and replace them with one road.
 
 > Declare visual and navigational continuity across an OSM segmentation seam while preserving source-road topology, provenance, and annotations.
 
-For the divided-road case in scope, a merge also declares that the median remains physically continuous. The side entrance connects only to its adjacent carriageway. A median opening that permits a left turn is explicitly outside this merge case.
+Executing a merge is the annotator's declaration that the selected seam must not behave as a traversable intersection. The main road stays visually continuous, and a side entrance connects only to its adjacent carriageway. The system does not ask the annotator to select a second “continuous median” mode or redetermine whether a median opening exists.
 
 ## Confirmed domain rules
 
-- If a physical median opening permits a left turn, the entrance must not be merged under the continuous-median mode.
+- Selecting merge is authoritative confirmation that the selected seam must not permit a cross-median left turn.
 - The main-road median, lane markings, and ordinary road style continue through the seam.
 - The seam does not add a main-road stop line, turn arrow, channelization bay, or intersection opening.
 - A side road may retain its own endpoint markings when its own annotation requires them.
@@ -39,6 +39,7 @@ For the divided-road case in scope, a merge also declares that the median remain
 - Draw a continuous physical median and continuous main-road style at a one-sided entrance.
 - Enforce no-cross-median navigation at the same seam.
 - Preserve source nodes, source segments, per-span attributes, and annotation identities.
+- Keep a source segment addressable through provenance even when road preparation absorbs or drops its active representation, and remap side-road references to the surviving representation.
 - Reject unsafe or ambiguous merges instead of silently inheriting the first segment's fields.
 - Make journal-based merges traceable, previewable, and reversible.
 - Recover existing merge work without requiring blanket manual reannotation.
@@ -46,7 +47,7 @@ For the divided-road case in scope, a merge also declares that the median remain
 
 ## Non-goals
 
-- Automatically deciding from geometry alone whether a real-world median has an opening.
+- Adding a second merge mode or asking the annotator to reconfirm whether the selected seam has a median opening.
 - Editing or correcting unrelated lane annotations.
 - Replacing the complete road-preparation, couplet, rendering, or routing architecture.
 - Automatically merging roads with conflicting directionality or incompatible lane/divider styles.
@@ -79,7 +80,6 @@ A versioned merge record describes an overlay on source roads rather than a repl
 ```ts
 interface RoadMergeConstraintV2 {
   schemaVersion: 2
-  mode: 'visual_continuity' | 'continuous_median_side_access'
   primarySegmentKey: string
   secondarySegmentKey: string
   junctionNodeId: number
@@ -89,11 +89,13 @@ interface RoadMergeConstraintV2 {
 }
 ```
 
-`visual_continuity` covers a simple OSM split with no special side-access restriction. `continuous_median_side_access` covers the confirmed divided-road case and activates the no-cross-median transition policy.
+V2 has one merge meaning: preserve road continuity without turning the selected seam into a traversable intersection. When no side road is incident, the side-access transition rules have no effect. When a side road is incident, it remains connected to its adjacent carriageway and cannot target the opposite side through the seam.
 
 The journal continues to provide sequence, timestamp, author, operation, and target identity. V2 stores only the stable semantic and provenance fields required to replay the operation.
 
 Source `RoadFeature` objects are not replaced. Their identities, nodes, geometry, directionality, lane attributes, and `sourceSegments` remain authoritative.
+
+If road preparation or couplet processing absorbs the secondary segment, it must publish a provenance alias from the dropped key to the surviving road and source span. Existing side-road references are resolved through that alias before graph construction; a dropped active representation is not a deleted routing target.
 
 ### 2. Sequential merge resolver
 
@@ -116,7 +118,7 @@ The routing graph keeps every source edge and junction node. A merge seam provid
 isTransitionAllowed(incomingEdge, junctionNode, outgoingEdge): boolean
 ```
 
-For `continuous_median_side_access`:
+At a merged seam:
 
 - main-road through transitions in both legal travel directions are allowed;
 - side-road transitions connect only to the physically adjacent carriageway;
@@ -156,7 +158,7 @@ An offline audit produces one row per active legacy merge with:
 - original sequence, timestamp, author, and merge key;
 - original primary and secondary keys;
 - resolved source identities and junction;
-- mode candidate;
+- resolved source roads, side roads, and permitted transition candidate;
 - compatibility and geometry checks;
 - route/connectivity comparison;
 - classification and reason.
@@ -165,7 +167,7 @@ Classifications are:
 
 - `replayable`: current identities resolve and validation passes;
 - `recoverable_via_provenance`: an exact active identity is gone but a unique `sourceSegments` or snapshot match exists;
-- `needs_manual_review`: multiple candidates or physical semantics cannot be determined safely;
+- `needs_manual_review`: multiple source, junction, or side-road target candidates prevent a unique reconstruction;
 - `legacy_destructive`: the source is absent from the current database and requires historical reconstruction;
 - `invalid`: evidence proves the recorded segments cannot form the requested seam.
 
@@ -177,10 +179,10 @@ Validation runs before a V2 record becomes active and is atomic.
 
 - Both source references resolve uniquely.
 - The two main-road spans meet at the declared junction and form a plausible continuation.
-- Mode is explicit.
 - Directionality and one-way behavior are compatible with the requested through movement.
 - Lane count, divider type, center style, road class, and other routing/render-critical seam fields are compatible.
-- For continuous-median side access, the adjacent carriageway and permitted side transitions are unambiguous.
+- When a side road exists, its adjacent carriageway and permitted side transitions are unambiguous.
+- Every side-road reference that previously targeted an absorbed secondary segment resolves to the correct surviving source span.
 - The operation does not remove an incident edge, source identity, or annotation reference.
 - A preview graph passes connectivity and route checks.
 
@@ -235,7 +237,7 @@ The current inspected journal contains 48 active unique legacy merge keys. In th
 - 47 contain a secondary-node snapshot;
 - all retain journal trace information such as sequence, timestamp, author, and source keys.
 
-These counts are migration inputs, not a guarantee that all physical semantics are correct.
+These counts are migration inputs, not a guarantee that every source and side-road target can already be resolved by the current implementation. The legacy merge action itself is treated as the annotator's declaration of the same V2 continuity semantics.
 
 ### Migration procedure
 
@@ -256,7 +258,7 @@ The migration never edits or deletes a historical record in place.
 An unusable record is not silently retained and is not erased.
 
 - If a source can be reconstructed uniquely, migration creates a reviewable V2 candidate.
-- If physical median semantics are ambiguous, a teammate confirms only the local seam and permitted turns; the complete road does not need to be reannotated.
+- If the original source, junction, or side-road target mapping is ambiguous, a teammate confirms only that local mapping; the complete road does not need to be reannotated.
 - If the source was destructively removed, the recovery tool extracts a candidate from Git history and compares it with current geometry and annotations.
 - After review, an invalid legacy effect is disabled with an append-only tombstone and the graph is rebuilt from source roads.
 - Existing dependent annotations are remapped through stable provenance. They are reported rather than discarded when a unique mapping is impossible.
@@ -267,7 +269,7 @@ No migration may publish a junction that has neither a validated original topolo
 
 The merge inspector shows:
 
-- current status and mode;
+- current status and resolved source mapping;
 - author, timestamp, sequence, and original merge key;
 - source roads, junction node, and absorbed provenance;
 - allowed and forbidden transition preview;
@@ -283,7 +285,7 @@ The merge inspector shows:
 - Missing exact source key: search provenance before reporting an orphan.
 - Multiple provenance matches: do not choose automatically; classify for manual review.
 - Incompatible seam fields: reject with the conflicting field names and values.
-- Ambiguous adjacent carriageway: reject continuous-median activation.
+- Ambiguous adjacent carriageway or dropped-target remap: reject activation and identify the unresolved candidates.
 - Routing invariant failure: reject and include the affected origin/destination and pre/post route comparison.
 - Rendering invariant failure: reject and identify the extra or missing seam styles.
 - Journal write failure: leave the old active state unchanged.
@@ -319,7 +321,7 @@ The merge inspector shows:
 - Median and main-road styles remain continuous through the seam.
 - The main road gains no stop line, arrow, bay, median opening, or intersection cap.
 - Explicit side-road endpoint markings remain visible.
-- A median-opening/nonmerge fixture retains ordinary intersection rendering.
+- A junction with no merge record retains ordinary intersection rendering and routing.
 - Visual suppression never marks a road deleted for routing.
 
 ### Recovery tests

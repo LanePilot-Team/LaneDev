@@ -1,6 +1,6 @@
 import { angleDelta, bearing, haversine } from './geo.ts'
 import type { EnhancementRecord } from './enhancements'
-import type { RoadFeature } from './roads'
+import type { RoadFeature, RoadProps } from './roads'
 
 export interface ResolvedRoadMerge {
   mergeKey: string
@@ -63,8 +63,39 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
       ? [...road.properties.oneSideEntryNodes] : undefined,
     oneSideEntryAccess: road.properties.oneSideEntryAccess
       ? road.properties.oneSideEntryAccess.map((entry) => ({ ...entry })) : undefined,
+    roadMergeDerived: road.properties.roadMergeDerived
+      ? road.properties.roadMergeDerived.map((entry) => ({
+        ...entry,
+        previousAccess: entry.previousAccess ? { ...entry.previousAccess } : undefined,
+      })) : undefined,
   },
 })
+
+const cloneWithoutDerivedRoadMerge = (road: RoadFeature): RoadFeature => {
+  const clean = cloneRoad(road)
+  for (const derived of clean.properties.roadMergeDerived ?? []) {
+    if (!derived.hadNode) {
+      clean.properties.oneSideEntryNodes = clean.properties.oneSideEntryNodes
+        ?.filter((node) => node !== derived.nodeId)
+    }
+    clean.properties.oneSideEntryAccess = clean.properties.oneSideEntryAccess
+      ?.filter((entry) => entry.nodeId !== derived.nodeId)
+    if (derived.previousAccess) {
+      clean.properties.oneSideEntryAccess = [
+        ...(clean.properties.oneSideEntryAccess ?? []),
+        { ...derived.previousAccess },
+      ]
+    }
+  }
+  if (clean.properties.oneSideEntryNodes?.length === 0) {
+    clean.properties.oneSideEntryNodes = undefined
+  }
+  if (clean.properties.oneSideEntryAccess?.length === 0) {
+    clean.properties.oneSideEntryAccess = undefined
+  }
+  clean.properties.roadMergeDerived = undefined
+  return clean
+}
 
 const activeMergeRecordsInSequence = (journal: EnhancementRecord[]) => {
   const active = new Map<string, EnhancementRecord>()
@@ -235,6 +266,20 @@ const suppressOverlappedRenderStubs = (
 }
 
 const registerOneSideAccess = (road: RoadFeature, nodeId: number, allowedBack: boolean) => {
+    const priorDerived = road.properties.roadMergeDerived
+      ?.find((entry) => entry.nodeId === nodeId)
+    if (!priorDerived) {
+      const previousAccess = road.properties.oneSideEntryAccess
+        ?.find((entry) => entry.nodeId === nodeId)
+      road.properties.roadMergeDerived = [
+        ...(road.properties.roadMergeDerived ?? []),
+        {
+          nodeId,
+          hadNode: road.properties.oneSideEntryNodes?.includes(nodeId) ?? false,
+          previousAccess: previousAccess ? { ...previousAccess } : undefined,
+        },
+      ]
+    }
     const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
     restricted.add(nodeId)
     road.properties.oneSideEntryNodes = [...restricted]
@@ -383,13 +428,133 @@ export function buildRoadMergeViews(
   roads: RoadFeature[],
   journal: EnhancementRecord[],
 ): RoadMergeViews {
-  const { working, resolved, rows } = replayRoadMerges(roads, journal)
-  applyRoutingConstraints(roads, resolved)
+  const routingRoads = roads.map(cloneWithoutDerivedRoadMerge)
+  const { working, resolved, rows } = replayRoadMerges(routingRoads, journal)
+  applyRoutingConstraints(routingRoads, resolved)
   suppressOverlappedRenderStubs(working, resolved)
   return {
-    routingRoads: roads,
+    routingRoads,
     renderRoads: working.filter((road) => !road.properties.renderHidden),
     resolved,
     rows,
   }
+}
+
+const MERGE_CRITICAL_FIELDS = [
+  'highway', 'oneway',
+  'lanesForward', 'lanesBackward',
+  'motoF', 'motoB', 'motoSepF', 'motoSepB',
+  'centerM', 'centerKind', 'roadMarkingMode',
+] as const satisfies readonly (keyof RoadProps)[]
+
+export interface RoadMergePreview {
+  ok: boolean
+  reason?: string
+  record?: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>
+  resolved?: ResolvedRoadMerge
+}
+
+const sourceSnapshot = (road: RoadFeature) => JSON.stringify({
+  osmId: road.properties.osm_id,
+  navSegmentKey: road.properties.navSegmentKey,
+  splitIndex: road.properties.splitIndex,
+  blockNode: road.properties.blockNode,
+  nodeRefs: road.properties.nodes,
+  sourceSegments: road.properties.sourceSegments,
+})
+
+export function previewRoadMerge(
+  roads: RoadFeature[],
+  journal: EnhancementRecord[],
+  primary: RoadFeature,
+  secondary: RoadFeature,
+): RoadMergePreview {
+  const primaryKey = roadBlockKey(primary)
+  const secondaryKey = roadBlockKey(secondary)
+  if (primary === secondary || primaryKey === secondaryKey) {
+    return { ok: false, reason: '不可選取同一路段兩次' }
+  }
+  const normalizeName = (name?: string) => (name ?? '').replace(/\s+/g, '').trim()
+  if (!normalizeName(primary.properties.name)
+    || normalizeName(primary.properties.name) !== normalizeName(secondary.properties.name)) {
+    return { ok: false, reason: '兩段道路名稱不同，為避免誤併已拒絕' }
+  }
+  const conflicts = MERGE_CRITICAL_FIELDS.filter((field) =>
+    JSON.stringify(primary.properties[field]) !== JSON.stringify(secondary.properties[field]))
+  if (conflicts.length) {
+    const detail = conflicts.map((field) =>
+      `${field}=${JSON.stringify(primary.properties[field])}/${JSON.stringify(secondary.properties[field])}`)
+      .join('、')
+    return { ok: false, reason: `關鍵欄位不同：${detail}` }
+  }
+  const join = endpointJoin(primary, secondary)
+  if (!join || join.distanceM > 1) {
+    return { ok: false, reason: join
+      ? `兩段端點未相接（相距 ${join.distanceM.toFixed(1)} 公尺）`
+      : '道路幾何點不足' }
+  }
+  const primaryCoordinates = primary.geometry.coordinates as [number, number][]
+  const secondaryCoordinates = secondary.geometry.coordinates as [number, number][]
+  const primaryAway = join.primaryAt === 'start'
+    ? bearing(primaryCoordinates[0], primaryCoordinates[1])
+    : bearing(primaryCoordinates[primaryCoordinates.length - 1],
+      primaryCoordinates[primaryCoordinates.length - 2])
+  const secondaryAway = join.secondaryAt === 'start'
+    ? bearing(secondaryCoordinates[0], secondaryCoordinates[1])
+    : bearing(secondaryCoordinates[secondaryCoordinates.length - 1],
+      secondaryCoordinates[secondaryCoordinates.length - 2])
+  const straightError = Math.abs(180 - Math.abs(angleDelta(primaryAway, secondaryAway)))
+  if (straightError > 15) {
+    return { ok: false,
+      reason: `兩段接合角度不是平順直線（偏差 ${straightError.toFixed(1)}°）` }
+  }
+  const junctionNode = join.primaryAt === 'start'
+    ? primary.properties.nodes[0]
+    : primary.properties.nodes[primary.properties.nodes.length - 1]
+  const record: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'> = {
+    op: 'set',
+    target: {
+      type: 'road_merge',
+      key: `merge/${primaryKey}+${secondaryKey}`,
+    },
+    fields: {
+      schema_version: 2,
+      primary: primaryKey,
+      secondary: secondaryKey,
+      junction_node: junctionNode,
+      primary_source: sourceSnapshot(primary),
+      secondary_source: sourceSnapshot(secondary),
+      secondary_nodes: JSON.stringify(secondary.properties.nodes),
+    },
+  }
+  const candidate: EnhancementRecord = {
+    ...record,
+    seq: (journal[journal.length - 1]?.seq ?? 0) + 1,
+    ts: 'preview',
+    author: 'preview',
+  }
+  const result = resolveRoadMerges(roads, [...journal, candidate])
+  const row = result.rows.find((item) => item.mergeKey === record.target.key)
+  if (!row?.resolved) {
+    return { ok: false, reason: row?.detail ?? '無法解析新增捏合' }
+  }
+  return { ok: true, record, resolved: row.resolved }
+}
+
+export function activeMergeForRoad(
+  rows: RoadMergeReplayRow[],
+  road: RoadFeature,
+): RoadMergeReplayRow | undefined {
+  const key = roadBlockKey(road)
+  return rows.find((row) => {
+    if (!row.resolved) return false
+    if (row.primaryKey === key || row.secondaryKey === key) return true
+    const parsedKeys = [row.primaryKey, row.secondaryKey]
+      .map(parseBlockKey).filter((parsed): parsed is ParsedBlockKey => !!parsed)
+    return parsedKeys.some((parsed) =>
+      (road.properties.osm_id === parsed.wayId
+        && road.properties.nodes.includes(parsed.blockNode))
+      || road.properties.sourceSegments.some((source) =>
+        source.osmId === parsed.wayId && source.nodeRefs.includes(parsed.blockNode)))
+  })
 }

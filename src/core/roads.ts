@@ -79,6 +79,12 @@ export interface RoadProps {
   oneSideEntryNodes?: number[]
   /** 捏合接縫實際相鄰的主路方向；舊紀錄缺少時以 allowedBack=false 相容。 */
   oneSideEntryAccess?: { nodeId: number; allowedBack: boolean }[]
+  /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
+  roadMergeDerived?: {
+    nodeId: number
+    hadNode: boolean
+    previousAccess?: { nodeId: number; allowedBack: boolean }
+  }[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */

@@ -228,6 +228,23 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         way/{editRoad.osmId}@b/{editRoad.blockNode} · {editRoad.oneway === 'yes' ? '單行' : '雙向'}
         {' '}· 僅影響目前兩個路口之間的區塊
       </div>
+      {editor.activeRoadMerge && (
+        <section className="edit-section">
+          <h3>道路捏合歷程</h3>
+          <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
+          <div className="road-src">
+            作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
+            {' '}時間：{editor.activeRoadMerge.resolved?.sourceTs ?? '未知'}<br />
+            主段：{editor.activeRoadMerge.primaryKey}<br />
+            次段：{editor.activeRoadMerge.secondaryKey}<br />
+            解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}
+          </div>
+          <div className="edit-row">
+            <span>恢復原始道路與路口拓撲</span>
+            <button className="mini danger" onClick={editor.undoRoadMerge}>撤銷捏合</button>
+          </div>
+        </section>
+      )}
       <div className="edit-notice">先調整下列設定；按「儲存並套用」後才會寫入 journal 並重繪道路。</div>
 
       <section className="edit-section">

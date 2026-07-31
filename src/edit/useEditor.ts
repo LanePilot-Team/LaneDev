@@ -4,8 +4,11 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
+  appendRecord, applyToRoads, foldJournal, type EnhancementRecord,
 } from '../core/enhancements'
+import {
+  activeMergeForRoad, previewRoadMerge, type RoadMergeReplayRow,
+} from '../core/roadMerge'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -127,6 +130,8 @@ export interface Editor {
   setIslandPanel: (v: { pairKey: string; wEff?: number } | null) => void
   overrideTwin: (key: string, fields: Record<string, string | number>) => void
   editWarn: string | null
+  activeRoadMerge: RoadMergeReplayRow | null
+  undoRoadMerge: () => void
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
   /** 拉線新增道路（road 工具）：草稿與屬性 */
@@ -153,6 +158,7 @@ export interface Editor {
 
 export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef: RefObject<Mode>): Editor {
   const [editTool, setEditToolState] = useState<EditTool>('lane')
+  const [activeRoadMerge, setActiveRoadMerge] = useState<RoadMergeReplayRow | null>(null)
   const editToolRef = useRef<EditTool>('lane')
   const setEditTool = (t: EditTool) => {
     editToolRef.current = t
@@ -379,38 +385,37 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             warn('第一段已不存在，請重新選取')
             return
           }
-          const check = checkRoadMerge(first, road)
-          if (!check.ok) {
-            warn(`無法合併：${check.reason}`)
+          const preview = previewRoadMerge(
+            core.roadsRef.current, core.journalRef.current, first, road)
+          if (!preview.ok || !preview.record) {
+            warn(`無法捏合：${preview.reason ?? '驗證失敗'}`)
             return
           }
           const ok = window.confirm(
             `確定將這兩段「${first.properties.name ?? '未命名道路'}」捏合為同一路段嗎？\n\n`
-            + `保留：${check.primaryKey}\n合併：${check.secondaryKey}\n\n`
-            + '此操作只寫一筆可逆的 journal 紀錄，不會改動靜態 OSM：'
-            + '第二段將退出活躍路網，整段共用第一段的道路與偏心道樣式。'
-            + '中間接點退化成 T 字路口——主路正向可進出側街，對向不得與側街互動。'
+            + `保留：${String(preview.record.fields?.primary)}\n`
+            + `接合：${String(preview.record.fields?.secondary)}\n\n`
+            + '捏合後：\n'
+            + '・主路與中央島跨接縫連續繪製\n'
+            + '・側路仍保留並連接相鄰方向\n'
+            + '・禁止跨中央島左轉、直穿及迴轉\n'
+            + '・原始道路與路口來源保留，可由歷程撤銷'
           )
           if (!ok) return
+          const previewRecord: EnhancementRecord = {
+            ...preview.record,
+            seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
+            ts: new Date().toISOString(),
+            author: 'preview',
+          }
+          if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+            warn('捏合預覽未通過，未寫入紀錄')
+            return
+          }
           mergeFirstRef.current = null
           setEditRoad(null)
-          // 捏合 = journal 紀錄，跟車道標記走同一條儲存路徑。靜態 OSM 完全不動，
-          // 所以重建 segments 炸不到它；區塊鍵也不會因為接點改名而變成孤兒。
-          core.journalRef.current = appendRecord(core.journalRef.current, {
-            op: 'set',
-            target: {
-              type: 'road_merge',
-              key: `merge/${check.primaryKey}+${check.secondaryKey}`,
-            },
-            fields: {
-              primary: check.primaryKey,
-              secondary: check.secondaryKey,
-              // 次段的節點清單：journalForMergedRoads 用它把路口元件的鍵
-              // 精準改掛到主段，不必整條次 way 一起搬。
-              secondary_nodes: JSON.stringify(road.properties.nodes),
-            },
-          })
-          core.replaceBaseMap(core.roadsRef.current)
+          core.journalRef.current = appendRecord(core.journalRef.current, preview.record)
+          core.refreshRoadMergeViews()
           warn('已捏合為同一路段（可在歷程中還原）')
           return
         }
@@ -498,6 +503,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const inferredB = inferMotoBox(true)
       const motoBoxF = mbF?.coveredLanes ?? 0
       const motoBoxB = mbB?.coveredLanes ?? 0
+      setActiveRoadMerge(activeMergeForRoad(core.mergeReplayRef.current, road) ?? null)
       setEditRoad({
         osmId: p2.osm_id, name: p2.name, oneway: p2.oneway,
         blockNode: p2.blockNode,
@@ -881,10 +887,35 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     setZonePanel(null)
     setBayPanel(null)
     setIslandPanel(null)
+    setActiveRoadMerge(null)
     updateDraft(null)
     setSelNewRoad(null)
     core.selectedZoneRef.current = null
     core.selectedVehicleRef.current = null
+  }
+
+  function undoRoadMerge() {
+    const row = activeRoadMerge
+    if (!row) return
+    const tombstone: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'> = {
+      op: 'delete',
+      target: { type: 'road_merge', key: row.mergeKey },
+      fields: { supersedes_seq: row.resolved?.sourceSeq ?? 0 },
+    }
+    const previewRecord: EnhancementRecord = {
+      ...tombstone,
+      seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
+      ts: new Date().toISOString(),
+      author: 'preview',
+    }
+    if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+      warn('撤銷預覽失敗，未變更歷程')
+      return
+    }
+    core.journalRef.current = appendRecord(core.journalRef.current, tombstone)
+    core.refreshRoadMergeViews()
+    setActiveRoadMerge(null)
+    warn('已撤銷道路捏合；原始主路、次段與路口拓撲已恢復')
   }
 
   // ── 鍵盤：Del 刪除選取的車輛（待轉區改由面板管理，不再拖曳/旋轉）。
@@ -913,6 +944,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
+    activeRoadMerge, undoRoadMerge,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
     overrideBay, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,

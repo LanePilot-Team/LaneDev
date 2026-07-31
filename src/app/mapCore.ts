@@ -22,7 +22,7 @@ import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
 import {
-  buildRoadMergeViews, type RoadMergeReplayRow,
+  buildRoadMergeViews, type RoadMergeReplayRow, type RoadMergeViews,
 } from '../core/roadMerge'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
@@ -262,7 +262,11 @@ export interface MapCore {
   /** 路面與車道分隔線重繪（journal 覆寫/標註匯入後） */
   redrawRoads: () => void
   /** 換 Base Layer：換路網、重建圖、重算 bay（匯入地圖用） */
-  replaceBaseMap: (roads: RoadFeature[]) => void
+  replaceBaseMap: (roads: RoadFeature[]) => boolean
+  /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
+  previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
+  /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
+  refreshRoadMergeViews: (journal?: EnhancementRecord[]) => boolean
 }
 
 export interface MapCoreState {
@@ -429,23 +433,41 @@ export function useMapCore(
     elevatedLayerRef.current?.setModel(model)
   }, [])
 
-  const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
-    const active = roads.filter((road) => !road.properties.deleted)
-    const mergeView = buildRoadMergeViews(active, journalRef.current)
+  const previewJournal = useCallback((journal: EnhancementRecord[]) => {
+    try {
+      return buildRoadMergeViews(roadsRef.current, journal)
+    } catch (error) {
+      console.error('道路捏合預覽失敗', error)
+      return null
+    }
+  }, [])
+
+  const refreshRoadMergeViews = useCallback((journal = journalRef.current) => {
+    const mergeView = previewJournal(journal)
+    if (!mergeView) return false
     roadsRef.current = mergeView.routingRoads
     renderRoadsRef.current = mergeView.renderRoads
     mergeReplayRef.current = mergeView.rows
+    graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
+    intersectionsRef.current = graphRef.current.intersections()
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
+    for (const row of mergeView.rows) {
+      if (!row.resolved) console.warn(`未套用道路捏合 ${row.mergeKey}：${row.detail}`)
+    }
     redrawRoads()
+    rebuildElevation(renderRoadsRef.current)
+    refreshBays()
+    return true
+  }, [previewJournal, redrawRoads, refreshBays, rebuildElevation])
+
+  const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
+    roadsRef.current = roads.filter((road) => !road.properties.deleted)
     laneGuidanceIndexRef.current = guidanceIndexForRoads(
       laneGuidanceRecordsRef.current, roadsRef.current,
       nodeRemapRef.current, wayRemapRef.current,
     )
-    graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
-    intersectionsRef.current = graphRef.current.intersections()
-    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
-    rebuildElevation(renderRoadsRef.current)
-    refreshBays()
-  }, [redrawRoads, refreshBays, rebuildElevation])
+    return refreshRoadMergeViews()
+  }, [refreshRoadMergeViews])
 
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
@@ -457,7 +479,7 @@ export function useMapCore(
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
       src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
-      redrawRoads, replaceBaseMap,
+      redrawRoads, replaceBaseMap, previewJournal, refreshRoadMergeViews,
     }
   }
 

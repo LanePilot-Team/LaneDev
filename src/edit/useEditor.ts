@@ -11,6 +11,7 @@ import {
   type RoadMergeReplayRow,
 } from '../core/roadMerge'
 import { flushStaticEditorSave } from '../core/staticDatabase'
+import { saveRoadMergeReloadState } from '../core/roadMergeReload'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -133,6 +134,7 @@ export interface Editor {
   overrideTwin: (key: string, fields: Record<string, string | number>) => void
   editWarn: string | null
   activeRoadMerge: RoadMergeReplayRow | null
+  setActiveRoadMerge: React.Dispatch<React.SetStateAction<RoadMergeReplayRow | null>>
   undoRoadMerge: () => void
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
@@ -168,6 +170,23 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     if (t !== 'road') { updateDraft(null); setSelNewRoad(null) } // 換工具＝放棄拉線草稿
   }
   const [editRoad, setEditRoad] = useState<EditRoadState | null>(null)
+
+  function rememberRoadMergeReloadState() {
+    const map = core.mapRef.current
+    if (!map) return
+    const center = map.getCenter()
+    saveRoadMergeReloadState(window.sessionStorage, {
+      camera: {
+        center: [center.lng, center.lat],
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+      },
+      mode: 'edit',
+      editTool,
+      editRoad,
+    })
+  }
   const [zonePanel, setZonePanel] = useState<{ nodeId: number; options: TurnOption[] } | null>(null)
   const [bayPanel, setBayPanel] = useState<{ nodeId: number } | null>(null)
   const [islandPanel, setIslandPanel] = useState<{ pairKey: string; wEff?: number } | null>(null)
@@ -415,6 +434,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             warn('捏合預覽未通過，未寫入紀錄')
             return
           }
+          rememberRoadMergeReloadState()
           mergeFirstRef.current = null
           setEditRoad(null)
           core.journalRef.current = appendRecord(core.journalRef.current, preview.record, author)
@@ -922,6 +942,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       warn('撤銷預覽失敗，未變更歷程')
       return
     }
+    rememberRoadMergeReloadState()
     core.journalRef.current = appendRecord(core.journalRef.current, tombstone, author)
     setActiveRoadMerge(null)
     warn('撤銷已確認，正在儲存並重新載入路網…')
@@ -960,7 +981,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
-    activeRoadMerge, undoRoadMerge,
+    activeRoadMerge, setActiveRoadMerge, undoRoadMerge,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
     overrideBay, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,

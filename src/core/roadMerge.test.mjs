@@ -354,3 +354,61 @@ test('撤銷後重建會清除先前衍生的接縫限制', () => {
   assert.equal(restored.routingRoads.some((item) => item.properties.oneSideEntryNodes?.includes(2)),
     false)
 })
+
+test('新版捏合撤銷後繪圖恢復原始兩段道路', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+  assert.equal(preview.ok, true)
+  const set = {
+    ...preview.record, seq: 1, ts: '2026-08-01T00:00:00Z', author: 'anna',
+  }
+  const del = {
+    seq: 2, ts: '2026-08-01T00:00:01Z', author: 'anna', op: 'delete',
+    target: { type: 'road_merge', key: set.target.key },
+    fields: { supersedes_seq: 1 },
+  }
+
+  const merged = buildRoadMergeViews([primary, secondary], [set])
+  const restored = buildRoadMergeViews([primary, secondary], [set, del])
+
+  assert.equal(merged.renderRoads.filter((item) => item.properties.osm_id === 100).length, 1)
+  assert.deepEqual(
+    restored.renderRoads
+      .filter((item) => item.properties.osm_id === 100)
+      .map((item) => item.properties.nodes),
+    [[1, 2], [2, 3]],
+  )
+})
+
+test('舊版捏合升級後仍可撤銷並恢復原始兩段繪圖', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const legacy = mergeRecord({ seq: 1 })
+  const legacyDelete = mergeRecord({ seq: 2, op: 'delete' })
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+  assert.equal(preview.ok, true)
+  const upgraded = {
+    ...preview.record, seq: 3, ts: '2026-08-01T00:00:02Z', author: 'migration',
+  }
+  const undo = {
+    seq: 4, ts: '2026-08-01T00:00:03Z', author: 'anna', op: 'delete',
+    target: { type: 'road_merge', key: upgraded.target.key },
+    fields: { supersedes_seq: 3 },
+  }
+
+  const upgradedView = buildRoadMergeViews(
+    [primary, secondary], [legacy, legacyDelete, upgraded],
+  )
+  const restored = buildRoadMergeViews(
+    [primary, secondary], [legacy, legacyDelete, upgraded, undo],
+  )
+
+  assert.equal(upgradedView.renderRoads.filter((item) => item.properties.osm_id === 100).length, 1)
+  assert.deepEqual(
+    restored.renderRoads
+      .filter((item) => item.properties.osm_id === 100)
+      .map((item) => item.properties.nodes),
+    [[1, 2], [2, 3]],
+  )
+})

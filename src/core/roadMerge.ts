@@ -58,6 +58,8 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
     sourceSegments: road.properties.sourceSegments.map((source) => ({
       ...source,
       nodeRefs: [...source.nodeRefs],
+      coordinates: source.coordinates
+        ?.map((coordinate) => [...coordinate] as [number, number]),
     })),
     oneSideEntryNodes: road.properties.oneSideEntryNodes
       ? [...road.properties.oneSideEntryNodes] : undefined,
@@ -117,10 +119,41 @@ const candidatesFor = (roads: RoadFeature[], key: string): BlockResolution[] => 
     road.properties.osm_id === parsed.wayId
     && road.properties.nodes.includes(parsed.blockNode))
   if (activeNode.length) return activeNode.map((road) => ({ road, by: 'active-node' }))
-  return roads
+  const provenance = roads
     .filter((road) => road.properties.sourceSegments.some((source) =>
       source.osmId === parsed.wayId && source.nodeRefs.includes(parsed.blockNode)))
-    .map((road) => ({ road, by: 'source-segment' }))
+    .map((road): BlockResolution => ({ road, by: 'source-segment' }))
+  // couplet 的 sourceSegments 可能保存整條被 drop way 的完整 nodeRefs，因而讓
+  // 每個切塊都看似候選；目前活躍幾何仍實際承載 blockNode 時，以它精確消歧。
+  const carryingNode = provenance.filter(({ road }) =>
+    road.properties.nodes.includes(parsed.blockNode))
+  if (carryingNode.length) return carryingNode
+
+  const pointToRoadM = (point: [number, number], road: RoadFeature) => {
+    const coordinates = road.geometry.coordinates as [number, number][]
+    const kx = 111320 * Math.cos(point[1] * Math.PI / 180)
+    const ky = 110540
+    let best = Infinity
+    for (let index = 0; index < coordinates.length - 1; index++) {
+      const a = coordinates[index], b = coordinates[index + 1]
+      const dx = (b[0] - a[0]) * kx, dy = (b[1] - a[1]) * ky
+      const px = (point[0] - a[0]) * kx, py = (point[1] - a[1]) * ky
+      const length2 = dx * dx + dy * dy
+      const t = length2 > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / length2)) : 0
+      best = Math.min(best, Math.hypot(px - t * dx, py - t * dy))
+    }
+    return best
+  }
+  const positioned = provenance.filter(({ road }) => {
+    for (const source of road.properties.sourceSegments) {
+      if (source.osmId !== parsed.wayId || !source.coordinates) continue
+      const index = source.nodeRefs.indexOf(parsed.blockNode)
+      const point = source.coordinates[index]
+      if (point && pointToRoadM(point, road) <= 25) return true
+    }
+    return false
+  })
+  return positioned.length ? positioned : provenance
 }
 
 const endpointJoin = (primary: RoadFeature, secondary: RoadFeature) => {

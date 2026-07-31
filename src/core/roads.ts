@@ -22,6 +22,8 @@ export interface RoadSourceSegment {
   navSegmentKey: string
   splitIndex: number
   nodeRefs: number[]
+  /** 原始 segment 幾何，供被 couplet 吸收後依舊能以舊 node 精確定位。 */
+  coordinates?: [number, number][]
 }
 
 /**
@@ -315,6 +317,7 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       navSegmentKey: props.navSegmentKey,
       splitIndex: props.splitIndex,
       nodeRefs: [...nodes],
+      coordinates: coords.map((coordinate) => [...coordinate] as [number, number]),
     }]
     computeDerived(props)
     out.push({

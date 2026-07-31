@@ -134,6 +134,38 @@ test('sourceSegments 找到多個候選時不猜測並列入人工確認', () =>
   assert.match(result.rows[0].detail, /候選不唯一/)
 })
 
+test('完整來源節點被多段共用時，以來源節點座標定位正確區塊', () => {
+  const source = {
+    osmId: 267715892,
+    navSegmentKey: 'way/267715892',
+    splitIndex: 0,
+    nodeRefs: [2, 3, 4],
+    coordinates: [[120, 22], [120, 22.001], [120, 22.002]],
+  }
+  const near = road({
+    osmId: 900, blockNode: 90, nodes: [90, 91], sourceSegments: [source],
+    coordinates: [[120.00001, 22.00099], [120.00001, 22.0015]],
+  })
+  const far = road({
+    osmId: 901, blockNode: 92, nodes: [92, 93], sourceSegments: [source],
+    coordinates: [[120.01, 22.01], [120.011, 22.011]],
+  })
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22.0005], [120, 22.00099]],
+  })
+  const record = mergeRecord({
+    primary: 'way/100@b/1',
+    secondary: 'way/267715892@b/3',
+    secondaryNodes: [2, 3],
+  })
+
+  const result = resolveRoadMerges([primary, near, far], [record])
+
+  assert.equal(result.rows[0].status, 'recoverable_via_provenance')
+  assert.equal(result.resolved[0].secondary.properties.osm_id, near.properties.osm_id)
+})
+
 test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {
   const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
   const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })

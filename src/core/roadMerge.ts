@@ -58,8 +58,9 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
     sourceSegments: road.properties.sourceSegments.map((source) => ({
       ...source,
       nodeRefs: [...source.nodeRefs],
-      coordinates: source.coordinates
-        ?.map((coordinate) => [...coordinate] as [number, number]),
+      // 來源幾何只用於追溯消歧，建立視圖時不會修改；共用可避免每次預覽
+      // 都複製整份 OSM 幾何，尤其 UI 在捏合前後連續建圖時會造成記憶體尖峰。
+      coordinates: source.coordinates,
     })),
     oneSideEntryNodes: road.properties.oneSideEntryNodes
       ? [...road.properties.oneSideEntryNodes] : undefined,
@@ -455,6 +456,10 @@ export interface RoadMergeViews {
   renderRoads: RoadFeature[]
   resolved: ResolvedRoadMerge[]
   rows: RoadMergeReplayRow[]
+}
+
+export function selectPreparedRoadMergeView<T>(prepared: T | undefined, build: () => T): T {
+  return prepared === undefined ? build() : prepared
 }
 
 export function buildRoadMergeViews(

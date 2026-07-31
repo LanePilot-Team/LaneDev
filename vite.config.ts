@@ -388,5 +388,8 @@ export default defineConfig(({ command }) => ({
     host: true,
     port: 5190,
     allowedHosts: true,
+    // 編輯器已在記憶體套用相同 journal；API 的原子寫檔不應讓 Vite
+    // 把整個 MapLibre 頁面重載，看起來像捏合或撤銷時 crash。
+    watch: { ignored: ['**/public/data/road_database.json'] },
   },
 }))

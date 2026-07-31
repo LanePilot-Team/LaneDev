@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, foldJournal, type EnhancementRecord,
+  appendRecord, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
 } from '../core/enhancements'
 import {
   activeMergeForRoad, previewRoadMerge, type RoadMergeReplayRow,
@@ -402,20 +402,22 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             + '・原始道路與路口來源保留，可由歷程撤銷'
           )
           if (!ok) return
+          const author = getAuthor()
           const previewRecord: EnhancementRecord = {
             ...preview.record,
             seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
             ts: new Date().toISOString(),
-            author: 'preview',
+            author,
           }
-          if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+          const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
+          if (!preparedView) {
             warn('捏合預覽未通過，未寫入紀錄')
             return
           }
           mergeFirstRef.current = null
           setEditRoad(null)
-          core.journalRef.current = appendRecord(core.journalRef.current, preview.record)
-          core.refreshRoadMergeViews()
+          core.journalRef.current = appendRecord(core.journalRef.current, preview.record, author)
+          core.refreshRoadMergeViews(undefined, preparedView)
           warn('已捏合為同一路段（可在歷程中還原）')
           return
         }
@@ -902,18 +904,20 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       target: { type: 'road_merge', key: row.mergeKey },
       fields: { supersedes_seq: row.resolved?.sourceSeq ?? 0 },
     }
+    const author = getAuthor()
     const previewRecord: EnhancementRecord = {
       ...tombstone,
       seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
       ts: new Date().toISOString(),
-      author: 'preview',
+      author,
     }
-    if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+    const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
+    if (!preparedView) {
       warn('撤銷預覽失敗，未變更歷程')
       return
     }
-    core.journalRef.current = appendRecord(core.journalRef.current, tombstone)
-    core.refreshRoadMergeViews()
+    core.journalRef.current = appendRecord(core.journalRef.current, tombstone, author)
+    core.refreshRoadMergeViews(undefined, preparedView)
     setActiveRoadMerge(null)
     warn('已撤銷道路捏合；原始主路、次段與路口拓撲已恢復')
   }

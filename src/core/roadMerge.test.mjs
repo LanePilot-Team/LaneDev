@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   activeMergeForRoad, buildRoadMergeViews, previewRoadMerge, resolveRoadMerges,
 } from './roadMerge.ts'
+import * as roadMergeModule from './roadMerge.ts'
 
 const coordinate = (node) => [120 + node / 1_000_000, 22]
 
@@ -164,6 +165,37 @@ test('完整來源節點被多段共用時，以來源節點座標定位正確�
 
   assert.equal(result.rows[0].status, 'recoverable_via_provenance')
   assert.equal(result.resolved[0].secondary.properties.osm_id, near.properties.osm_id)
+})
+
+test('來源幾何是不可變追溯資料，建立視圖時不得重複深拷貝', () => {
+  const coordinates = [[120, 22], [120, 22.001]]
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    sourceSegments: [{
+      osmId: 100, navSegmentKey: 'way/100', splitIndex: 0,
+      nodeRefs: [1, 2], coordinates,
+    }],
+  })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const view = buildRoadMergeViews([primary, secondary], [mergeRecord()])
+
+  assert.equal(view.routingRoads[0].properties.sourceSegments[0].coordinates, coordinates)
+})
+
+test('已有預先解析的捏合視圖時不得再次呼叫完整建圖器', () => {
+  const select = roadMergeModule.selectPreparedRoadMergeView
+  assert.equal(typeof select, 'function', '需要可沿用預覽結果的視圖選擇器')
+  let builds = 0
+  const prepared = { routingRoads: [], renderRoads: [], resolved: [], rows: [] }
+
+  const selected = select?.(prepared, () => {
+    builds++
+    return { routingRoads: [], renderRoads: [], resolved: [], rows: [] }
+  })
+
+  assert.equal(selected, prepared)
+  assert.equal(builds, 0)
 })
 
 test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {

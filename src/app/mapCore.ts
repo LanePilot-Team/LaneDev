@@ -22,7 +22,8 @@ import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
 import {
-  buildRoadMergeViews, type RoadMergeReplayRow, type RoadMergeViews,
+  buildRoadMergeViews, selectPreparedRoadMergeView,
+  type RoadMergeReplayRow, type RoadMergeViews,
 } from '../core/roadMerge'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
@@ -266,7 +267,9 @@ export interface MapCore {
   /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
   previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
   /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
-  refreshRoadMergeViews: (journal?: EnhancementRecord[]) => boolean
+  refreshRoadMergeViews: (
+    journal?: EnhancementRecord[], preparedView?: RoadMergeViews,
+  ) => boolean
 }
 
 export interface MapCoreState {
@@ -442,8 +445,14 @@ export function useMapCore(
     }
   }, [])
 
-  const refreshRoadMergeViews = useCallback((journal = journalRef.current) => {
-    const mergeView = previewJournal(journal)
+  const refreshRoadMergeViews = useCallback((
+    journal = journalRef.current,
+    preparedView?: RoadMergeViews,
+  ) => {
+    const mergeView = selectPreparedRoadMergeView(
+      preparedView,
+      () => previewJournal(journal),
+    )
     if (!mergeView) return false
     roadsRef.current = mergeView.routingRoads
     renderRoadsRef.current = mergeView.renderRoads

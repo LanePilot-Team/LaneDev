@@ -2,15 +2,15 @@
 //
 // 起終點吸附：不再 snap 到路口節點，而是吸到「任意路段的最近頂點」，
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
-import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
-import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads'
-import { oneSideEntryTransitionAllowed } from './oneSideEntry'
+import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo.ts'
+import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads.ts'
+import { oneSideEntryTransitionAllowed } from './oneSideEntry.ts'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
   type LaneGuidanceIndex,
   type ResolvedLaneGuidance,
-} from './laneGuidance'
+} from './laneGuidance.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -792,57 +792,71 @@ export class RoadGraph {
     if (startEntries.length === 0 || goalEntries.length === 0) return null
 
     const goalPos = toP
-    const g = new Map<number, number>()
-    const cameFrom = new Map<number, Edge>()
-    const startPart = new Map<number, Edge>()
-    const open = new Map<number, number>()
+    const edgeIdentity = (edge: Edge) =>
+      `${edge.road.properties.navSegmentKey}:${edge.road.properties.blockNode}`
+      + `:${edge.from}>${edge.to}:${edge.back ? 1 : 0}`
+    const stateKey = (node: number, incoming: Edge) => `${node}|${edgeIdentity(incoming)}`
+    const states = new Map<string, { node: number; incoming: Edge }>()
+    const g = new Map<string, number>()
+    const cameFrom = new Map<string, { previous: string; edge: Edge }>()
+    const startPart = new Map<string, Edge>()
+    const open = new Map<string, number>()
     for (const s of startEntries) {
-      if (s.part.timeS < (g.get(s.node) ?? Infinity)) {
-        g.set(s.node, s.part.timeS)
-        startPart.set(s.node, s.part)
-        open.set(s.node, s.part.timeS +
+      const key = stateKey(s.node, s.part)
+      if (s.part.timeS < (g.get(key) ?? Infinity)) {
+        states.set(key, { node: s.node, incoming: s.part })
+        g.set(key, s.part.timeS)
+        startPart.set(key, s.part)
+        open.set(key, s.part.timeS +
           haversine(this.nodePos.get(s.node) ?? s.part.coords[s.part.coords.length - 1], goalPos) / MAX_SPEED_MS)
       }
     }
-    const closed = new Set<number>()
-    let bestGoal: { cost: number; node: number; part: Edge } | null = null
+    const closed = new Set<string>()
+    let bestGoal: { cost: number; stateKey: string; part: Edge } | null = null
 
     while (open.size > 0) {
-      let cur = -1, curF = Infinity
-      for (const [id, f] of open) if (f < curF) { curF = f; cur = id }
-      open.delete(cur)
+      let currentKey = '', curF = Infinity
+      for (const [key, f] of open) if (f < curF) { curF = f; currentKey = key }
+      open.delete(currentKey)
       if (bestGoal && curF >= bestGoal.cost) break
-      closed.add(cur)
+      const current = states.get(currentKey)
+      if (!current) continue
+      closed.add(currentKey)
       for (const ge of goalEntries) {
-        if (ge.node === cur) {
-          const total = g.get(cur)! + ge.part.timeS
-          if (!bestGoal || total < bestGoal.cost) bestGoal = { cost: total, node: cur, part: ge.part }
+        if (ge.node === current.node) {
+          if (!transitionAllowed(current.incoming, ge.part, current.node)) continue
+          const total = g.get(currentKey)! + ge.part.timeS
+          if (!bestGoal || total < bestGoal.cost) {
+            bestGoal = { cost: total, stateKey: currentKey, part: ge.part }
+          }
         }
       }
-      for (const e of this.adj.get(cur) ?? []) {
-        if (closed.has(e.to)) continue
+      for (const e of this.adj.get(current.node) ?? []) {
         if (!edgeAllowed(e.road, e.back, profile)) continue
-        if (!transitionAllowed(cameFrom.get(cur) ?? startPart.get(cur), e, cur)) continue
-        const tentative = g.get(cur)! + e.timeS
-        if (tentative < (g.get(e.to) ?? Infinity)) {
-          g.set(e.to, tentative)
-          cameFrom.set(e.to, e)
-          startPart.delete(e.to) // 走圖比直接入口便宜，起點部分邊不再適用
-          open.set(e.to, tentative + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
+        if (!transitionAllowed(current.incoming, e, current.node)) continue
+        const nextKey = stateKey(e.to, e)
+        if (closed.has(nextKey)) continue
+        const tentative = g.get(currentKey)! + e.timeS
+        if (tentative < (g.get(nextKey) ?? Infinity)) {
+          states.set(nextKey, { node: e.to, incoming: e })
+          g.set(nextKey, tentative)
+          cameFrom.set(nextKey, { previous: currentKey, edge: e })
+          open.set(nextKey, tentative
+            + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
         }
       }
     }
     if (!bestGoal) return null
 
     const chain: Edge[] = [bestGoal.part]
-    let cur = bestGoal.node
-    while (!startPart.has(cur)) {
-      const e = cameFrom.get(cur)
-      if (!e) return null // 理論上不會發生
-      chain.unshift(e)
-      cur = e.from
+    let currentKey = bestGoal.stateKey
+    while (!startPart.has(currentKey)) {
+      const previous = cameFrom.get(currentKey)
+      if (!previous) return null // 理論上不會發生
+      chain.unshift(previous.edge)
+      currentKey = previous.previous
     }
-    chain.unshift(startPart.get(cur)!)
+    chain.unshift(startPart.get(currentKey)!)
     return this.assemble(chain.filter((e) => e.coords.length >= 2), profile)
   }
 

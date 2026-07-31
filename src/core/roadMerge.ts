@@ -1,4 +1,4 @@
-import { haversine } from './geo.ts'
+import { angleDelta, bearing, haversine } from './geo.ts'
 import type { EnhancementRecord } from './enhancements'
 import type { RoadFeature } from './roads'
 
@@ -61,6 +61,8 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
     })),
     oneSideEntryNodes: road.properties.oneSideEntryNodes
       ? [...road.properties.oneSideEntryNodes] : undefined,
+    oneSideEntryAccess: road.properties.oneSideEntryAccess
+      ? road.properties.oneSideEntryAccess.map((entry) => ({ ...entry })) : undefined,
   },
 })
 
@@ -106,6 +108,73 @@ const endpointJoin = (primary: RoadFeature, secondary: RoadFeature) => {
   ].map((pair) => ({ ...pair, distanceM: haversine(a[pair.primaryIndex], b[pair.secondaryIndex]) }))
     .sort((left, right) => left.distanceM - right.distanceM)
   return pairs[0]
+}
+
+const mergedMainAroundJunction = (
+  primary: RoadFeature,
+  secondary: RoadFeature,
+  primaryAt: 'start' | 'end',
+  secondaryAt: 'start' | 'end',
+  junctionNodeId: number,
+) => {
+  if (primary === secondary) {
+    const index = primary.properties.nodes.indexOf(junctionNodeId)
+    const coordinates = primary.geometry.coordinates as [number, number][]
+    return index > 0 && index < coordinates.length - 1
+      ? { before: coordinates[index - 1], join: coordinates[index], after: coordinates[index + 1] }
+      : null
+  }
+  const primaryCoordinates = primary.geometry.coordinates as [number, number][]
+  const secondaryCoordinates0 = secondary.geometry.coordinates as [number, number][]
+  const secondaryCoordinates = secondaryAt === 'start'
+    ? secondaryCoordinates0 : [...secondaryCoordinates0].reverse()
+  if (primaryAt === 'end') {
+    return {
+      before: primaryCoordinates[primaryCoordinates.length - 2],
+      join: primaryCoordinates[primaryCoordinates.length - 1],
+      after: secondaryCoordinates[1],
+    }
+  }
+  return {
+    before: secondaryCoordinates[1],
+    join: primaryCoordinates[0],
+    after: primaryCoordinates[1],
+  }
+}
+
+const isRightTurn = (from: number, to: number) => {
+  const delta = angleDelta(from, to)
+  return delta >= 20 && delta <= 160
+}
+
+const resolveAdjacentDirection = (
+  primary: RoadFeature,
+  secondary: RoadFeature,
+  primaryAt: 'start' | 'end',
+  secondaryAt: 'start' | 'end',
+  junctionNodeId: number,
+  sideRoads: RoadFeature[],
+): boolean | null => {
+  if (!sideRoads.length) return null
+  const main = mergedMainAroundJunction(
+    primary, secondary, primaryAt, secondaryAt, junctionNodeId)
+  if (!main) return null
+  const candidates = new Set<boolean>()
+  for (const side of sideRoads) {
+    const index = side.properties.nodes.indexOf(junctionNodeId)
+    const coordinates = side.geometry.coordinates as [number, number][]
+    if (index !== 0 && index !== coordinates.length - 1) return null
+    const other = index === 0 ? coordinates[1] : coordinates[coordinates.length - 2]
+    const sideOut = bearing(main.join, other)
+    const sideIn = bearing(other, main.join)
+    const forward = isRightTurn(bearing(main.before, main.join), sideOut)
+      && isRightTurn(sideIn, bearing(main.join, main.after))
+    const backward = isRightTurn(bearing(main.after, main.join), sideOut)
+      && isRightTurn(sideIn, bearing(main.join, main.before))
+    if (forward === backward) return null
+    candidates.add(backward)
+  }
+  return candidates.size === 1 ? [...candidates][0] : null
 }
 
 const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge) => {
@@ -160,11 +229,20 @@ const applyRoutingConstraints = (
   merges: ResolvedRoadMerge[],
 ) => {
   for (const merge of merges) {
+    if (merge.adjacentBack === null) continue
     const primary = candidatesFor(routingRoads, merge.primaryKey)
     if (primary.length !== 1) continue
     const restricted = new Set(primary[0].road.properties.oneSideEntryNodes ?? [])
     restricted.add(merge.junctionNodeId)
     primary[0].road.properties.oneSideEntryNodes = [...restricted]
+    const access = new Map(
+      (primary[0].road.properties.oneSideEntryAccess ?? [])
+        .map((entry) => [entry.nodeId, entry] as const))
+    access.set(merge.junctionNodeId, {
+      nodeId: merge.junctionNodeId,
+      allowedBack: merge.adjacentBack,
+    })
+    primary[0].road.properties.oneSideEntryAccess = [...access.values()]
   }
 }
 
@@ -212,6 +290,23 @@ function replayRoadMerges(
     const usedProvenance = alreadyAbsorbed
       || primaryResolution.by === 'source-segment'
       || secondaryResolution.by === 'source-segment'
+    const sideRoads = working.filter((road) =>
+      road !== primaryResolution.road
+      && road !== secondaryResolution.road
+      && road.properties.nodes.includes(junctionNodeId))
+    const adjacentBack = resolveAdjacentDirection(
+      primaryResolution.road,
+      secondaryResolution.road,
+      primaryAt,
+      secondaryAt,
+      junctionNodeId,
+      sideRoads,
+    )
+    if (sideRoads.length && adjacentBack === null) {
+      rows.push({ ...rowBase, status: 'needs_manual_review',
+        detail: '無法唯一判定側路相鄰的主路方向' })
+      continue
+    }
     const merge: ResolvedRoadMerge = {
       ...rowBase,
       primary: primaryResolution.road,
@@ -219,7 +314,7 @@ function replayRoadMerges(
       junctionNodeId,
       primaryAt,
       secondaryAt,
-      adjacentBack: null,
+      adjacentBack,
       resolvedBy: alreadyAbsorbed ? 'already-absorbed'
         : usedProvenance ? 'source-segment'
           : primaryResolution.by === 'active-node' || secondaryResolution.by === 'active-node'

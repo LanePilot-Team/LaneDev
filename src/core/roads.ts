@@ -8,7 +8,7 @@ import { buffer, lineOffset } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
 import {
   angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M,
-} from './geo'
+} from './geo.ts'
 
 export const MOTO_LANE_M = 2.2
 
@@ -77,6 +77,8 @@ export interface RoadProps {
   startTurnLanesB?: string[]
   /** 捏合後仍保留的側街入口；主路 forward 可轉入，backward 不可跨線左轉。 */
   oneSideEntryNodes?: number[]
+  /** 捏合接縫實際相鄰的主路方向；舊紀錄缺少時以 allowedBack=false 相容。 */
+  oneSideEntryAccess?: { nodeId: number; allowedBack: boolean }[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */

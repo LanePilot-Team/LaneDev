@@ -5,10 +5,10 @@ import { buildRoadMergeViews, resolveRoadMerges } from './roadMerge.ts'
 const coordinate = (node) => [120 + node / 1_000_000, 22]
 
 const road = ({
-  osmId, blockNode, nodes, sourceSegments, name = '測試路',
+  osmId, blockNode, nodes, sourceSegments, name = '測試路', coordinates,
 }) => ({
   type: 'Feature',
-  geometry: { type: 'LineString', coordinates: nodes.map(coordinate) },
+  geometry: { type: 'LineString', coordinates: coordinates ?? nodes.map(coordinate) },
   properties: {
     osm_id: osmId,
     blockNode,
@@ -135,7 +135,11 @@ test('sourceSegments 找到多個候選時不猜測並列入人工確認', () =>
 test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {
   const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
   const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
-  const side = road({ osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路' })
+  const join = coordinate(2)
+  const side = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路',
+    coordinates: [join, [join[0], join[1] - 0.001]],
+  })
   const source = [primary, secondary, side]
 
   const view = buildRoadMergeViews(source, [mergeRecord()])
@@ -162,4 +166,25 @@ test('與捏合主路重疊的短碎段只從繪圖隱藏，仍保留在導航�
   assert.ok(routingStub)
   assert.equal(routingStub.properties.deleted, undefined)
   assert.equal(view.renderRoads.some((item) => item.properties.blockNode === 50), false)
+})
+
+test('依側路所在方向判定相鄰主路方向，不固定假設 forward', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const westSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '西側路',
+    coordinates: [[120, 22.001], [119.999, 22.001]],
+  })
+
+  const view = buildRoadMergeViews([primary, secondary, westSide], [mergeRecord()])
+
+  assert.deepEqual(primary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
+  assert.equal(view.resolved[0].adjacentBack, true)
 })

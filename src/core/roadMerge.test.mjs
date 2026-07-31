@@ -198,6 +198,20 @@ test('已有預先解析的捏合視圖時不得再次呼叫完整建圖器', ()
   assert.equal(builds, 0)
 })
 
+test('結構性捏合更新必須等 journal 排隊寫入且落盤後才重新載入', async () => {
+  const reloadAfterSave = roadMergeModule.reloadAfterRoadMergeSave
+  assert.equal(typeof reloadAfterSave, 'function', '需要安全完成捏合儲存再重新載入的流程')
+  const events = []
+  queueMicrotask(() => events.push('journal-queued'))
+
+  await reloadAfterSave?.(
+    async () => { events.push('database-flushed') },
+    () => { events.push('page-reloaded') },
+  )
+
+  assert.deepEqual(events, ['journal-queued', 'database-flushed', 'page-reloaded'])
+})
+
 test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {
   const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
   const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })

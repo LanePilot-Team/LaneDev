@@ -7,8 +7,10 @@ import {
   appendRecord, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
 } from '../core/enhancements'
 import {
-  activeMergeForRoad, previewRoadMerge, type RoadMergeReplayRow,
+  activeMergeForRoad, previewRoadMerge, reloadAfterRoadMergeSave,
+  type RoadMergeReplayRow,
 } from '../core/roadMerge'
+import { flushStaticEditorSave } from '../core/staticDatabase'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -409,16 +411,21 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             ts: new Date().toISOString(),
             author,
           }
-          const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
-          if (!preparedView) {
+          if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
             warn('捏合預覽未通過，未寫入紀錄')
             return
           }
           mergeFirstRef.current = null
           setEditRoad(null)
           core.journalRef.current = appendRecord(core.journalRef.current, preview.record, author)
-          core.refreshRoadMergeViews(undefined, preparedView)
-          warn('已捏合為同一路段（可在歷程中還原）')
+          warn('捏合已確認，正在儲存並重新載入路網…')
+          void reloadAfterRoadMergeSave(
+            flushStaticEditorSave,
+            () => window.location.reload(),
+          ).catch((error) => {
+            console.error('道路捏合儲存失敗', error)
+            warn('道路捏合尚未完成儲存，頁面未重新載入')
+          })
           return
         }
       } else {
@@ -911,15 +918,20 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       ts: new Date().toISOString(),
       author,
     }
-    const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
-    if (!preparedView) {
+    if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
       warn('撤銷預覽失敗，未變更歷程')
       return
     }
     core.journalRef.current = appendRecord(core.journalRef.current, tombstone, author)
-    core.refreshRoadMergeViews(undefined, preparedView)
     setActiveRoadMerge(null)
-    warn('已撤銷道路捏合；原始主路、次段與路口拓撲已恢復')
+    warn('撤銷已確認，正在儲存並重新載入路網…')
+    void reloadAfterRoadMergeSave(
+      flushStaticEditorSave,
+      () => window.location.reload(),
+    ).catch((error) => {
+      console.error('道路捏合撤銷儲存失敗', error)
+      warn('道路捏合撤銷尚未完成儲存，頁面未重新載入')
+    })
   }
 
   // ── 鍵盤：Del 刪除選取的車輛（待轉區改由面板管理，不再拖曳/旋轉）。

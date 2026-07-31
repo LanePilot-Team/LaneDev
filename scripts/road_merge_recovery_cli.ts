@@ -19,6 +19,7 @@ const argument = (name: string, fallback = '') =>
 const databasePath = resolve(argument('db', 'public/data/road_database.json'))
 const outputPath = resolve(argument(
   'json', `artifacts/road-merge-recovery-${new Date().toISOString().slice(0, 10)}.json`))
+const sourceCommit = argument('source-commit')
 const databaseJson = readFileSync(databasePath, 'utf8')
 const databaseSha256 = createHash('sha256').update(databaseJson).digest('hex')
 const db = JSON.parse(databaseJson)
@@ -29,12 +30,13 @@ const journal = (db.editor?.journal ?? []) as EnhancementRecord[]
 applyToRoads(roads, foldJournal(journal))
 const active = roads.filter((road: RoadFeature) => !road.properties.deleted)
 const report = buildRecoveryReport(active, journal, databasePath)
-const reviewReport = buildReviewReport(report, databaseSha256)
+const reviewReport = buildReviewReport(report, databaseSha256, sourceCommit)
 mkdirSync(dirname(outputPath), { recursive: true })
 writeFileSync(outputPath, `${JSON.stringify(reviewReport, null, 2)}\n`, 'utf8')
 console.log(`道路捏合復原報告：${outputPath}`)
 console.log(`總計 ${report.rows.length}：${Object.entries(report.totals)
   .map(([status, count]) => `${status}=${count}`).join('｜')}`)
+console.log(`處理：已升級=${reviewReport.summary.upgraded}｜已回退=${reviewReport.summary.rolledBack}`)
 
 if (process.argv.includes('--apply')) {
   const approvedPathArg = argument('approved-report')
@@ -47,13 +49,18 @@ if (process.argv.includes('--apply')) {
   if (approved.sourceDatabaseSha256 !== databaseSha256) {
     throw new Error('正式資料庫已變更，必須重新產生並審核復原報告')
   }
+  if (approved.sourceCommit !== reviewReport.sourceCommit) {
+    throw new Error('核准報告的來源 commit 與目前指定值不同')
+  }
   if (reviewRowsSignature(approved.rows) !== reviewRowsSignature(reviewReport.rows)) {
     throw new Error('核准報告與目前重播結果不同，必須重新審核')
   }
-  const unsafe = approved.totals.needs_manual_review
-    + approved.totals.legacy_destructive + approved.totals.invalid
-  if (unsafe > 0) throw new Error(`核准報告仍有 ${unsafe} 筆需人工處理，不產生遷移候選`)
-  const candidatePath = resolve('artifacts/road_database-road-merge-v2-candidate.json')
+  if (approved.summary.upgraded !== reviewReport.summary.upgraded
+    || approved.summary.rolledBack !== reviewReport.summary.rolledBack) {
+    throw new Error('核准報告的升級／回退數量與目前結果不同')
+  }
+  const candidatePath = resolve(argument(
+    'output-db', 'artifacts/road_database-road-merge-v2-candidate.json'))
   const candidateDb = {
     ...db,
     editor: {
@@ -61,6 +68,10 @@ if (process.argv.includes('--apply')) {
       journal: [...journal, ...report.migrationCandidates],
     },
   }
-  writeFileSync(candidatePath, `${JSON.stringify(candidateDb)}\n`, 'utf8')
-  console.log(`僅新增候選檔（未覆寫來源資料庫）：${candidatePath}`)
+  const candidateJson = `${JSON.stringify(candidateDb)}\n`
+  writeFileSync(candidatePath, candidateJson, 'utf8')
+  reviewReport.outputDatabaseSha256 = createHash('sha256').update(candidateJson).digest('hex')
+  writeFileSync(outputPath, `${JSON.stringify(reviewReport, null, 2)}\n`, 'utf8')
+  console.log(`已產生升級資料庫：${candidatePath}`)
+  console.log(`升級資料 SHA-256：${reviewReport.outputDatabaseSha256}`)
 }

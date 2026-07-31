@@ -1,0 +1,1232 @@
+{
+  "format": "lanedev-road-merge-recovery-v3",
+  "generatedAt": "2026-07-31T20:18:13.777Z",
+  "databasePath": "C:\\Users\\Cindy\\Desktop\\GraduationProject\\.worktrees\\lanedev-anna-latest\\public\\data\\road_database.json",
+  "sourceCommit": "origin/anna@7d2121d",
+  "sourceDatabaseSha256": "9d984b4118b5e6d1fd3aaf291645b544768e5c3134ccbbffa94f5a14d60711da",
+  "summary": {
+    "total": 48,
+    "upgraded": 43,
+    "rolledBack": 5,
+    "alreadyV2": 0
+  },
+  "totals": {
+    "replayable": 40,
+    "recoverable_via_provenance": 3,
+    "needs_manual_review": 4,
+    "legacy_destructive": 0,
+    "invalid": 1
+  },
+  "upgraded": [
+    {
+      "mergeKey": "merge/way/254325307@b/12658227994+way/254325307@b/256245347",
+      "roadName": "藍昌路",
+      "sourceSeq": 341,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325307@b/12658227994",
+      "secondaryKey": "way/254325307@b/256245347"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697254+way/312871463@b/1080696851",
+      "roadName": "德中路",
+      "sourceSeq": 1934,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/312871463@b/1080697254",
+      "secondaryKey": "way/312871463@b/1080696851"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/2206324454+way/312871463@b/8420604124",
+      "roadName": "德中路",
+      "sourceSeq": 1939,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/312871463@b/2206324454",
+      "secondaryKey": "way/312871463@b/8420604124"
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/2206324442+way/267715934@b/4585345353",
+      "roadName": "德中路",
+      "sourceSeq": 1943,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/267715934@b/2206324442",
+      "secondaryKey": "way/267715934@b/4585345353"
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/9853009726+way/267715934@b/2206324436",
+      "roadName": "德中路",
+      "sourceSeq": 1948,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/267715934@b/9853009726",
+      "secondaryKey": "way/267715934@b/2206324436"
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/1398635978",
+      "roadName": "右昌街",
+      "sourceSeq": 1963,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/1398635978"
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/256455983+way/267715913@b/2956870896",
+      "roadName": "右昌街",
+      "sourceSeq": 1964,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/267715913@b/256455983",
+      "secondaryKey": "way/267715913@b/2956870896"
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/256455983",
+      "roadName": "右昌街",
+      "sourceSeq": 1965,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/256455983"
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/1398634826+way/339750724@b/1398636099",
+      "roadName": "右昌街",
+      "sourceSeq": 1970,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/339750724@b/1398634826",
+      "secondaryKey": "way/339750724@b/1398636099"
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634826",
+      "roadName": "右昌街",
+      "sourceSeq": 1971,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634826"
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635694+way/23683314@b/1398634474",
+      "roadName": "右昌街",
+      "sourceSeq": 1978,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/23683314@b/1398635694",
+      "secondaryKey": "way/23683314@b/1398634474"
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635837+way/23683314@b/1398635694",
+      "roadName": "右昌街",
+      "sourceSeq": 1979,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/23683314@b/1398635837",
+      "secondaryKey": "way/23683314@b/1398635694"
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/265968424+way/23683314@b/1398635837",
+      "roadName": "右昌街",
+      "sourceSeq": 1980,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/23683314@b/265968424",
+      "secondaryKey": "way/23683314@b/1398635837"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176462+way/267715892@b/2401176460",
+      "roadName": "軍校路",
+      "sourceSeq": 2078,
+      "status": "recoverable_via_provenance",
+      "outcome": "upgraded",
+      "detail": "主次來源已吸收到同一存活道路",
+      "primaryKey": "way/267715892@b/2401176462",
+      "secondaryKey": "way/267715892@b/2401176460"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176466+way/267715892@b/2401176462",
+      "roadName": "軍校路",
+      "sourceSeq": 2079,
+      "status": "recoverable_via_provenance",
+      "outcome": "upgraded",
+      "detail": "主次來源已吸收到同一存活道路",
+      "primaryKey": "way/267715892@b/2401176466",
+      "secondaryKey": "way/267715892@b/2401176462"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/2401176466",
+      "roadName": "軍校路",
+      "sourceSeq": 2081,
+      "status": "recoverable_via_provenance",
+      "outcome": "upgraded",
+      "detail": "主次來源已吸收到同一存活道路",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/2401176466"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697102",
+      "roadName": "德中路",
+      "sourceSeq": 2643,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697102"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697358",
+      "roadName": "德中路",
+      "sourceSeq": 2644,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697358"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/256455721+way/312871463@b/4668515918",
+      "roadName": "德中路",
+      "sourceSeq": 2648,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/312871463@b/256455721",
+      "secondaryKey": "way/312871463@b/4668515918"
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/262083286+way/383026294@b/258786223",
+      "roadName": "軍校路",
+      "sourceSeq": 2697,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/383026294@b/262083286",
+      "secondaryKey": "way/383026294@b/258786223"
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/2938751972+way/383026294@b/2938751971",
+      "roadName": "軍校路",
+      "sourceSeq": 2708,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/383026294@b/2938751972",
+      "secondaryKey": "way/383026294@b/2938751971"
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/4315349243+way/383026294@b/2938751972",
+      "roadName": "軍校路",
+      "sourceSeq": 2709,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/383026294@b/4315349243",
+      "secondaryKey": "way/383026294@b/2938751972"
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/2206349235",
+      "roadName": "加昌路",
+      "sourceSeq": 2781,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/2206349235"
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/1400036052",
+      "roadName": "加昌路",
+      "sourceSeq": 2782,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/1400036052"
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/1400036046",
+      "roadName": "加昌路",
+      "sourceSeq": 2783,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/1400036046"
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206232294+way/280015655@b/1400036098",
+      "roadName": "加昌路",
+      "sourceSeq": 2784,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280015655@b/2206232294",
+      "secondaryKey": "way/280015655@b/1400036098"
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/2206232291",
+      "roadName": "加昌路",
+      "sourceSeq": 2785,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/2206232291"
+    },
+    {
+      "mergeKey": "merge/way/293422503@b/1400036749+way/293422503@b/304709043",
+      "roadName": "加昌路",
+      "sourceSeq": 2789,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/293422503@b/1400036749",
+      "secondaryKey": "way/293422503@b/304709043"
+    },
+    {
+      "mergeKey": "merge/way/268219230@b/1400036464+way/268219230@b/10894062953",
+      "roadName": "加昌路",
+      "sourceSeq": 2794,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/268219230@b/1400036464",
+      "secondaryKey": "way/268219230@b/10894062953"
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/2417585497+way/23976945@b/2417585494",
+      "roadName": "加昌路",
+      "sourceSeq": 2795,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/23976945@b/2417585497",
+      "secondaryKey": "way/23976945@b/2417585494"
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/1219300551+way/280277096@b/2377566099",
+      "roadName": "加昌路",
+      "sourceSeq": 2800,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280277096@b/1219300551",
+      "secondaryKey": "way/280277096@b/2377566099"
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/256730893+way/280277096@b/265599589",
+      "roadName": "加昌路",
+      "sourceSeq": 2807,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/280277096@b/256730893",
+      "secondaryKey": "way/280277096@b/265599589"
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/256245267+way/23976945@b/1401138499",
+      "roadName": "加昌路",
+      "sourceSeq": 2809,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/23976945@b/256245267",
+      "secondaryKey": "way/23976945@b/1401138499"
+    },
+    {
+      "mergeKey": "merge/way/230216178@b/2624297542+way/268219227@b/1196964687",
+      "roadName": "加昌路",
+      "sourceSeq": 2811,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/230216178@b/2624297542",
+      "secondaryKey": "way/268219227@b/1196964687"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/256455746+way/254325305@b/2379749920",
+      "roadName": "德民路",
+      "sourceSeq": 2813,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/256455746",
+      "secondaryKey": "way/254325305@b/2379749920"
+    },
+    {
+      "mergeKey": "merge/way/297138323@b/13305979122+way/1450825430@b/258784609",
+      "roadName": "藍昌路",
+      "sourceSeq": 2814,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/297138323@b/13305979122",
+      "secondaryKey": "way/1450825430@b/258784609"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1400036368+way/254325305@b/256455769",
+      "roadName": "德民路",
+      "sourceSeq": 2818,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/1400036368",
+      "secondaryKey": "way/254325305@b/256455769"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1398635729+way/254325305@b/1400036368",
+      "roadName": "德民路",
+      "sourceSeq": 2819,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/1398635729",
+      "secondaryKey": "way/254325305@b/1400036368"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/1420142022@b/13049704155",
+      "roadName": "德民路",
+      "sourceSeq": 2822,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/1420142022@b/13049704155"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/1400036861",
+      "roadName": "德民路",
+      "sourceSeq": 2824,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/1400036861"
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/3164180313",
+      "roadName": "德民路",
+      "sourceSeq": 2825,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/3164180313"
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/7477787914+way/126247850@b/12599118960",
+      "roadName": "德民路",
+      "sourceSeq": 2859,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/126247850@b/7477787914",
+      "secondaryKey": "way/126247850@b/12599118960"
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/258785765+way/126247850@b/2913992342",
+      "roadName": "德民路",
+      "sourceSeq": 2864,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/126247850@b/258785765",
+      "secondaryKey": "way/126247850@b/2913992342"
+    }
+  ],
+  "rolledBack": [
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634927",
+      "roadName": "右昌街",
+      "sourceSeq": 1972,
+      "status": "needs_manual_review",
+      "outcome": "rolled_back",
+      "detail": "無法唯一判定側路相鄰的主路方向",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634927"
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/265968430",
+      "roadName": "右昌街",
+      "sourceSeq": 1973,
+      "status": "invalid",
+      "outcome": "rolled_back",
+      "detail": "兩段端點相距 21.7 公尺",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/265968430"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/262083253",
+      "roadName": "軍校路",
+      "sourceSeq": 2083,
+      "status": "needs_manual_review",
+      "outcome": "rolled_back",
+      "detail": "來源候選不唯一（主 1／次 2）",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/262083253"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/262083266+way/267715892@b/11808717001",
+      "roadName": "軍校路",
+      "sourceSeq": 2094,
+      "status": "needs_manual_review",
+      "outcome": "rolled_back",
+      "detail": "來源候選不唯一（主 2／次 2）",
+      "primaryKey": "way/267715892@b/262083266",
+      "secondaryKey": "way/267715892@b/11808717001"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/262083269+way/267715892@b/262083266",
+      "roadName": "軍校路",
+      "sourceSeq": 2095,
+      "status": "needs_manual_review",
+      "outcome": "rolled_back",
+      "detail": "來源候選不唯一（主 1／次 2）",
+      "primaryKey": "way/267715892@b/262083269",
+      "secondaryKey": "way/267715892@b/262083266"
+    }
+  ],
+  "alreadyV2": [],
+  "rows": [
+    {
+      "mergeKey": "merge/way/254325307@b/12658227994+way/254325307@b/256245347",
+      "primaryKey": "way/254325307@b/12658227994",
+      "secondaryKey": "way/254325307@b/256245347",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 12658227994,
+        "primaryBlockKey": "way/254325307@b/12658227994",
+        "secondaryBlockKey": "way/254325307@b/256245347",
+        "resolvedBy": "exact",
+        "sourceSeq": 341,
+        "sourceTs": "2026-07-27T03:17:02.188Z",
+        "sourceAuthor": "rex"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697254+way/312871463@b/1080696851",
+      "primaryKey": "way/312871463@b/1080697254",
+      "secondaryKey": "way/312871463@b/1080696851",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080696851,
+        "primaryBlockKey": "way/312871463@b/1080697254",
+        "secondaryBlockKey": "way/312871463@b/1080696851",
+        "resolvedBy": "exact",
+        "sourceSeq": 1934,
+        "sourceTs": "2026-07-29T11:29:48.414Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/2206324454+way/312871463@b/8420604124",
+      "primaryKey": "way/312871463@b/2206324454",
+      "secondaryKey": "way/312871463@b/8420604124",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 8420604124,
+        "primaryBlockKey": "way/312871463@b/2206324454",
+        "secondaryBlockKey": "way/312871463@b/8420604124",
+        "resolvedBy": "exact",
+        "sourceSeq": 1939,
+        "sourceTs": "2026-07-29T11:31:52.901Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/2206324442+way/267715934@b/4585345353",
+      "primaryKey": "way/267715934@b/2206324442",
+      "secondaryKey": "way/267715934@b/4585345353",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4585345353,
+        "primaryBlockKey": "way/267715934@b/2206324442",
+        "secondaryBlockKey": "way/267715934@b/4585345353",
+        "resolvedBy": "exact",
+        "sourceSeq": 1943,
+        "sourceTs": "2026-07-29T11:35:05.679Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/9853009726+way/267715934@b/2206324436",
+      "primaryKey": "way/267715934@b/9853009726",
+      "secondaryKey": "way/267715934@b/2206324436",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 9853009726,
+        "primaryBlockKey": "way/267715934@b/9853009726",
+        "secondaryBlockKey": "way/267715934@b/2206324436",
+        "resolvedBy": "exact",
+        "sourceSeq": 1948,
+        "sourceTs": "2026-07-29T11:37:39.205Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/1398635978",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/1398635978",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635978,
+        "primaryBlockKey": "way/267715913@b/1398635709",
+        "secondaryBlockKey": "way/267715913@b/1398635978",
+        "resolvedBy": "exact",
+        "sourceSeq": 1963,
+        "sourceTs": "2026-07-29T12:21:10.398Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/256455983+way/267715913@b/2956870896",
+      "primaryKey": "way/267715913@b/256455983",
+      "secondaryKey": "way/267715913@b/2956870896",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2956870896,
+        "primaryBlockKey": "way/267715913@b/256455983",
+        "secondaryBlockKey": "way/267715913@b/2956870896",
+        "resolvedBy": "exact",
+        "sourceSeq": 1964,
+        "sourceTs": "2026-07-29T12:21:34.433Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/256455983",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/256455983",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635709,
+        "primaryBlockKey": "way/267715913@b/1398635709",
+        "secondaryBlockKey": "way/267715913@b/256455983",
+        "resolvedBy": "exact",
+        "sourceSeq": 1965,
+        "sourceTs": "2026-07-29T12:22:01.958Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/1398634826+way/339750724@b/1398636099",
+      "primaryKey": "way/339750724@b/1398634826",
+      "secondaryKey": "way/339750724@b/1398636099",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398636099,
+        "primaryBlockKey": "way/339750724@b/1398634826",
+        "secondaryBlockKey": "way/339750724@b/1398636099",
+        "resolvedBy": "exact",
+        "sourceSeq": 1970,
+        "sourceTs": "2026-07-29T12:27:21.501Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634826",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634826",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398634826,
+        "primaryBlockKey": "way/339750724@b/265968432",
+        "secondaryBlockKey": "way/339750724@b/1398634826",
+        "resolvedBy": "exact",
+        "sourceSeq": 1971,
+        "sourceTs": "2026-07-29T12:27:56.808Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634927",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634927",
+      "status": "needs_manual_review",
+      "detail": "無法唯一判定側路相鄰的主路方向"
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/265968430",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/265968430",
+      "status": "invalid",
+      "detail": "兩段端點相距 21.7 公尺"
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635694+way/23683314@b/1398634474",
+      "primaryKey": "way/23683314@b/1398635694",
+      "secondaryKey": "way/23683314@b/1398634474",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398634474,
+        "primaryBlockKey": "way/23683314@b/1398635694",
+        "secondaryBlockKey": "way/23683314@b/1398634474",
+        "resolvedBy": "exact",
+        "sourceSeq": 1978,
+        "sourceTs": "2026-07-29T12:32:09.080Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635837+way/23683314@b/1398635694",
+      "primaryKey": "way/23683314@b/1398635837",
+      "secondaryKey": "way/23683314@b/1398635694",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635694,
+        "primaryBlockKey": "way/23683314@b/1398635837",
+        "secondaryBlockKey": "way/23683314@b/1398635694",
+        "resolvedBy": "exact",
+        "sourceSeq": 1979,
+        "sourceTs": "2026-07-29T12:32:44.907Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/265968424+way/23683314@b/1398635837",
+      "primaryKey": "way/23683314@b/265968424",
+      "secondaryKey": "way/23683314@b/1398635837",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635837,
+        "primaryBlockKey": "way/23683314@b/265968424",
+        "secondaryBlockKey": "way/23683314@b/1398635837",
+        "resolvedBy": "exact",
+        "sourceSeq": 1980,
+        "sourceTs": "2026-07-29T12:33:06.485Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176462+way/267715892@b/2401176460",
+      "primaryKey": "way/267715892@b/2401176462",
+      "secondaryKey": "way/267715892@b/2401176460",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176460,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 2078,
+        "sourceTs": "2026-07-29T13:40:07.226Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176466+way/267715892@b/2401176462",
+      "primaryKey": "way/267715892@b/2401176466",
+      "secondaryKey": "way/267715892@b/2401176462",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176462,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 2079,
+        "sourceTs": "2026-07-29T13:41:23.429Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/2401176466",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/2401176466",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176466,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 2081,
+        "sourceTs": "2026-07-29T13:42:38.134Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/262083253",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/262083253",
+      "status": "needs_manual_review",
+      "detail": "來源候選不唯一（主 1／次 2）"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/262083266+way/267715892@b/11808717001",
+      "primaryKey": "way/267715892@b/262083266",
+      "secondaryKey": "way/267715892@b/11808717001",
+      "status": "needs_manual_review",
+      "detail": "來源候選不唯一（主 2／次 2）"
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/262083269+way/267715892@b/262083266",
+      "primaryKey": "way/267715892@b/262083269",
+      "secondaryKey": "way/267715892@b/262083266",
+      "status": "needs_manual_review",
+      "detail": "來源候選不唯一（主 1／次 2）"
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697102",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697102",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080697102,
+        "primaryBlockKey": "way/312871463@b/1080697514",
+        "secondaryBlockKey": "way/312871463@b/1080697102",
+        "resolvedBy": "exact",
+        "sourceSeq": 2643,
+        "sourceTs": "2026-07-30T02:01:15.157Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697358",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697358",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080697358,
+        "primaryBlockKey": "way/312871463@b/1080697514",
+        "secondaryBlockKey": "way/312871463@b/1080697358",
+        "resolvedBy": "exact",
+        "sourceSeq": 2644,
+        "sourceTs": "2026-07-30T02:02:16.092Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/256455721+way/312871463@b/4668515918",
+      "primaryKey": "way/312871463@b/256455721",
+      "secondaryKey": "way/312871463@b/4668515918",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4668515918,
+        "primaryBlockKey": "way/312871463@b/256455721",
+        "secondaryBlockKey": "way/312871463@b/4668515918",
+        "resolvedBy": "exact",
+        "sourceSeq": 2648,
+        "sourceTs": "2026-07-30T02:03:57.450Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/262083286+way/383026294@b/258786223",
+      "primaryKey": "way/383026294@b/262083286",
+      "secondaryKey": "way/383026294@b/258786223",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 262083286,
+        "primaryBlockKey": "way/383026294@b/262083286",
+        "secondaryBlockKey": "way/383026294@b/258786223",
+        "resolvedBy": "exact",
+        "sourceSeq": 2697,
+        "sourceTs": "2026-07-30T02:43:34.941Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/2938751972+way/383026294@b/2938751971",
+      "primaryKey": "way/383026294@b/2938751972",
+      "secondaryKey": "way/383026294@b/2938751971",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2938751971,
+        "primaryBlockKey": "way/383026294@b/2938751972",
+        "secondaryBlockKey": "way/383026294@b/2938751971",
+        "resolvedBy": "exact",
+        "sourceSeq": 2708,
+        "sourceTs": "2026-07-30T02:50:53.535Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/4315349243+way/383026294@b/2938751972",
+      "primaryKey": "way/383026294@b/4315349243",
+      "secondaryKey": "way/383026294@b/2938751972",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2938751972,
+        "primaryBlockKey": "way/383026294@b/4315349243",
+        "secondaryBlockKey": "way/383026294@b/2938751972",
+        "resolvedBy": "exact",
+        "sourceSeq": 2709,
+        "sourceTs": "2026-07-30T02:51:49.313Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/2206349235",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/2206349235",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206349235,
+        "primaryBlockKey": "way/280015655@b/2206349237",
+        "secondaryBlockKey": "way/280015655@b/2206349235",
+        "resolvedBy": "exact",
+        "sourceSeq": 2781,
+        "sourceTs": "2026-07-30T04:35:00.126Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/1400036052",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/1400036052",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206349237,
+        "primaryBlockKey": "way/280015655@b/2206349237",
+        "secondaryBlockKey": "way/280015655@b/1400036052",
+        "resolvedBy": "exact",
+        "sourceSeq": 2782,
+        "sourceTs": "2026-07-30T04:36:08.833Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/1400036046",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/1400036046",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036405,
+        "primaryBlockKey": "way/280015655@b/1400036405",
+        "secondaryBlockKey": "way/280015655@b/1400036046",
+        "resolvedBy": "exact",
+        "sourceSeq": 2783,
+        "sourceTs": "2026-07-30T04:37:32.109Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206232294+way/280015655@b/1400036098",
+      "primaryKey": "way/280015655@b/2206232294",
+      "secondaryKey": "way/280015655@b/1400036098",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036098,
+        "primaryBlockKey": "way/280015655@b/2206232294",
+        "secondaryBlockKey": "way/280015655@b/1400036098",
+        "resolvedBy": "exact",
+        "sourceSeq": 2784,
+        "sourceTs": "2026-07-30T07:03:54.256Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/2206232291",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/2206232291",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036046,
+        "primaryBlockKey": "way/280015655@b/1400036405",
+        "secondaryBlockKey": "way/280015655@b/2206232291",
+        "resolvedBy": "exact",
+        "sourceSeq": 2785,
+        "sourceTs": "2026-07-30T07:05:53.620Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/293422503@b/1400036749+way/293422503@b/304709043",
+      "primaryKey": "way/293422503@b/1400036749",
+      "secondaryKey": "way/293422503@b/304709043",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036749,
+        "primaryBlockKey": "way/293422503@b/1400036749",
+        "secondaryBlockKey": "way/293422503@b/304709043",
+        "resolvedBy": "exact",
+        "sourceSeq": 2789,
+        "sourceTs": "2026-07-30T07:07:52.799Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/268219230@b/1400036464+way/268219230@b/10894062953",
+      "primaryKey": "way/268219230@b/1400036464",
+      "secondaryKey": "way/268219230@b/10894062953",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 10894062953,
+        "primaryBlockKey": "way/268219230@b/1400036464",
+        "secondaryBlockKey": "way/268219230@b/10894062953",
+        "resolvedBy": "exact",
+        "sourceSeq": 2794,
+        "sourceTs": "2026-07-30T07:09:53.534Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/2417585497+way/23976945@b/2417585494",
+      "primaryKey": "way/23976945@b/2417585497",
+      "secondaryKey": "way/23976945@b/2417585494",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2417585494,
+        "primaryBlockKey": "way/23976945@b/2417585497",
+        "secondaryBlockKey": "way/23976945@b/2417585494",
+        "resolvedBy": "exact",
+        "sourceSeq": 2795,
+        "sourceTs": "2026-07-30T07:21:05.371Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/1219300551+way/280277096@b/2377566099",
+      "primaryKey": "way/280277096@b/1219300551",
+      "secondaryKey": "way/280277096@b/2377566099",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1219300551,
+        "primaryBlockKey": "way/280277096@b/1219300551",
+        "secondaryBlockKey": "way/280277096@b/2377566099",
+        "resolvedBy": "exact",
+        "sourceSeq": 2800,
+        "sourceTs": "2026-07-30T07:29:31.602Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/256730893+way/280277096@b/265599589",
+      "primaryKey": "way/280277096@b/256730893",
+      "secondaryKey": "way/280277096@b/265599589",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 265599589,
+        "primaryBlockKey": "way/280277096@b/256730893",
+        "secondaryBlockKey": "way/280277096@b/265599589",
+        "resolvedBy": "exact",
+        "sourceSeq": 2807,
+        "sourceTs": "2026-07-30T07:35:39.375Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/256245267+way/23976945@b/1401138499",
+      "primaryKey": "way/23976945@b/256245267",
+      "secondaryKey": "way/23976945@b/1401138499",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1401138499,
+        "primaryBlockKey": "way/23976945@b/256245267",
+        "secondaryBlockKey": "way/23976945@b/1401138499",
+        "resolvedBy": "exact",
+        "sourceSeq": 2809,
+        "sourceTs": "2026-07-30T07:37:43.755Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/230216178@b/2624297542+way/268219227@b/1196964687",
+      "primaryKey": "way/230216178@b/2624297542",
+      "secondaryKey": "way/268219227@b/1196964687",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1196964687,
+        "primaryBlockKey": "way/230216178@b/2624297542",
+        "secondaryBlockKey": "way/268219227@b/1196964687",
+        "resolvedBy": "exact",
+        "sourceSeq": 2811,
+        "sourceTs": "2026-07-30T07:39:38.334Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/256455746+way/254325305@b/2379749920",
+      "primaryKey": "way/254325305@b/256455746",
+      "secondaryKey": "way/254325305@b/2379749920",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2379749920,
+        "primaryBlockKey": "way/254325305@b/256455746",
+        "secondaryBlockKey": "way/254325305@b/2379749920",
+        "resolvedBy": "exact",
+        "sourceSeq": 2813,
+        "sourceTs": "2026-07-30T07:51:32.644Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/297138323@b/13305979122+way/1450825430@b/258784609",
+      "primaryKey": "way/297138323@b/13305979122",
+      "secondaryKey": "way/1450825430@b/258784609",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 13305979122,
+        "primaryBlockKey": "way/297138323@b/13305979122",
+        "secondaryBlockKey": "way/1450825430@b/258784609",
+        "resolvedBy": "exact",
+        "sourceSeq": 2814,
+        "sourceTs": "2026-07-30T08:08:53.922Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1400036368+way/254325305@b/256455769",
+      "primaryKey": "way/254325305@b/1400036368",
+      "secondaryKey": "way/254325305@b/256455769",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 256455769,
+        "primaryBlockKey": "way/254325305@b/1400036368",
+        "secondaryBlockKey": "way/254325305@b/256455769",
+        "resolvedBy": "exact",
+        "sourceSeq": 2818,
+        "sourceTs": "2026-07-30T08:19:07.425Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1398635729+way/254325305@b/1400036368",
+      "primaryKey": "way/254325305@b/1398635729",
+      "secondaryKey": "way/254325305@b/1400036368",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036368,
+        "primaryBlockKey": "way/254325305@b/1398635729",
+        "secondaryBlockKey": "way/254325305@b/1400036368",
+        "resolvedBy": "exact",
+        "sourceSeq": 2819,
+        "sourceTs": "2026-07-30T08:19:48.470Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/1420142022@b/13049704155",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/1420142022@b/13049704155",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 13049704155,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/1420142022@b/13049704155",
+        "resolvedBy": "exact",
+        "sourceSeq": 2822,
+        "sourceTs": "2026-07-30T08:24:34.404Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/1400036861",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/1400036861",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1401138287,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/254325305@b/1400036861",
+        "resolvedBy": "exact",
+        "sourceSeq": 2824,
+        "sourceTs": "2026-07-30T08:29:48.258Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/3164180313",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/3164180313",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036861,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/254325305@b/3164180313",
+        "resolvedBy": "exact",
+        "sourceSeq": 2825,
+        "sourceTs": "2026-07-30T08:29:48.258Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/7477787914+way/126247850@b/12599118960",
+      "primaryKey": "way/126247850@b/7477787914",
+      "secondaryKey": "way/126247850@b/12599118960",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 12599118960,
+        "primaryBlockKey": "way/126247850@b/7477787914",
+        "secondaryBlockKey": "way/126247850@b/12599118960",
+        "resolvedBy": "exact",
+        "sourceSeq": 2859,
+        "sourceTs": "2026-07-30T09:44:23.806Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/258785765+way/126247850@b/2913992342",
+      "primaryKey": "way/126247850@b/258785765",
+      "secondaryKey": "way/126247850@b/2913992342",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2913992342,
+        "primaryBlockKey": "way/126247850@b/258785765",
+        "secondaryBlockKey": "way/126247850@b/2913992342",
+        "resolvedBy": "exact",
+        "sourceSeq": 2864,
+        "sourceTs": "2026-07-30T12:20:52.211Z",
+        "sourceAuthor": "anna"
+      }
+    }
+  ],
+  "migrationCandidateCount": 91,
+  "outputDatabaseSha256": "99ae20ee8383099e82f1c88b356e03abb0e2ec5371a107fbdb346bf0b29fe78c"
+}

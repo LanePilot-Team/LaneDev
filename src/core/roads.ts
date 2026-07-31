@@ -139,6 +139,8 @@ export interface RoadProps {
   sourceSegments: RoadSourceSegment[]
   /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
   deleted?: boolean
+  /** 只從繪圖視圖隱藏；導航與來源追溯仍保留此道路。 */
+  renderHidden?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
    * forward/backward 是 OSM 原始方向，比對時要翻轉 */
   reversed?: boolean

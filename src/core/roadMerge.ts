@@ -131,10 +131,47 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
   if (index >= 0) roads.splice(index, 1)
 }
 
-export function resolveRoadMerges(
+const polylineLengthM = (coordinates: [number, number][]) =>
+  coordinates.slice(1).reduce(
+    (total, coordinate, index) => total + haversine(coordinates[index], coordinate), 0)
+
+const suppressOverlappedRenderStubs = (
+  renderRoads: RoadFeature[],
+  merges: ResolvedRoadMerge[],
+) => {
+  for (const merge of merges) {
+    const carrier = merge.primary
+    const carrierCoordinates = carrier.geometry.coordinates as [number, number][]
+    for (const road of renderRoads) {
+      if (road === carrier || road.properties.deleted || road.properties.renderHidden) continue
+      if (road.properties.osm_id !== carrier.properties.osm_id) continue
+      const coordinates = road.geometry.coordinates as [number, number][]
+      if (coordinates.length < 2 || polylineLengthM(coordinates) > 25) continue
+      const covered = coordinates.filter((point) =>
+        carrierCoordinates.some((carrierPoint) => haversine(point, carrierPoint) < 12)).length
+      if (covered / coordinates.length < 0.9) continue
+      road.properties.renderHidden = true
+    }
+  }
+}
+
+const applyRoutingConstraints = (
+  routingRoads: RoadFeature[],
+  merges: ResolvedRoadMerge[],
+) => {
+  for (const merge of merges) {
+    const primary = candidatesFor(routingRoads, merge.primaryKey)
+    if (primary.length !== 1) continue
+    const restricted = new Set(primary[0].road.properties.oneSideEntryNodes ?? [])
+    restricted.add(merge.junctionNodeId)
+    primary[0].road.properties.oneSideEntryNodes = [...restricted]
+  }
+}
+
+function replayRoadMerges(
   roads: RoadFeature[],
   journal: EnhancementRecord[],
-): { resolved: ResolvedRoadMerge[]; rows: RoadMergeReplayRow[] } {
+): { working: RoadFeature[]; resolved: ResolvedRoadMerge[]; rows: RoadMergeReplayRow[] } {
   const working = roads.map(cloneRoad)
   const resolved: ResolvedRoadMerge[] = []
   const rows: RoadMergeReplayRow[] = []
@@ -202,5 +239,35 @@ export function resolveRoadMerges(
     rows.push(row)
     applyVisualMergeInPlace(working, merge)
   }
+  return { working, resolved, rows }
+}
+
+export function resolveRoadMerges(
+  roads: RoadFeature[],
+  journal: EnhancementRecord[],
+): { resolved: ResolvedRoadMerge[]; rows: RoadMergeReplayRow[] } {
+  const { resolved, rows } = replayRoadMerges(roads, journal)
   return { resolved, rows }
+}
+
+export interface RoadMergeViews {
+  routingRoads: RoadFeature[]
+  renderRoads: RoadFeature[]
+  resolved: ResolvedRoadMerge[]
+  rows: RoadMergeReplayRow[]
+}
+
+export function buildRoadMergeViews(
+  roads: RoadFeature[],
+  journal: EnhancementRecord[],
+): RoadMergeViews {
+  const { working, resolved, rows } = replayRoadMerges(roads, journal)
+  applyRoutingConstraints(roads, resolved)
+  suppressOverlappedRenderStubs(working, resolved)
+  return {
+    routingRoads: roads,
+    renderRoads: working.filter((road) => !road.properties.renderHidden),
+    resolved,
+    rows,
+  }
 }

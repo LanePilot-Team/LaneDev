@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveRoadMerges } from './roadMerge.ts'
+import { buildRoadMergeViews, resolveRoadMerges } from './roadMerge.ts'
 
 const coordinate = (node) => [120 + node / 1_000_000, 22]
 
@@ -130,4 +130,36 @@ test('sourceSegments 找到多個候選時不猜測並列入人工確認', () =>
   assert.equal(result.resolved.length, 0)
   assert.equal(result.rows[0].status, 'needs_manual_review')
   assert.match(result.rows[0].detail, /候選不唯一/)
+})
+
+test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const side = road({ osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路' })
+  const source = [primary, secondary, side]
+
+  const view = buildRoadMergeViews(source, [mergeRecord()])
+
+  assert.equal(view.routingRoads.length, 3)
+  assert.ok(view.routingRoads.includes(secondary), '導航必須保留原始次段物件')
+  assert.ok(view.routingRoads.includes(side), '側路不得因捏合退出導航圖')
+  assert.deepEqual(secondary.properties.nodes, [2, 3], '來源道路不可被繪圖接合改寫')
+  assert.deepEqual(primary.properties.oneSideEntryNodes, [2], '主路必須保存接縫轉向限制')
+  const renderedMain = view.renderRoads.filter((item) => item.properties.osm_id === 100)
+  assert.equal(renderedMain.length, 1)
+  assert.deepEqual(renderedMain[0].properties.nodes, [1, 2, 3])
+  assert.equal(view.renderRoads.some((item) => item.properties.osm_id === 200), true)
+})
+
+test('與捏合主路重疊的短碎段只從繪圖隱藏，仍保留在導航來源', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const stub = road({ osmId: 100, blockNode: 50, nodes: [50, 51] })
+
+  const view = buildRoadMergeViews([primary, secondary, stub], [mergeRecord()])
+
+  const routingStub = view.routingRoads.find((item) => item.properties.blockNode === 50)
+  assert.ok(routingStub)
+  assert.equal(routingStub.properties.deleted, undefined)
+  assert.equal(view.renderRoads.some((item) => item.properties.blockNode === 50), false)
 })

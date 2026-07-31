@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyRoadMerges, applyToRoads, checkRoadMerge, foldJournal,
+  appendRecord, applyToRoads, checkRoadMerge, foldJournal,
 } from '../core/enhancements'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
@@ -410,12 +410,8 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
               secondary_nodes: JSON.stringify(road.properties.nodes),
             },
           })
-          if (applyRoadMerges(core.roadsRef.current, core.journalRef.current) > 0) {
-            core.replaceBaseMap(core.roadsRef.current)
-            warn('已捏合為同一路段（可在歷程中還原）')
-          } else {
-            warn('捏合紀錄已寫入，但這兩段目前接不起來——請重新整理後確認')
-          }
+          core.replaceBaseMap(core.roadsRef.current)
+          warn('已捏合為同一路段（可在歷程中還原）')
           return
         }
       } else {

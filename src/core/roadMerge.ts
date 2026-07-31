@@ -196,6 +196,16 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
       ...secondaryNodes.slice(1).reverse(), ...merge.primary.properties.nodes,
     ]
   }
+  const restricted = new Set(merge.primary.properties.oneSideEntryNodes ?? [])
+  for (const node of merge.secondary.properties.oneSideEntryNodes ?? []) restricted.add(node)
+  merge.primary.properties.oneSideEntryNodes = restricted.size ? [...restricted] : undefined
+  const access = new Map(
+    (merge.primary.properties.oneSideEntryAccess ?? [])
+      .map((entry) => [entry.nodeId, entry] as const))
+  for (const entry of merge.secondary.properties.oneSideEntryAccess ?? []) {
+    if (!access.has(entry.nodeId)) access.set(entry.nodeId, entry)
+  }
+  merge.primary.properties.oneSideEntryAccess = access.size ? [...access.values()] : undefined
   const index = roads.indexOf(merge.secondary)
   if (index >= 0) roads.splice(index, 1)
 }
@@ -224,6 +234,17 @@ const suppressOverlappedRenderStubs = (
   }
 }
 
+const registerOneSideAccess = (road: RoadFeature, nodeId: number, allowedBack: boolean) => {
+    const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
+    restricted.add(nodeId)
+    road.properties.oneSideEntryNodes = [...restricted]
+    const access = new Map(
+      (road.properties.oneSideEntryAccess ?? [])
+        .map((entry) => [entry.nodeId, entry] as const))
+    access.set(nodeId, { nodeId, allowedBack })
+    road.properties.oneSideEntryAccess = [...access.values()]
+}
+
 const applyRoutingConstraints = (
   routingRoads: RoadFeature[],
   merges: ResolvedRoadMerge[],
@@ -232,17 +253,18 @@ const applyRoutingConstraints = (
     if (merge.adjacentBack === null) continue
     const primary = candidatesFor(routingRoads, merge.primaryKey)
     if (primary.length !== 1) continue
-    const restricted = new Set(primary[0].road.properties.oneSideEntryNodes ?? [])
-    restricted.add(merge.junctionNodeId)
-    primary[0].road.properties.oneSideEntryNodes = [...restricted]
-    const access = new Map(
-      (primary[0].road.properties.oneSideEntryAccess ?? [])
-        .map((entry) => [entry.nodeId, entry] as const))
-    access.set(merge.junctionNodeId, {
-      nodeId: merge.junctionNodeId,
-      allowedBack: merge.adjacentBack,
-    })
-    primary[0].road.properties.oneSideEntryAccess = [...access.values()]
+    registerOneSideAccess(primary[0].road, merge.junctionNodeId, merge.adjacentBack)
+
+    const secondary = candidatesFor(routingRoads, merge.secondaryKey)
+    if (secondary.length !== 1 || secondary[0].road === primary[0].road) continue
+    // 合併主線的 forward 始終跟 primary 的 digitize 方向一致；secondary
+    // 若以同類端點接合（start-start / end-end），其 digitize 方向相反。
+    const secondaryForwardBack = merge.primaryAt === merge.secondaryAt
+    registerOneSideAccess(
+      secondary[0].road,
+      merge.junctionNodeId,
+      secondaryForwardBack !== merge.adjacentBack,
+    )
   }
 }
 
@@ -332,6 +354,11 @@ function replayRoadMerges(
     }
     resolved.push(merge)
     rows.push(row)
+    if (merge.adjacentBack !== null) {
+      // working 就是繪圖視圖；直接標在當前 carrier，避免連鎖捏合後舊 block key
+      // 已被吸收而無法再次查回。若 carrier 後續成為 secondary，視覺合併會轉移標記。
+      registerOneSideAccess(merge.primary, merge.junctionNodeId, merge.adjacentBack)
+    }
     applyVisualMergeInPlace(working, merge)
   }
   return { working, resolved, rows }

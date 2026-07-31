@@ -363,7 +363,7 @@ export class RoadGraph {
   /** 指定 oneSideEntry 節點是否真的接有另一條 OSM 道路。
    * 單純把同一條路的兩個區塊捏合，不應被當成側巷路口。 */
   hasDistinctRoadAt(nodeId: number, carrier: RoadFeature): boolean {
-    return (this.adj.get(nodeId) ?? []).some((edge) =>
+    return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])].some((edge) =>
       edge.road.properties.osm_id !== carrier.properties.osm_id)
   }
 

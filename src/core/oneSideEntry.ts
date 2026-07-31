@@ -33,7 +33,14 @@ export function oneSideEntryTransitionAllowed(
   const outgoingAccess = accessAt(outgoingRoad)
   // 同一條主路同方向續行不受限制；在接縫切換方向就是跨中央島迴轉。
   if (outgoingRoad.properties.osm_id === incomingRoad.properties.osm_id) {
-    return !(incomingAccess || outgoingAccess) || incomingBack === outgoingBack
+    if (!incomingAccess && !outgoingAccess) return true
+    // 兩個來源路段的 digitize 方向可能相反。各自都有方向資訊時，應比較
+    // 「是否位於分隔島相鄰側」，而不是直接比較 back 布林值。
+    if (incomingAccess && outgoingAccess) {
+      return (incomingBack === incomingAccess.allowedBack)
+        === (outgoingBack === outgoingAccess.allowedBack)
+    }
+    return incomingBack === outgoingBack
   }
   if (incomingAccess && incomingBack !== incomingAccess.allowedBack) return false
   if (outgoingAccess && outgoingBack !== outgoingAccess.allowedBack) return false

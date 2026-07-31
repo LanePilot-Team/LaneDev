@@ -149,6 +149,8 @@ test('導航保留主段次段與側路，只有繪圖視圖接合主路', () =>
   assert.ok(view.routingRoads.includes(side), '側路不得因捏合退出導航圖')
   assert.deepEqual(secondary.properties.nodes, [2, 3], '來源道路不可被繪圖接合改寫')
   assert.deepEqual(primary.properties.oneSideEntryNodes, [2], '主路必須保存接縫轉向限制')
+  assert.deepEqual(secondary.properties.oneSideEntryNodes, [2],
+    '次段也必須標記接縫，避免由次段方向生成主路停止線或箭頭')
   const renderedMain = view.renderRoads.filter((item) => item.properties.osm_id === 100)
   assert.equal(renderedMain.length, 1)
   assert.deepEqual(renderedMain[0].properties.nodes, [1, 2, 3])
@@ -186,5 +188,30 @@ test('依側路所在方向判定相鄰主路方向，不固定假設 forward', 
 
   assert.deepEqual(primary.properties.oneSideEntryAccess,
     [{ nodeId: 2, allowedBack: true }])
+  assert.deepEqual(secondary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
   assert.equal(view.resolved[0].adjacentBack, true)
+})
+
+test('端點方向相反時，次段限制會換算成自己的 back 方向', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 3, nodes: [3, 2],
+    coordinates: [[120, 22.002], [120, 22.001]],
+  })
+  const eastSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '東側路',
+    coordinates: [[120, 22.001], [120.001, 22.001]],
+  })
+  const record = mergeRecord({ secondary: 'way/100@b/3' })
+
+  buildRoadMergeViews([primary, secondary, eastSide], [record])
+
+  assert.deepEqual(primary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: false }])
+  assert.deepEqual(secondary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
 })

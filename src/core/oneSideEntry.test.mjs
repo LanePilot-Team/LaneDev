@@ -43,6 +43,15 @@ test('捏合接縫不可直接切換主路方向作為迴轉', () => {
   assert.equal(allow(main(), true, main(), false), false)
 })
 
+test('相反 digitize 方向的兩個主路段仍可沿同一實體方向直行', () => {
+  const first = road(1, [80], [{ nodeId: 80, allowedBack: false }])
+  const reversed = road(1, [80], [{ nodeId: 80, allowedBack: true }])
+
+  assert.equal(allow(first, false, reversed, true, 80), true)
+  assert.equal(allow(first, true, reversed, false, 80), true)
+  assert.equal(allow(first, false, reversed, false, 80), false)
+})
+
 test('相鄰方向由 allowedBack 決定，不可固定假設 forward', () => {
   const reversedMain = main(true)
   assert.equal(allow(reversedMain, true, side(), false), true)

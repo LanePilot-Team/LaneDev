@@ -827,16 +827,23 @@ export function roadsForRendering(roads: RoadFeature[]): RoadFeature[] {
     }
     return matches(inner) || matches([...inner].reverse())
   }
+  const activeRoadsByOsmId = new Map<number, RoadFeature[]>()
+  for (const road of roads) {
+    if (road.properties.deleted) continue
+    const osmId = road.properties.osm_id
+    const candidates = activeRoadsByOsmId.get(osmId)
+    if (candidates) candidates.push(road)
+    else activeRoadsByOsmId.set(osmId, [road])
+  }
   const exactSeen = new Set<string>()
   return roads.filter((road) => {
     if (road.properties.deleted) return true
-    const exactKey = `${road.properties.osm_id}:${road.properties.nodes.join(',')}`
+    const osmId = road.properties.osm_id
+    const exactKey = `${osmId}:${road.properties.nodes.join(',')}`
     if (exactSeen.has(exactKey)) return false
     exactSeen.add(exactKey)
-    return !roads.some((candidate) =>
+    return !(activeRoadsByOsmId.get(osmId) ?? []).some((candidate) =>
       candidate !== road
-      && !candidate.properties.deleted
-      && candidate.properties.osm_id === road.properties.osm_id
       && candidate.properties.nodes.length > road.properties.nodes.length
       && containsPath(candidate.properties.nodes, road.properties.nodes))
   })

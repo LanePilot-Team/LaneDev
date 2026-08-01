@@ -56,16 +56,28 @@ function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
 
 export { oneSideEntryTransitionAllowed }
 
-function transitionAllowed(incoming: Edge | undefined, outgoing: Edge, nodeId: number): boolean {
+function transitionAllowed(
+  incoming: Edge | undefined,
+  outgoing: Edge,
+  nodeId: number,
+  barrierNode: boolean,
+): boolean {
   if (!incoming) return true
   const incomingBarrier = incoming.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
   const outgoingBarrier = outgoing.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
-  if (incomingBarrier && outgoingBarrier) {
+  if (barrierNode) {
     const incomingCoords = incoming.coords
     const incomingBearing = bearing(
       incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
     const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
-    if (classifyTurn(angleDelta(incomingBearing, outgoingBearing)) === 'uturn') return false
+    const delta = angleDelta(incomingBearing, outgoingBearing)
+    if (incomingBarrier && outgoingBarrier) {
+      if (classifyTurn(delta) === 'uturn') return false
+    } else if (incomingBarrier !== outgoingBarrier) {
+      if (delta < 20 || delta > 160) return false
+    } else {
+      return false
+    }
   }
   return oneSideEntryTransitionAllowed(
     incoming.road, incoming.back, outgoing.road, outgoing.back, nodeId)
@@ -324,6 +336,7 @@ function twinSeg(e: Edge, seg: number): number {
 
 export class RoadGraph {
   private nodePos = new Map<number, [number, number]>()
+  private roadMergeBarrierNodes = new Set<number>()
   private adj = new Map<number, Edge[]>()
   private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
@@ -351,6 +364,9 @@ export class RoadGraph {
       const nodes = r.properties.nodes
       if (nodes.length !== r.geometry.coordinates.length) continue
       for (const id of nodes) usage.set(id, (usage.get(id) ?? 0) + 1)
+      for (const id of r.properties.roadMergeBarrierNodes ?? []) {
+        this.roadMergeBarrierNodes.add(id)
+      }
     }
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -865,7 +881,10 @@ export class RoadGraph {
       closed.add(currentKey)
       for (const ge of goalEntries) {
         if (ge.node === current.node) {
-          if (!transitionAllowed(current.incoming, ge.part, current.node)) continue
+          if (!transitionAllowed(
+            current.incoming, ge.part, current.node,
+            this.roadMergeBarrierNodes.has(current.node),
+          )) continue
           const total = g.get(currentKey)! + ge.part.timeS
           if (!bestGoal || total < bestGoal.cost) {
             bestGoal = { cost: total, stateKey: currentKey, part: ge.part }
@@ -874,7 +893,10 @@ export class RoadGraph {
       }
       for (const e of this.adj.get(current.node) ?? []) {
         if (!edgeAllowed(e.road, e.back, profile)) continue
-        if (!transitionAllowed(current.incoming, e, current.node)) continue
+        if (!transitionAllowed(
+          current.incoming, e, current.node,
+          this.roadMergeBarrierNodes.has(current.node),
+        )) continue
         const nextKey = stateKey(e.to, e)
         if (closed.has(nextKey)) continue
         const tentative = g.get(currentKey)! + e.timeS

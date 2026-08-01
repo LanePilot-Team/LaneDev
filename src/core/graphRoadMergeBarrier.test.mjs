@@ -88,3 +88,16 @@ test('連續中央島接點禁止兩側側路互相直穿', () => {
 
   assert.equal(acrossMedian, null, '兩側側路不得穿越連續中央島互通')
 })
+
+test('連鎖捏合只標記其中一段時同一主路仍可直行通過', () => {
+  const junction = [120, 22]
+  const incomingMain = road(100, [1, 2], [[119.999, 22], junction])
+  const outgoingMain = road(100, [2, 3], [junction, [120.001, 22]])
+  outgoingMain.properties.roadMergeBarrierNodes = [2]
+  const graph = new RoadGraph([incomingMain, outgoingMain])
+
+  const route = graph.route([119.9992, 22], [120.0008, 22], 'car')
+
+  assert.ok(route, '同一條主路不可因連鎖捏合標記分布不完整而中斷')
+  assert.deepEqual(route.spans.map((span) => span.road?.properties.osm_id), [100, 100])
+})

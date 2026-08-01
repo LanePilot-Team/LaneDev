@@ -71,7 +71,9 @@ function transitionAllowed(
       incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
     const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
     const delta = angleDelta(incomingBearing, outgoingBearing)
-    if (incomingBarrier && outgoingBarrier) {
+    const sameMainRoad = incoming.road.properties.osm_id === outgoing.road.properties.osm_id
+    if ((incomingBarrier && outgoingBarrier)
+      || ((incomingBarrier || outgoingBarrier) && sameMainRoad)) {
       if (classifyTurn(delta) === 'uturn') return false
     } else if (incomingBarrier !== outgoingBarrier) {
       if (delta < 20 || delta > 160) return false

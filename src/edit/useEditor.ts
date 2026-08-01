@@ -4,12 +4,13 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
+  appendRecord, appendRecords, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
 } from '../core/enhancements'
 import {
-  activeMergeForRoad, previewRoadMerge, reloadAfterRoadMergeSave,
+  activeMergeForRoad, planRoadMergeSeamUndo, previewRoadMerge, reloadAfterRoadMergeSave,
   type RoadMergeReplayRow,
 } from '../core/roadMerge'
+import { materializeJournalRecords } from '../core/journalBatch'
 import { flushStaticEditorSave } from '../core/staticDatabase'
 import { saveRoadMergeReloadState } from '../core/roadMergeReload'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
@@ -926,26 +927,35 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   function undoRoadMerge() {
     const row = activeRoadMerge
     if (!row) return
-    const tombstone: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'> = {
-      op: 'delete',
-      target: { type: 'road_merge', key: row.mergeKey },
-      fields: { supersedes_seq: row.resolved?.sourceSeq ?? 0 },
+    const plan = planRoadMergeSeamUndo(
+      core.roadsRef.current,
+      core.journalRef.current,
+      row.mergeKey,
+    )
+    if (!plan.ok) {
+      warn(plan.reason)
+      return
     }
     const author = getAuthor()
-    const previewRecord: EnhancementRecord = {
-      ...tombstone,
-      seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
-      ts: new Date().toISOString(),
+    const previewJournal = materializeJournalRecords(
+      core.journalRef.current,
+      plan.records,
       author,
-    }
-    if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+      () => new Date(),
+    )
+    if (!core.previewJournal(previewJournal)) {
       warn('撤銷預覽失敗，未變更歷程')
       return
     }
     rememberRoadMergeReloadState()
-    core.journalRef.current = appendRecord(core.journalRef.current, tombstone, author)
+    core.journalRef.current = appendRecords(
+      core.journalRef.current,
+      plan.records,
+      author,
+    )
     setActiveRoadMerge(null)
-    warn('撤銷已確認，正在儲存並重新載入路網…')
+    warn(`已解除接縫；停用 ${plan.retiredMergeKeys.length} 筆、`
+      + `重定位 ${plan.rebasedMergeKeys.length} 筆，正在儲存…`)
     void reloadAfterRoadMergeSave(
       flushStaticEditorSave,
       () => window.location.reload(),

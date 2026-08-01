@@ -5,6 +5,7 @@ import {
   consumeRoadMergeReloadState,
   saveRoadMergeReloadState,
 } from './roadMergeReload.ts'
+import { appendJournalRecords } from './journalBatch.ts'
 
 const memoryStorage = () => {
   const values = new Map()
@@ -47,3 +48,33 @@ test('損壞或不完整的重載狀態會被清除', () => {
   assert.equal(storage.has(ROAD_MERGE_RELOAD_STATE_KEY), false)
 })
 
+test('接縫撤銷交易一次追加連續 seq 並共用時間與作者', () => {
+  const writes = []
+  const existing = [{
+    seq: 7,
+    ts: '2026-08-01T00:00:00.000Z',
+    author: 'anna',
+    op: 'set',
+    target: { type: 'road_merge', key: 'merge/A+B' },
+  }]
+  const drafts = [
+    { op: 'delete', target: { type: 'road_merge', key: 'merge/A+B' } },
+    { op: 'delete', target: { type: 'road_merge', key: 'merge/A+C' } },
+    { op: 'set', target: { type: 'road_merge', key: 'merge/B+C' }, fields: { schema_version: 2 } },
+  ]
+
+  const next = appendJournalRecords(
+    existing,
+    drafts,
+    'anna',
+    () => new Date('2026-08-01T12:34:56.000Z'),
+    (journal) => writes.push(journal),
+  )
+
+  assert.deepEqual(next.slice(-3).map((record) => record.seq), [8, 9, 10])
+  assert.deepEqual(new Set(next.slice(-3).map((record) => record.ts)),
+    new Set(['2026-08-01T12:34:56.000Z']))
+  assert.deepEqual(new Set(next.slice(-3).map((record) => record.author)), new Set(['anna']))
+  assert.equal(writes.length, 1, '同一交易只持久化最後的完整 journal')
+  assert.equal(writes[0], next)
+})

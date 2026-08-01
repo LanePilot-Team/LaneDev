@@ -11,6 +11,7 @@ import type { Zone } from './zones'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
 import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
+import { appendJournalRecords, type EnhancementRecordDraft } from './journalBatch'
 
 export interface EnhancementRecord {
   seq: number
@@ -91,17 +92,19 @@ export function loadJournal(): EnhancementRecord[] {
 
 export function appendRecord(
   journal: EnhancementRecord[],
-  rec: Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>,
+  rec: EnhancementRecordDraft,
   author: string = getAuthor(), // 公開 main 預設 unknown；本機可設為 anna
 ): EnhancementRecord[] {
-  const next = [...journal, {
-    ...rec,
-    seq: (journal[journal.length - 1]?.seq ?? 0) + 1,
-    ts: new Date().toISOString(),
-    author,
-  }]
-  queueJournalPersistence(next)
-  return next
+  return appendRecords(journal, [rec], author)
+}
+
+export function appendRecords(
+  journal: EnhancementRecord[],
+  records: EnhancementRecordDraft[],
+  author: string = getAuthor(),
+  now: () => Date = () => new Date(),
+): EnhancementRecord[] {
+  return appendJournalRecords(journal, records, author, now, queueJournalPersistence)
 }
 
 /**

@@ -7,12 +7,11 @@ import {
   appendRecord, appendRecords, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
 } from '../core/enhancements'
 import {
-  activeMergeForRoad, planRoadMergeSeamUndo, previewRoadMerge, reloadAfterRoadMergeSave,
+  activeMergeForRoad, applyRoadMergeAfterSave, planRoadMergeSeamUndo, previewRoadMerge,
   type RoadMergeReplayRow,
 } from '../core/roadMerge'
 import { materializeJournalRecords } from '../core/journalBatch'
 import { flushStaticEditorSave } from '../core/staticDatabase'
-import { saveRoadMergeReloadState } from '../core/roadMergeReload'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -172,22 +171,6 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   }
   const [editRoad, setEditRoad] = useState<EditRoadState | null>(null)
 
-  function rememberRoadMergeReloadState() {
-    const map = core.mapRef.current
-    if (!map) return
-    const center = map.getCenter()
-    saveRoadMergeReloadState(window.sessionStorage, {
-      camera: {
-        center: [center.lng, center.lat],
-        zoom: map.getZoom(),
-        bearing: map.getBearing(),
-        pitch: map.getPitch(),
-      },
-      mode: 'edit',
-      editTool,
-      editRoad,
-    })
-  }
   const [zonePanel, setZonePanel] = useState<{ nodeId: number; options: TurnOption[] } | null>(null)
   const [bayPanel, setBayPanel] = useState<{ nodeId: number } | null>(null)
   const [islandPanel, setIslandPanel] = useState<{ pairKey: string; wEff?: number } | null>(null)
@@ -431,21 +414,29 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             ts: new Date().toISOString(),
             author,
           }
-          if (!core.previewJournal([...core.journalRef.current, previewRecord])) {
+          const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
+          if (!preparedView) {
             warn('捏合預覽未通過，未寫入紀錄')
             return
           }
-          rememberRoadMergeReloadState()
           mergeFirstRef.current = null
-          setEditRoad(null)
           core.journalRef.current = appendRecord(core.journalRef.current, preview.record, author)
-          warn('捏合已確認，正在儲存並重新載入路網…')
-          void reloadAfterRoadMergeSave(
+          warn('捏合已確認，正在儲存並更新路網…')
+          void applyRoadMergeAfterSave(
             flushStaticEditorSave,
-            () => window.location.reload(),
+            () => {
+              core.refreshRoadMergeViews(core.journalRef.current, preparedView)
+              const selected = editRoad && core.roadsRef.current.find((candidate) =>
+                candidate.properties.osm_id === editRoad.osmId
+                && candidate.properties.blockNode === editRoad.blockNode)
+              setActiveRoadMerge(selected
+                ? activeMergeForRoad(core.mergeReplayRef.current, selected) ?? null
+                : null)
+              warn('道路捏合已儲存並套用')
+            },
           ).catch((error) => {
             console.error('道路捏合儲存失敗', error)
-            warn('道路捏合尚未完成儲存，頁面未重新載入')
+            warn('道路捏合尚未完成儲存，路網未更新')
           })
           return
         }
@@ -943,11 +934,11 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       author,
       () => new Date(),
     )
-    if (!core.previewJournal(previewJournal)) {
+    const preparedView = core.previewJournal(previewJournal)
+    if (!preparedView) {
       warn('撤銷預覽失敗，未變更歷程')
       return
     }
-    rememberRoadMergeReloadState()
     core.journalRef.current = appendRecords(
       core.journalRef.current,
       plan.records,
@@ -956,12 +947,21 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     setActiveRoadMerge(null)
     warn(`已解除接縫；停用 ${plan.retiredMergeKeys.length} 筆、`
       + `重定位 ${plan.rebasedMergeKeys.length} 筆，正在儲存…`)
-    void reloadAfterRoadMergeSave(
+    void applyRoadMergeAfterSave(
       flushStaticEditorSave,
-      () => window.location.reload(),
+      () => {
+        core.refreshRoadMergeViews(core.journalRef.current, preparedView)
+        const selected = editRoad && core.roadsRef.current.find((candidate) =>
+          candidate.properties.osm_id === editRoad.osmId
+          && candidate.properties.blockNode === editRoad.blockNode)
+        setActiveRoadMerge(selected
+          ? activeMergeForRoad(core.mergeReplayRef.current, selected) ?? null
+          : null)
+        warn('道路捏合接縫已撤銷並套用')
+      },
     ).catch((error) => {
       console.error('道路捏合撤銷儲存失敗', error)
-      warn('道路捏合撤銷尚未完成儲存，頁面未重新載入')
+      warn('道路捏合撤銷尚未完成儲存，路網未更新')
     })
   }
 

@@ -491,18 +491,14 @@ export function selectPreparedRoadMergeView<T>(prepared: T | undefined, build: (
   return prepared === undefined ? build() : prepared
 }
 
-/**
- * 道路捏合會改變整體拓撲與多個大型 MapLibre GeoJSON source。先讓 appendRecord
- * 排入的 journal 寫入工作執行，再等待資料庫確實落盤，最後以乾淨頁面重建一次；
- * 避免在既有完整圖層仍佔用記憶體時，同時生成第二套完整圖層而殺死 renderer。
- */
-export async function reloadAfterRoadMergeSave(
+/** 讓 journal 先排入儲存並確實落盤，再原地套用預先建好的繪圖與導航雙視圖。 */
+export async function applyRoadMergeAfterSave(
   flush: () => Promise<void>,
-  reload: () => void,
+  apply: () => void,
 ): Promise<void> {
   await new Promise<void>((resolve) => queueMicrotask(resolve))
   await flush()
-  reload()
+  apply()
 }
 
 export function buildRoadMergeViews(

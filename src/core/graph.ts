@@ -530,11 +530,11 @@ export class RoadGraph {
    * route 必須保留這個有向結果；若之後只拿中心線位置重新接雙向 edge，
    * 使用者點在對向車道時就會被悄悄改成另一方向。
    */
-  private projectToDirectedLane(
+  private projectToDirectedLanes(
     p: [number, number], profile: Profile,
-  ): DirectedLaneProjection | null {
+  ): DirectedLaneProjection[] {
     const hit = this.project(p, profile)
-    if (!hit) return null
+    if (!hit) return []
     const candidates: { edge: Edge; seg: number; t: number }[] = [{
       edge: hit.edge, seg: hit.seg, t: hit.t,
     }]
@@ -543,8 +543,7 @@ export class RoadGraph {
       seg: twinSeg(hit.edge, hit.seg),
       t: 1 - hit.t,
     })
-    let best: DirectedLaneProjection | null = null
-    let bestDistance = Infinity
+    const projections: { projection: DirectedLaneProjection; distance: number }[] = []
     for (const candidate of candidates) {
       const { edge, seg, t } = candidate
       if (!edgeAllowed(edge.road, edge.back, profile)) continue
@@ -556,14 +555,21 @@ export class RoadGraph {
         hit.pos[1] + (offset * Math.cos(radians)) / 110540,
       ]
       const distance = haversine(p, lanePos)
-      if (distance < bestDistance) {
-        bestDistance = distance
-        best = {
+      projections.push({
+        distance,
+        projection: {
           edge, seg, t, pos: hit.pos, lanePos, bearing: direction,
-        }
-      }
+        },
+      })
     }
-    return best
+    projections.sort((a, b) => a.distance - b.distance)
+    return projections.map(({ projection }) => projection)
+  }
+
+  private projectToDirectedLane(
+    p: [number, number], profile: Profile,
+  ): DirectedLaneProjection | null {
+    return this.projectToDirectedLanes(p, profile)[0] ?? null
   }
 
   /** 某路口所有可能的「左轉配對」（進入行向 × 左轉出口），供待轉區設定選單用 */
@@ -812,8 +818,27 @@ export class RoadGraph {
 
   route(fromP: [number, number], toP: [number, number], profile: Profile = 'car'): RouteResult | null {
     const sA = this.projectToDirectedLane(fromP, profile)
-    const sB = this.projectToDirectedLane(toP, profile)
-    if (!sA || !sB) return null
+    const projectedGoals = this.projectToDirectedLanes(toP, profile)
+    if (!sA || projectedGoals.length === 0) return null
+    const primaryGoal = projectedGoals[0]
+    const goals = primaryGoal.edge.road.properties.oneway === 'no'
+      && (primaryGoal.edge.road.properties.centerM || 0) <= 0
+      && !primaryGoal.edge.road.properties.roadMergeBarrierNodes?.length
+      ? projectedGoals
+      : [primaryGoal]
+    for (const goal of goals) {
+      const result = this.routeToProjection(sA, goal, toP, profile)
+      if (result) return result
+    }
+    return null
+  }
+
+  private routeToProjection(
+    sA: DirectedLaneProjection,
+    sB: DirectedLaneProjection,
+    toP: [number, number],
+    profile: Profile,
+  ): RouteResult | null {
 
     // 同一條（順向）邊且順序正確 → 直接一段
     if (sA.edge === sB.edge) {

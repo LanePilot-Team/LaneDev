@@ -158,3 +158,65 @@ test('側路不得從捏合節點跨越中央島接到主路另一側', () => {
   assert.ok(acrossMedian.lengthM > legal.lengthM,
     '中央島另一側終點必須包含合法繞行，不得與同側終點同長')
 })
+
+test('未分隔雙向終點的點選方向不可達時改由另一方向合法繞行', () => {
+  const split = [120.001, 22]
+  const blockedEnd = [120.002, 22]
+  const detour = [120.002, 22.001]
+  const openEnd = [120.003, 22]
+  const destination = twoWayRoad(50, [2, 4], [blockedEnd, openEnd])
+  const barrierCarrier = road(60, [2, 5], [blockedEnd, [120.002, 21.999]])
+  barrierCarrier.properties.roadMergeBarrierNodes = [2]
+  const graph = new RoadGraph([
+    road(10, [0, 1], [[120, 22], split]),
+    road(30, [1, 3], [split, detour]),
+    road(40, [3, 4], [detour, openEnd]),
+    destination,
+    barrierCarrier,
+  ])
+  const laneOffsetLat = 1.6 / 110540
+  const clickedForwardGoal = [120.0028, 22 - laneOffsetLat]
+
+  const route = graph.route([120.0001, 22], clickedForwardGoal, 'car')
+
+  assert.ok(route, '點選方向不可達時應保留從另一方向抵達的合法繞行路線')
+  assert.equal(route.spans.at(-1)?.road?.properties.osm_id, 50)
+  assert.equal(route.spans.at(-1)?.back, true)
+  assert.deepEqual(route.spans.map((span) => span.road?.properties.osm_id), [10, 30, 40, 50])
+})
+
+test('有實體中央分隔的終點不可退回另一方向', () => {
+  const split = [120.001, 22]
+  const blockedEnd = [120.002, 22]
+  const detour = [120.002, 22.001]
+  const openEnd = [120.003, 22]
+  const destination = twoWayRoad(50, [2, 4], [blockedEnd, openEnd])
+  destination.properties.centerM = 2
+  const barrierCarrier = road(60, [2, 5], [blockedEnd, [120.002, 21.999]])
+  barrierCarrier.properties.roadMergeBarrierNodes = [2]
+  const graph = new RoadGraph([
+    road(10, [0, 1], [[120, 22], split]),
+    road(30, [1, 3], [split, detour]),
+    road(40, [3, 4], [detour, openEnd]),
+    destination,
+    barrierCarrier,
+  ])
+  const clickedForwardGoal = [120.0028, 22 - 2.6 / 110540]
+
+  const route = graph.route([120.0001, 22], clickedForwardGoal, 'car')
+
+  assert.equal(route, null, '有中央分隔時不得把對向車道視為相同終點')
+})
+
+test('點選的終點方向可達時仍優先使用該方向', () => {
+  const destination = twoWayRoad(100, [1, 2], [[120, 22], [120.002, 22]])
+  const graph = new RoadGraph([destination])
+  const laneOffsetLat = 1.6 / 110540
+  const start = [120.0002, 22 - laneOffsetLat]
+  const goal = [120.0018, 22 - laneOffsetLat]
+
+  const route = graph.route(start, goal, 'car')
+
+  assert.ok(route)
+  assert.deepEqual(route.spans.map((span) => span.back), [false])
+})

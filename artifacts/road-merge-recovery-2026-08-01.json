@@ -1,21 +1,21 @@
 {
   "format": "lanedev-road-merge-recovery-v3",
-  "generatedAt": "2026-07-31T20:18:13.777Z",
+  "generatedAt": "2026-08-01T14:11:58.314Z",
   "databasePath": "C:\\Users\\Cindy\\Desktop\\GraduationProject\\.worktrees\\lanedev-anna-latest\\public\\data\\road_database.json",
-  "sourceCommit": "origin/anna@7d2121d",
-  "sourceDatabaseSha256": "9d984b4118b5e6d1fd3aaf291645b544768e5c3134ccbbffa94f5a14d60711da",
+  "sourceCommit": "origin/anna@272b741",
+  "sourceDatabaseSha256": "73577e035f4322ed937a6b168cafdebbb672898869553356b6b3e38ad08fd4e5",
   "summary": {
-    "total": 48,
-    "upgraded": 43,
-    "rolledBack": 5,
+    "total": 51,
+    "upgraded": 44,
+    "rolledBack": 7,
     "alreadyV2": 0
   },
   "totals": {
-    "replayable": 40,
+    "replayable": 41,
     "recoverable_via_provenance": 3,
-    "needs_manual_review": 4,
+    "needs_manual_review": 5,
     "legacy_destructive": 0,
-    "invalid": 1
+    "invalid": 2
   },
   "upgraded": [
     {
@@ -26,7 +26,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325307@b/12658227994",
-      "secondaryKey": "way/254325307@b/256245347"
+      "secondaryKey": "way/254325307@b/256245347",
+      "location": {
+        "nodeId": 12658227994,
+        "longitude": 120.29235600984691,
+        "latitude": 22.73179771761087,
+        "googleMaps": "https://www.google.com/maps/@22.73179771761087,120.29235600984691,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/12658227994"
+      }
     },
     {
       "mergeKey": "merge/way/312871463@b/1080697254+way/312871463@b/1080696851",
@@ -36,7 +43,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/312871463@b/1080697254",
-      "secondaryKey": "way/312871463@b/1080696851"
+      "secondaryKey": "way/312871463@b/1080696851",
+      "location": {
+        "nodeId": 1080696851,
+        "longitude": 120.2747883,
+        "latitude": 22.7265288,
+        "googleMaps": "https://www.google.com/maps/@22.7265288,120.2747883,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080696851"
+      }
     },
     {
       "mergeKey": "merge/way/312871463@b/2206324454+way/312871463@b/8420604124",
@@ -46,7 +60,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/312871463@b/2206324454",
-      "secondaryKey": "way/312871463@b/8420604124"
+      "secondaryKey": "way/312871463@b/8420604124",
+      "location": {
+        "nodeId": 8420604124,
+        "longitude": 120.2760852,
+        "latitude": 22.7245962,
+        "googleMaps": "https://www.google.com/maps/@22.7245962,120.2760852,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/8420604124"
+      }
     },
     {
       "mergeKey": "merge/way/267715934@b/2206324442+way/267715934@b/4585345353",
@@ -56,7 +77,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/267715934@b/2206324442",
-      "secondaryKey": "way/267715934@b/4585345353"
+      "secondaryKey": "way/267715934@b/4585345353",
+      "location": {
+        "nodeId": 4585345353,
+        "longitude": 120.2776658,
+        "latitude": 22.7227034,
+        "googleMaps": "https://www.google.com/maps/@22.7227034,120.2776658,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4585345353"
+      }
     },
     {
       "mergeKey": "merge/way/267715934@b/9853009726+way/267715934@b/2206324436",
@@ -66,7 +94,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/267715934@b/9853009726",
-      "secondaryKey": "way/267715934@b/2206324436"
+      "secondaryKey": "way/267715934@b/2206324436",
+      "location": {
+        "nodeId": 9853009726,
+        "longitude": 120.2785028,
+        "latitude": 22.7221724,
+        "googleMaps": "https://www.google.com/maps/@22.7221724,120.2785028,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/9853009726"
+      }
     },
     {
       "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/1398635978",
@@ -76,7 +111,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/267715913@b/1398635709",
-      "secondaryKey": "way/267715913@b/1398635978"
+      "secondaryKey": "way/267715913@b/1398635978",
+      "location": {
+        "nodeId": 1398635978,
+        "longitude": 120.28371918808679,
+        "latitude": 22.719057258826922,
+        "googleMaps": "https://www.google.com/maps/@22.719057258826922,120.28371918808679,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635978"
+      }
     },
     {
       "mergeKey": "merge/way/267715913@b/256455983+way/267715913@b/2956870896",
@@ -86,7 +128,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/267715913@b/256455983",
-      "secondaryKey": "way/267715913@b/2956870896"
+      "secondaryKey": "way/267715913@b/2956870896",
+      "location": {
+        "nodeId": 2956870896,
+        "longitude": 120.28465426522413,
+        "latitude": 22.718490348170008,
+        "googleMaps": "https://www.google.com/maps/@22.718490348170008,120.28465426522413,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2956870896"
+      }
     },
     {
       "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/256455983",
@@ -96,7 +145,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/267715913@b/1398635709",
-      "secondaryKey": "way/267715913@b/256455983"
+      "secondaryKey": "way/267715913@b/256455983",
+      "location": {
+        "nodeId": 1398635709,
+        "longitude": 120.28421299006834,
+        "latitude": 22.71875788073867,
+        "googleMaps": "https://www.google.com/maps/@22.71875788073867,120.28421299006834,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635709"
+      }
     },
     {
       "mergeKey": "merge/way/339750724@b/1398634826+way/339750724@b/1398636099",
@@ -106,7 +162,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/339750724@b/1398634826",
-      "secondaryKey": "way/339750724@b/1398636099"
+      "secondaryKey": "way/339750724@b/1398636099",
+      "location": {
+        "nodeId": 1398636099,
+        "longitude": 120.2853798,
+        "latitude": 22.7179879,
+        "googleMaps": "https://www.google.com/maps/@22.7179879,120.2853798,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398636099"
+      }
     },
     {
       "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634826",
@@ -116,7 +179,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/339750724@b/265968432",
-      "secondaryKey": "way/339750724@b/1398634826"
+      "secondaryKey": "way/339750724@b/1398634826",
+      "location": {
+        "nodeId": 1398634826,
+        "longitude": 120.28561584147815,
+        "latitude": 22.717910054160345,
+        "googleMaps": "https://www.google.com/maps/@22.717910054160345,120.28561584147815,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398634826"
+      }
     },
     {
       "mergeKey": "merge/way/23683314@b/1398635694+way/23683314@b/1398634474",
@@ -126,7 +196,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/23683314@b/1398635694",
-      "secondaryKey": "way/23683314@b/1398634474"
+      "secondaryKey": "way/23683314@b/1398634474",
+      "location": {
+        "nodeId": 1398634474,
+        "longitude": 120.2868877,
+        "latitude": 22.7170969,
+        "googleMaps": "https://www.google.com/maps/@22.7170969,120.2868877,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398634474"
+      }
     },
     {
       "mergeKey": "merge/way/23683314@b/1398635837+way/23683314@b/1398635694",
@@ -136,7 +213,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/23683314@b/1398635837",
-      "secondaryKey": "way/23683314@b/1398635694"
+      "secondaryKey": "way/23683314@b/1398635694",
+      "location": {
+        "nodeId": 1398635694,
+        "longitude": 120.2872028,
+        "latitude": 22.7169992,
+        "googleMaps": "https://www.google.com/maps/@22.7169992,120.2872028,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635694"
+      }
     },
     {
       "mergeKey": "merge/way/23683314@b/265968424+way/23683314@b/1398635837",
@@ -146,7 +230,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/23683314@b/265968424",
-      "secondaryKey": "way/23683314@b/1398635837"
+      "secondaryKey": "way/23683314@b/1398635837",
+      "location": {
+        "nodeId": 1398635837,
+        "longitude": 120.2871693,
+        "latitude": 22.7169064,
+        "googleMaps": "https://www.google.com/maps/@22.7169064,120.2871693,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635837"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/2401176462+way/267715892@b/2401176460",
@@ -156,7 +247,14 @@
       "outcome": "upgraded",
       "detail": "主次來源已吸收到同一存活道路",
       "primaryKey": "way/267715892@b/2401176462",
-      "secondaryKey": "way/267715892@b/2401176460"
+      "secondaryKey": "way/267715892@b/2401176460",
+      "location": {
+        "nodeId": 2401176460,
+        "longitude": 120.2929731,
+        "latitude": 22.7086649,
+        "googleMaps": "https://www.google.com/maps/@22.7086649,120.2929731,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176460"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/2401176466+way/267715892@b/2401176462",
@@ -166,7 +264,14 @@
       "outcome": "upgraded",
       "detail": "主次來源已吸收到同一存活道路",
       "primaryKey": "way/267715892@b/2401176466",
-      "secondaryKey": "way/267715892@b/2401176462"
+      "secondaryKey": "way/267715892@b/2401176462",
+      "location": {
+        "nodeId": 2401176462,
+        "longitude": 120.292968,
+        "latitude": 22.7085939,
+        "googleMaps": "https://www.google.com/maps/@22.7085939,120.292968,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176462"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/2401176466",
@@ -176,7 +281,14 @@
       "outcome": "upgraded",
       "detail": "主次來源已吸收到同一存活道路",
       "primaryKey": "way/267715892@b/1372607199",
-      "secondaryKey": "way/267715892@b/2401176466"
+      "secondaryKey": "way/267715892@b/2401176466",
+      "location": {
+        "nodeId": 2401176466,
+        "longitude": 120.292958,
+        "latitude": 22.7085321,
+        "googleMaps": "https://www.google.com/maps/@22.7085321,120.292958,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176466"
+      }
     },
     {
       "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697102",
@@ -186,7 +298,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/312871463@b/1080697514",
-      "secondaryKey": "way/312871463@b/1080697102"
+      "secondaryKey": "way/312871463@b/1080697102",
+      "location": {
+        "nodeId": 1080697102,
+        "longitude": 120.27251821941903,
+        "latitude": 22.729462568698665,
+        "googleMaps": "https://www.google.com/maps/@22.729462568698665,120.27251821941903,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080697102"
+      }
     },
     {
       "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697358",
@@ -196,7 +315,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/312871463@b/1080697514",
-      "secondaryKey": "way/312871463@b/1080697358"
+      "secondaryKey": "way/312871463@b/1080697358",
+      "location": {
+        "nodeId": 1080697358,
+        "longitude": 120.27214033735282,
+        "latitude": 22.72996920131409,
+        "googleMaps": "https://www.google.com/maps/@22.72996920131409,120.27214033735282,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080697358"
+      }
     },
     {
       "mergeKey": "merge/way/312871463@b/256455721+way/312871463@b/4668515918",
@@ -206,7 +332,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/312871463@b/256455721",
-      "secondaryKey": "way/312871463@b/4668515918"
+      "secondaryKey": "way/312871463@b/4668515918",
+      "location": {
+        "nodeId": 4668515918,
+        "longitude": 120.27362207751308,
+        "latitude": 22.7279852800404,
+        "googleMaps": "https://www.google.com/maps/@22.7279852800404,120.27362207751308,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4668515918"
+      }
     },
     {
       "mergeKey": "merge/way/383026294@b/262083286+way/383026294@b/258786223",
@@ -216,7 +349,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/383026294@b/262083286",
-      "secondaryKey": "way/383026294@b/258786223"
+      "secondaryKey": "way/383026294@b/258786223",
+      "location": {
+        "nodeId": 262083286,
+        "longitude": 120.2928091952179,
+        "latitude": 22.705610801046483,
+        "googleMaps": "https://www.google.com/maps/@22.705610801046483,120.2928091952179,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/262083286"
+      }
     },
     {
       "mergeKey": "merge/way/383026294@b/2938751972+way/383026294@b/2938751971",
@@ -226,7 +366,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/383026294@b/2938751972",
-      "secondaryKey": "way/383026294@b/2938751971"
+      "secondaryKey": "way/383026294@b/2938751971",
+      "location": {
+        "nodeId": 2938751971,
+        "longitude": 120.2925069,
+        "latitude": 22.7048345,
+        "googleMaps": "https://www.google.com/maps/@22.7048345,120.2925069,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2938751971"
+      }
     },
     {
       "mergeKey": "merge/way/383026294@b/4315349243+way/383026294@b/2938751972",
@@ -236,7 +383,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/383026294@b/4315349243",
-      "secondaryKey": "way/383026294@b/2938751972"
+      "secondaryKey": "way/383026294@b/2938751972",
+      "location": {
+        "nodeId": 2938751972,
+        "longitude": 120.2925083,
+        "latitude": 22.70447,
+        "googleMaps": "https://www.google.com/maps/@22.70447,120.2925083,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2938751972"
+      }
     },
     {
       "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/2206349235",
@@ -246,7 +400,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280015655@b/2206349237",
-      "secondaryKey": "way/280015655@b/2206349235"
+      "secondaryKey": "way/280015655@b/2206349235",
+      "location": {
+        "nodeId": 2206349235,
+        "longitude": 120.2955899,
+        "latitude": 22.7143433,
+        "googleMaps": "https://www.google.com/maps/@22.7143433,120.2955899,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206349235"
+      }
     },
     {
       "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/1400036052",
@@ -256,7 +417,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280015655@b/2206349237",
-      "secondaryKey": "way/280015655@b/1400036052"
+      "secondaryKey": "way/280015655@b/1400036052",
+      "location": {
+        "nodeId": 2206349237,
+        "longitude": 120.2958517,
+        "latitude": 22.7144334,
+        "googleMaps": "https://www.google.com/maps/@22.7144334,120.2958517,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206349237"
+      }
     },
     {
       "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/1400036046",
@@ -266,7 +434,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280015655@b/1400036405",
-      "secondaryKey": "way/280015655@b/1400036046"
+      "secondaryKey": "way/280015655@b/1400036046",
+      "location": {
+        "nodeId": 1400036405,
+        "longitude": 120.2964683,
+        "latitude": 22.7146483,
+        "googleMaps": "https://www.google.com/maps/@22.7146483,120.2964683,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036405"
+      }
     },
     {
       "mergeKey": "merge/way/280015655@b/2206232294+way/280015655@b/1400036098",
@@ -276,7 +451,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280015655@b/2206232294",
-      "secondaryKey": "way/280015655@b/1400036098"
+      "secondaryKey": "way/280015655@b/1400036098",
+      "location": {
+        "nodeId": 1400036098,
+        "longitude": 120.29744851157412,
+        "latitude": 22.71509552149069,
+        "googleMaps": "https://www.google.com/maps/@22.71509552149069,120.29744851157412,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036098"
+      }
     },
     {
       "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/2206232291",
@@ -286,7 +468,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280015655@b/1400036405",
-      "secondaryKey": "way/280015655@b/2206232291"
+      "secondaryKey": "way/280015655@b/2206232291",
+      "location": {
+        "nodeId": 1400036046,
+        "longitude": 120.2968139031436,
+        "latitude": 22.71485803908675,
+        "googleMaps": "https://www.google.com/maps/@22.71485803908675,120.2968139031436,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036046"
+      }
     },
     {
       "mergeKey": "merge/way/293422503@b/1400036749+way/293422503@b/304709043",
@@ -296,7 +485,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/293422503@b/1400036749",
-      "secondaryKey": "way/293422503@b/304709043"
+      "secondaryKey": "way/293422503@b/304709043",
+      "location": {
+        "nodeId": 1400036749,
+        "longitude": 120.2987823,
+        "latitude": 22.71565,
+        "googleMaps": "https://www.google.com/maps/@22.71565,120.2987823,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036749"
+      }
     },
     {
       "mergeKey": "merge/way/268219230@b/1400036464+way/268219230@b/10894062953",
@@ -306,7 +502,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/268219230@b/1400036464",
-      "secondaryKey": "way/268219230@b/10894062953"
+      "secondaryKey": "way/268219230@b/10894062953",
+      "location": {
+        "nodeId": 10894062953,
+        "longitude": 120.3000992,
+        "latitude": 22.7161202,
+        "googleMaps": "https://www.google.com/maps/@22.7161202,120.3000992,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/10894062953"
+      }
     },
     {
       "mergeKey": "merge/way/23976945@b/2417585497+way/23976945@b/2417585494",
@@ -316,7 +519,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/23976945@b/2417585497",
-      "secondaryKey": "way/23976945@b/2417585494"
+      "secondaryKey": "way/23976945@b/2417585494",
+      "location": {
+        "nodeId": 2417585494,
+        "longitude": 120.3151321,
+        "latitude": 22.7219622,
+        "googleMaps": "https://www.google.com/maps/@22.7219622,120.3151321,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2417585494"
+      }
     },
     {
       "mergeKey": "merge/way/280277096@b/1219300551+way/280277096@b/2377566099",
@@ -326,7 +536,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280277096@b/1219300551",
-      "secondaryKey": "way/280277096@b/2377566099"
+      "secondaryKey": "way/280277096@b/2377566099",
+      "location": {
+        "nodeId": 1219300551,
+        "longitude": 120.3056390180698,
+        "latitude": 22.718138362550732,
+        "googleMaps": "https://www.google.com/maps/@22.718138362550732,120.3056390180698,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1219300551"
+      }
     },
     {
       "mergeKey": "merge/way/280277096@b/256730893+way/280277096@b/265599589",
@@ -336,7 +553,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/280277096@b/256730893",
-      "secondaryKey": "way/280277096@b/265599589"
+      "secondaryKey": "way/280277096@b/265599589",
+      "location": {
+        "nodeId": 265599589,
+        "longitude": 120.3089414,
+        "latitude": 22.7192692,
+        "googleMaps": "https://www.google.com/maps/@22.7192692,120.3089414,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/265599589"
+      }
     },
     {
       "mergeKey": "merge/way/23976945@b/256245267+way/23976945@b/1401138499",
@@ -346,7 +570,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/23976945@b/256245267",
-      "secondaryKey": "way/23976945@b/1401138499"
+      "secondaryKey": "way/23976945@b/1401138499",
+      "location": {
+        "nodeId": 1401138499,
+        "longitude": 120.3114176,
+        "latitude": 22.7204191,
+        "googleMaps": "https://www.google.com/maps/@22.7204191,120.3114176,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1401138499"
+      }
     },
     {
       "mergeKey": "merge/way/230216178@b/2624297542+way/268219227@b/1196964687",
@@ -356,7 +587,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/230216178@b/2624297542",
-      "secondaryKey": "way/268219227@b/1196964687"
+      "secondaryKey": "way/268219227@b/1196964687",
+      "location": {
+        "nodeId": 1196964687,
+        "longitude": 120.3188825,
+        "latitude": 22.7236125,
+        "googleMaps": "https://www.google.com/maps/@22.7236125,120.3188825,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1196964687"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/256455746+way/254325305@b/2379749920",
@@ -366,7 +604,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/256455746",
-      "secondaryKey": "way/254325305@b/2379749920"
+      "secondaryKey": "way/254325305@b/2379749920",
+      "location": {
+        "nodeId": 2379749920,
+        "longitude": 120.29198869496852,
+        "latitude": 22.721702968209716,
+        "googleMaps": "https://www.google.com/maps/@22.721702968209716,120.29198869496852,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2379749920"
+      }
     },
     {
       "mergeKey": "merge/way/297138323@b/13305979122+way/1450825430@b/258784609",
@@ -376,7 +621,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/297138323@b/13305979122",
-      "secondaryKey": "way/1450825430@b/258784609"
+      "secondaryKey": "way/1450825430@b/258784609",
+      "location": {
+        "nodeId": 13305979122,
+        "longitude": 120.29162786095868,
+        "latitude": 22.726484728978562,
+        "googleMaps": "https://www.google.com/maps/@22.726484728978562,120.29162786095868,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/13305979122"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/1400036368+way/254325305@b/256455769",
@@ -386,7 +638,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/1400036368",
-      "secondaryKey": "way/254325305@b/256455769"
+      "secondaryKey": "way/254325305@b/256455769",
+      "location": {
+        "nodeId": 256455769,
+        "longitude": 120.2945163,
+        "latitude": 22.7219859,
+        "googleMaps": "https://www.google.com/maps/@22.7219859,120.2945163,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/256455769"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/1398635729+way/254325305@b/1400036368",
@@ -396,7 +655,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/1398635729",
-      "secondaryKey": "way/254325305@b/1400036368"
+      "secondaryKey": "way/254325305@b/1400036368",
+      "location": {
+        "nodeId": 1400036368,
+        "longitude": 120.29388401674038,
+        "latitude": 22.721928049968362,
+        "googleMaps": "https://www.google.com/maps/@22.721928049968362,120.29388401674038,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036368"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/1401138287+way/1420142022@b/13049704155",
@@ -406,7 +672,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/1401138287",
-      "secondaryKey": "way/1420142022@b/13049704155"
+      "secondaryKey": "way/1420142022@b/13049704155",
+      "location": {
+        "nodeId": 13049704155,
+        "longitude": 120.2956702,
+        "latitude": 22.7223994,
+        "googleMaps": "https://www.google.com/maps/@22.7223994,120.2956702,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/13049704155"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/1400036861",
@@ -416,7 +689,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/1401138287",
-      "secondaryKey": "way/254325305@b/1400036861"
+      "secondaryKey": "way/254325305@b/1400036861",
+      "location": {
+        "nodeId": 1401138287,
+        "longitude": 120.2952755,
+        "latitude": 22.7225036,
+        "googleMaps": "https://www.google.com/maps/@22.7225036,120.2952755,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1401138287"
+      }
     },
     {
       "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/3164180313",
@@ -426,7 +706,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/254325305@b/1401138287",
-      "secondaryKey": "way/254325305@b/3164180313"
+      "secondaryKey": "way/254325305@b/3164180313",
+      "location": {
+        "nodeId": 1400036861,
+        "longitude": 120.29524264277696,
+        "latitude": 22.722377476563278,
+        "googleMaps": "https://www.google.com/maps/@22.722377476563278,120.29524264277696,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036861"
+      }
     },
     {
       "mergeKey": "merge/way/126247850@b/7477787914+way/126247850@b/12599118960",
@@ -436,7 +723,14 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/126247850@b/7477787914",
-      "secondaryKey": "way/126247850@b/12599118960"
+      "secondaryKey": "way/126247850@b/12599118960",
+      "location": {
+        "nodeId": 12599118960,
+        "longitude": 120.3157708,
+        "latitude": 22.7305373,
+        "googleMaps": "https://www.google.com/maps/@22.7305373,120.3157708,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/12599118960"
+      }
     },
     {
       "mergeKey": "merge/way/126247850@b/258785765+way/126247850@b/2913992342",
@@ -446,7 +740,31 @@
       "outcome": "upgraded",
       "detail": "可依序重播",
       "primaryKey": "way/126247850@b/258785765",
-      "secondaryKey": "way/126247850@b/2913992342"
+      "secondaryKey": "way/126247850@b/2913992342",
+      "location": {
+        "nodeId": 2913992342,
+        "longitude": 120.31647834640353,
+        "latitude": 22.731035321007433,
+        "googleMaps": "https://www.google.com/maps/@22.731035321007433,120.31647834640353,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2913992342"
+      }
+    },
+    {
+      "mergeKey": "merge/way/281341661@b/4586442323+way/281341661@b/1372607153",
+      "roadName": "後昌路",
+      "sourceSeq": 3290,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/281341661@b/4586442323",
+      "secondaryKey": "way/281341661@b/1372607153",
+      "location": {
+        "nodeId": 4586442323,
+        "longitude": 120.28831404351948,
+        "latitude": 22.71607064849144,
+        "googleMaps": "https://www.google.com/maps/@22.71607064849144,120.28831404351948,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4586442323"
+      }
     }
   ],
   "rolledBack": [
@@ -458,7 +776,14 @@
       "outcome": "rolled_back",
       "detail": "無法唯一判定側路相鄰的主路方向",
       "primaryKey": "way/339750724@b/265968432",
-      "secondaryKey": "way/339750724@b/1398634927"
+      "secondaryKey": "way/339750724@b/1398634927",
+      "location": {
+        "nodeId": 1398634927,
+        "longitude": 120.28617436181221,
+        "latitude": 22.71757209253361,
+        "googleMaps": "https://www.google.com/maps/@22.71757209253361,120.28617436181221,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398634927"
+      }
     },
     {
       "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/265968430",
@@ -468,7 +793,14 @@
       "outcome": "rolled_back",
       "detail": "兩段端點相距 21.7 公尺",
       "primaryKey": "way/339750724@b/265968432",
-      "secondaryKey": "way/339750724@b/265968430"
+      "secondaryKey": "way/339750724@b/265968430",
+      "location": {
+        "nodeId": 265968430,
+        "longitude": 120.2865971,
+        "latitude": 22.7173801,
+        "googleMaps": "https://www.google.com/maps/@22.7173801,120.2865971,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/265968430"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/262083253",
@@ -478,7 +810,14 @@
       "outcome": "rolled_back",
       "detail": "來源候選不唯一（主 1／次 2）",
       "primaryKey": "way/267715892@b/1372607199",
-      "secondaryKey": "way/267715892@b/262083253"
+      "secondaryKey": "way/267715892@b/262083253",
+      "location": {
+        "nodeId": 262083253,
+        "longitude": 120.2928335,
+        "latitude": 22.7080972,
+        "googleMaps": "https://www.google.com/maps/@22.7080972,120.2928335,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/262083253"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/262083266+way/267715892@b/11808717001",
@@ -488,7 +827,14 @@
       "outcome": "rolled_back",
       "detail": "來源候選不唯一（主 2／次 2）",
       "primaryKey": "way/267715892@b/262083266",
-      "secondaryKey": "way/267715892@b/11808717001"
+      "secondaryKey": "way/267715892@b/11808717001",
+      "location": {
+        "nodeId": 11808717001,
+        "longitude": 120.2927927,
+        "latitude": 22.7079042,
+        "googleMaps": "https://www.google.com/maps/@22.7079042,120.2927927,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/11808717001"
+      }
     },
     {
       "mergeKey": "merge/way/267715892@b/262083269+way/267715892@b/262083266",
@@ -498,7 +844,48 @@
       "outcome": "rolled_back",
       "detail": "來源候選不唯一（主 1／次 2）",
       "primaryKey": "way/267715892@b/262083269",
-      "secondaryKey": "way/267715892@b/262083266"
+      "secondaryKey": "way/267715892@b/262083266",
+      "location": {
+        "nodeId": 262083266,
+        "longitude": 120.2927762,
+        "latitude": 22.7077032,
+        "googleMaps": "https://www.google.com/maps/@22.7077032,120.2927762,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/262083266"
+      }
+    },
+    {
+      "mergeKey": "merge/way/75852429@b/1400036109+way/75852429@b/1196964527",
+      "roadName": "德民路",
+      "sourceSeq": 2907,
+      "status": "needs_manual_review",
+      "outcome": "rolled_back",
+      "detail": "無法唯一判定側路相鄰的主路方向",
+      "primaryKey": "way/75852429@b/1400036109",
+      "secondaryKey": "way/75852429@b/1196964527",
+      "location": {
+        "nodeId": 1196964527,
+        "longitude": 120.3213976,
+        "latitude": 22.7339268,
+        "googleMaps": "https://www.google.com/maps/@22.7339268,120.3213976,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1196964527"
+      }
+    },
+    {
+      "mergeKey": "merge/way/75852429@b/1400036109+way/75852429@b/1196964663",
+      "roadName": "德民路",
+      "sourceSeq": 2908,
+      "status": "invalid",
+      "outcome": "rolled_back",
+      "detail": "兩段端點相距 8.8 公尺",
+      "primaryKey": "way/75852429@b/1400036109",
+      "secondaryKey": "way/75852429@b/1196964663",
+      "location": {
+        "nodeId": 1196964663,
+        "longitude": 120.3209815927969,
+        "latitude": 22.73375358316642,
+        "googleMaps": "https://www.google.com/maps/@22.73375358316642,120.3209815927969,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1196964663"
+      }
     }
   ],
   "alreadyV2": [],
@@ -1225,8 +1612,38 @@
         "sourceTs": "2026-07-30T12:20:52.211Z",
         "sourceAuthor": "anna"
       }
+    },
+    {
+      "mergeKey": "merge/way/75852429@b/1400036109+way/75852429@b/1196964527",
+      "primaryKey": "way/75852429@b/1400036109",
+      "secondaryKey": "way/75852429@b/1196964527",
+      "status": "needs_manual_review",
+      "detail": "無法唯一判定側路相鄰的主路方向"
+    },
+    {
+      "mergeKey": "merge/way/75852429@b/1400036109+way/75852429@b/1196964663",
+      "primaryKey": "way/75852429@b/1400036109",
+      "secondaryKey": "way/75852429@b/1196964663",
+      "status": "invalid",
+      "detail": "兩段端點相距 8.8 公尺"
+    },
+    {
+      "mergeKey": "merge/way/281341661@b/4586442323+way/281341661@b/1372607153",
+      "primaryKey": "way/281341661@b/4586442323",
+      "secondaryKey": "way/281341661@b/1372607153",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4586442323,
+        "primaryBlockKey": "way/281341661@b/4586442323",
+        "secondaryBlockKey": "way/281341661@b/1372607153",
+        "resolvedBy": "exact",
+        "sourceSeq": 3290,
+        "sourceTs": "2026-07-31T01:50:00.146Z",
+        "sourceAuthor": "anna"
+      }
     }
   ],
-  "migrationCandidateCount": 91,
-  "outputDatabaseSha256": "99ae20ee8383099e82f1c88b356e03abb0e2ec5371a107fbdb346bf0b29fe78c"
+  "migrationCandidateCount": 95,
+  "outputDatabaseSha256": "71eccb79c6cfaea93d71382cf8e19d9268025f83a7ed594740a7cfe22e2c4be6"
 }

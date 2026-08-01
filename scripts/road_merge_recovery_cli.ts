@@ -8,7 +8,7 @@ import {
   applyToRoads, foldJournal, type EnhancementRecord,
 } from '../src/core/enhancements'
 import {
-  buildRecoveryReport, buildReviewReport, reviewRowsSignature,
+  buildRecoveryReport, buildReviewMarkdown, buildReviewReport, reviewRowsSignature,
   type RoadMergeReviewReport,
 } from './road_merge_recovery'
 
@@ -19,6 +19,8 @@ const argument = (name: string, fallback = '') =>
 const databasePath = resolve(argument('db', 'public/data/road_database.json'))
 const outputPath = resolve(argument(
   'json', `artifacts/road-merge-recovery-${new Date().toISOString().slice(0, 10)}.json`))
+const markdownPath = resolve(argument(
+  'markdown', outputPath.replace(/\.json$/i, '.md')))
 const sourceCommit = argument('source-commit')
 const databaseJson = readFileSync(databasePath, 'utf8')
 const databaseSha256 = createHash('sha256').update(databaseJson).digest('hex')
@@ -33,6 +35,7 @@ const report = buildRecoveryReport(active, journal, databasePath)
 const reviewReport = buildReviewReport(report, databaseSha256, sourceCommit)
 mkdirSync(dirname(outputPath), { recursive: true })
 writeFileSync(outputPath, `${JSON.stringify(reviewReport, null, 2)}\n`, 'utf8')
+writeFileSync(markdownPath, buildReviewMarkdown(reviewReport), 'utf8')
 console.log(`道路捏合復原報告：${outputPath}`)
 console.log(`總計 ${report.rows.length}：${Object.entries(report.totals)
   .map(([status, count]) => `${status}=${count}`).join('｜')}`)

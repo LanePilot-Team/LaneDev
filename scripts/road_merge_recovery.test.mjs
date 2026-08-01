@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildMigrationCandidate, buildRecoveryReport, buildReviewReport,
+  buildMigrationCandidate, buildRecoveryReport, buildReviewMarkdown, buildReviewReport,
 } from './road_merge_recovery.ts'
 
 const point = (node) => [120 + node / 100_000, 22]
@@ -149,4 +149,24 @@ test('正式報告分開列出已升級與已回退並記錄來源 commit', () =
   assert.equal(review.rolledBack.length, 1)
   assert.equal(review.upgraded[0].outcome, 'upgraded')
   assert.equal(review.rolledBack[0].outcome, 'rolled_back')
+  assert.deepEqual(review.upgraded[0].location, {
+    nodeId: 2,
+    longitude: point(2)[0],
+    latitude: point(2)[1],
+    googleMaps: `https://www.google.com/maps/@${point(2)[1]},${point(2)[0]},20z`,
+    openStreetMap: 'https://www.openstreetmap.org/node/2',
+  })
+  assert.deepEqual(review.rolledBack[0].location, {
+    nodeId: 142,
+    longitude: point(142)[0],
+    latitude: point(142)[1],
+    googleMaps: `https://www.google.com/maps/@${point(142)[1]},${point(142)[0]},20z`,
+    openStreetMap: 'https://www.openstreetmap.org/node/142',
+  })
+
+  const markdown = buildReviewMarkdown(review)
+  assert.match(markdown, /## 已升級（1）/)
+  assert.match(markdown, /## 已回退（1）/)
+  assert.match(markdown, /Google Maps/)
+  assert.match(markdown, /way\/100@b\/1/)
 })

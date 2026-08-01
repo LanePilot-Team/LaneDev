@@ -7,6 +7,14 @@ import type { RoadFeature } from '../src/core/roads'
 type ReplayStatus = RoadMergeReplayRow['status']
 type MigrationOutcome = 'upgraded' | 'rolled_back' | 'already_v2'
 
+export interface RoadMergeReviewLocation {
+  nodeId: number
+  longitude: number
+  latitude: number
+  googleMaps: string
+  openStreetMap: string
+}
+
 export interface RoadMergeOutcomeRow {
   mergeKey: string
   roadName: string
@@ -16,6 +24,7 @@ export interface RoadMergeOutcomeRow {
   detail: string
   primaryKey: string
   secondaryKey: string
+  location?: RoadMergeReviewLocation
 }
 
 export interface RoadMergeRecoveryReport {
@@ -201,6 +210,85 @@ const roadNameFor = (row: RoadMergeReplayRow, roads: RoadFeature[]) => {
     ?? row.primaryKey
 }
 
+const blockNodeFromKey = (key: string) => {
+  const match = key.match(/@b\/(-?\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+const coordinateForNode = (roads: RoadFeature[], nodeId: number): [number, number] | null => {
+  for (const road of roads) {
+    const roadIndex = road.properties.nodes.indexOf(nodeId)
+    if (roadIndex >= 0) {
+      const coordinate = road.geometry.coordinates[roadIndex]
+      if (coordinate) return [Number(coordinate[0]), Number(coordinate[1])]
+    }
+    for (const source of road.properties.sourceSegments ?? []) {
+      const sourceIndex = source.nodeRefs.indexOf(nodeId)
+      const coordinate = sourceIndex >= 0 ? source.coordinates?.[sourceIndex] : undefined
+      if (coordinate) return [Number(coordinate[0]), Number(coordinate[1])]
+    }
+  }
+  return null
+}
+
+const reviewLocationFor = (
+  row: RoadMergeReplayRow, roads: RoadFeature[],
+): RoadMergeReviewLocation | undefined => {
+  const nodeId = row.resolved?.junctionNodeId ?? blockNodeFromKey(row.secondaryKey)
+  if (nodeId === null) return undefined
+  const coordinate = coordinateForNode(roads, nodeId)
+  if (!coordinate) return undefined
+  const [longitude, latitude] = coordinate
+  return {
+    nodeId,
+    longitude,
+    latitude,
+    googleMaps: `https://www.google.com/maps/@${latitude},${longitude},20z`,
+    openStreetMap: `https://www.openstreetmap.org/node/${nodeId}`,
+  }
+}
+
+const escapeTableCell = (value: unknown) => String(value ?? '').replaceAll('|', '\\|')
+
+const outcomeTable = (rows: RoadMergeOutcomeRow[]) => [
+  '| 道路 | 主段 | 次段 | 來源 seq | 判定 | 說明 | 人工回查位置 |',
+  '| --- | --- | --- | ---: | --- | --- | --- |',
+  ...rows.map((row) => {
+    const location = row.location
+      ? `[Google Maps](${row.location.googleMaps}) / [OSM node ${row.location.nodeId}](${row.location.openStreetMap})`
+      : '未能自動定位'
+    return `| ${escapeTableCell(row.roadName)} | \`${row.primaryKey}\` | \`${row.secondaryKey}\` | ${row.sourceSeq} | ${row.status} | ${escapeTableCell(row.detail)} | ${location} |`
+  }),
+].join('\n')
+
+export function buildReviewMarkdown(report: RoadMergeReviewReport): string {
+  return [
+    '# 舊道路捏合升級與回退回查報告',
+    '',
+    `- 來源：\`${report.sourceCommit || '未指定'}\``,
+    `- 產生時間：\`${report.generatedAt}\``,
+    `- 總數：${report.summary.total}`,
+    `- 已升級：${report.summary.upgraded}`,
+    `- 已回退：${report.summary.rolledBack}`,
+    `- 原本已是 V2：${report.summary.alreadyV2}`,
+    '',
+    '「已升級」代表舊捏合已轉成可追溯的 schema v2；「已回退」代表無法安全還原關係，因此只停用舊捏合，讓道路回到未捏合狀態。',
+    '',
+    `## 已升級（${report.upgraded.length}）`,
+    '',
+    outcomeTable(report.upgraded),
+    '',
+    `## 已回退（${report.rolledBack.length}）`,
+    '',
+    outcomeTable(report.rolledBack),
+    '',
+    `## 原本已是 V2（${report.alreadyV2.length}）`,
+    '',
+    outcomeTable(report.alreadyV2),
+    '',
+  ].join('\n')
+}
+
 export function buildRecoveryReport(
   roads: RoadFeature[],
   journal: EnhancementRecord[],
@@ -240,6 +328,7 @@ export function buildRecoveryReport(
       detail: isV2 ? '已是 schema v2，不重複遷移' : row.detail,
       primaryKey: row.primaryKey,
       secondaryKey: row.secondaryKey,
+      location: reviewLocationFor(row, roads),
     }
     if (outcome === 'already_v2') {
       outcomes.alreadyV2.push(outcomeRow)

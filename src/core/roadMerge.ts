@@ -535,6 +535,23 @@ export interface RoadMergePreview {
   resolved?: ResolvedRoadMerge
 }
 
+export type RoadMergeJournalDraft = Omit<EnhancementRecord, 'seq' | 'ts' | 'author'>
+
+export type RoadMergeSeamUndoPlan =
+  | {
+      ok: true
+      records: RoadMergeJournalDraft[]
+      retiredMergeKeys: string[]
+      rebasedMergeKeys: string[]
+    }
+  | {
+      ok: false
+      reason: string
+      records: []
+      retiredMergeKeys: []
+      rebasedMergeKeys: []
+    }
+
 const sourceSnapshot = (road: RoadFeature) => JSON.stringify({
   osmId: road.properties.osm_id,
   navSegmentKey: road.properties.navSegmentKey,
@@ -620,6 +637,162 @@ export function previewRoadMerge(
     return { ok: false, reason: row?.detail ?? '無法解析新增捏合' }
   }
   return { ok: true, record, resolved: row.resolved }
+}
+
+const failedSeamUndoPlan = (reason: string): RoadMergeSeamUndoPlan => ({
+  ok: false,
+  reason,
+  records: [],
+  retiredMergeKeys: [],
+  rebasedMergeKeys: [],
+})
+
+const stampRoadMergeDrafts = (
+  journal: EnhancementRecord[], drafts: RoadMergeJournalDraft[],
+): EnhancementRecord[] => {
+  const firstSeq = (journal[journal.length - 1]?.seq ?? 0) + 1
+  return [
+    ...journal,
+    ...drafts.map((draft, index): EnhancementRecord => ({
+      ...draft,
+      seq: firstSeq + index,
+      ts: `preview-seam-undo-${String(index).padStart(4, '0')}`,
+      author: 'preview',
+    })),
+  ]
+}
+
+interface RoadMergeSourceSnapshot {
+  osmId: number
+  blockNode: number
+  nodeRefs: number[]
+}
+
+const parseRoadMergeSourceSnapshot = (value: unknown): RoadMergeSourceSnapshot | null => {
+  if (typeof value !== 'string') return null
+  try {
+    const parsed = JSON.parse(value) as Partial<RoadMergeSourceSnapshot>
+    if (!Number.isFinite(parsed.osmId) || !Number.isFinite(parsed.blockNode)
+      || !Array.isArray(parsed.nodeRefs) || parsed.nodeRefs.length < 2
+      || parsed.nodeRefs.some((node) => !Number.isFinite(node))) return null
+    return {
+      osmId: Number(parsed.osmId),
+      blockNode: Number(parsed.blockNode),
+      nodeRefs: parsed.nodeRefs.map(Number),
+    }
+  } catch {
+    return null
+  }
+}
+
+const snapshotMatchesKey = (snapshot: RoadMergeSourceSnapshot, key: string) =>
+  `way/${snapshot.osmId}@b/${snapshot.blockNode}` === key
+
+/**
+ * 解除一條捏合接縫，而不是回滾整個 carrier 的後續歷史。線性鏈 A+B、AB+C
+ * 撤銷 A-B 時，舊紀錄全部以 tombstone 退役，再重建仍連通的 B+C。
+ */
+export function planRoadMergeSeamUndo(
+  roads: RoadFeature[], journal: EnhancementRecord[], selectedMergeKey: string,
+): RoadMergeSeamUndoPlan {
+  const active = activeMergeRecordsInSequence(journal)
+  const selected = active.find((record) => record.target.key === selectedMergeKey)
+  if (!selected) return failedSeamUndoPlan('選取的接縫已不是有效捏合')
+  const carrierKey = String(selected.fields?.primary ?? '')
+  const componentRecords = active.filter((record) =>
+    String(record.fields?.primary ?? '') === carrierKey)
+  const selectedIndex = componentRecords.findIndex((record) =>
+    record.target.key === selectedMergeKey)
+  if (!carrierKey || selectedIndex < 0) {
+    return failedSeamUndoPlan('無法辨識捏合接縫的承載路段')
+  }
+  const atomSnapshots: RoadMergeSourceSnapshot[] = []
+  for (const [index, record] of componentRecords.entries()) {
+    const primaryKey = String(record.fields?.primary ?? '')
+    const secondaryKey = String(record.fields?.secondary ?? '')
+    const primarySnapshot = parseRoadMergeSourceSnapshot(record.fields?.primary_source)
+    const secondarySnapshot = parseRoadMergeSourceSnapshot(record.fields?.secondary_source)
+    if (Number(record.fields?.schema_version) !== 2
+      || !primarySnapshot || !secondarySnapshot
+      || !snapshotMatchesKey(primarySnapshot, primaryKey)
+      || !snapshotMatchesKey(secondarySnapshot, secondaryKey)) {
+      return failedSeamUndoPlan('舊捏合缺少完整來源快照，無法安全解除接縫')
+    }
+    if (index === 0) atomSnapshots.push(primarySnapshot)
+    const primaryNodes = new Set(primarySnapshot.nodeRefs)
+    if (atomSnapshots.some((snapshot) =>
+      snapshot.nodeRefs.some((node) => !primaryNodes.has(node)))) {
+      return failedSeamUndoPlan('捏合來源鏈形成分岔，無法唯一重定位')
+    }
+    const junctionNode = Number(record.fields?.junction_node)
+    if (!Number.isFinite(junctionNode)
+      || !primarySnapshot.nodeRefs.includes(junctionNode)
+      || !secondarySnapshot.nodeRefs.includes(junctionNode)) {
+      return failedSeamUndoPlan('捏合來源鏈形成分岔，無法唯一重定位')
+    }
+    atomSnapshots.push(secondarySnapshot)
+  }
+  const atomKeys = [
+    carrierKey,
+    ...componentRecords.map((record) => String(record.fields?.secondary ?? '')),
+  ]
+  if (atomKeys.some((key) => !parseBlockKey(key)) || new Set(atomKeys).size !== atomKeys.length) {
+    return failedSeamUndoPlan('捏合來源不是唯一線性道路鏈')
+  }
+
+  const records: RoadMergeJournalDraft[] = componentRecords.map((record) => ({
+    op: 'delete',
+    target: { type: 'road_merge', key: record.target.key },
+    fields: { supersedes_seq: record.seq },
+  }))
+  const groups = [
+    atomKeys.slice(0, selectedIndex + 1),
+    atomKeys.slice(selectedIndex + 1),
+  ]
+  const atomRoads = atomKeys.map((key) => roads.filter((road) => roadBlockKey(road) === key))
+  if (atomRoads.some((matches) => matches.length !== 1)) {
+    return failedSeamUndoPlan('無法唯一找到接縫兩側的來源路段')
+  }
+  const componentNodes = new Set(atomRoads.flat().flatMap((road) => road.properties.nodes))
+  // 重定位只需要本鏈與接點側路；避免在 UI 預演階段重建數千筆無關道路捏合，
+  // 最後仍由呼叫端以完整路網做一次 all-or-nothing 驗證。
+  const localRoads = roads.filter((road) =>
+    atomKeys.includes(roadBlockKey(road))
+    || road.properties.nodes.some((node) => componentNodes.has(node)))
+  const rebasedMergeKeys: string[] = []
+  const replacementRecords: RoadMergeJournalDraft[] = []
+  let previewJournal: EnhancementRecord[] = []
+
+  for (const group of groups) {
+    if (group.length < 2) continue
+    for (let index = 1; index < group.length; index++) {
+      const view = buildRoadMergeViews(localRoads, previewJournal)
+      const primary = view.renderRoads.find((road) => roadBlockKey(road) === group[0])
+      const secondary = view.renderRoads.find((road) => roadBlockKey(road) === group[index])
+      if (!primary || !secondary) {
+        return failedSeamUndoPlan('無法唯一找到接縫兩側的來源路段')
+      }
+      const preview = previewRoadMerge(view.renderRoads, previewJournal, primary, secondary)
+      if (!preview.ok || !preview.record) {
+        return failedSeamUndoPlan(preview.reason ?? '保留接縫無法重新定位')
+      }
+      replacementRecords.push(preview.record)
+      rebasedMergeKeys.push(preview.record.target.key)
+      previewJournal = stampRoadMergeDrafts([], replacementRecords)
+    }
+  }
+
+  const finalView = buildRoadMergeViews(localRoads, previewJournal)
+  const resolvedKeys = new Set(finalView.resolved.map((merge) => merge.mergeKey))
+  if (rebasedMergeKeys.some((key) => !resolvedKeys.has(key))) {
+    return failedSeamUndoPlan('接縫重定位預演未完整解析')
+  }
+  return {
+    ok: true,
+    records: [...records, ...replacementRecords],
+    retiredMergeKeys: componentRecords.map((record) => record.target.key),
+    rebasedMergeKeys,
+  }
 }
 
 export function activeMergeForRoad(

@@ -22,6 +22,19 @@ const journal = db.editor?.journal ?? []
 applyToRoads(roads, foldJournal(journal))
 const view = buildRoadMergeViews(roads.filter((road) => !road.properties.deleted), journal)
 const active = view.routingRoads
+const routableMerges = view.resolved.filter((merge) => active.some((road) =>
+  road.properties.nodes.includes(merge.junctionNodeId)))
+const absorbedMerges = view.resolved.filter((merge) => !routableMerges.includes(merge))
+const missingBarriers = routableMerges.filter((merge) => !active.some((road) =>
+  road.properties.nodes.includes(merge.junctionNodeId)
+  && road.properties.roadMergeBarrierNodes?.includes(merge.junctionNodeId)))
+
+console.log(`可路由的捏合屏障：${routableMerges.length - missingBarriers.length}/${routableMerges.length}`)
+console.log(`已由舊版吸收、無導航節點：${absorbedMerges.length}`)
+for (const merge of missingBarriers) {
+  console.log(`❌ node=${merge.junctionNodeId} 未建立中央島屏障`)
+}
+console.log('')
 
 interface Direction { road: RoadFeature; back: boolean }
 
@@ -94,4 +107,4 @@ console.log(`\n失去合法轉向的側路：${orphans}/${audits.length}`)
 console.log(orphans === 0
   ? '✅ 側路仍連到相鄰方向；跨中央島轉向由 oneSideEntry 限制'
   : `❌ ${orphans} 條側路雖保留節點，但合法進出轉向仍被切斷`)
-process.exitCode = orphans === 0 ? 0 : 1
+process.exitCode = orphans === 0 && missingBarriers.length === 0 ? 0 : 1

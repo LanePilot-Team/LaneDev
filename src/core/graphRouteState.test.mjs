@@ -117,6 +117,19 @@ test('同一道路點在相反車道時不得悄悄改用另一方向', () => {
   assert.ok(route.lengthM > 190, '不得用順向 edge 直接抵達對向車道')
 })
 
+test('任何捏合接點都不得作為迴轉點，即使沒有側路方向資訊', () => {
+  const main = twoWayRoad(100, [1, 2], [[120, 22], [120.002, 22]])
+  main.properties.roadMergeBarrierNodes = [2]
+  const graph = new RoadGraph([main])
+  const laneOffsetLat = 1.6 / 110540
+  const forwardStart = [120.0018, 22 - laneOffsetLat]
+  const oppositeGoal = [120.0016, 22 + laneOffsetLat]
+
+  const route = graph.route(forwardStart, oppositeGoal, 'car')
+
+  assert.equal(route, null, '連續中央島的捏合接點不可用來切換主路方向')
+})
+
 test('側路不得從捏合節點跨越中央島接到主路另一側', () => {
   const junction = [120, 22]
   const access = [{ nodeId: 2, allowedBack: false }]

@@ -66,6 +66,8 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
       ? [...road.properties.oneSideEntryNodes] : undefined,
     oneSideEntryAccess: road.properties.oneSideEntryAccess
       ? road.properties.oneSideEntryAccess.map((entry) => ({ ...entry })) : undefined,
+    roadMergeBarrierNodes: road.properties.roadMergeBarrierNodes
+      ? [...road.properties.roadMergeBarrierNodes] : undefined,
     roadMergeDerived: road.properties.roadMergeDerived
       ? road.properties.roadMergeDerived.map((entry) => ({
         ...entry,
@@ -79,6 +81,10 @@ const cloneWithoutDerivedRoadMerge = (road: RoadFeature): RoadFeature => {
   for (const derived of clean.properties.roadMergeDerived ?? []) {
     if (!derived.hadNode) {
       clean.properties.oneSideEntryNodes = clean.properties.oneSideEntryNodes
+        ?.filter((node) => node !== derived.nodeId)
+    }
+    if (!derived.hadBarrier) {
+      clean.properties.roadMergeBarrierNodes = clean.properties.roadMergeBarrierNodes
         ?.filter((node) => node !== derived.nodeId)
     }
     clean.properties.oneSideEntryAccess = clean.properties.oneSideEntryAccess
@@ -95,6 +101,9 @@ const cloneWithoutDerivedRoadMerge = (road: RoadFeature): RoadFeature => {
   }
   if (clean.properties.oneSideEntryAccess?.length === 0) {
     clean.properties.oneSideEntryAccess = undefined
+  }
+  if (clean.properties.roadMergeBarrierNodes?.length === 0) {
+    clean.properties.roadMergeBarrierNodes = undefined
   }
   clean.properties.roadMergeDerived = undefined
   return clean
@@ -271,6 +280,9 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
     if (!access.has(entry.nodeId)) access.set(entry.nodeId, entry)
   }
   merge.primary.properties.oneSideEntryAccess = access.size ? [...access.values()] : undefined
+  const barriers = new Set(merge.primary.properties.roadMergeBarrierNodes ?? [])
+  for (const node of merge.secondary.properties.roadMergeBarrierNodes ?? []) barriers.add(node)
+  merge.primary.properties.roadMergeBarrierNodes = barriers.size ? [...barriers] : undefined
   const index = roads.indexOf(merge.secondary)
   if (index >= 0) roads.splice(index, 1)
 }
@@ -299,29 +311,41 @@ const suppressOverlappedRenderStubs = (
   }
 }
 
+const ensureRoadMergeDerived = (road: RoadFeature, nodeId: number) => {
+  const prior = road.properties.roadMergeDerived
+    ?.find((entry) => entry.nodeId === nodeId)
+  if (prior) return prior
+  const previousAccess = road.properties.oneSideEntryAccess
+    ?.find((entry) => entry.nodeId === nodeId)
+  const derived = {
+    nodeId,
+    hadNode: road.properties.oneSideEntryNodes?.includes(nodeId) ?? false,
+    hadBarrier: road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false,
+    previousAccess: previousAccess ? { ...previousAccess } : undefined,
+  }
+  road.properties.roadMergeDerived = [
+    ...(road.properties.roadMergeDerived ?? []), derived,
+  ]
+  return derived
+}
+
+const registerRoadMergeBarrier = (road: RoadFeature, nodeId: number) => {
+  ensureRoadMergeDerived(road, nodeId)
+  const barriers = new Set(road.properties.roadMergeBarrierNodes ?? [])
+  barriers.add(nodeId)
+  road.properties.roadMergeBarrierNodes = [...barriers]
+}
+
 const registerOneSideAccess = (road: RoadFeature, nodeId: number, allowedBack: boolean) => {
-    const priorDerived = road.properties.roadMergeDerived
-      ?.find((entry) => entry.nodeId === nodeId)
-    if (!priorDerived) {
-      const previousAccess = road.properties.oneSideEntryAccess
-        ?.find((entry) => entry.nodeId === nodeId)
-      road.properties.roadMergeDerived = [
-        ...(road.properties.roadMergeDerived ?? []),
-        {
-          nodeId,
-          hadNode: road.properties.oneSideEntryNodes?.includes(nodeId) ?? false,
-          previousAccess: previousAccess ? { ...previousAccess } : undefined,
-        },
-      ]
-    }
-    const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
-    restricted.add(nodeId)
-    road.properties.oneSideEntryNodes = [...restricted]
-    const access = new Map(
-      (road.properties.oneSideEntryAccess ?? [])
-        .map((entry) => [entry.nodeId, entry] as const))
-    access.set(nodeId, { nodeId, allowedBack })
-    road.properties.oneSideEntryAccess = [...access.values()]
+  ensureRoadMergeDerived(road, nodeId)
+  const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
+  restricted.add(nodeId)
+  road.properties.oneSideEntryNodes = [...restricted]
+  const access = new Map(
+    (road.properties.oneSideEntryAccess ?? [])
+      .map((entry) => [entry.nodeId, entry] as const))
+  access.set(nodeId, { nodeId, allowedBack })
+  road.properties.oneSideEntryAccess = [...access.values()]
 }
 
 const applyRoutingConstraints = (
@@ -329,12 +353,16 @@ const applyRoutingConstraints = (
   merges: ResolvedRoadMerge[],
 ) => {
   for (const merge of merges) {
-    if (merge.adjacentBack === null) continue
     const primary = candidatesFor(routingRoads, merge.primaryKey)
     if (primary.length !== 1) continue
-    registerOneSideAccess(primary[0].road, merge.junctionNodeId, merge.adjacentBack)
+    registerRoadMergeBarrier(primary[0].road, merge.junctionNodeId)
 
     const secondary = candidatesFor(routingRoads, merge.secondaryKey)
+    if (secondary.length === 1 && secondary[0].road !== primary[0].road) {
+      registerRoadMergeBarrier(secondary[0].road, merge.junctionNodeId)
+    }
+    if (merge.adjacentBack === null) continue
+    registerOneSideAccess(primary[0].road, merge.junctionNodeId, merge.adjacentBack)
     if (secondary.length !== 1 || secondary[0].road === primary[0].road) continue
     // 合併主線的 forward 始終跟 primary 的 digitize 方向一致；secondary
     // 若以同類端點接合（start-start / end-end），其 digitize 方向相反。
@@ -433,6 +461,7 @@ function replayRoadMerges(
     }
     resolved.push(merge)
     rows.push(row)
+    registerRoadMergeBarrier(merge.primary, merge.junctionNodeId)
     if (merge.adjacentBack !== null) {
       // working 就是繪圖視圖；直接標在當前 carrier，避免連鎖捏合後舊 block key
       // 已被吸收而無法再次查回。若 carrier 後續成為 secondary，視覺合併會轉移標記。

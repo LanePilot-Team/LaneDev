@@ -242,6 +242,20 @@ test('導航保留主段次段與側路，只有繪圖視圖接合主路', () =>
   assert.equal(view.renderRoads.some((item) => item.properties.osm_id === 200), true)
 })
 
+test('沒有側路方向資訊的捏合仍須在導航主次段標記中央島屏障', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const view = buildRoadMergeViews([primary, secondary], [mergeRecord()])
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+
+  assert.deepEqual(routingPrimary.properties.roadMergeBarrierNodes, [2])
+  assert.deepEqual(routingSecondary.properties.roadMergeBarrierNodes, [2])
+  assert.equal(primary.properties.roadMergeBarrierNodes, undefined,
+    '來源道路不得被衍生屏障污染')
+})
+
 test('與捏合主路重疊的短碎段只從繪圖隱藏，仍保留在導航來源', () => {
   const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
   const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
@@ -353,6 +367,8 @@ test('撤銷後重建會清除先前衍生的接縫限制', () => {
   assert.equal(restored.rows.length, 0)
   assert.equal(restored.routingRoads.some((item) => item.properties.oneSideEntryNodes?.includes(2)),
     false)
+  assert.equal(restored.routingRoads.some((item) => item.properties.roadMergeBarrierNodes?.includes(2)),
+    false, '撤銷後不可殘留中央島屏障')
 })
 
 test('新版捏合撤銷後繪圖恢復原始兩段道路', () => {

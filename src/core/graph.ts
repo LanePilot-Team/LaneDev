@@ -58,6 +58,15 @@ export { oneSideEntryTransitionAllowed }
 
 function transitionAllowed(incoming: Edge | undefined, outgoing: Edge, nodeId: number): boolean {
   if (!incoming) return true
+  const incomingBarrier = incoming.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  const outgoingBarrier = outgoing.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  if (incomingBarrier && outgoingBarrier) {
+    const incomingCoords = incoming.coords
+    const incomingBearing = bearing(
+      incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
+    const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
+    if (classifyTurn(angleDelta(incomingBearing, outgoingBearing)) === 'uturn') return false
+  }
   return oneSideEntryTransitionAllowed(
     incoming.road, incoming.back, outgoing.road, outgoing.back, nodeId)
 }

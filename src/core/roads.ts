@@ -81,10 +81,13 @@ export interface RoadProps {
   oneSideEntryNodes?: number[]
   /** 捏合接縫實際相鄰的主路方向；舊紀錄缺少時以 allowedBack=false 相容。 */
   oneSideEntryAccess?: { nodeId: number; allowedBack: boolean }[]
+  /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
+  roadMergeBarrierNodes?: number[]
   /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
   roadMergeDerived?: {
     nodeId: number
     hadNode: boolean
+    hadBarrier?: boolean
     previousAccess?: { nodeId: number; allowedBack: boolean }
   }[]
   roadMarkingMode: 'all' | 'center' | 'none'

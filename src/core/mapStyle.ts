@@ -18,6 +18,8 @@ export const C = {
   route: '#3b82f6',
   label: '#3d4a5c',
   labelHalo: '#ffffff',
+  pick: '#22d3ee', // 編輯選取中的路段中心線（青，路面配色沒有的顏色）
+  pickAlt: '#fb923c', // 同一疊未選取的候選（橘虛線）
 }
 
 /** icon 尺寸表達式：讓圖片呈現為實際 meters 高（imgPx = 圖片像素高） */
@@ -307,6 +309,22 @@ export function buildStyle(): StyleSpecification {
         id: 'road-preview-moto', type: 'fill', source: 'roadPreview', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'moto'],
         paint: { 'fill-color': C.laneLine },
+      },
+      // 疊在一起的路段（主線／側車道中心線完全重合）：預覽用的是真實路面顏色，
+      // 光看路面分不出選到哪一條，所以另外畫中心線——虛線 = 同一疊的其他候選，
+      // 實線 = 目前選取。放在最低 zoom 也看得到，才能在拉遠時確認選中的是誰。
+      {
+        id: 'road-preview-stack-alt', type: 'line', source: 'roadPreview', minzoom: 12,
+        filter: ['==', ['get', 'kind'], 'stack-alt'],
+        paint: {
+          'line-color': C.pickAlt, 'line-width': 2, 'line-opacity': 0.9,
+          'line-dasharray': [2, 2],
+        },
+      },
+      {
+        id: 'road-preview-select', type: 'line', source: 'roadPreview', minzoom: 12,
+        filter: ['==', ['get', 'kind'], 'select'],
+        paint: { 'line-color': C.pick, 'line-width': 3, 'line-opacity': 0.95 },
       },
 
       // ── 機車停等格（排在車道線之後：不透明 fill 蓋掉框內車道線＝「線在格前截止」，

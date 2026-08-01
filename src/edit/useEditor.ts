@@ -15,6 +15,10 @@ import {
   buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
 } from '../core/roads'
 import { groundMarkingPolygons } from '../core/groundMarkings'
+import {
+  collectStackedRoads, describeStackRoad, nextStackIndex, stackKeyOf, EMPTY_CURSOR,
+  type StackCursor, type StackPick,
+} from './stackPick'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -127,6 +131,12 @@ export interface Editor {
   setIslandPanel: (v: { pairKey: string; wEff?: number } | null) => void
   overrideTwin: (key: string, fields: Record<string, string | number>) => void
   editWarn: string | null
+  /** 上一次點擊處疊在一起的所有路段（由上而下）；長度 >1 才需要消歧 */
+  stackPicks: StackPick[]
+  /** stackPicks 中目前選取的索引 */
+  stackIndex: number
+  /** 直接選取整疊中的第 i 條（面板的疊層清單用） */
+  pickStacked: (i: number) => void
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
   /** 拉線新增道路（road 工具）：草稿與屬性 */
@@ -165,6 +175,11 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   const [islandPanel, setIslandPanel] = useState<{ pairKey: string; wEff?: number } | null>(null)
   const [bayTick, setBayTick] = useState(0) // journal 覆寫後讓面板重算
   void bayTick
+  // ── 疊合路段消歧 ──
+  const [stackPicks, setStackPicks] = useState<StackPick[]>([])
+  const [stackIndex, setStackIndex] = useState(0)
+  /** 上一次點擊的螢幕位置與整疊組成，用來判定「同一處再點一下」＝輪選下一條 */
+  const stackRef = useRef<StackCursor>(EMPTY_CURSOR)
   const [editWarn, setEditWarn] = useState<string | null>(null)
   const editWarnTimer = useRef<number>(0)
   // ── 拉線新增道路（road 工具）──
@@ -329,11 +344,29 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
       (p) => p?.kind === 'lane',
     )
+    // 選取指示線：疊在一起的路面顏色一模一樣，只有中心線分得出選到哪一條。
+    const outline = (road: RoadFeature, kind: 'select' | 'stack-alt') => ({
+      type: 'Feature' as const,
+      properties: { kind },
+      geometry: { type: 'LineString' as const, coordinates: road.geometry.coordinates },
+    })
+    const alts = stackPicks.length > 1
+      ? stackPicks
+        .filter((pick) => pick.osmId !== editRoad.osmId || pick.blockNode !== editRoad.blockNode)
+        .map((pick) => core.roadsRef.current.find((road) =>
+          road.properties.osm_id === pick.osmId
+          && road.properties.blockNode === pick.blockNode))
+        .filter((road): road is RoadFeature => !!road)
+        .map((road) => outline(road, 'stack-alt'))
+      : []
     source.setData({
       type: 'FeatureCollection',
-      features: [...surfaces.features, ...dividers.features],
+      features: [
+        ...surfaces.features, ...dividers.features,
+        ...alts, outline(original, 'select'),
+      ],
     } as never)
-  }, [core, editRoad])
+  }, [core, editRoad, stackPicks])
 
   function warn(msg: string) {
     setEditWarn(msg)
@@ -351,16 +384,27 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         const wEff = hitIsland[0].properties.wEff
         setIslandPanel({ pairKey, wEff: typeof wEff === 'number' ? wEff : undefined })
         setEditRoad(null)
+        clearStack()
         return
       }
-      const hit = map.queryRenderedFeatures(e.point, { layers: ['road-surface', 'roads-simple'] })
-      if (hit.length === 0) { setEditRoad(null); setIslandPanel(null); return }
-      // way 已依路口切塊：osm_id + blockNode 才唯一指到點選的區塊
-      const road = core.roadsRef.current.find(
-        (r) => r.properties.osm_id === Number(hit[0].properties.osm_id)
-          && r.properties.blockNode === Number(hit[0].properties.blockNode))
-      if (!road) return
+      // 整疊都收下來：主線與側車道（高楠公路等）中心線完全重合時，只取 hit[0]
+      // 會讓下層那條永遠點不到。way 已依路口切塊，osm_id + blockNode 才唯一指到區塊。
+      const stack = collectStackedRoads(map, e.point, core.roadsRef.current)
+      if (stack.length === 0) { setEditRoad(null); setIslandPanel(null); clearStack(); return }
       const ctrlSelect = e.originalEvent.ctrlKey || e.originalEvent.metaKey
+      const keys = stack.map((r) => stackKeyOf(r.properties.osm_id, r.properties.blockNode)).join('|')
+      const index = nextStackIndex(
+        stackRef.current, e.point.x, e.point.y, keys, stack.length, ctrlSelect)
+      stackRef.current = { x: e.point.x, y: e.point.y, keys, index }
+      setStackPicks(stack.map(describeStackRoad))
+      setStackIndex(index)
+      const road = stack[index]
+      if (stack.length > 1 && !ctrlSelect) {
+        // 「再點一下換下一條」寫在提示列常駐文字，這裡只報選到誰，免得訊息長到換行
+        const pick = describeStackRoad(road)
+        warn(`疊了 ${stack.length} 條 · 已選 ${index + 1}/${stack.length}`
+          + ` ${pick.name}（${pick.detail}）`)
+      }
       if (ctrlSelect) {
         const firstKey = mergeFirstRef.current
         if (!firstKey) {
@@ -421,152 +465,164 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       } else {
         mergeFirstRef.current = null
       }
-      const p2 = road.properties
-      const cs = road.geometry.coordinates as [number, number][]
-      const brg = geoBearing(cs[0], cs[cs.length - 1])
-      const segmentLengthM = cs.slice(1).reduce(
-        (sum, point, index) => sum + haversine(cs[index], point),
-        0,
-      )
-      // 面板初始值 = 路面圖示（有真值用真值，否則同 buildLaneArrows 的預設推導）
-      const g = core.graphRef.current
-      const tl = g ? groundMoves(g, core.baysRef.current, road, false, core.rightLanesRef.current)
-        : Array.from({ length: p2.lanesForward }, () => 'through')
-      const tlB = g && p2.oneway === 'no'
-        ? groundMoves(g, core.baysRef.current, road, true, core.rightLanesRef.current)
-        : Array.from({ length: Math.max(1, p2.lanesBackward) }, () => 'through')
-      // 停等格／偏心道鍵必須採 RoadGraph 實際行向終點；couplet、反向 way、
-      // 切塊後 properties.nodes 的首尾不一定等於 graph edge 的 toNode。
-      // 收邊參數與停止線/停等格一致（stopLineEdges）：停等格資格要看 endSetbackM，
-      // 面板若用別組參數判定，就會給出建置端一定會拒絕的設定入口。
-      const directionEdges = g ? stopLineEdges(g, (candidate) => candidate === road) : []
-      const forwardEdge = directionEdges.find((edge) => !edge.back)
-      const backwardEdge = directionEdges.find((edge) => edge.back)
-      const nodeLast = forwardEdge?.toNode ?? p2.nodes[p2.nodes.length - 1] ?? 0
-      const nodeFirst = backwardEdge?.toNode ?? p2.nodes[0] ?? 0
-      // 兩向偏心道現況（folded journal 已反映在 baysRef）
-      const bayOf = (key: string) =>
-        core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
-      const bayF = bayOf(`way/${p2.osm_id}@node/${nodeLast}`)
-      const bayB = bayOf(`way/${p2.osm_id}@node/${nodeFirst}~b`)
-      const activeBay = core.baysRef.current.find((b) =>
-        b.key === `way/${p2.osm_id}@node/${nodeLast}`
-        || b.key === `way/${p2.osm_id}@node/${nodeFirst}~b`)
-      const baySingleMode = activeBay?.singleMode ?? 'capped'
-      // 地面規則現況（無人工設定時顯示 fallback，讓使用者看到現有印字的來源）
-      const rulesF = p2.rulesF ?? (p2.motorcycle === 'no' ? ['no_moto'] : [])
-      const rulesB = p2.oneway === 'no'
-        ? (p2.rulesB ?? (p2.motorcycle === 'no' ? ['no_moto'] : []))
-        : []
-      const legacyMarks = (rules: string[], lanes: number, motoCount: number) => {
-        const mark = rules.includes('no_moto') ? { text: '禁行機車', color: '#facc15' } : null
-        return [...Array.from({ length: lanes }, () => mark),
-          ...Array.from({ length: motoCount }, () => null)]
+      openRoadPanel(road)
+      return
+    }
+    handleOtherTools(map, e, p)
+  }
+
+  /** 讀出區塊現況並開啟車道面板（地圖點選、疊層清單直選都走這裡）。 */
+  function openRoadPanel(road: RoadFeature) {
+    const p2 = road.properties
+    const cs = road.geometry.coordinates as [number, number][]
+    const brg = geoBearing(cs[0], cs[cs.length - 1])
+    const segmentLengthM = cs.slice(1).reduce(
+      (sum, point, index) => sum + haversine(cs[index], point),
+      0,
+    )
+    // 面板初始值 = 路面圖示（有真值用真值，否則同 buildLaneArrows 的預設推導）
+    const g = core.graphRef.current
+    const tl = g ? groundMoves(g, core.baysRef.current, road, false, core.rightLanesRef.current)
+      : Array.from({ length: p2.lanesForward }, () => 'through')
+    const tlB = g && p2.oneway === 'no'
+      ? groundMoves(g, core.baysRef.current, road, true, core.rightLanesRef.current)
+      : Array.from({ length: Math.max(1, p2.lanesBackward) }, () => 'through')
+    // 停等格／偏心道鍵必須採 RoadGraph 實際行向終點；couplet、反向 way、
+    // 切塊後 properties.nodes 的首尾不一定等於 graph edge 的 toNode。
+    // 收邊參數與停止線/停等格一致（stopLineEdges）：停等格資格要看 endSetbackM，
+    // 面板若用別組參數判定，就會給出建置端一定會拒絕的設定入口。
+    const directionEdges = g ? stopLineEdges(g, (candidate) => candidate === road) : []
+    const forwardEdge = directionEdges.find((edge) => !edge.back)
+    const backwardEdge = directionEdges.find((edge) => edge.back)
+    const nodeLast = forwardEdge?.toNode ?? p2.nodes[p2.nodes.length - 1] ?? 0
+    const nodeFirst = backwardEdge?.toNode ?? p2.nodes[0] ?? 0
+    // 兩向偏心道現況（folded journal 已反映在 baysRef）
+    const bayOf = (key: string) =>
+      core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
+    const bayF = bayOf(`way/${p2.osm_id}@node/${nodeLast}`)
+    const bayB = bayOf(`way/${p2.osm_id}@node/${nodeFirst}~b`)
+    const activeBay = core.baysRef.current.find((b) =>
+      b.key === `way/${p2.osm_id}@node/${nodeLast}`
+      || b.key === `way/${p2.osm_id}@node/${nodeFirst}~b`)
+    const baySingleMode = activeBay?.singleMode ?? 'capped'
+    // 地面規則現況（無人工設定時顯示 fallback，讓使用者看到現有印字的來源）
+    const rulesF = p2.rulesF ?? (p2.motorcycle === 'no' ? ['no_moto'] : [])
+    const rulesB = p2.oneway === 'no'
+      ? (p2.rulesB ?? (p2.motorcycle === 'no' ? ['no_moto'] : []))
+      : []
+    const legacyMarks = (rules: string[], lanes: number, motoCount: number) => {
+      const mark = rules.includes('no_moto') ? { text: '禁行機車', color: '#facc15' } : null
+      return [...Array.from({ length: lanes }, () => mark),
+        ...Array.from({ length: motoCount }, () => null)]
+    }
+    const laneMarksF = resizeLaneMarks(
+      p2.laneMarksF ?? legacyMarks(rulesF, p2.lanesForward, p2.motoCountF),
+      p2.lanesForward + p2.motoCountF)
+    const laneMarksB = resizeLaneMarks(
+      p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoCountB),
+      p2.lanesBackward + p2.motoCountB)
+    // 機車停等格現況（refreshBays 已把 folded journal 反映在 motoBoxesRef）
+    const mbOf = (dirKey: string) =>
+      core.motoBoxesRef.current.find((m) => m.dir === dirKey)
+    const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
+    const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
+    const rlF = core.rightLanesRef.current.find((r) =>
+      r.wayId === p2.osm_id && r.nodeId === nodeLast && !r.back)
+    const rlB = core.rightLanesRef.current.find((r) =>
+      r.wayId === p2.osm_id && r.nodeId === nodeFirst && r.back)
+    // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
+    // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
+    // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
+    const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
+    const inferMotoBox = (back: boolean) => {
+      const edge = back ? backwardEdge : forwardEdge
+      if (!motoBoxSlot || !edge) return { max: 0, start: 0, end: 0 }
+      const slot = motoBoxSlot(edge)
+      // 快慢分隔島只影響自動產生；人工編輯仍應能選擇是否繪製停等格。
+      // buildMotoBoxes 會以明確的 moto_box journal 設定覆蓋自動篩選。
+      if (!slot.eligible) return { max: 0, start: 0, end: 0 }
+      const lanes = p2.oneway === 'yes'
+        ? p2.lanesForward : back ? p2.lanesBackward : p2.lanesForward
+      const moto = p2.oneway === 'yes' ? p2.motoF : back ? p2.motoB : p2.motoF
+      return {
+        max: slot.maxLanes,
+        start: slot.firstLegalLane,
+        end: lanes + (moto ? 1 : 0),
       }
-      const laneMarksF = resizeLaneMarks(
-        p2.laneMarksF ?? legacyMarks(rulesF, p2.lanesForward, p2.motoCountF),
-        p2.lanesForward + p2.motoCountF)
-      const laneMarksB = resizeLaneMarks(
-        p2.laneMarksB ?? legacyMarks(rulesB, p2.lanesBackward, p2.motoCountB),
-        p2.lanesBackward + p2.motoCountB)
-      // 機車停等格現況（refreshBays 已把 folded journal 反映在 motoBoxesRef）
-      const mbOf = (dirKey: string) =>
-        core.motoBoxesRef.current.find((m) => m.dir === dirKey)
-      const mbF = mbOf(`${p2.osm_id}@${nodeLast}`)
-      const mbB = mbOf(`${p2.osm_id}@${nodeFirst}~b`)
-      const rlF = core.rightLanesRef.current.find((r) =>
-        r.wayId === p2.osm_id && r.nodeId === nodeLast && !r.back)
-      const rlB = core.rightLanesRef.current.find((r) =>
-        r.wayId === p2.osm_id && r.nodeId === nodeFirst && r.back)
-      // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
-      // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
-      // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
-      const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
-      const inferMotoBox = (back: boolean) => {
-        const edge = back ? backwardEdge : forwardEdge
-        if (!motoBoxSlot || !edge) return { max: 0, start: 0, end: 0 }
-        const slot = motoBoxSlot(edge)
-        // 快慢分隔島只影響自動產生；人工編輯仍應能選擇是否繪製停等格。
-        // buildMotoBoxes 會以明確的 moto_box journal 設定覆蓋自動篩選。
-        if (!slot.eligible) return { max: 0, start: 0, end: 0 }
-        const lanes = p2.oneway === 'yes'
-          ? p2.lanesForward : back ? p2.lanesBackward : p2.lanesForward
-        const moto = p2.oneway === 'yes' ? p2.motoF : back ? p2.motoB : p2.motoF
-        return {
-          max: slot.maxLanes,
-          start: slot.firstLegalLane,
-          end: lanes + (moto ? 1 : 0),
-        }
-      }
-      const inferredF = inferMotoBox(false)
-      const inferredB = inferMotoBox(true)
-      const motoBoxF = mbF?.coveredLanes ?? 0
-      const motoBoxB = mbB?.coveredLanes ?? 0
-      setEditRoad({
-        osmId: p2.osm_id, name: p2.name, oneway: p2.oneway,
-        blockNode: p2.blockNode,
-        f: p2.lanesForward, b: p2.lanesBackward,
-        motoF: p2.motoF, motoB: p2.motoB,
-        motoCountF: p2.motoCountF, motoCountB: p2.motoCountB,
-        motoSepF: p2.motoSepF || 0, motoSepB: p2.motoSepB || 0,
-        motoEntryIconF: !!p2.motoEntryIconF,
-        motoEntryIconB: !!p2.motoEntryIconB,
-        motoTextDiamondF: !!p2.motoTextDiamondF,
-        motoTextDiamondB: !!p2.motoTextDiamondB,
-        stopLineF: p2.stopLineF !== false,
-        stopLineB: p2.stopLineB !== false,
-        arrowDisplayF: p2.arrowDisplayF !== false,
-        arrowDisplayB: p2.arrowDisplayB !== false,
-        startArrowDisplayF: !!p2.startArrowDisplayF,
-        startArrowDisplayB: !!p2.startArrowDisplayB,
-        leftWaitAreaF: !!p2.leftWaitAreaF,
-        leftWaitAreaB: !!p2.leftWaitAreaB,
-        startTurnLanes: resizeTurnLanes(p2.startTurnLanes ?? tl, p2.lanesForward),
-        startTurnLanesB: resizeTurnLanes(
-          p2.startTurnLanesB ?? tlB,
-          Math.max(1, p2.lanesBackward),
-        ),
-        segmentLengthM,
-        roadMarkingMode: p2.roadMarkingMode,
-        centerM: p2.centerM || 0,
-        extraM: p2.extraM || 0,
-        centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
-        islandBayMode: !!p2.islandBayMode,
-        centerExtendStart: !!p2.centerExtendStart,
-        centerExtendEnd: !!p2.centerExtendEnd,
-        canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
-        fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
-        turnLanes: resizeTurnLanes(tl, p2.lanesForward),
-        turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
-        motoTurnLanesF: resizeTurnLanes(p2.motoTurnLanesF ?? [], p2.motoCountF),
-        motoTurnLanesB: resizeTurnLanes(p2.motoTurnLanesB ?? [], p2.motoCountB),
-        nodeFirst, nodeLast,
-        bayF, bayB, bayF0: bayF, bayB0: bayB,
-        baySingleMode, baySingleMode0: baySingleMode,
-        laneMarksF, laneMarksB,
-        motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
-        motoBoxMaxF: mbF?.maxLanes ?? inferredF.max,
-        motoBoxMaxB: mbB?.maxLanes ?? inferredB.max,
-        motoBoxStartF: mbF?.startLane ?? inferredF.start,
-        motoBoxEndF: mbF?.endLane ?? inferredF.end,
-        motoBoxStartB: mbB?.startLane ?? inferredB.start,
-        motoBoxEndB: mbB?.endLane ?? inferredB.end,
-        motoBoxStartF0: mbF?.startLane ?? inferredF.start,
-        motoBoxEndF0: mbF?.endLane ?? inferredF.end,
-        motoBoxStartB0: mbB?.startLane ?? inferredB.start,
-        motoBoxEndB0: mbB?.endLane ?? inferredB.end,
-        motoBoxSlotsF: p2.lanesForward + p2.motoCountF + (rlF ? 1 : 0),
-        motoBoxSlotsB: p2.lanesBackward + p2.motoCountB + (rlB ? 1 : 0),
-        motoBoxMinF: inferredF.start,
-        motoBoxMinB: inferredB.start,
-        rightLaneF: !!rlF, rightLaneB: !!rlB,
-        rightLaneF0: !!rlF, rightLaneB0: !!rlB,
-        rightLaneLenF: Math.round(rlF?.lenM ?? 20),
-        rightLaneLenB: Math.round(rlB?.lenM ?? 20),
-        rightLaneLenF0: Math.round(rlF?.lenM ?? 20),
-        rightLaneLenB0: Math.round(rlB?.lenM ?? 20),
-      })
-    } else if (editToolRef.current === 'vehicle') {
+    }
+    const inferredF = inferMotoBox(false)
+    const inferredB = inferMotoBox(true)
+    const motoBoxF = mbF?.coveredLanes ?? 0
+    const motoBoxB = mbB?.coveredLanes ?? 0
+    setEditRoad({
+      osmId: p2.osm_id, name: p2.name, oneway: p2.oneway,
+      blockNode: p2.blockNode,
+      f: p2.lanesForward, b: p2.lanesBackward,
+      motoF: p2.motoF, motoB: p2.motoB,
+      motoCountF: p2.motoCountF, motoCountB: p2.motoCountB,
+      motoSepF: p2.motoSepF || 0, motoSepB: p2.motoSepB || 0,
+      motoEntryIconF: !!p2.motoEntryIconF,
+      motoEntryIconB: !!p2.motoEntryIconB,
+      motoTextDiamondF: !!p2.motoTextDiamondF,
+      motoTextDiamondB: !!p2.motoTextDiamondB,
+      stopLineF: p2.stopLineF !== false,
+      stopLineB: p2.stopLineB !== false,
+      arrowDisplayF: p2.arrowDisplayF !== false,
+      arrowDisplayB: p2.arrowDisplayB !== false,
+      startArrowDisplayF: !!p2.startArrowDisplayF,
+      startArrowDisplayB: !!p2.startArrowDisplayB,
+      leftWaitAreaF: !!p2.leftWaitAreaF,
+      leftWaitAreaB: !!p2.leftWaitAreaB,
+      startTurnLanes: resizeTurnLanes(p2.startTurnLanes ?? tl, p2.lanesForward),
+      startTurnLanesB: resizeTurnLanes(
+        p2.startTurnLanesB ?? tlB,
+        Math.max(1, p2.lanesBackward),
+      ),
+      segmentLengthM,
+      roadMarkingMode: p2.roadMarkingMode,
+      centerM: p2.centerM || 0,
+      extraM: p2.extraM || 0,
+      centerKind: p2.centerKind === 'island' ? 'island' : 'hatch',
+      islandBayMode: !!p2.islandBayMode,
+      centerExtendStart: !!p2.centerExtendStart,
+      centerExtendEnd: !!p2.centerExtendEnd,
+      canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
+      fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
+      turnLanes: resizeTurnLanes(tl, p2.lanesForward),
+      turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
+      motoTurnLanesF: resizeTurnLanes(p2.motoTurnLanesF ?? [], p2.motoCountF),
+      motoTurnLanesB: resizeTurnLanes(p2.motoTurnLanesB ?? [], p2.motoCountB),
+      nodeFirst, nodeLast,
+      bayF, bayB, bayF0: bayF, bayB0: bayB,
+      baySingleMode, baySingleMode0: baySingleMode,
+      laneMarksF, laneMarksB,
+      motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
+      motoBoxMaxF: mbF?.maxLanes ?? inferredF.max,
+      motoBoxMaxB: mbB?.maxLanes ?? inferredB.max,
+      motoBoxStartF: mbF?.startLane ?? inferredF.start,
+      motoBoxEndF: mbF?.endLane ?? inferredF.end,
+      motoBoxStartB: mbB?.startLane ?? inferredB.start,
+      motoBoxEndB: mbB?.endLane ?? inferredB.end,
+      motoBoxStartF0: mbF?.startLane ?? inferredF.start,
+      motoBoxEndF0: mbF?.endLane ?? inferredF.end,
+      motoBoxStartB0: mbB?.startLane ?? inferredB.start,
+      motoBoxEndB0: mbB?.endLane ?? inferredB.end,
+      motoBoxSlotsF: p2.lanesForward + p2.motoCountF + (rlF ? 1 : 0),
+      motoBoxSlotsB: p2.lanesBackward + p2.motoCountB + (rlB ? 1 : 0),
+      motoBoxMinF: inferredF.start,
+      motoBoxMinB: inferredB.start,
+      rightLaneF: !!rlF, rightLaneB: !!rlB,
+      rightLaneF0: !!rlF, rightLaneB0: !!rlB,
+      rightLaneLenF: Math.round(rlF?.lenM ?? 20),
+      rightLaneLenB: Math.round(rlB?.lenM ?? 20),
+      rightLaneLenF0: Math.round(rlF?.lenM ?? 20),
+      rightLaneLenB0: Math.round(rlB?.lenM ?? 20),
+    })
+  }
+
+  /** 車道以外的工具分派（車輛／新路／偏心道／待轉區），維持原本行為。 */
+  function handleOtherTools(map: MLMap, e: MapMouseEvent, p: [number, number]) {
+    if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
       let hitV: PlacedVehicle | null = null
       let hitD = 4 // 公尺
@@ -880,7 +936,26 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     core.refreshVehicles()
   }
 
+  /** 疊層清單直選：略過輪選，直接打開整疊中的第 i 條。 */
+  function pickStacked(i: number) {
+    const pick = stackPicks[i]
+    if (!pick) return
+    const road = core.roadsRef.current.find((r) =>
+      r.properties.osm_id === pick.osmId && r.properties.blockNode === pick.blockNode)
+    if (!road) { warn('該路段已不在目前路網（可能剛被刪除或捏合）'); return }
+    stackRef.current = { ...stackRef.current, index: i }
+    setStackIndex(i)
+    openRoadPanel(road)
+  }
+
+  function clearStack() {
+    setStackPicks([])
+    setStackIndex(0)
+    stackRef.current = EMPTY_CURSOR
+  }
+
   function closeAll() {
+    clearStack()
     setEditRoad(null)
     setZonePanel(null)
     setBayPanel(null)
@@ -917,6 +992,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
+    stackPicks, stackIndex, pickStacked,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
     overrideBay, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,

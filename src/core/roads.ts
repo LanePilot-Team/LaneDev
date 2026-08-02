@@ -8,7 +8,7 @@ import { buffer, lineOffset } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
 import {
   angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M,
-} from './geo'
+} from './geo.ts'
 
 export const MOTO_LANE_M = 2.2
 
@@ -22,6 +22,8 @@ export interface RoadSourceSegment {
   navSegmentKey: string
   splitIndex: number
   nodeRefs: number[]
+  /** 原始 segment 幾何，供被 couplet 吸收後依舊能以舊 node 精確定位。 */
+  coordinates?: [number, number][]
 }
 
 /**
@@ -77,6 +79,17 @@ export interface RoadProps {
   startTurnLanesB?: string[]
   /** 捏合後仍保留的側街入口；主路 forward 可轉入，backward 不可跨線左轉。 */
   oneSideEntryNodes?: number[]
+  /** 捏合接縫實際相鄰的主路方向；舊紀錄缺少時以 allowedBack=false 相容。 */
+  oneSideEntryAccess?: { nodeId: number; allowedBack: boolean }[]
+  /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
+  roadMergeBarrierNodes?: number[]
+  /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
+  roadMergeDerived?: {
+    nodeId: number
+    hadNode: boolean
+    hadBarrier?: boolean
+    previousAccess?: { nodeId: number; allowedBack: boolean }
+  }[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，
    * 兩向車道各外移一半（way 線 = 中央帶中心）。couplet 合併或 journal 設定 */
@@ -139,6 +152,8 @@ export interface RoadProps {
   sourceSegments: RoadSourceSegment[]
   /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
   deleted?: boolean
+  /** 只從繪圖視圖隱藏；導航與來源追溯仍保留此道路。 */
+  renderHidden?: boolean
   /** oneway=-1 反向單行道：載入時已反轉幾何。外部資料（LanePilot 標註）的
    * forward/backward 是 OSM 原始方向，比對時要翻轉 */
   reversed?: boolean
@@ -305,6 +320,7 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       navSegmentKey: props.navSegmentKey,
       splitIndex: props.splitIndex,
       nodeRefs: [...nodes],
+      coordinates: coords.map((coordinate) => [...coordinate] as [number, number]),
     }]
     computeDerived(props)
     out.push({
@@ -811,16 +827,23 @@ export function roadsForRendering(roads: RoadFeature[]): RoadFeature[] {
     }
     return matches(inner) || matches([...inner].reverse())
   }
+  const activeRoadsByOsmId = new Map<number, RoadFeature[]>()
+  for (const road of roads) {
+    if (road.properties.deleted) continue
+    const osmId = road.properties.osm_id
+    const candidates = activeRoadsByOsmId.get(osmId)
+    if (candidates) candidates.push(road)
+    else activeRoadsByOsmId.set(osmId, [road])
+  }
   const exactSeen = new Set<string>()
   return roads.filter((road) => {
     if (road.properties.deleted) return true
-    const exactKey = `${road.properties.osm_id}:${road.properties.nodes.join(',')}`
+    const osmId = road.properties.osm_id
+    const exactKey = `${osmId}:${road.properties.nodes.join(',')}`
     if (exactSeen.has(exactKey)) return false
     exactSeen.add(exactKey)
-    return !roads.some((candidate) =>
+    return !(activeRoadsByOsmId.get(osmId) ?? []).some((candidate) =>
       candidate !== road
-      && !candidate.properties.deleted
-      && candidate.properties.osm_id === road.properties.osm_id
       && candidate.properties.nodes.length > road.properties.nodes.length
       && containsPath(candidate.properties.nodes, road.properties.nodes))
   })

@@ -4,8 +4,15 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
 import type { Profile, TurnOption } from '../core/graph'
 import {
-  appendRecord, applyRoadMerges, applyToRoads, checkRoadMerge, foldJournal,
+  appendRecord, appendRecords, applyToRoads, foldJournal, getAuthor,
+  type EnhancementRecord,
 } from '../core/enhancements'
+import {
+  activeMergeForRoad, applyRoadMergeAfterSave, planRoadMergeSeamUndo, previewRoadMerge,
+  type RoadMergeReplayRow,
+} from '../core/roadMerge'
+import { materializeJournalRecords } from '../core/journalBatch'
+import { flushStaticEditorSave } from '../core/staticDatabase'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import { groundMoves, makeMotoBoxSlot, stopLineEdges } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
@@ -137,6 +144,9 @@ export interface Editor {
   stackIndex: number
   /** 直接選取整疊中的第 i 條（面板的疊層清單用） */
   pickStacked: (i: number) => void
+  activeRoadMerge: RoadMergeReplayRow | null
+  setActiveRoadMerge: (row: RoadMergeReplayRow | null) => void
+  undoRoadMerge: () => void
   handleEditClick: (map: MLMap, e: MapMouseEvent, p: [number, number]) => void
   saveRoadEdit: () => void
   /** 拉線新增道路（road 工具）：草稿與屬性 */
@@ -178,6 +188,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   // ── 疊合路段消歧 ──
   const [stackPicks, setStackPicks] = useState<StackPick[]>([])
   const [stackIndex, setStackIndex] = useState(0)
+  const [activeRoadMerge, setActiveRoadMerge] = useState<RoadMergeReplayRow | null>(null)
   /** 上一次點擊的螢幕位置與整疊組成，用來判定「同一處再點一下」＝輪選下一條 */
   const stackRef = useRef<StackCursor>(EMPTY_CURSOR)
   const [editWarn, setEditWarn] = useState<string | null>(null)
@@ -423,43 +434,54 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             warn('第一段已不存在，請重新選取')
             return
           }
-          const check = checkRoadMerge(first, road)
-          if (!check.ok) {
-            warn(`無法合併：${check.reason}`)
+          const preview = previewRoadMerge(core.roadsRef.current, core.journalRef.current, first, road)
+          if (!preview.ok || !preview.record) {
+            warn(`無法捏合：${preview.reason ?? '驗證失敗'}`)
             return
           }
           const ok = window.confirm(
-            `確定將這兩段「${first.properties.name ?? '未命名道路'}」捏合為同一路段嗎？\n\n`
-            + `保留：${check.primaryKey}\n合併：${check.secondaryKey}\n\n`
-            + '此操作只寫一筆可逆的 journal 紀錄，不會改動靜態 OSM：'
-            + '第二段將退出活躍路網，整段共用第一段的道路與偏心道樣式。'
-            + '中間接點退化成 T 字路口——主路正向可進出側街，對向不得與側街互動。'
+            `確定將「${first.properties.name ?? '未命名道路'}」的兩個區塊安全捏合？\n\n`
+            + `保留：${String(preview.record.fields?.primary)}\n`
+            + `接合：${String(preview.record.fields?.secondary)}\n\n`
+            + '捏合後：\n'
+            + '・主路與中央島跨接縫連續繪製\n'
+            + '・側路仍保留並連接相鄰方向\n'
+            + '・禁止跨中央島左轉、直穿及迴轉\n'
+            + '・原始道路與路口來源保留，可由歷程撤銷'
           )
           if (!ok) return
           mergeFirstRef.current = null
           setEditRoad(null)
-          // 捏合 = journal 紀錄，跟車道標記走同一條儲存路徑。靜態 OSM 完全不動，
-          // 所以重建 segments 炸不到它；區塊鍵也不會因為接點改名而變成孤兒。
-          core.journalRef.current = appendRecord(core.journalRef.current, {
-            op: 'set',
-            target: {
-              type: 'road_merge',
-              key: `merge/${check.primaryKey}+${check.secondaryKey}`,
-            },
-            fields: {
-              primary: check.primaryKey,
-              secondary: check.secondaryKey,
-              // 次段的節點清單：journalForMergedRoads 用它把路口元件的鍵
-              // 精準改掛到主段，不必整條次 way 一起搬。
-              secondary_nodes: JSON.stringify(road.properties.nodes),
-            },
-          })
-          if (applyRoadMerges(core.roadsRef.current, core.journalRef.current) > 0) {
-            core.replaceBaseMap(core.roadsRef.current)
-            warn('已捏合為同一路段（可在歷程中還原）')
-          } else {
-            warn('捏合紀錄已寫入，但這兩段目前接不起來——請重新整理後確認')
+          const author = getAuthor()
+          const previewRecord: EnhancementRecord = {
+            ...preview.record,
+            seq: (core.journalRef.current[core.journalRef.current.length - 1]?.seq ?? 0) + 1,
+            ts: new Date().toISOString(),
+            author,
           }
+          const preparedView = core.previewJournal([...core.journalRef.current, previewRecord])
+          if (!preparedView) {
+            warn('捏合預覽未通過，未寫入紀錄')
+            return
+          }
+          core.journalRef.current = appendRecord(core.journalRef.current, preview.record, author)
+          warn('捏合已確認，正在儲存並更新路網…')
+          void applyRoadMergeAfterSave(
+            flushStaticEditorSave,
+            () => {
+              core.refreshRoadMergeViews(core.journalRef.current, preparedView)
+              const selected = editRoad && core.roadsRef.current.find((candidate) =>
+                candidate.properties.osm_id === editRoad.osmId
+                && candidate.properties.blockNode === editRoad.blockNode)
+              setActiveRoadMerge(selected
+                ? activeMergeForRoad(core.mergeReplayRef.current, selected) ?? null
+                : null)
+              warn('道路捏合已儲存並套用')
+            },
+          ).catch((error) => {
+            console.error('道路捏合儲存失敗', error)
+            warn('道路捏合尚未完成儲存，路網未更新')
+          })
           return
         }
       } else {
@@ -474,6 +496,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   /** 讀出區塊現況並開啟車道面板（地圖點選、疊層清單直選都走這裡）。 */
   function openRoadPanel(road: RoadFeature) {
     const p2 = road.properties
+    setActiveRoadMerge(activeMergeForRoad(core.mergeReplayRef.current, road) ?? null)
     const cs = road.geometry.coordinates as [number, number][]
     const brg = geoBearing(cs[0], cs[cs.length - 1])
     const segmentLengthM = cs.slice(1).reduce(
@@ -936,6 +959,38 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     core.refreshVehicles()
   }
 
+  function undoRoadMerge() {
+    const row = activeRoadMerge
+    if (!row) return
+    const plan = planRoadMergeSeamUndo(core.roadsRef.current, core.journalRef.current, row.mergeKey)
+    if (!plan.ok) { warn(plan.reason ?? '無法撤銷道路捏合'); return }
+    const author = getAuthor()
+    const previewJournal = materializeJournalRecords(
+      core.journalRef.current, plan.records, author, () => new Date(),
+    )
+    const preparedView = core.previewJournal(previewJournal)
+    if (!preparedView) { warn('撤銷預覽失敗，未變更歷程'); return }
+    core.journalRef.current = appendRecords(core.journalRef.current, plan.records, author)
+    setActiveRoadMerge(null)
+    warn(`已解除接縫；停用 ${plan.retiredMergeKeys.length} 筆、重定位 ${plan.rebasedMergeKeys.length} 筆，正在儲存…`)
+    void applyRoadMergeAfterSave(
+      flushStaticEditorSave,
+      () => {
+        core.refreshRoadMergeViews(core.journalRef.current, preparedView)
+        const selected = editRoad && core.roadsRef.current.find((candidate) =>
+          candidate.properties.osm_id === editRoad.osmId
+          && candidate.properties.blockNode === editRoad.blockNode)
+        setActiveRoadMerge(selected
+          ? activeMergeForRoad(core.mergeReplayRef.current, selected) ?? null
+          : null)
+        warn('道路捏合接縫已撤銷並套用')
+      },
+    ).catch((error) => {
+      console.error('道路捏合撤銷儲存失敗', error)
+      warn('道路捏合撤銷尚未完成儲存，路網未更新')
+    })
+  }
+
   /** 疊層清單直選：略過輪選，直接打開整疊中的第 i 條。 */
   function pickStacked(i: number) {
     const pick = stackPicks[i]
@@ -956,6 +1011,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
 
   function closeAll() {
     clearStack()
+    setActiveRoadMerge(null)
     setEditRoad(null)
     setZonePanel(null)
     setBayPanel(null)
@@ -993,6 +1049,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
     stackPicks, stackIndex, pickStacked,
+    activeRoadMerge, setActiveRoadMerge, undoRoadMerge,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
     overrideBay, overrideRightLane, overrideTwin,
     draftRoad, draftName, setDraftName, draftOneway, setDraftOneway,

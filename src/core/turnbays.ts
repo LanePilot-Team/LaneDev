@@ -108,7 +108,13 @@ export interface PaintLine {
 }
 
 /** 地面箭頭（車道走向/偏心道），icon 對應 mapStyle makeIcons */
-export interface GroundArrow { pos: [number, number]; brg: number; icon: string }
+export interface GroundArrow {
+  pos: [number, number]
+  brg: number
+  icon: string
+  /** 來源行向；供稽核與除錯精確區分主路、側路，正式繪製不依賴此欄位。 */
+  ownerKey?: string
+}
 
 function foldBayOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
   const out = new Map<string, Record<string, string | number>>()
@@ -636,6 +642,8 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       && graph.hasDistinctRoadAt(e.toNode, e.road)
     const s0 = mergeThroughStart ? 0 : Math.min(e.startSetbackM, total)
     const s1 = mergeThroughEnd ? total : Math.max(0, total - e.endSetbackM)
+    const startCapM = mergeThroughStart ? 0 : 0.5
+    const endCapM = mergeThroughEnd ? 0 : 0.5
     if (s1 - s0 < 3) continue
     // 兩端的停止線斜線係數（裁切點 = s0/s1 + 橫向偏移×sk ∓ 0.5，收邊平行交叉路）
     const sk1 = mergeThroughEnd
@@ -647,8 +655,8 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       // 單行道：左緣（中央側）黃線，有 bay 則畫到漸變段起點
       const bay = bayMap.get(`${p.osm_id}@${e.toNode}`)
       const R0 = -laneSpanM(p, false) / 2
-      const from = Math.max(0, s0 + sk0 * R0 + 0.5)
-      const to = bay ? bay.d0M : Math.min(total, s1 + sk1 * R0 - 0.5)
+      const from = Math.max(0, s0 + sk0 * R0 + startCapM)
+      const to = bay ? bay.d0M : Math.min(total, s1 + sk1 * R0 - endCapM)
       if (to - from < 4) continue
       out.push({ color: 'yellow', coords: lineAt(e, cum, from, to, R0) })
       continue
@@ -674,8 +682,8 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       // 封口或補償線。雙黃線固定在偏心道的對向側，中央預留寬度整段直接
       // 分配給唯一有左轉功能的行向。
       const off = onlyFwdBay ? dv - c : dv + c
-      const from = Math.max(0, s0 + sk0 * off + 0.5)
-      const to = Math.min(total, s1 + sk1 * off - 0.5)
+      const from = Math.max(0, s0 + sk0 * off + startCapM)
+      const to = Math.min(total, s1 + sk1 * off - endCapM)
       pushDoubleSegs(
         out, e, cum, off, [[from, to]], 'single-bay-used', singleBay.key,
       )
@@ -727,12 +735,12 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
     // 觸到 s0/s1 的段端點改裁到停止線斜線（bay 開口側的內部端點不動）
     const clip = (segs: [number, number][], o: number): [number, number][] =>
       segs.map(([a, b]) => [
-        a <= s0 + 1e-6 ? Math.max(0, s0 + sk0 * o + 0.5) : a,
-        b >= s1 - 1e-6 ? Math.min(total, s1 + sk1 * o - 0.5) : b,
+        a <= s0 + 1e-6 ? Math.max(0, s0 + sk0 * o + startCapM) : a,
+        b >= s1 - 1e-6 ? Math.min(total, s1 + sk1 * o - endCapM) : b,
       ] as [number, number])
     // 斜紋槽化：兩向 bay 都沒佔用的中段（兩端依斜線取保守界，斜紋不戳出停止線）
-    const hs = Math.max(s0 + Math.max(sk0 * (dv - c), sk0 * (dv + c)) + 0.5, bwdOpen ? bwdOpen[1] : 0)
-    const he = Math.min(s1 + Math.min(sk1 * (dv - c), sk1 * (dv + c)) - 0.5, fwdOpen ? fwdOpen[0] : total)
+    const hs = Math.max(s0 + Math.max(sk0 * (dv - c), sk0 * (dv + c)) + startCapM, bwdOpen ? bwdOpen[1] : 0)
+    const he = Math.min(s1 + Math.min(sk1 * (dv - c), sk1 * (dv + c)) - endCapM, fwdOpen ? fwdOpen[0] : total)
     const paintBoundary = (off: number, segs: [number, number][]) => {
       for (const seg of segs) {
         const hatchPart: [number, number] = [Math.max(seg[0], hs), Math.min(seg[1], he)]
@@ -755,8 +763,8 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
       )
       const fixedOff = sideOffsets.movingStart
       const capOff = sideOffsets.unusedBoundary
-      const clippedStart = (off: number) => Math.max(0, s0 + sk0 * off + 0.5)
-      const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - 0.5)
+      const clippedStart = (off: number) => Math.max(0, s0 + sk0 * off + startCapM)
+      const clippedEnd = (off: number) => Math.min(total, s1 + sk1 * off - endCapM)
       const movingCapRoadM = onlyFwdBay ? clippedStart(capOff) : clippedEnd(capOff)
       const fixedCapRoadM = onlyFwdBay ? clippedStart(fixedOff) : clippedEnd(fixedOff)
       const tipRoadM = onlyFwdBay ? activeBay.bayStartM : total - activeBay.bayStartM
@@ -1196,6 +1204,7 @@ export function buildLaneArrows(
           pos: offsetAt(e.coords, cum, dk, off),
           brg: pointAlong(e.coords, cum, dk).brg,
           icon: ARROW_ICON[moves[k]] ?? 'lane-arrow-through',
+          ownerKey: directionKey,
         })
       }
       // 多機車道才畫各自的路口箭頭；單一機車道維持既有無箭頭樣式。
@@ -1215,6 +1224,7 @@ export function buildLaneArrows(
             pos: offsetAt(e.coords, cum, dk, off),
             brg: pointAlong(e.coords, cum, dk).brg,
             icon: ARROW_ICON[move] ?? 'lane-arrow-through',
+            ownerKey: directionKey,
           })
         }
       }
@@ -1230,6 +1240,7 @@ export function buildLaneArrows(
           pos: offsetAt(e.coords, cum, motoD, motoOff),
           brg: pointAlong(e.coords, cum, motoD).brg,
           icon: 'bay-arrow-left',
+          ownerKey: directionKey,
         })
       }
     }
@@ -1249,6 +1260,7 @@ export function buildLaneArrows(
             pos: offsetAt(e.coords, cum, startD, off),
             brg: pointAlong(e.coords, cum, startD).brg,
             icon: ARROW_ICON[startMoves[k]] ?? 'lane-arrow-through',
+            ownerKey: directionKey,
           })
         }
       }

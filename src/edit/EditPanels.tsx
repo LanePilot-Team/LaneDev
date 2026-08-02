@@ -896,6 +896,23 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         </div>
       </>}
       </section>
+      {editor.activeRoadMerge && (
+        <section className="edit-section">
+          <h3>道路捏合歷程</h3>
+          <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
+          <div className="road-src">
+            作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
+            {' '}時間：{editor.activeRoadMerge.resolved?.sourceTs ?? '未知'}<br />
+            主段：{editor.activeRoadMerge.primaryKey}<br />
+            次段：{editor.activeRoadMerge.secondaryKey}<br />
+            解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}
+          </div>
+          <div className="edit-row">
+            <span>恢復原始道路與路口拓撲</span>
+            <button className="mini danger" onClick={editor.undoRoadMerge}>撤銷捏合</button>
+          </div>
+        </section>
+      )}
       <div className="edit-actions">
         <button className="mini go" onClick={editor.saveRoadEdit}>儲存並套用</button>
         <button className="mini" onClick={() => setEditRoad(null)}>取消</button>

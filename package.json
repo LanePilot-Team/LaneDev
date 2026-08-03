@@ -18,6 +18,7 @@
     "test:segment-dedupe": "node --test scripts/segment_dedupe.test.mjs",
     "test:stack-pick": "node --test src/edit/stackPick.test.mjs",
     "test:edit-time": "node --test src/edit/timeFormat.test.mjs",
+    "test:road-save-feedback": "node --test src/edit/roadSaveFeedback.test.mjs",
     "audit:journal-merge": "node scripts/run_offline.mjs scripts/journal_merge_audit.ts",
     "audit:one-side-entry": "node scripts/run_offline.mjs scripts/one_side_entry_audit.ts",
     "audit:orphans": "node scripts/run_offline.mjs scripts/orphan_audit.ts",
@@ -31,7 +32,7 @@
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py",
-    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-merge",
+    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-save-feedback && npm run test:road-merge",
     "build:candidate": "node scripts/build_static_road_database.mjs"
   },
   "dependencies": {

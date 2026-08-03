@@ -26,6 +26,7 @@ import {
   collectStackedRoads, describeStackRoad, nextStackIndex, stackKeyOf, EMPTY_CURSOR,
   type StackCursor, type StackPick,
 } from './stackPick'
+import { reportRoadEditSave } from './roadSaveFeedback'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -739,6 +740,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
 
   function saveRoadEdit() {
     if (!editRoad) return
+    const saveWarnings: string[] = []
     const selectedRoad = core.roadsRef.current.find((road) =>
       road.properties.osm_id === editRoad.osmId
       && road.properties.blockNode === editRoad.blockNode)
@@ -908,7 +910,9 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       if (editRoad.bayB !== 'none' && !core.baysRef.current.some((b) => b.key === bayKeyB)) {
         failed.push(editRoad.bwdLabel)
       }
-      if (failed.length) warn(`${failed.join('、')}偏心道未生成：此區塊太短，放不下儲車段`)
+      if (failed.length) {
+        saveWarnings.push(`${failed.join('、')}偏心道未生成：此區塊太短，放不下儲車段`)
+      }
     }
     // 停等格同樣要回饋：設了涵蓋車道數但幾何放不下（格寬 <1.2m）時不要靜默還原
     const motoFailed: string[] = []
@@ -923,9 +927,11 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       motoFailed.push(editRoad.bwdLabel)
     }
     if (motoFailed.length) {
-      warn(`${motoFailed.join('、')}機車停等格未生成：此行向路口前放不下停等格`)
+      saveWarnings.push(
+        `${motoFailed.join('、')}機車停等格未生成：此行向路口前放不下停等格`)
     }
     setEditRoad(null)
+    void reportRoadEditSave(flushStaticEditorSave, warn, saveWarnings)
   }
 
   function deleteRoadSegment() {

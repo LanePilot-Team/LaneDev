@@ -2,9 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { oneSideEntryTransitionAllowed } from './oneSideEntry.ts'
 
-const road = (osmId, restricted = [], access = undefined) => ({
+const road = (osmId, restricted = [], access = undefined, blockNode = osmId * 10) => ({
   properties: {
     osm_id: osmId,
+    blockNode,
     oneSideEntryNodes: restricted,
     oneSideEntryAccess: access,
   },
@@ -13,7 +14,7 @@ const road = (osmId, restricted = [], access = undefined) => ({
 // 捏合接點 = T 字路口：只有主路正向那一側能與側街互動。
 const NODE = 20
 const main = (allowedBack = false) => road(100, [NODE], [{ nodeId: NODE, allowedBack }])
-const side = () => road(200)
+const side = (osmId = 200) => road(osmId)
 const allow = (inRoad, inBack, outRoad, outBack, node = NODE) =>
   oneSideEntryTransitionAllowed(inRoad, inBack, outRoad, outBack, node)
 
@@ -72,4 +73,25 @@ test('沒有登記限制的一般路口完全不受影響', () => {
 
 test('沒有進入邊時（起點）一律放行', () => {
   assert.equal(allow(undefined, false, main(), true), true)
+})
+
+test('有 sideRoadKey 時會依實際側路選擇不同方向規則', () => {
+  const westKey = 'way/201@b/2010'
+  const eastKey = 'way/202@b/2020'
+  const keyedMain = road(100, [NODE], [
+    { nodeId: NODE, allowedBack: false, sideRoadKey: eastKey },
+    { nodeId: NODE, allowedBack: true, sideRoadKey: westKey },
+  ])
+
+  assert.equal(allow(side(201), false, keyedMain, true), true)
+  assert.equal(allow(side(201), false, keyedMain, false), false)
+  assert.equal(allow(keyedMain, false, side(202), false), true)
+  assert.equal(allow(keyedMain, true, side(202), false), false)
+})
+
+test('沒有 sideRoadKey 的舊規則仍適用任意側路', () => {
+  const legacyMain = road(100, [NODE], [{ nodeId: NODE, allowedBack: false }])
+
+  assert.equal(allow(side(201), false, legacyMain, false), true)
+  assert.equal(allow(side(202), false, legacyMain, true), false)
 })

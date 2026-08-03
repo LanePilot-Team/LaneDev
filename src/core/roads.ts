@@ -26,6 +26,12 @@ export interface RoadSourceSegment {
   coordinates?: [number, number][]
 }
 
+export interface OneSideEntryAccess {
+  nodeId: number
+  allowedBack: boolean
+  sideRoadKey?: string
+}
+
 /**
  * 少數 OSM 分岔段的中心軸會在實際分流前先與主路重疊。道路面仍需保持連通，
  * 但車道線、箭頭、停止線與路面文字必須等支路完全離開主路後才開始。
@@ -80,7 +86,7 @@ export interface RoadProps {
   /** 捏合後仍保留的側街入口；主路 forward 可轉入，backward 不可跨線左轉。 */
   oneSideEntryNodes?: number[]
   /** 捏合接縫實際相鄰的主路方向；舊紀錄缺少時以 allowedBack=false 相容。 */
-  oneSideEntryAccess?: { nodeId: number; allowedBack: boolean }[]
+  oneSideEntryAccess?: OneSideEntryAccess[]
   /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
   roadMergeBarrierNodes?: number[]
   /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */

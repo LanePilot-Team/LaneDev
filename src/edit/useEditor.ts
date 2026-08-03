@@ -9,6 +9,7 @@ import {
 } from '../core/enhancements'
 import {
   activeMergeForRoad, applyRoadMergeAfterSave, planRoadMergeSeamUndo, previewRoadMerge,
+  roadMergeComponentBlockKeys, roadMergeEditableRoads, roadMergeEditDrafts,
   type RoadMergeReplayRow,
 } from '../core/roadMerge'
 import { materializeJournalRecords } from '../core/journalBatch'
@@ -496,7 +497,9 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   /** 讀出區塊現況並開啟車道面板（地圖點選、疊層清單直選都走這裡）。 */
   function openRoadPanel(road: RoadFeature) {
     const p2 = road.properties
-    setActiveRoadMerge(activeMergeForRoad(core.mergeReplayRef.current, road) ?? null)
+    const activeMerge = activeMergeForRoad(core.mergeReplayRef.current, road) ?? null
+    const mergeBlockKeys = roadMergeComponentBlockKeys(core.mergeReplayRef.current, road)
+    setActiveRoadMerge(activeMerge)
     const cs = road.geometry.coordinates as [number, number][]
     const brg = geoBearing(cs[0], cs[cs.length - 1])
     const segmentLengthM = cs.slice(1).reduce(
@@ -609,7 +612,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       islandBayMode: !!p2.islandBayMode,
       centerExtendStart: !!p2.centerExtendStart,
       centerExtendEnd: !!p2.centerExtendEnd,
-      canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0,
+      canCenter: !!p2.coupletMerged || (p2.centerM || 0) > 0 || mergeBlockKeys.length > 1,
       fwdLabel: compassOf(brg), bwdLabel: compassOf(brg + 180),
       turnLanes: resizeTurnLanes(tl, p2.lanesForward),
       turnLanesB: resizeTurnLanes(tlB, Math.max(1, p2.lanesBackward)),
@@ -732,11 +735,10 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
 
   function saveRoadEdit() {
     if (!editRoad) return
-    core.journalRef.current = appendRecord(core.journalRef.current, {
-      op: 'set',
-      // 區塊級鍵：只影響點選的「路口到路口」區塊（舊 way 級紀錄仍相容、先套用）
-      target: { type: 'road', key: `way/${editRoad.osmId}@b/${editRoad.blockNode}` },
-      fields: {
+    const selectedRoad = core.roadsRef.current.find((road) =>
+      road.properties.osm_id === editRoad.osmId
+      && road.properties.blockNode === editRoad.blockNode)
+    const roadFields = {
         lanes_forward: editRoad.f,
         lanes_backward: editRoad.oneway === 'yes' ? 0 : editRoad.b,
         shared_lane: editRoad.oneway === 'no' && editRoad.f + editRoad.b === 1
@@ -780,8 +782,23 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
             lane_marks_backward: JSON.stringify(editRoad.laneMarksB),
           }
           : {}),
-      },
-    })
+    }
+    const roadDrafts = selectedRoad
+      ? roadMergeEditDrafts(
+        core.mergeReplayRef.current,
+        selectedRoad,
+        roadFields,
+        core.roadsRef.current,
+      )
+      : [{
+        op: 'set' as const,
+        target: {
+          type: 'road' as const,
+          key: `way/${editRoad.osmId}@b/${editRoad.blockNode}`,
+        },
+        fields: roadFields,
+      }]
+    core.journalRef.current = appendRecords(core.journalRef.current, roadDrafts)
     // 偏心道轉向（有動才寫）：none = 該行向關閉、其餘 = 開啟並指定轉向
     const singleBayModeApplies =
       (editRoad.bayF !== 'none') !== (editRoad.bayB !== 'none')
@@ -862,10 +879,18 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         editRoad.motoBoxStartB0, editRoad.motoBoxEndB0,
       )
     }
-    // 本次只變更一個 OSM block，不需要把完整 journal 重套到所有道路。
-    const changedRoads = core.roadsRef.current.filter((road) =>
-      road.properties.osm_id === editRoad.osmId
-      && road.properties.blockNode === editRoad.blockNode)
+    // 導航與繪圖是不同物件；一般道路要同時更新兩份，捏合道路還要涵蓋
+    // carrier 的所有原始區塊，否則 journal 已寫入但畫面仍停在舊斷面。
+    const changedRoads = selectedRoad
+      ? roadMergeEditableRoads(
+        core.mergeReplayRef.current,
+        selectedRoad,
+        core.roadsRef.current,
+        core.renderRoadsRef.current,
+      )
+      : [...core.roadsRef.current, ...core.renderRoadsRef.current].filter((road) =>
+        road.properties.osm_id === editRoad.osmId
+        && road.properties.blockNode === editRoad.blockNode)
     applyToRoads(changedRoads, foldJournal(core.journalRef.current))
     // 編輯即所見：路寬與車道線立即重繪（bay 橫向位置依斷面寬，也要跟著動）
     core.redrawRoads()

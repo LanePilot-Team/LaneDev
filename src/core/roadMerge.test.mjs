@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   activeMergeForRoad, buildRoadMergeViews, planRoadMergeSeamUndo,
-  previewRoadMerge, resolveRoadMerges,
+  previewRoadMerge, resolveRoadMerges, roadMergeComponentBlockKeys,
+  roadMergeEditDrafts, roadMergeEditableRoads,
 } from './roadMerge.ts'
 import * as roadMergeModule from './roadMerge.ts'
 
@@ -84,6 +85,103 @@ const stampPlanned = (journal, records) => records.reduce((next, record, index) 
     author: 'anna',
   },
 ], journal)
+
+test('連鎖捏合道路編輯涵蓋承載段與所有被接合區塊', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+
+  assert.ok(carrier)
+  assert.deepEqual(roadMergeComponentBlockKeys(view.rows, carrier), [
+    'way/100@b/1',
+    'way/100@b/2',
+    'way/100@b/3',
+  ])
+})
+
+test('由來源追溯找回的舊捏合仍可辨識全部編輯區塊', () => {
+  const carrier = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: [{
+      osmId: 100,
+      navSegmentKey: 'way/100',
+      splitIndex: 0,
+      nodeRefs: [1, 2, 3],
+    }],
+  })
+  const row = {
+    mergeKey: 'merge/way/100@b/1+way/100@b/2',
+    primaryKey: 'way/100@b/1',
+    secondaryKey: 'way/100@b/2',
+    status: 'recoverable_via_provenance',
+    detail: '主次來源已吸收到同一存活道路',
+    resolved: {},
+  }
+
+  assert.deepEqual(roadMergeComponentBlockKeys([row], carrier), [
+    'way/100@b/1',
+    'way/100@b/2',
+  ])
+
+  const fields = { center_m: 2.4 }
+  assert.deepEqual(
+    roadMergeEditDrafts([row], carrier, fields, [carrier]).map((record) => record.target.key),
+    ['way/900@b/90'],
+  )
+  const renderCarrier = structuredClone(carrier)
+  assert.deepEqual(
+    roadMergeEditableRoads([row], carrier, [carrier], [renderCarrier]),
+    [carrier, renderCarrier],
+  )
+})
+
+test('捏合道路斷面編輯會為每個原始區塊產生同一組 journal 欄位', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+  assert.ok(carrier)
+
+  const fields = { lanes_forward: 3, center_m: 3.2, extra_width_m: 0.8 }
+  const drafts = roadMergeEditDrafts(view.rows, carrier, fields, view.routingRoads)
+
+  assert.deepEqual(drafts.map((record) => record.target.key), [
+    'way/100@b/1',
+    'way/100@b/2',
+    'way/100@b/3',
+  ])
+  assert.ok(drafts.every((record) => record.op === 'set' && record.fields === fields))
+})
+
+test('捏合道路即時編輯同時更新三段導航來源與一條繪圖承載道路', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+  assert.ok(carrier)
+
+  const editable = roadMergeEditableRoads(
+    view.rows, carrier, view.routingRoads, view.renderRoads)
+
+  assert.equal(editable.length, 4)
+  assert.equal(editable.filter((item) => view.routingRoads.includes(item)).length, 3)
+  assert.equal(editable.filter((item) => view.renderRoads.includes(item)).length, 1)
+})
 
 test('精確 block key 可依日誌追溯', () => {
   const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })

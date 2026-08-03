@@ -94,7 +94,7 @@ export interface RoadProps {
     nodeId: number
     hadNode: boolean
     hadBarrier?: boolean
-    previousAccess?: { nodeId: number; allowedBack: boolean }
+    previousAccess?: OneSideEntryAccess[]
   }[]
   roadMarkingMode: 'all' | 'center' | 'none'
   /** 中央帶寬（公尺，預設 0）：偏心左轉道/槽化線/分隔島共用的中央空間，

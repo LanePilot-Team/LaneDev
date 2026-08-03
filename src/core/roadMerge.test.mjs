@@ -508,6 +508,68 @@ test('依側路所在方向判定相鄰主路方向，不固定假設 forward', 
   assert.equal(view.resolved[0].adjacentBack, true)
 })
 
+test('十字型接點會分別判定中央帶兩側的側路方向', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const eastSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 8], name: '東側路',
+    coordinates: [[120, 22.001], [120.001, 22.001]],
+  })
+  const westSide = road({
+    osmId: 201, blockNode: 2, nodes: [2, 9], name: '西側路',
+    coordinates: [[120, 22.001], [119.999, 22.001]],
+  })
+
+  const view = buildRoadMergeViews(
+    [primary, secondary, eastSide, westSide], [mergeRecord()])
+
+  assert.equal(view.resolved.length, 1)
+  assert.equal(view.resolved[0].adjacentBack, null)
+  assert.deepEqual(view.resolved[0].sideAccess, [
+    { sideRoadKey: 'way/200@b/2', allowedBack: false },
+    { sideRoadKey: 'way/201@b/2', allowedBack: true },
+  ])
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+  assert.deepEqual(routingPrimary.properties.oneSideEntryAccess, [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/200@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/201@b/2' },
+  ])
+  assert.deepEqual(routingSecondary.properties.oneSideEntryAccess, [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/200@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/201@b/2' },
+  ])
+})
+
+test('側路穿越接縫時拒絕整筆捏合並指出道路與原因', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const crossingSide = road({
+    osmId: 202, blockNode: 2, nodes: [8, 2, 9], name: '穿越側路',
+    coordinates: [[119.999, 22.001], [120, 22.001], [120.001, 22.001]],
+  })
+
+  const view = buildRoadMergeViews([primary, secondary, crossingSide], [mergeRecord()])
+
+  assert.equal(view.resolved.length, 0)
+  assert.equal(view.rows[0].status, 'needs_manual_review')
+  assert.match(view.rows[0].detail, /穿越側路/)
+  assert.match(view.rows[0].detail, /way\/202@b\/2/)
+  assert.match(view.rows[0].detail, /接縫不是側路端點/)
+})
+
 test('端點方向相反時，次段限制會換算成自己的 back 方向', () => {
   const primary = road({
     osmId: 100, blockNode: 1, nodes: [1, 2],
@@ -583,6 +645,29 @@ test('撤銷後重建會清除先前衍生的接縫限制', () => {
     false)
   assert.equal(restored.routingRoads.some((item) => item.properties.roadMergeBarrierNodes?.includes(2)),
     false, '撤銷後不可殘留中央島屏障')
+})
+
+test('撤銷後會完整還原接縫原有的多筆側路規則', () => {
+  const originalAccess = [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/900@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/901@b/2' },
+  ]
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  primary.properties.oneSideEntryAccess = originalAccess
+  primary.properties.oneSideEntryNodes = [2]
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const side = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路',
+    coordinates: [coordinate(2), [coordinate(2)[0], coordinate(2)[1] - 0.001]],
+  })
+  const set = mergeRecord()
+  const merged = buildRoadMergeViews([primary, secondary, side], [set])
+  const del = mergeRecord({ seq: 2, op: 'delete' })
+
+  const restored = buildRoadMergeViews(merged.routingRoads, [set, del])
+  const restoredPrimary = restored.routingRoads.find((item) => item.properties.blockNode === 1)
+
+  assert.deepEqual(restoredPrimary.properties.oneSideEntryAccess, originalAccess)
 })
 
 test('新版捏合撤銷後繪圖恢復原始兩段道路', () => {

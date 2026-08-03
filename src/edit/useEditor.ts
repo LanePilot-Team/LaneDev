@@ -22,6 +22,10 @@ import {
   buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
 } from '../core/roads'
 import { groundMarkingPolygons } from '../core/groundMarkings'
+import {
+  collectStackedRoads, describeStackRoad, nextStackIndex, stackKeyOf, EMPTY_CURSOR,
+  type StackCursor, type StackPick,
+} from './stackPick'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 
@@ -134,6 +138,9 @@ export interface Editor {
   setIslandPanel: (v: { pairKey: string; wEff?: number } | null) => void
   overrideTwin: (key: string, fields: Record<string, string | number>) => void
   editWarn: string | null
+  stackPicks: StackPick[]
+  stackIndex: number
+  pickStacked: (index: number) => void
   activeRoadMerge: RoadMergeReplayRow | null
   setActiveRoadMerge: React.Dispatch<React.SetStateAction<RoadMergeReplayRow | null>>
   undoRoadMerge: () => void
@@ -164,10 +171,18 @@ export interface Editor {
 export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef: RefObject<Mode>): Editor {
   const [editTool, setEditToolState] = useState<EditTool>('lane')
   const [activeRoadMerge, setActiveRoadMerge] = useState<RoadMergeReplayRow | null>(null)
+  const [stackPicks, setStackPicks] = useState<StackPick[]>([])
+  const [stackIndex, setStackIndex] = useState(0)
+  const stackRef = useRef<StackCursor>(EMPTY_CURSOR)
+  const forcedStackIndexRef = useRef<number | null>(null)
+  const lastLaneClickRef = useRef<{
+    map: MLMap; event: MapMouseEvent; position: [number, number]
+  } | null>(null)
   const editToolRef = useRef<EditTool>('lane')
   const setEditTool = (t: EditTool) => {
     editToolRef.current = t
     setEditToolState(t)
+    if (t !== 'lane') clearStack()
     if (t !== 'road') { updateDraft(null); setSelNewRoad(null) } // 換工具＝放棄拉線草稿
   }
   const [editRoad, setEditRoad] = useState<EditRoadState | null>(null)
@@ -341,11 +356,30 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
       (p) => p?.kind === 'lane',
     )
+    const outline = (road: RoadFeature, kind: 'select' | 'stack-alt') => ({
+      type: 'Feature' as const,
+      properties: { kind },
+      geometry: { type: 'LineString' as const, coordinates: road.geometry.coordinates },
+    })
+    const alternateOutlines = stackPicks.length > 1
+      ? stackPicks
+        .filter((pick) => pick.osmId !== editRoad.osmId || pick.blockNode !== editRoad.blockNode)
+        .map((pick) => core.roadsRef.current.find((road) =>
+          road.properties.osm_id === pick.osmId
+          && road.properties.blockNode === pick.blockNode))
+        .filter((road): road is RoadFeature => !!road)
+        .map((road) => outline(road, 'stack-alt'))
+      : []
     source.setData({
       type: 'FeatureCollection',
-      features: [...surfaces.features, ...dividers.features],
+      features: [
+        ...surfaces.features,
+        ...dividers.features,
+        ...alternateOutlines,
+        outline(original, 'select'),
+      ],
     } as never)
-  }, [core, editRoad])
+  }, [core, editRoad, stackPicks])
 
   function warn(msg: string) {
     setEditWarn(msg)
@@ -363,16 +397,42 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         const wEff = hitIsland[0].properties.wEff
         setIslandPanel({ pairKey, wEff: typeof wEff === 'number' ? wEff : undefined })
         setEditRoad(null)
+        clearStack()
         return
       }
-      const hit = map.queryRenderedFeatures(e.point, { layers: ['road-surface', 'roads-simple'] })
-      if (hit.length === 0) { setEditRoad(null); setIslandPanel(null); return }
+      const forcedIndex = forcedStackIndexRef.current
+      forcedStackIndexRef.current = null
+      const ctrlSelect = forcedIndex === null
+        && (e.originalEvent.ctrlKey || e.originalEvent.metaKey)
+      const stack = collectStackedRoads(map, e.point, core.roadsRef.current)
+      if (stack.length === 0) {
+        setEditRoad(null)
+        setIslandPanel(null)
+        clearStack()
+        return
+      }
       // way 已依路口切塊：osm_id + blockNode 才唯一指到點選的區塊
-      const road = core.roadsRef.current.find(
-        (r) => r.properties.osm_id === Number(hit[0].properties.osm_id)
-          && r.properties.blockNode === Number(hit[0].properties.blockNode))
-      if (!road) return
-      const ctrlSelect = e.originalEvent.ctrlKey || e.originalEvent.metaKey
+      const keys = stack
+        .map((candidate) => stackKeyOf(
+          candidate.properties.osm_id,
+          candidate.properties.blockNode,
+        ))
+        .join('|')
+      const index = forcedIndex === null
+        ? nextStackIndex(
+          stackRef.current, e.point.x, e.point.y, keys, stack.length, ctrlSelect,
+        )
+        : Math.max(0, Math.min(stack.length - 1, forcedIndex))
+      stackRef.current = { x: e.point.x, y: e.point.y, keys, index }
+      lastLaneClickRef.current = { map, event: e, position: p }
+      setStackPicks(stack.map(describeStackRoad))
+      setStackIndex(index)
+      const road = stack[index]
+      if (stack.length > 1 && !ctrlSelect) {
+        const pick = describeStackRoad(road)
+        warn(`此處疊了 ${stack.length} 條 · 已選 ${index + 1}/${stack.length} `
+          + `${pick.name}（${pick.detail}）`)
+      }
       if (ctrlSelect) {
         const firstKey = mergeFirstRef.current
         if (!firstKey) {
@@ -928,7 +988,24 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     core.refreshVehicles()
   }
 
+  function pickStacked(index: number) {
+    if (!stackPicks[index]) return
+    const lastClick = lastLaneClickRef.current
+    if (!lastClick) return
+    forcedStackIndexRef.current = index
+    handleEditClick(lastClick.map, lastClick.event, lastClick.position)
+  }
+
+  function clearStack() {
+    setStackPicks([])
+    setStackIndex(0)
+    stackRef.current = EMPTY_CURSOR
+    forcedStackIndexRef.current = null
+    lastLaneClickRef.current = null
+  }
+
   function closeAll() {
+    clearStack()
     setEditRoad(null)
     setZonePanel(null)
     setBayPanel(null)
@@ -1016,6 +1093,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
   return {
     editTool, setEditTool, editRoad, setEditRoad, zonePanel, setZonePanel,
     bayPanel, setBayPanel, islandPanel, setIslandPanel, editWarn,
+    stackPicks, stackIndex, pickStacked,
     activeRoadMerge, setActiveRoadMerge, undoRoadMerge,
     handleEditClick, saveRoadEdit, deleteRoadSegment,
     overrideBay, overrideRightLane, overrideTwin,

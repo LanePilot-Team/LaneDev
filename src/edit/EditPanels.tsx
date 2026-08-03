@@ -16,6 +16,7 @@ import {
   compassOf, resizeLaneMarks, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
   BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
 } from './useEditor'
+import { formatTaiwanHistoryTime } from './timeFormat'
 
 const resizeDirectionMarks = (
   marks: (LaneMark | null)[], oldCars: number, newCars: number, moto: boolean | number,
@@ -216,7 +217,7 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
 
 /** 側面板：車道編輯 */
 export function LaneEditPanel({ editor }: { editor: Editor }) {
-  const { editRoad, setEditRoad } = editor
+  const { editRoad, setEditRoad, stackPicks, stackIndex, pickStacked } = editor
   if (!editRoad) return null
   return (
     <div className="side-panel lane-editor">
@@ -228,13 +229,30 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         way/{editRoad.osmId}@b/{editRoad.blockNode} · {editRoad.oneway === 'yes' ? '單行' : '雙向'}
         {' '}· 僅影響目前兩個路口之間的區塊
       </div>
+      {stackPicks.length > 1 && (
+        <div className="stack-picker">
+          <div className="stack-head">
+            此處疊了 {stackPicks.length} 條路；可直接選擇，或在地圖同一點再次點擊切換
+          </div>
+          {stackPicks.map((pick, index) => (
+            <button
+              key={pick.key}
+              className={`stack-item${index === stackIndex ? ' on' : ''}`}
+              onClick={() => pickStacked(index)}
+            >
+              <b>{pick.name}</b>
+              <span>{pick.detail}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {editor.activeRoadMerge && (
         <section className="edit-section">
           <h3>道路捏合歷程</h3>
           <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
           <div className="road-src">
             作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
-            {' '}時間：{editor.activeRoadMerge.resolved?.sourceTs ?? '未知'}<br />
+            {' '}時間：{formatTaiwanHistoryTime(editor.activeRoadMerge.resolved?.sourceTs)}<br />
             主段：{editor.activeRoadMerge.primaryKey}<br />
             次段：{editor.activeRoadMerge.secondaryKey}<br />
             解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}

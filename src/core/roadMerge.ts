@@ -791,22 +791,21 @@ export function planRoadMergeSeamUndo(
   }
 }
 
+const resolvedRoadBlockKeys = (row: RoadMergeReplayRow): string[] => row.resolved
+  ? [roadBlockKey(row.resolved.primary), roadBlockKey(row.resolved.secondary)]
+  : []
+
+const rowMatchesCurrentRoad = (row: RoadMergeReplayRow, roadKey: string) =>
+  row.primaryKey === roadKey
+  || row.secondaryKey === roadKey
+  || resolvedRoadBlockKeys(row).includes(roadKey)
+
 export function activeMergeForRoad(
   rows: RoadMergeReplayRow[],
   road: RoadFeature,
 ): RoadMergeReplayRow | undefined {
   const key = roadBlockKey(road)
-  return rows.find((row) => {
-    if (!row.resolved) return false
-    if (row.primaryKey === key || row.secondaryKey === key) return true
-    const parsedKeys = [row.primaryKey, row.secondaryKey]
-      .map(parseBlockKey).filter((parsed): parsed is ParsedBlockKey => !!parsed)
-    return parsedKeys.some((parsed) =>
-      (road.properties.osm_id === parsed.wayId
-        && road.properties.nodes.includes(parsed.blockNode))
-      || road.properties.sourceSegments.some((source) =>
-        source.osmId === parsed.wayId && source.nodeRefs.includes(parsed.blockNode)))
-  })
+  return rows.find((row) => row.resolved && rowMatchesCurrentRoad(row, key))
 }
 
 export function roadMergeComponentBlockKeys(
@@ -816,7 +815,7 @@ export function roadMergeComponentBlockKeys(
   const selectedKey = roadBlockKey(road)
   const component = new Set([selectedKey])
   for (const row of rows) {
-    if (!row.resolved || !activeMergeForRoad([row], road)) continue
+    if (!row.resolved || !rowMatchesCurrentRoad(row, selectedKey)) continue
     component.add(row.primaryKey)
     component.add(row.secondaryKey)
   }
@@ -867,9 +866,10 @@ const currentRoadsForMergeComponent = (
   const keys = new Set(roadMergeComponentBlockKeys(rows, road))
   const componentRows = rows.filter((row) => row.resolved
     && (keys.has(row.primaryKey) || keys.has(row.secondaryKey)))
+  const currentKeys = new Set(componentRows.flatMap(resolvedRoadBlockKeys))
   return roads.filter((candidate) =>
     keys.has(roadBlockKey(candidate))
-    || !!activeMergeForRoad(componentRows, candidate))
+    || currentKeys.has(roadBlockKey(candidate)))
 }
 
 export function roadMergeEditableRoads(

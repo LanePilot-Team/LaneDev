@@ -16,6 +16,8 @@
     "test:ground-markings": "node scripts/run_offline.mjs src/core/groundMarkings.test.mjs",
     "test:road-merge": "node --test src/core/roadMerge.test.mjs src/core/roadMergeReload.test.mjs src/core/graph.test.mjs src/core/graphRouteState.test.mjs src/core/graphRoadMergeBarrier.test.mjs src/core/roadsForRendering.test.mjs scripts/road_merge_recovery.test.mjs scripts/vite_road_database_watch.test.mjs && npm run test:ground-markings && npm run test:road-merge-rendering",
     "test:segment-dedupe": "node --test scripts/segment_dedupe.test.mjs",
+    "test:stack-pick": "node --test src/edit/stackPick.test.mjs",
+    "test:edit-time": "node --test src/edit/timeFormat.test.mjs",
     "audit:journal-merge": "node scripts/run_offline.mjs scripts/journal_merge_audit.ts",
     "audit:one-side-entry": "node scripts/run_offline.mjs scripts/one_side_entry_audit.ts",
     "audit:orphans": "node scripts/run_offline.mjs scripts/orphan_audit.ts",
@@ -29,7 +31,7 @@
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py",
-    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:road-merge",
+    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-merge",
     "build:candidate": "node scripts/build_static_road_database.mjs"
   },
   "dependencies": {

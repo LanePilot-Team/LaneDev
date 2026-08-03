@@ -86,6 +86,81 @@ const stampPlanned = (journal, records) => records.reduce((next, record, index) 
   },
 ], journal)
 
+test('同一 OSM way 上互不相連的捏合不會被視為同一個編輯群組', () => {
+  const sharedSource = [{
+    osmId: 100,
+    navSegmentKey: 'way/100',
+    splitIndex: 0,
+    nodeRefs: [1, 2, 3, 4, 5],
+  }]
+  const carrierAB = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: sharedSource,
+  })
+  const carrierCD = road({
+    osmId: 901,
+    blockNode: 92,
+    nodes: [92, 93],
+    sourceSegments: sharedSource,
+  })
+  const rows = [
+    {
+      mergeKey: 'merge/way/100@b/1+way/100@b/2',
+      primaryKey: 'way/100@b/1',
+      secondaryKey: 'way/100@b/2',
+      status: 'recoverable_via_provenance',
+      detail: '第一組捏合',
+      resolved: { primary: carrierAB, secondary: carrierAB },
+    },
+    {
+      mergeKey: 'merge/way/100@b/3+way/100@b/4',
+      primaryKey: 'way/100@b/3',
+      secondaryKey: 'way/100@b/4',
+      status: 'recoverable_via_provenance',
+      detail: '第二組捏合',
+      resolved: { primary: carrierCD, secondary: carrierCD },
+    },
+  ]
+
+  assert.deepEqual(roadMergeComponentBlockKeys(rows, carrierAB), [
+    'way/100@b/1',
+    'way/100@b/2',
+  ])
+})
+
+test('未參與捏合的同 OSM way 路段不顯示其他區塊的捏合歷程', () => {
+  const sharedSource = [{
+    osmId: 100,
+    navSegmentKey: 'way/100',
+    splitIndex: 0,
+    nodeRefs: [1, 2, 3, 4],
+  }]
+  const mergedCarrier = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: sharedSource,
+  })
+  const untouchedBlock = road({
+    osmId: 100,
+    blockNode: 3,
+    nodes: [3, 4],
+    sourceSegments: sharedSource,
+  })
+  const row = {
+    mergeKey: 'merge/way/100@b/1+way/100@b/2',
+    primaryKey: 'way/100@b/1',
+    secondaryKey: 'way/100@b/2',
+    status: 'recoverable_via_provenance',
+    detail: '只有區塊 1 與 2 被捏合',
+    resolved: { primary: mergedCarrier, secondary: mergedCarrier },
+  }
+
+  assert.equal(activeMergeForRoad([row], untouchedBlock), undefined)
+})
+
 test('連鎖捏合道路編輯涵蓋承載段與所有被接合區塊', () => {
   const blocks = [
     chainRoad(1, [1, 2]),
@@ -122,7 +197,7 @@ test('由來源追溯找回的舊捏合仍可辨識全部編輯區塊', () => {
     secondaryKey: 'way/100@b/2',
     status: 'recoverable_via_provenance',
     detail: '主次來源已吸收到同一存活道路',
-    resolved: {},
+    resolved: { primary: carrier, secondary: carrier },
   }
 
   assert.deepEqual(roadMergeComponentBlockKeys([row], carrier), [

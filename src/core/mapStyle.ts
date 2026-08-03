@@ -18,6 +18,8 @@ export const C = {
   route: '#3b82f6',
   label: '#3d4a5c',
   labelHalo: '#ffffff',
+  pick: '#22d3ee',
+  pickAlt: '#fb923c',
 }
 
 /** icon 尺寸表達式：讓圖片呈現為實際 meters 高（imgPx = 圖片像素高） */
@@ -307,6 +309,22 @@ export function buildStyle(): StyleSpecification {
         id: 'road-preview-moto', type: 'fill', source: 'roadPreview', minzoom: 15.5,
         filter: ['==', ['get', 'kind'], 'moto'],
         paint: { 'fill-color': C.laneLine },
+      },
+
+      {
+        id: 'road-preview-stack-alt', type: 'line', source: 'roadPreview', minzoom: 12,
+        filter: ['==', ['get', 'kind'], 'stack-alt'],
+        paint: {
+          'line-color': C.pickAlt,
+          'line-width': 2,
+          'line-opacity': 0.9,
+          'line-dasharray': [2, 2],
+        },
+      },
+      {
+        id: 'road-preview-select', type: 'line', source: 'roadPreview', minzoom: 12,
+        filter: ['==', ['get', 'kind'], 'select'],
+        paint: { 'line-color': C.pick, 'line-width': 3, 'line-opacity': 0.95 },
       },
 
       // ── 機車停等格（排在車道線之後：不透明 fill 蓋掉框內車道線＝「線在格前截止」，

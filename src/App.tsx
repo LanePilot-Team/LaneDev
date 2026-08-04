@@ -12,6 +12,7 @@ import { DriveHUD } from './nav/DriveHUD'
 import { useEditor, type EditRoadState } from './edit/useEditor'
 import { consumeRoadMergeReloadState } from './core/roadMergeReload'
 import { activeMergeForRoad } from './core/roadMerge'
+import { PlaceSearch } from './places/PlaceSearch'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
   RoadDrawPanel,
@@ -121,6 +122,8 @@ export default function App() {
       <div ref={containerRef} className="map" />
 
       {loading && <div className="loading">載入楠梓＋左營路網中…</div>}
+
+      {mode !== 'drive' && <PlaceSearch core={core} mapLoading={loading} />}
 
       {/* ── 導航 HUD ── */}
       {mode === 'drive' && (

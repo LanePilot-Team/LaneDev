@@ -119,6 +119,69 @@ body {
 }
 .toolbar button.on { background: #1058b8; color: #fff; }
 
+/* ── 地標搜尋 ── */
+.place-search {
+  position: absolute; top: 12px; left: 12px; z-index: 24;
+  width: min(410px, calc(100vw - 190px));
+  color: #24303f;
+}
+.place-search-form {
+  height: 48px; display: flex; align-items: center; gap: 7px;
+  padding: 5px 6px 5px 13px; border-radius: 14px; background: #fff;
+  box-shadow: 0 4px 18px rgba(23, 32, 48, 0.2);
+}
+.place-search-icon { color: #1058b8; font-size: 25px; line-height: 1; transform: rotate(-18deg); }
+.place-search-form input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: #24303f; font: inherit; font-size: 14px;
+}
+.place-search-form input::placeholder { color: #8c97a6; }
+.place-clear, .place-submit {
+  border: 0; cursor: pointer; font-weight: 700;
+}
+.place-clear {
+  width: 28px; height: 28px; border-radius: 50%; background: #eef1f5; color: #6f7a89;
+}
+.place-submit {
+  align-self: stretch; padding: 0 14px; border-radius: 10px;
+  background: #1058b8; color: #fff;
+}
+.place-submit:disabled { cursor: default; opacity: .42; }
+.place-results {
+  margin-top: 8px; max-height: min(58vh, 520px); overflow-y: auto;
+  border-radius: 14px; padding: 7px; background: #fff;
+  box-shadow: 0 6px 24px rgba(23, 32, 48, 0.22);
+}
+.place-result {
+  width: 100%; border: 0; border-radius: 10px; padding: 10px 9px;
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  background: transparent; color: #24303f; cursor: pointer;
+}
+.place-result:hover, .place-result.selected { background: #eef5ff; }
+.place-result.selected { box-shadow: inset 3px 0 #2563eb; }
+.place-pin { color: #2563eb; font-size: 15px; flex: none; }
+.place-result-copy { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.place-result-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.place-result-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7a8494; font-size: 11.5px; }
+.place-source {
+  flex: none; border-radius: 999px; padding: 3px 7px;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em;
+}
+.place-source.osm { background: #e8f5e9; color: #287a36; }
+.place-source.tdx { background: #e8f0ff; color: #2458a6; }
+.place-message { padding: 16px 12px; color: #6f7a89; font-size: 13px; text-align: center; }
+.place-message.error { color: #b3261e; }
+.place-attribution {
+  padding: 8px 8px 4px; border-top: 1px solid #eef1f5;
+  color: #99a3b1; font-size: 10px; text-align: center;
+}
+
+@media (max-width: 720px) {
+  .place-search { width: calc(100vw - 24px); }
+  .toolbar { top: 72px; }
+  .place-results { max-height: 48vh; }
+}
+
 /* ── 提示列 ── */
 .hint {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);

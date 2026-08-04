@@ -29,6 +29,22 @@ npx tsx scripts/ground_audit.ts   # 停止線/分隔線收邊/右轉道/路寬�
 npx tsx scripts/import_audit.ts   # LanePilot 標註吃入命中率
 ```
 
+## 手動更新地標資料（OSM＋TDX）
+
+1. 複製 `.env.example` 為 `.env.local`，填入 TDX Client Id 與 Client Secret。
+   `.env.local` 已由 `.gitignore` 排除，不會打包或部署。
+2. 執行：
+
+```powershell
+npm run places:update                 # OSM＋TDX
+npm run places:update -- --osm-only  # 只更新 OSM
+npm run places:update -- --tdx-only  # 只更新 TDX
+```
+
+更新結果會寫入 `public/data/places/places.json`。OSM 抓取楠梓區與左營區的具名
+POI；TDX 抓取高雄市觀光、車站、公車站與公有停車場資料，再裁切至目前路網範圍。
+腳本先完整驗證新資料才替換舊檔，任一主要來源失敗時會保留上一版。
+
 **關閉 dev server**：終端機 Ctrl+C；找不到終端機時：
 
 ```powershell

@@ -26,6 +26,8 @@
     "audit:merged-render": "node scripts/run_offline.mjs scripts/merged_junction_render_audit.ts",
     "audit:road-merge-recovery": "node scripts/run_offline.mjs scripts/road_merge_recovery_cli.ts",
     "audit:coverage": "node scripts/coverage_audit.mjs",
+    "audit:stacked": "node scripts/run_offline.mjs scripts/stack_audit.ts",
+    "audit:style": "node scripts/run_offline.mjs scripts/style_audit.ts",
     "prebuild": "npm run lane-guidance:data",
     "build": "tsc -b && vite build",
     "collect-environment": "node scripts/collect-nanzih-environment-data.mjs",

@@ -127,6 +127,7 @@ body {
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
 }
 .hint.warn { background: rgba(190, 50, 50, 0.92); }
+.hint-text { cursor: help; }
 .mini {
   border: none; border-radius: 999px; padding: 5px 12px;
   background: rgba(255, 255, 255, 0.18); color: #fff;

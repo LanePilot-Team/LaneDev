@@ -101,3 +101,60 @@ test('連鎖捏合只標記其中一段時同一主路仍可直行通過', () =>
   assert.ok(route, '同一條主路不可因連鎖捏合標記分布不完整而中斷')
   assert.deepEqual(route.spans.map((span) => span.road?.properties.osm_id), [100, 100])
 })
+
+test('十字型捏合依側路限制方向且主路仍可直行', () => {
+  const junction = [120, 22]
+  const southMain = road(100, [1, 2], [[120, 21.999], junction])
+  const northMain = road(100, [2, 3], [junction, [120, 22.001]])
+  const eastSide = road(200, [4, 2], [[120.001, 22], junction])
+  const westSide = road(201, [5, 2], [[119.999, 22], junction])
+  const eastKey = 'way/200@b/4'
+  const westKey = 'way/201@b/5'
+  for (const main of [southMain, northMain]) {
+    main.properties.oneway = 'no'
+    main.properties.lanesBackward = 1
+    main.properties.roadMergeBarrierNodes = [2]
+    main.properties.oneSideEntryNodes = [2]
+    main.properties.oneSideEntryAccess = [
+      { nodeId: 2, allowedBack: false, sideRoadKey: eastKey },
+      { nodeId: 2, allowedBack: true, sideRoadKey: westKey },
+    ]
+  }
+  const graph = new RoadGraph([southMain, northMain, eastSide, westSide])
+
+  const eastToNorth = graph.route([120.0008, 22], [120, 22.0008], 'car')
+  const eastToSouth = graph.route([120.0008, 22], [120, 21.9992], 'car')
+  const westToSouth = graph.route([119.9992, 22], [120, 21.9992], 'car')
+  const westToNorth = graph.route([119.9992, 22], [120, 22.0008], 'car')
+  const eastToWest = graph.route([120.0008, 22], [119.9992, 22], 'car')
+  const mainThrough = graph.route([120, 21.9992], [120, 22.0008], 'car')
+
+  assert.ok(eastToNorth, '東側路應可右轉進入北向主路')
+  assert.ok(eastToSouth, '對向目的地仍可經較遠處迴轉抵達')
+  assert.deepEqual(
+    eastToSouth.spans.slice(0, 2).map((span) => [
+      span.road?.properties.osm_id,
+      span.road?.properties.blockNode,
+      span.back,
+    ]),
+    [[200, 4, false], [100, 2, false]],
+    '東側路必須先右轉北向，不得在捏合接點直接跨帶',
+  )
+  assert.ok(eastToSouth.coords.some((coord) => coord[1] > 22),
+    '前往南向目的地前必須先離開接點到北側折返')
+  assert.ok(westToSouth, '西側路應可右轉進入南向主路')
+  assert.ok(westToNorth, '對向目的地仍可經較遠處迴轉抵達')
+  assert.deepEqual(
+    westToNorth.spans.slice(0, 2).map((span) => [
+      span.road?.properties.osm_id,
+      span.road?.properties.blockNode,
+      span.back,
+    ]),
+    [[201, 5, false], [100, 1, true]],
+    '西側路必須先右轉南向，不得在捏合接點直接跨帶',
+  )
+  assert.ok(westToNorth.coords.some((coord) => coord[1] < 22),
+    '前往北向目的地前必須先離開接點到南側折返')
+  assert.equal(eastToWest, null, '兩側側路不得直穿中央帶')
+  assert.ok(mainThrough, '主路直行不得被捏合屏障中斷')
+})

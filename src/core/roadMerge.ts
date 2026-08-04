@@ -1,6 +1,6 @@
 import { angleDelta, bearing, haversine } from './geo.ts'
 import type { EnhancementRecord } from './enhancements'
-import type { RoadFeature, RoadProps } from './roads'
+import type { OneSideEntryAccess, RoadFeature, RoadProps } from './roads'
 
 export interface ResolvedRoadMerge {
   mergeKey: string
@@ -12,6 +12,7 @@ export interface ResolvedRoadMerge {
   primaryAt: 'start' | 'end'
   secondaryAt: 'start' | 'end'
   adjacentBack: boolean | null
+  sideAccess: { sideRoadKey: string; allowedBack: boolean }[]
   resolvedBy: 'exact' | 'active-node' | 'source-segment' | 'already-absorbed'
   sourceSeq?: number
   sourceTs?: string
@@ -40,6 +41,13 @@ interface BlockResolution {
 
 const roadBlockKey = (road: RoadFeature) =>
   `way/${road.properties.osm_id}@b/${road.properties.blockNode}`
+
+const clonePreviousAccess = (
+  value: OneSideEntryAccess[] | OneSideEntryAccess | undefined,
+): OneSideEntryAccess[] | undefined => {
+  if (!value) return undefined
+  return (Array.isArray(value) ? value : [value]).map((entry) => ({ ...entry }))
+}
 
 const parseBlockKey = (key: string): ParsedBlockKey | null => {
   const match = key.match(/^way\/(-?\d+)@b\/(-?\d+)$/)
@@ -71,7 +79,7 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
     roadMergeDerived: road.properties.roadMergeDerived
       ? road.properties.roadMergeDerived.map((entry) => ({
         ...entry,
-        previousAccess: entry.previousAccess ? { ...entry.previousAccess } : undefined,
+        previousAccess: clonePreviousAccess(entry.previousAccess),
       })) : undefined,
   },
 })
@@ -89,10 +97,11 @@ const cloneWithoutDerivedRoadMerge = (road: RoadFeature): RoadFeature => {
     }
     clean.properties.oneSideEntryAccess = clean.properties.oneSideEntryAccess
       ?.filter((entry) => entry.nodeId !== derived.nodeId)
-    if (derived.previousAccess) {
+    const previousAccess = clonePreviousAccess(derived.previousAccess)
+    if (previousAccess) {
       clean.properties.oneSideEntryAccess = [
         ...(clean.properties.oneSideEntryAccess ?? []),
-        { ...derived.previousAccess },
+        ...previousAccess,
       ]
     }
   }
@@ -221,23 +230,34 @@ const isRightTurn = (from: number, to: number) => {
   return delta >= 20 && delta <= 160
 }
 
-const resolveAdjacentDirection = (
+type SideAccessResolution =
+  | { ok: true; access: { sideRoadKey: string; allowedBack: boolean }[] }
+  | { ok: false; reason: string }
+
+const resolveSideAccess = (
   primary: RoadFeature,
   secondary: RoadFeature,
   primaryAt: 'start' | 'end',
   secondaryAt: 'start' | 'end',
   junctionNodeId: number,
   sideRoads: RoadFeature[],
-): boolean | null => {
-  if (!sideRoads.length) return null
+): SideAccessResolution => {
+  if (!sideRoads.length) return { ok: true, access: [] }
   const main = mergedMainAroundJunction(
     primary, secondary, primaryAt, secondaryAt, junctionNodeId)
-  if (!main) return null
-  const candidates = new Set<boolean>()
+  if (!main) return { ok: false, reason: '無法建立主路接縫幾何' }
+  const access: { sideRoadKey: string; allowedBack: boolean }[] = []
   for (const side of sideRoads) {
+    const sideRoadKey = roadBlockKey(side)
+    const sideLabel = `${side.properties.name || '未命名側路'}（${sideRoadKey}）`
     const index = side.properties.nodes.indexOf(junctionNodeId)
     const coordinates = side.geometry.coordinates as [number, number][]
-    if (index !== 0 && index !== coordinates.length - 1) return null
+    if (coordinates.length < 2) {
+      return { ok: false, reason: `${sideLabel}：幾何點不足` }
+    }
+    if (index !== 0 && index !== side.properties.nodes.length - 1) {
+      return { ok: false, reason: `${sideLabel}：接縫不是側路端點` }
+    }
     const other = index === 0 ? coordinates[1] : coordinates[coordinates.length - 2]
     const sideOut = bearing(main.join, other)
     const sideIn = bearing(other, main.join)
@@ -245,10 +265,12 @@ const resolveAdjacentDirection = (
       && isRightTurn(sideIn, bearing(main.join, main.after))
     const backward = isRightTurn(bearing(main.after, main.join), sideOut)
       && isRightTurn(sideIn, bearing(main.join, main.before))
-    if (forward === backward) return null
-    candidates.add(backward)
+    if (forward === backward) {
+      return { ok: false, reason: `${sideLabel}：無法唯一判定相鄰的主路方向` }
+    }
+    access.push({ sideRoadKey, allowedBack: backward })
   }
-  return candidates.size === 1 ? [...candidates][0] : null
+  return { ok: true, access }
 }
 
 const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge) => {
@@ -273,11 +295,12 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
   const restricted = new Set(merge.primary.properties.oneSideEntryNodes ?? [])
   for (const node of merge.secondary.properties.oneSideEntryNodes ?? []) restricted.add(node)
   merge.primary.properties.oneSideEntryNodes = restricted.size ? [...restricted] : undefined
-  const access = new Map(
+  const access = new Map<string, OneSideEntryAccess>(
     (merge.primary.properties.oneSideEntryAccess ?? [])
-      .map((entry) => [entry.nodeId, entry] as const))
+      .map((entry) => [`${entry.nodeId}:${entry.sideRoadKey ?? '*'}`, entry] as const))
   for (const entry of merge.secondary.properties.oneSideEntryAccess ?? []) {
-    if (!access.has(entry.nodeId)) access.set(entry.nodeId, entry)
+    const key = `${entry.nodeId}:${entry.sideRoadKey ?? '*'}`
+    if (!access.has(key)) access.set(key, entry)
   }
   merge.primary.properties.oneSideEntryAccess = access.size ? [...access.values()] : undefined
   const barriers = new Set(merge.primary.properties.roadMergeBarrierNodes ?? [])
@@ -316,12 +339,12 @@ const ensureRoadMergeDerived = (road: RoadFeature, nodeId: number) => {
     ?.find((entry) => entry.nodeId === nodeId)
   if (prior) return prior
   const previousAccess = road.properties.oneSideEntryAccess
-    ?.find((entry) => entry.nodeId === nodeId)
+    ?.filter((entry) => entry.nodeId === nodeId)
   const derived = {
     nodeId,
     hadNode: road.properties.oneSideEntryNodes?.includes(nodeId) ?? false,
     hadBarrier: road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false,
-    previousAccess: previousAccess ? { ...previousAccess } : undefined,
+    previousAccess: clonePreviousAccess(previousAccess),
   }
   road.properties.roadMergeDerived = [
     ...(road.properties.roadMergeDerived ?? []), derived,
@@ -336,16 +359,37 @@ const registerRoadMergeBarrier = (road: RoadFeature, nodeId: number) => {
   road.properties.roadMergeBarrierNodes = [...barriers]
 }
 
-const registerOneSideAccess = (road: RoadFeature, nodeId: number, allowedBack: boolean) => {
+const registerOneSideAccess = (
+  road: RoadFeature,
+  nodeId: number,
+  allowedBack: boolean,
+  sideRoadKey?: string,
+) => {
   ensureRoadMergeDerived(road, nodeId)
   const restricted = new Set(road.properties.oneSideEntryNodes ?? [])
   restricted.add(nodeId)
   road.properties.oneSideEntryNodes = [...restricted]
-  const access = new Map(
+  const access = new Map<string, OneSideEntryAccess>(
     (road.properties.oneSideEntryAccess ?? [])
-      .map((entry) => [entry.nodeId, entry] as const))
-  access.set(nodeId, { nodeId, allowedBack })
+      .map((entry) => [`${entry.nodeId}:${entry.sideRoadKey ?? '*'}`, entry] as const))
+  access.set(`${nodeId}:${sideRoadKey ?? '*'}`, {
+    nodeId,
+    allowedBack,
+    ...(sideRoadKey ? { sideRoadKey } : {}),
+  })
   road.properties.oneSideEntryAccess = [...access.values()]
+}
+
+const accessRulesForMerge = (merge: ResolvedRoadMerge): {
+  allowedBack: boolean
+  sideRoadKey?: string
+}[] => {
+  if (!merge.sideAccess.length) return []
+  const directions = new Set(merge.sideAccess.map((entry) => entry.allowedBack))
+  if (directions.size === 1) {
+    return [{ allowedBack: merge.sideAccess[0].allowedBack }]
+  }
+  return merge.sideAccess
 }
 
 const applyRoutingConstraints = (
@@ -361,17 +405,28 @@ const applyRoutingConstraints = (
     if (secondary.length === 1 && secondary[0].road !== primary[0].road) {
       registerRoadMergeBarrier(secondary[0].road, merge.junctionNodeId)
     }
-    if (merge.adjacentBack === null) continue
-    registerOneSideAccess(primary[0].road, merge.junctionNodeId, merge.adjacentBack)
-    if (secondary.length !== 1 || secondary[0].road === primary[0].road) continue
+    const accessRules = accessRulesForMerge(merge)
+    for (const access of accessRules) {
+      registerOneSideAccess(
+        primary[0].road,
+        merge.junctionNodeId,
+        access.allowedBack,
+        access.sideRoadKey,
+      )
+    }
+    if (!accessRules.length
+      || secondary.length !== 1 || secondary[0].road === primary[0].road) continue
     // 合併主線的 forward 始終跟 primary 的 digitize 方向一致；secondary
     // 若以同類端點接合（start-start / end-end），其 digitize 方向相反。
     const secondaryForwardBack = merge.primaryAt === merge.secondaryAt
-    registerOneSideAccess(
-      secondary[0].road,
-      merge.junctionNodeId,
-      secondaryForwardBack !== merge.adjacentBack,
-    )
+    for (const access of accessRules) {
+      registerOneSideAccess(
+        secondary[0].road,
+        merge.junctionNodeId,
+        secondaryForwardBack !== access.allowedBack,
+        access.sideRoadKey,
+      )
+    }
   }
 }
 
@@ -423,7 +478,7 @@ function replayRoadMerges(
       road !== primaryResolution.road
       && road !== secondaryResolution.road
       && road.properties.nodes.includes(junctionNodeId))
-    const adjacentBack = resolveAdjacentDirection(
+    const sideAccessResolution = resolveSideAccess(
       primaryResolution.road,
       secondaryResolution.road,
       primaryAt,
@@ -431,11 +486,15 @@ function replayRoadMerges(
       junctionNodeId,
       sideRoads,
     )
-    if (sideRoads.length && adjacentBack === null) {
+    if (!sideAccessResolution.ok) {
       rows.push({ ...rowBase, status: 'needs_manual_review',
-        detail: '無法唯一判定側路相鄰的主路方向' })
+        detail: sideAccessResolution.reason })
       continue
     }
+    const sideAccess = sideAccessResolution.access
+    const adjacentDirections = new Set(sideAccess.map((entry) => entry.allowedBack))
+    const adjacentBack = adjacentDirections.size === 1
+      ? sideAccess[0].allowedBack : null
     const merge: ResolvedRoadMerge = {
       ...rowBase,
       primary: primaryResolution.road,
@@ -444,6 +503,7 @@ function replayRoadMerges(
       primaryAt,
       secondaryAt,
       adjacentBack,
+      sideAccess,
       resolvedBy: alreadyAbsorbed ? 'already-absorbed'
         : usedProvenance ? 'source-segment'
           : primaryResolution.by === 'active-node' || secondaryResolution.by === 'active-node'
@@ -462,10 +522,15 @@ function replayRoadMerges(
     resolved.push(merge)
     rows.push(row)
     registerRoadMergeBarrier(merge.primary, merge.junctionNodeId)
-    if (merge.adjacentBack !== null) {
+    for (const access of accessRulesForMerge(merge)) {
       // working 就是繪圖視圖；直接標在當前 carrier，避免連鎖捏合後舊 block key
       // 已被吸收而無法再次查回。若 carrier 後續成為 secondary，視覺合併會轉移標記。
-      registerOneSideAccess(merge.primary, merge.junctionNodeId, merge.adjacentBack)
+      registerOneSideAccess(
+        merge.primary,
+        merge.junctionNodeId,
+        access.allowedBack,
+        access.sideRoadKey,
+      )
     }
     applyVisualMergeInPlace(working, merge)
   }
@@ -791,22 +856,21 @@ export function planRoadMergeSeamUndo(
   }
 }
 
+const resolvedRoadBlockKeys = (row: RoadMergeReplayRow): string[] => row.resolved
+  ? [roadBlockKey(row.resolved.primary), roadBlockKey(row.resolved.secondary)]
+  : []
+
+const rowMatchesCurrentRoad = (row: RoadMergeReplayRow, roadKey: string) =>
+  row.primaryKey === roadKey
+  || row.secondaryKey === roadKey
+  || resolvedRoadBlockKeys(row).includes(roadKey)
+
 export function activeMergeForRoad(
   rows: RoadMergeReplayRow[],
   road: RoadFeature,
 ): RoadMergeReplayRow | undefined {
   const key = roadBlockKey(road)
-  return rows.find((row) => {
-    if (!row.resolved) return false
-    if (row.primaryKey === key || row.secondaryKey === key) return true
-    const parsedKeys = [row.primaryKey, row.secondaryKey]
-      .map(parseBlockKey).filter((parsed): parsed is ParsedBlockKey => !!parsed)
-    return parsedKeys.some((parsed) =>
-      (road.properties.osm_id === parsed.wayId
-        && road.properties.nodes.includes(parsed.blockNode))
-      || road.properties.sourceSegments.some((source) =>
-        source.osmId === parsed.wayId && source.nodeRefs.includes(parsed.blockNode)))
-  })
+  return rows.find((row) => row.resolved && rowMatchesCurrentRoad(row, key))
 }
 
 export function roadMergeComponentBlockKeys(
@@ -816,7 +880,7 @@ export function roadMergeComponentBlockKeys(
   const selectedKey = roadBlockKey(road)
   const component = new Set([selectedKey])
   for (const row of rows) {
-    if (!row.resolved || !activeMergeForRoad([row], road)) continue
+    if (!row.resolved || !rowMatchesCurrentRoad(row, selectedKey)) continue
     component.add(row.primaryKey)
     component.add(row.secondaryKey)
   }
@@ -867,9 +931,10 @@ const currentRoadsForMergeComponent = (
   const keys = new Set(roadMergeComponentBlockKeys(rows, road))
   const componentRows = rows.filter((row) => row.resolved
     && (keys.has(row.primaryKey) || keys.has(row.secondaryKey)))
+  const currentKeys = new Set(componentRows.flatMap(resolvedRoadBlockKeys))
   return roads.filter((candidate) =>
     keys.has(roadBlockKey(candidate))
-    || !!activeMergeForRoad(componentRows, candidate))
+    || currentKeys.has(roadBlockKey(candidate)))
 }
 
 export function roadMergeEditableRoads(

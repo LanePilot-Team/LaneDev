@@ -14,8 +14,9 @@ import {
 } from '../core/staticDatabase'
 import {
   compassOf, resizeLaneMarks, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
-  BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor, type EditTool,
+  BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
 } from './useEditor'
+import { formatTaiwanHistoryTime } from './timeFormat'
 
 const resizeDirectionMarks = (
   marks: (LaneMark | null)[], oldCars: number, newCars: number, moto: boolean | number,
@@ -151,35 +152,6 @@ function LaneMarkEditor({ label, marks, carLanes, motoLanes, onChange }: {
   )
 }
 
-/** 提示列一行放得下才有用：short 顯示、full 掛 title 供滑鼠停留查看完整說明。 */
-const TOOL_HINTS: Record<EditTool, {
-  short: (profile: Profile) => string
-  full: (profile: Profile) => string
-}> = {
-  lane: {
-    short: () => '點道路編輯 · 再點一下換疊在下面的路 · Ctrl 點兩段捏合',
-    full: () => '點選道路編輯車道；同一點再按一下可換下一條疊在一起的路；'
-      + '按住 Ctrl 依序點兩段相接、平行道路可捏合路段',
-  },
-  zone: {
-    short: () => '點路口 → 面板選左轉方向',
-    full: () => '點選「路口」→ 右側面板選左轉方向（位置自動計算）',
-  },
-  bay: {
-    short: () => '點路口 → 開關偏心左轉／右轉道',
-    full: () => '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道',
-  },
-  road: {
-    short: () => '點地圖放頂點（自動吸附）→ 面板「完成」· 點自訂道路可刪',
-    full: () => '點地圖依序放頂點（靠近既有路口/節點會自動吸附）→ 面板按「完成」成路'
-      + ' · 點自訂道路可刪除',
-  },
-  vehicle: {
-    short: (profile) => `點道路放${profile === 'car' ? '汽車' : '機車'} · 點模型可選取／刪除`,
-    full: (profile) => `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`,
-  },
-}
-
 export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: {
   core: MapCore; editor: Editor; profile: Profile; zoneCount: number; vehicleCount: number
 }) {
@@ -215,11 +187,15 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
         }}>
         {saveLabel}
       </button>
-      {editWarn ?? (
-        <span className="hint-text" title={TOOL_HINTS[editTool].full(profile)}>
-          {TOOL_HINTS[editTool].short(profile)}
-        </span>
-      )}
+      {editWarn ?? (editTool === 'lane'
+        ? '點選道路編輯車道；按住 Ctrl 依序點兩段相接、平行道路可捏合路段'
+        : editTool === 'zone'
+          ? '點選「路口」→ 右側面板選左轉方向（位置自動計算）'
+          : editTool === 'bay'
+            ? '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道'
+            : editTool === 'road'
+              ? '點地圖依序放頂點（靠近既有路口/節點會自動吸附）→ 面板按「完成」成路 · 點自訂道路可刪除'
+              : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
       {!editWarn && (
         <button className="mini"
           onClick={() => {
@@ -253,21 +229,39 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         way/{editRoad.osmId}@b/{editRoad.blockNode} · {editRoad.oneway === 'yes' ? '單行' : '雙向'}
         {' '}· 僅影響目前兩個路口之間的區塊
       </div>
-      {/* 疊在一起的路（主線＋側車道等）：地圖上點不開下層那條，改由這裡直選。
-          地圖同時畫出候選中心線——實線青色是選取中，橘虛線是同一疊的其他條。 */}
       {stackPicks.length > 1 && (
         <div className="stack-picker">
           <div className="stack-head">
-            此處疊了 {stackPicks.length} 條路（地圖上同一點再按一下也會換下一條）
+            此處疊了 {stackPicks.length} 條路；可直接選擇，或在地圖同一點再次點擊切換
           </div>
-          {stackPicks.map((pick, i) => (
-            <button key={pick.key} className={`stack-item${i === stackIndex ? ' on' : ''}`}
-              onClick={() => pickStacked(i)}>
+          {stackPicks.map((pick, index) => (
+            <button
+              key={pick.key}
+              className={`stack-item${index === stackIndex ? ' on' : ''}`}
+              onClick={() => pickStacked(index)}
+            >
               <b>{pick.name}</b>
               <span>{pick.detail}</span>
             </button>
           ))}
         </div>
+      )}
+      {editor.activeRoadMerge && (
+        <section className="edit-section">
+          <h3>道路捏合歷程</h3>
+          <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
+          <div className="road-src">
+            作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
+            {' '}時間：{formatTaiwanHistoryTime(editor.activeRoadMerge.resolved?.sourceTs)}<br />
+            主段：{editor.activeRoadMerge.primaryKey}<br />
+            次段：{editor.activeRoadMerge.secondaryKey}<br />
+            解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}
+          </div>
+          <div className="edit-row">
+            <span>恢復原始道路與路口拓撲</span>
+            <button className="mini danger" onClick={editor.undoRoadMerge}>撤銷捏合</button>
+          </div>
+        </section>
       )}
       <div className="edit-notice">先調整下列設定；按「儲存並套用」後才會寫入 journal 並重繪道路。</div>
 
@@ -896,23 +890,6 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         </div>
       </>}
       </section>
-      {editor.activeRoadMerge && (
-        <section className="edit-section">
-          <h3>道路捏合歷程</h3>
-          <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
-          <div className="road-src">
-            作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
-            {' '}時間：{editor.activeRoadMerge.resolved?.sourceTs ?? '未知'}<br />
-            主段：{editor.activeRoadMerge.primaryKey}<br />
-            次段：{editor.activeRoadMerge.secondaryKey}<br />
-            解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}
-          </div>
-          <div className="edit-row">
-            <span>恢復原始道路與路口拓撲</span>
-            <button className="mini danger" onClick={editor.undoRoadMerge}>撤銷捏合</button>
-          </div>
-        </section>
-      )}
       <div className="edit-actions">
         <button className="mini go" onClick={editor.saveRoadEdit}>儲存並套用</button>
         <button className="mini" onClick={() => setEditRoad(null)}>取消</button>

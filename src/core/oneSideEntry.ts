@@ -22,15 +22,19 @@ export function oneSideEntryTransitionAllowed(
   nodeId: number,
 ): boolean {
   if (!incomingRoad) return true
-  const accessAt = (road: RoadFeature) => {
-    const explicit = road.properties.oneSideEntryAccess
-      ?.find((entry) => entry.nodeId === nodeId)
+  const roadKey = (road: RoadFeature) =>
+    `way/${road.properties.osm_id}@b/${road.properties.blockNode}`
+  const accessAt = (road: RoadFeature, counterpart: RoadFeature) => {
+    const entries = road.properties.oneSideEntryAccess
+      ?.filter((entry) => entry.nodeId === nodeId) ?? []
+    const explicit = entries.find((entry) => entry.sideRoadKey === roadKey(counterpart))
+      ?? entries.find((entry) => !entry.sideRoadKey)
     if (explicit) return explicit
     return road.properties.oneSideEntryNodes?.includes(nodeId)
       ? { nodeId, allowedBack: false } : undefined
   }
-  const incomingAccess = accessAt(incomingRoad)
-  const outgoingAccess = accessAt(outgoingRoad)
+  const incomingAccess = accessAt(incomingRoad, outgoingRoad)
+  const outgoingAccess = accessAt(outgoingRoad, incomingRoad)
   // 同一條主路同方向續行不受限制；在接縫切換方向就是跨中央島迴轉。
   if (outgoingRoad.properties.osm_id === incomingRoad.properties.osm_id) {
     if (!incomingAccess && !outgoingAccess) return true

@@ -522,7 +522,11 @@ export function buildStyle(): StyleSpecification {
       // ── 路名 ──
       {
         id: 'road-label', type: 'symbol', source: 'roads', minzoom: 14.5,
+        // 高架路段排除：符號畫在地面平面，橋面卻由 elevated3d 抬到 6m，
+        // 名稱會落在橋下的地上（「機車專用道(往…方向)」印在草地/平面道路上）。
+        // 地面車道級渲染本來就略過 elevated 區塊，路名也要跟著略過才一致。
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
+          ['!=', ['get', 'elevated'], true],
           ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {
           'symbol-placement': 'line',

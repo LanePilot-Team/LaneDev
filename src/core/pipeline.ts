@@ -5,7 +5,7 @@ import {
   mergeCouplets, absorbSideWays, applyLantianSections,
   type DropRemap, type CoupletSection,
 } from './couplet'
-import { applyFixups, collapseKnownIntersections, REMOVED_WAY_IDS } from './fixups'
+import { applyFixups, collapseKnownIntersections, hugSideLanes, REMOVED_WAY_IDS } from './fixups'
 import {
   collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
 } from './roads'
@@ -123,6 +123,8 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   roads = mergeCouplets(roads, new Set(['高楠公路']), {
     lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'island',
   }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
+  // 合併完才貼齊平行的機車專用高架：主橋中線要先落在兩向中間，貼齊才有意義。
+  hugSideLanes(roads)
   // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——
   // 主線合併成 2+2＋機車道＋快慢分隔島（寬度可編輯），再吸收慢車道 way
   for (const name of MAINLINE_ONLY_ROADS) {

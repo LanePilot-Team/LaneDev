@@ -21,6 +21,7 @@
     "audit:merged-render": "node scripts/run_offline.mjs scripts/merged_junction_render_audit.ts",
     "audit:coverage": "node scripts/coverage_audit.mjs",
     "audit:stacked": "node scripts/run_offline.mjs scripts/stack_audit.ts",
+    "audit:side-lane-hug": "node scripts/run_offline.mjs scripts/side_lane_hug_audit.ts",
     "audit:style": "node scripts/run_offline.mjs scripts/style_audit.ts",
     "prebuild": "npm run lane-guidance:data",
     "build": "tsc -b && vite build",

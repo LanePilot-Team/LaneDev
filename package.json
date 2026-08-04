@@ -11,6 +11,7 @@
     "prebuild": "npm run lane-guidance:data",
     "build": "tsc -b && vite build",
     "collect-environment": "node scripts/collect-nanzih-environment-data.mjs",
+    "places:update": "node scripts/update_places.mjs",
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py"

@@ -68,6 +68,7 @@ export function buildStyle(): StyleSpecification {
       occludedBuildings: { type: 'geojson', data: emptyFC as never },
       route: { type: 'geojson', data: emptyFC as never },
       endpoints: { type: 'geojson', data: emptyFC as never },
+      placeSelection: { type: 'geojson', data: emptyFC as never },
       zones: { type: 'geojson', data: emptyFC as never },
       draftroad: { type: 'geojson', data: emptyFC as never }, // 新增道路拉線預覽（LaneDev 編輯模式）
     },
@@ -516,6 +517,41 @@ export function buildStyle(): StyleSpecification {
           'text-color': C.label,
           'text-halo-color': C.labelHalo,
           'text-halo-width': 1.6,
+        },
+      },
+
+      // ── 地標搜尋結果 ──
+      {
+        id: 'place-selection-halo', type: 'circle', source: 'placeSelection',
+        paint: {
+          'circle-radius': 18,
+          'circle-color': '#2563eb',
+          'circle-opacity': 0.18,
+        },
+      },
+      {
+        id: 'place-selection-marker', type: 'circle', source: 'placeSelection',
+        paint: {
+          'circle-radius': 9,
+          'circle-color': '#2563eb',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3,
+        },
+      },
+      {
+        id: 'place-selection-label', type: 'symbol', source: 'placeSelection',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 15,
+          'text-anchor': 'top',
+          'text-offset': [0, 1.25],
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#173d74',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2,
         },
       },
 

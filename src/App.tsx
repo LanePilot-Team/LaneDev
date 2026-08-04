@@ -9,6 +9,7 @@ import { PlanPanel } from './plan/PlanPanel'
 import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
 import { useDrive } from './nav/useDrive'
 import { DriveHUD } from './nav/DriveHUD'
+import { PlaceSearch } from './places/PlaceSearch'
 import { useEditor } from './edit/useEditor'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
@@ -98,6 +99,8 @@ export default function App() {
       <div ref={containerRef} className="map" />
 
       {loading && <div className="loading">載入楠梓＋左營路網中…</div>}
+
+      {mode !== 'drive' && <PlaceSearch core={core} mapLoading={loading} />}
 
       {/* ── 導航 HUD ── */}
       {mode === 'drive' && (

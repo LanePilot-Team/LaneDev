@@ -16,7 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
-import { foldJournal, applyToRoads, applyRoadMerges, replayRoadMerge } from '../src/core/enhancements'
+import { foldJournal, applyToRoads, applyRoadMerges } from '../src/core/enhancements'
+import { buildRoadMergeViews } from '../src/core/roadMerge'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const arg = (name: string, dflt: string) =>
@@ -30,10 +31,18 @@ if (parsed.kind !== 'map') throw new Error('靜態資料庫格式錯誤')
 const { roads } = prepareBaseRoads(roadsFromGeoJSON(parsed.fc))
 const journal = db.editor?.journal ?? []
 applyToRoads(roads, foldJournal(journal))
+const mergeView = buildRoadMergeViews(
+  roads.filter((road: RoadFeature) => !road.properties.deleted),
+  journal,
+)
+// Orphan-key counts retain the legacy destructive view so historical road-field
+// targets are compared with the same post-merge block layout as older reports.
+// Merge validity itself comes from mergeView above, which understands V2 source snapshots.
 applyRoadMerges(roads, journal)
+const auditRoads = roads
 
 const blockKey = (r: RoadFeature) => `way/${r.properties.osm_id}@b/${r.properties.blockNode}`
-const live = new Map(roads.map((r) => [blockKey(r), r]))
+const live = new Map(auditRoads.map((r) => [blockKey(r), r]))
 const folded = foldJournal(journal)
 const nameOf = (r?: RoadFeature) => r?.properties.name ?? '未命名'
 const parseKey = (k: string) => {
@@ -49,29 +58,26 @@ interface MergeRow {
 const merges: MergeRow[] = []
 /** 被捏合吸收掉的次段鍵——這些鍵變孤兒是預期行為，不該算失效 */
 const absorbedKeys = new Set<string>()
-for (const [k, f] of folded) {
-  if (!k.startsWith('merge/')) continue
-  const pk = String(f.primary ?? '')
-  const sk = String(f.secondary ?? '')
-  const a = live.get(pk)
-  const b = live.get(sk)
-  const sp = parseKey(sk)
-  if (a && !b && sp && a.properties.nodes.includes(sp.blockNode)) {
-    // 保留段存在、次段消失，而且次段的起點節點就在保留段裡 = 已經併進去了
-    absorbedKeys.add(sk)
-    merges.push({ key: k, primary: pk, secondary: sk, status: 'absorbed',
-      detail: `次段已併入 ${pk}（${nameOf(a)}）` })
-    continue
+for (const row of mergeView.rows) {
+  if (row.resolved) {
+    const absorbed = !live.has(row.secondaryKey)
+    if (absorbed) absorbedKeys.add(row.secondaryKey)
+    merges.push({
+      key: row.mergeKey,
+      primary: row.primaryKey,
+      secondary: row.secondaryKey,
+      status: absorbed ? 'absorbed' : 'applied',
+      detail: `由 ${row.resolved.resolvedBy} 來源重播成功`,
+    })
+  } else {
+    merges.push({
+      key: row.mergeKey,
+      primary: row.primaryKey,
+      secondary: row.secondaryKey,
+      status: 'failed',
+      detail: row.detail,
+    })
   }
-  if (a && b) {
-    const c = replayRoadMerge(a, b)
-    merges.push({ key: k, primary: pk, secondary: sk,
-      status: c.ok ? 'applied' : 'failed',
-      detail: c.ok ? '兩段皆存在且可接合' : (c.reason ?? '未知') })
-    continue
-  }
-  merges.push({ key: k, primary: pk, secondary: sk, status: 'failed',
-    detail: `找不到區塊（主${a ? 'ok' : '缺'}／次${b ? 'ok' : '缺'}）` })
 }
 const mergeFailed = merges.filter((m) => m.status === 'failed')
 console.log(`捏合紀錄 ${merges.length} 組`
@@ -102,14 +108,14 @@ for (const [key, fields] of folded) {
     continue
   }
   const p = parseKey(key)!
-  const host = roads.find((r) => r.properties.osm_id === p.wayId
+  const host = auditRoads.find((r) => r.properties.osm_id === p.wayId
     && r.properties.nodes.includes(p.blockNode))
   if (host) {
     orphans.push({ key, klass: 'candidate_remap_needs_review', deleted, fields: n,
       new_target: blockKey(host), new_road: nameOf(host),
       detail: '同 way 有區塊含此節點，可能是它——道路名稱不同時務必人工確認' })
   } else {
-    const anyWay = roads.some((r) => r.properties.osm_id === p.wayId)
+    const anyWay = auditRoads.some((r) => r.properties.osm_id === p.wayId)
     orphans.push({ key, klass: 'unresolved', deleted, fields: n,
       detail: anyWay ? 'way 還在，但舊 blockNode 已不在任何區塊裡' : '整條 way 已不存在' })
   }

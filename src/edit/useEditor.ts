@@ -107,6 +107,8 @@ export interface EditRoadState {
   /** 單邊偏心道另一端的處理；雙邊使用時此值不參與幾何。 */
   baySingleMode: 'capped' | 'ignore'
   baySingleMode0: 'capped' | 'ignore'
+  bayMarkF: LaneMark | null; bayMarkB: LaneMark | null
+  bayMarkF0: LaneMark | null; bayMarkB0: LaneMark | null
   /** 兩向地面規則（GROUND_RULES code，順序 = 選取順序 = 印字由上往下） */
   laneMarksF: (LaneMark | null)[]; laneMarksB: (LaneMark | null)[]
   /** 機車停等格涵蓋車道數及自駕駛視角左→右的起訖範圍；*0 = 開面板初值 */
@@ -124,6 +126,8 @@ export interface EditRoadState {
   rightLaneF0: boolean; rightLaneB0: boolean
   rightLaneLenF: number; rightLaneLenB: number
   rightLaneLenF0: number; rightLaneLenB0: number
+  rightLaneMarkF: LaneMark | null; rightLaneMarkB: LaneMark | null
+  rightLaneMarkF0: LaneMark | null; rightLaneMarkB0: LaneMark | null
 }
 
 export interface Editor {
@@ -529,10 +533,12 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
       const nodeLast = forwardEdge?.toNode ?? p2.nodes[p2.nodes.length - 1] ?? 0
       const nodeFirst = backwardEdge?.toNode ?? p2.nodes[0] ?? 0
       // 兩向偏心道現況（folded journal 已反映在 baysRef）
-      const bayOf = (key: string) =>
-        core.baysRef.current.find((b) => b.key === key)?.turns ?? 'none'
-      const bayF = bayOf(`way/${p2.osm_id}@node/${nodeLast}`)
-      const bayB = bayOf(`way/${p2.osm_id}@node/${nodeFirst}~b`)
+      const bayObjectF = core.baysRef.current.find((b) =>
+        b.key === `way/${p2.osm_id}@node/${nodeLast}`)
+      const bayObjectB = core.baysRef.current.find((b) =>
+        b.key === `way/${p2.osm_id}@node/${nodeFirst}~b`)
+      const bayF = bayObjectF?.turns ?? 'none'
+      const bayB = bayObjectB?.turns ?? 'none'
       const activeBay = core.baysRef.current.find((b) =>
         b.key === `way/${p2.osm_id}@node/${nodeLast}`
         || b.key === `way/${p2.osm_id}@node/${nodeFirst}~b`)
@@ -630,6 +636,10 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         nodeFirst, nodeLast,
         bayF, bayB, bayF0: bayF, bayB0: bayB,
         baySingleMode, baySingleMode0: baySingleMode,
+        bayMarkF: bayObjectF?.laneMark ?? { text: '禁行機車', color: '#facc15' },
+        bayMarkB: bayObjectB?.laneMark ?? { text: '禁行機車', color: '#facc15' },
+        bayMarkF0: bayObjectF?.laneMark ?? { text: '禁行機車', color: '#facc15' },
+        bayMarkB0: bayObjectB?.laneMark ?? { text: '禁行機車', color: '#facc15' },
         laneMarksF, laneMarksB,
         motoBoxF, motoBoxB, motoBoxF0: motoBoxF, motoBoxB0: motoBoxB,
         motoBoxMaxF: mbF?.maxLanes ?? inferredF.max,
@@ -652,6 +662,10 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         rightLaneLenB: Math.round(rlB?.lenM ?? 20),
         rightLaneLenF0: Math.round(rlF?.lenM ?? 20),
         rightLaneLenB0: Math.round(rlB?.lenM ?? 20),
+        rightLaneMarkF: rlF?.laneMark ?? { text: '右轉專用', color: '#ffffff' },
+        rightLaneMarkB: rlB?.laneMark ?? { text: '右轉專用', color: '#ffffff' },
+        rightLaneMarkF0: rlF?.laneMark ?? { text: '右轉專用', color: '#ffffff' },
+        rightLaneMarkB0: rlB?.laneMark ?? { text: '右轉專用', color: '#ffffff' },
       })
     } else if (editToolRef.current === 'vehicle') {
       // three.js 圖層不能用 queryRenderedFeatures，改用距離命中
@@ -808,14 +822,17 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     // 偏心道轉向（有動才寫）：none = 該行向關閉、其餘 = 開啟並指定轉向
     const singleBayModeApplies =
       (editRoad.bayF !== 'none') !== (editRoad.bayB !== 'none')
-    const writeBay = (key: string, v: string, v0: string) => {
+    const writeBay = (
+      key: string, v: string, v0: string, mark: LaneMark | null, mark0: LaneMark | null,
+    ) => {
       const modeChanged = singleBayModeApplies && v !== 'none'
         && editRoad.baySingleMode !== editRoad.baySingleMode0
+      const markChanged = JSON.stringify(mark) !== JSON.stringify(mark0)
       // 單邊模式必須把未使用端明確寫成 present:0。只靠畫面上的 none 不夠：
       // 若該端沒有 journal 覆寫，refreshBays 會依自動左轉配對再次生成，造成
       // 第一次儲存短暫變成雙邊使用、第二次關閉才生效。
       const lockUnusedEnd = singleBayModeApplies && v === 'none'
-      if (v === v0 && !modeChanged && !lockUnusedEnd) return
+      if (v === v0 && !modeChanged && !lockUnusedEnd && !markChanged) return
       core.journalRef.current = appendRecord(core.journalRef.current, {
         op: 'set', target: { type: 'turn_bay', key },
         fields: v === 'none'
@@ -823,6 +840,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
           : {
             present: 1,
             turns: v,
+            lane_mark: JSON.stringify(mark),
             ...(singleBayModeApplies ? { single_mode: editRoad.baySingleMode } : {}),
           },
       })
@@ -830,31 +848,34 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     const bayKeyF = `way/${editRoad.osmId}@node/${editRoad.nodeLast}`
     const bayKeyB = `way/${editRoad.osmId}@node/${editRoad.nodeFirst}~b`
     if (editRoad.oneway === 'no') {
-      writeBay(bayKeyF, editRoad.bayF, editRoad.bayF0)
-      writeBay(bayKeyB, editRoad.bayB, editRoad.bayB0)
+      writeBay(bayKeyF, editRoad.bayF, editRoad.bayF0, editRoad.bayMarkF, editRoad.bayMarkF0)
+      writeBay(bayKeyB, editRoad.bayB, editRoad.bayB0, editRoad.bayMarkB, editRoad.bayMarkB0)
     }
     // 路口末端右轉專用道：只是末端分流，不改整段基本車道數。
     const writeRightLane = (
       nodeId: number, back: boolean, enabled: boolean, enabled0: boolean,
-      lenM: number, lenM0: number,
+      lenM: number, lenM0: number, mark: LaneMark | null, mark0: LaneMark | null,
     ) => {
-      if (enabled === enabled0 && lenM === lenM0) return
+      if (enabled === enabled0 && lenM === lenM0
+        && JSON.stringify(mark) === JSON.stringify(mark0)) return
       core.journalRef.current = appendRecord(core.journalRef.current, {
         op: 'set',
         target: {
           type: 'right_lane',
           key: `way/${editRoad.osmId}@node/${nodeId}${back ? '~b' : ''}~r`,
         },
-        fields: { present: enabled ? 1 : 0, len_m: lenM },
+        fields: { present: enabled ? 1 : 0, len_m: lenM, lane_mark: JSON.stringify(mark) },
       })
     }
     writeRightLane(
       editRoad.nodeLast, false, editRoad.rightLaneF, editRoad.rightLaneF0,
-      editRoad.rightLaneLenF, editRoad.rightLaneLenF0)
+      editRoad.rightLaneLenF, editRoad.rightLaneLenF0,
+      editRoad.rightLaneMarkF, editRoad.rightLaneMarkF0)
     if (editRoad.oneway === 'no') {
       writeRightLane(
         editRoad.nodeFirst, true, editRoad.rightLaneB, editRoad.rightLaneB0,
-        editRoad.rightLaneLenB, editRoad.rightLaneLenB0)
+        editRoad.rightLaneLenB, editRoad.rightLaneLenB0,
+        editRoad.rightLaneMarkB, editRoad.rightLaneMarkB0)
     }
     // 機車停等格以左→右的起訖車道保存；lanes 同時保留供舊版相容。
     const writeMotoBox = (

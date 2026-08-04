@@ -89,6 +89,14 @@ export interface RoadProps {
   oneSideEntryAccess?: OneSideEntryAccess[]
   /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
   roadMergeBarrierNodes?: number[]
+  /** 僅記憶體：中央島跨路口貫通的接點（現地指定，見 centerIslandJoins.ts）。
+   * 語意與捏合接縫相同——島面在此連續、主路不得迴轉——但兩段斷面不同，
+   * 不能真的捏合成一段。 */
+  centerIslandJoinNodes?: number[]
+  /** 僅記憶體：在該接點與本路段共用同一條中央島的「續行對向路段」區塊鍵。
+   * 兩段的 way id 不同時，單向進入規則必須靠這份對照才認得出「這是主路續行、
+   * 不是側街」，否則反向會被自己的 T 字限制擋在主路上。 */
+  medianContinuityPeers?: { nodeId: number; peerKey: string }[]
   /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
   roadMergeDerived?: {
     nodeId: number

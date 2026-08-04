@@ -9,7 +9,7 @@
 import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
 import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
-import { laneSpanM, MOTO_LANE_M } from './roads'
+import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
 import {
@@ -87,6 +87,8 @@ export interface TurnBay {
   arrows: { pos: [number, number]; brg: number; dM: number }[]
   /** 偏心道專屬路面印字錨點；位於儲車段內並朝向路口。 */
   roadText?: { pos: [number, number]; brg: number; dM: number }
+  /** 可由道路編輯器覆寫的偏心左轉道地面文字。 */
+  laneMark?: LaneMark | null
   /** 邊線：黃 = 分隔對向（左緣/斜切），白 = 分隔同向（右緣） */
   lines: PaintLine[]
 }
@@ -418,6 +420,7 @@ function makeBay(
     source: (o ? 'manual' : 'default') as TurnBay['source'],
     d0M: d0, bayStartM: bayStart, endM: end, setbackM: a.setbackM,
     back: a.back, paired, singleMode,
+    laneMark: readSpecialLaneMark(o?.lane_mark, { text: '禁行機車', color: '#facc15' }),
   }
 
   if (isCenter) {
@@ -963,16 +966,22 @@ export function buildChannelization(graph: RoadGraph, bays: TurnBay[]): PaintLin
 }
 
 /**
- * 現地單一例外：way/126247880@b/258785735 的快慢分隔為白色槽化帶。
+ * 現地指定例外：下列精確路段的快慢分隔為白色槽化帶。
  *
  * 僅使用現有中央黃色槽化帶的間距、內縮、寬度自適應與兩端封口規格，
  * 不推導其他道路，也不提供編輯工具。
  */
 export function buildSpecifiedWhiteMotoHatch(graph: RoadGraph): PaintLine[] {
   const out: PaintLine[] = []
-  for (const e of graph.scopeEdges((road) =>
-    road.properties.osm_id === 126247880
-      && road.properties.blockNode === 258785735, 0, 2)) {
+  const specified = new Set([
+    '126247880@258785735',
+    '23875933@2401086121',
+    '94402836@258785638',
+    '1454602407@7244167956', // 外環西路（南段）順向快慢分隔
+  ])
+  for (const e of graph.scopeEdges((road) => specified.has(
+    `${road.properties.osm_id}@${road.properties.blockNode}`,
+  ), 0, 2)) {
     const p = e.road.properties
     if (p.roadMarkingMode === 'none') continue
     const lanes = p.oneway === 'yes' || !e.back ? p.lanesForward : p.lanesBackward
@@ -1319,6 +1328,8 @@ export function groundMoves(
 // 純人工開啟（無自動生成）；鍵 = bay 鍵 + '~r' 尾碼。
 
 const RL_DEFAULTS = { len_m: 20, taper_len_m: 10, width_m: 3.0 }
+/** 地面文字需要足夠的專用道長度；人工文字設定不能繞過此安全門檻。 */
+const RIGHT_LANE_TEXT_MIN_LEN_M = 28
 
 export interface RightLane {
   key: string // way/W@node/N[~b]~r（journal target key）
@@ -1338,7 +1349,22 @@ export interface RightLane {
   polygon: [number, number][]
   casing: [number, number][]
   arrows: GroundArrow[]
+  /** 右轉專用道地面文字及其錨點。 */
+  laneMark?: LaneMark | null
+  roadText?: { pos: [number, number]; brg: number; dM: number }
   lines: PaintLine[]
+}
+
+function readSpecialLaneMark(value: string | number | undefined, fallback: LaneMark): LaneMark | null {
+  if (value === undefined) return fallback
+  try {
+    const parsed = JSON.parse(String(value)) as LaneMark | null
+    return parsed && typeof parsed.text === 'string'
+      ? { text: parsed.text, color: parsed.color || fallback.color }
+      : null
+  } catch {
+    return fallback
+  }
 }
 
 function foldRightLaneOverrides(journal: EnhancementRecord[]): Map<string, Record<string, string | number>> {
@@ -1410,6 +1436,12 @@ function makeRightLane(
       brg: pointAlong(a.coords, cum, d).brg,
       icon: 'lane-arrow-right',
     })),
+    laneMark: readSpecialLaneMark(o.lane_mark, { text: '右轉專用', color: '#ffffff' }),
+    roadText: lenM < RIGHT_LANE_TEXT_MIN_LEN_M ? undefined : {
+      pos: offsetAt(a.coords, cum, Math.max(start + 4, end - 11), R0 + widthM / 2),
+      brg: pointAlong(a.coords, cum, Math.max(start + 4, end - 11)).brg,
+      dM: Math.max(start + 4, end - 11),
+    },
     // 儲車段左界白線（分隔同向直行車道，末端裁到停止線斜線）；
     // 漸變段外緣是路面邊，由 casing 表達
     lines: [{
@@ -1470,6 +1502,32 @@ export function annotateRightLanes(route: RouteResult, rightLanes: RightLane[]) 
  * （距路口 = 收邊量處，與 bay 前端同一基準）畫一條橫向白粗線，橫跨該行向
  * 全部車道（含中央偏心道與右轉附加車道）。
  */
+/**
+ * 現地指定停止線：資料上是「way 換 id 的續接點」——`graph.intersections()` 只數
+ * 相異鄰接節點，疊在一起的重複 way 共用同一組節點對，度數因此停在 2；同名續接
+ * 也讓 `scopeEdges` 量不到交叉路寬。兩個判準都是對的（否則整份路網會在每個 way
+ * 邊界長出橫線），但這幾個進口實地就是路口，必須明確補上。
+ *
+ * back = true 代表朝「區塊起點」行進的那個行向（區塊鍵 @b/N 的 N 就是起點）。
+ */
+export const FORCED_STOP_LINES: {
+  osmId: number; blockNode: number; toNode: number; back: boolean
+}[] = [
+  // 外環西路北端：接一小段同名 way（way/1454602408），節點度數 2
+  { osmId: 268219234, blockNode: 7244182804, toNode: 7244182804, back: true },
+  // 左楠路 × 外環西路：路口三向，但左楠路 way/65451653 與外環西路 way/1454602407
+  // 兩條疊在一起共用同一組節點，相異鄰接只剩 2 個
+  { osmId: 386557630, blockNode: 1631504648, toNode: 1631504648, back: true },
+]
+/** 現地指定進口量不到交叉路寬時的固定淨距（公尺）。 */
+const FORCED_STOP_CLEAR_M = 2.2
+
+const isForcedStopLine = (
+  osmId: number, blockNode: number, toNode: number, back: boolean,
+) => FORCED_STOP_LINES.some((spec) =>
+  spec.osmId === osmId && spec.blockNode === blockNode
+  && spec.toNode === toNode && spec.back === back)
+
 export function buildStopLines(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[],
   journal: EnhancementRecord[] = [],
@@ -1490,13 +1548,20 @@ export function buildStopLines(
   const inter = new Set(graph.intersections().map((i) => i.id))
   const out: PaintLine[] = []
   const seen = new Set<string>()
-  for (const e of stopLineEdges(graph, (r) =>
+  const normalEdges = stopLineEdges(graph, (r) =>
     scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id)
-      || isStopLineRoad(r) || isMajorStopRoad(r) || mergeSideApproach(r))) {
+      || isStopLineRoad(r) || isMajorStopRoad(r) || mergeSideApproach(r))
+  const forcedEdges = FORCED_STOP_LINES.flatMap((spec) =>
+    graph.scopeEdges((r) =>
+      r.properties.osm_id === spec.osmId && r.properties.blockNode === spec.blockNode,
+    0, FORCED_STOP_CLEAR_M)
+      .filter((edge) => edge.back === spec.back && edge.toNode === spec.toNode))
+  for (const e of [...normalEdges, ...forcedEdges]) {
     const p = e.road.properties
+    const forced = isForcedStopLine(p.osm_id, p.blockNode, e.toNode, e.back)
     // road_merge 的單側入口節點仍供導航使用，但承載它的主路在繪圖上
     // 必須保持連續，不可於內部捏合點生成停止線。
-    if (p.oneSideEntryNodes?.includes(e.toNode)
+    if (!forced && p.oneSideEntryNodes?.includes(e.toNode)
       && graph.hasDistinctRoadAt(e.toNode, e.road)) continue
     if (p.roadMarkingMode !== 'all') continue
     if ((e.back ? p.stopLineB : p.stopLineF) === false) continue
@@ -1509,13 +1574,17 @@ export function buildStopLines(
       && !p.oneSideEntryNodes?.includes(e.toNode)
     if (!atMergeSideEntry && !scopeFn(e.road) && !hasTl(e.road) && !rl
       && !isStopLineRoad(e.road) && !isMajorStopRoad(e.road)) continue
-    if (!inter.has(e.toNode)) continue // 純續接節點/死路端不畫
-    if (e.endSetbackM <= 2) continue // 終點無交叉路不畫
+    if (!forced && !inter.has(e.toNode)) continue // 純續接節點/死路端不畫
+    if (!forced && e.endSetbackM <= 2) continue // 終點無交叉路不畫
     const span = laneSpanM(p, e.back)
     if (span <= 0) continue
     const cum = cumulative(e.coords)
     const total = cum[cum.length - 1]
-    const d = total - e.endSetbackM
+    // 現地指定的進口若量不到交叉路寬（同名續接 way），退到固定淨距，
+    // 讓停止線就落在該區塊最前端而不是被推進路口裡。
+    const endSetbackM = forced
+      ? Math.max(e.endSetbackM, FORCED_STOP_CLEAR_M) : e.endSetbackM
+    const d = total - endSetbackM
     // 人工明確開啟停止線時允許緊湊進口；自動生成仍維持 6m 防護，
     // 不會因此替其他短路段普遍補線。
     const manualStop = hasManualRoadField(

@@ -34,7 +34,7 @@ import {
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
-import { buildRoadTexts } from '../core/roadtext'
+import { buildRoadTexts, roadTextObstacles } from '../core/roadtext'
 import {
   buildMedians, buildCenterIslands, buildMotoSepIslands, buildTwinIslands, mediansToGeoJSON,
 } from '../core/medians'
@@ -380,11 +380,12 @@ export function useMapCore(
     const laneArrows = buildLaneArrows(
       renderGraph, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
       journal)
+    const motoEntryIcons = buildMotoLaneEntryIcons(renderGraph, journal)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
-      ...buildMotoLaneEntryIcons(renderGraph, journal).features,
+      ...motoEntryIcons.features,
       ...buildUnusedLaneGores(renderGraph, baysRef.current).features)
     const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
     src('turnbays').setData(groundMarkingPolygons(
@@ -402,9 +403,17 @@ export function useMapCore(
       ...buildMotoSepIslands(renderGraph),
       ...buildCenterIslands(renderGraph, baysRef.current),
     ]) as never)
-    // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走
+    // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走。
+    // 印字位置要避開同一段路已經畫好的箭頭、機車道入口圖示與停止線——
+    // 這些都在上面算完了，直接餵給 buildRoadTexts，不重算一份會漂移的位置。
     src('roadtext').setData(cleanIntersectionFeatures(
-      buildRoadTexts(renderGraph, baysRef.current)) as never)
+      buildRoadTexts(renderGraph, baysRef.current, rightLanesRef.current,
+        roadTextObstacles({
+          arrows: laneArrows,
+          motoEntryIcons: motoEntryIcons.features,
+          stopLines,
+          motoBoxes: motoBoxes.boxes,
+        }))) as never)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
   }, [src])
 

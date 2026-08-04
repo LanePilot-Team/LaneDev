@@ -4,7 +4,9 @@
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
 import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo.ts'
 import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads.ts'
-import { oneSideEntryTransitionAllowed } from './oneSideEntry.ts'
+import {
+  medianBarrierAt, medianContinuationAt, oneSideEntryTransitionAllowed,
+} from './oneSideEntry.ts'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
@@ -63,15 +65,15 @@ function transitionAllowed(
   barrierNode: boolean,
 ): boolean {
   if (!incoming) return true
-  const incomingBarrier = incoming.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
-  const outgoingBarrier = outgoing.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  const incomingBarrier = medianBarrierAt(incoming.road, nodeId)
+  const outgoingBarrier = medianBarrierAt(outgoing.road, nodeId)
   if (barrierNode) {
     const incomingCoords = incoming.coords
     const incomingBearing = bearing(
       incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
     const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
     const delta = angleDelta(incomingBearing, outgoingBearing)
-    const sameMainRoad = incoming.road.properties.osm_id === outgoing.road.properties.osm_id
+    const sameMainRoad = medianContinuationAt(incoming.road, outgoing.road, nodeId)
     if ((incomingBarrier && outgoingBarrier)
       || ((incomingBarrier || outgoingBarrier) && sameMainRoad)) {
       if (classifyTurn(delta) === 'uturn') return false
@@ -367,6 +369,10 @@ export class RoadGraph {
       if (nodes.length !== r.geometry.coordinates.length) continue
       for (const id of nodes) usage.set(id, (usage.get(id) ?? 0) + 1)
       for (const id of r.properties.roadMergeBarrierNodes ?? []) {
+        this.roadMergeBarrierNodes.add(id)
+      }
+      // 現地指定的中央島貫通接點與捏合接縫共用同一套「島面連續 = 不得迴轉」語意
+      for (const id of r.properties.centerIslandJoinNodes ?? []) {
         this.roadMergeBarrierNodes.add(id)
       }
     }
@@ -824,6 +830,7 @@ export class RoadGraph {
     const goals = primaryGoal.edge.road.properties.oneway === 'no'
       && (primaryGoal.edge.road.properties.centerM || 0) <= 0
       && !primaryGoal.edge.road.properties.roadMergeBarrierNodes?.length
+      && !primaryGoal.edge.road.properties.centerIslandJoinNodes?.length
       ? projectedGoals
       : [primaryGoal]
     for (const goal of goals) {

@@ -136,7 +136,9 @@ export function importAnnotations(
     if (motoForwardLanes > 0) fields.moto_forward = motoForwardLanes
     if (motoBackwardLanes > 0) fields.moto_backward = motoBackwardLanes
     const access = [...(f?.motorcycle_access_by_lane ?? []), ...(bwd?.motorcycle_access_by_lane ?? [])]
-    if (access.length && access.every((x) => x === 'no')) fields.motorcycle = 'no' // 全車道禁行 = 整段禁行機車
+    // 全車道禁行 = 整段禁行機車。這是 way 級紀錄，區塊級編輯蓋不掉——之後在
+    // 面板加機車道時，enhancements.applyToRoads 會把它降級成「汽車車道禁行」。
+    if (access.length && access.every((x) => x === 'no')) fields.motorcycle = 'no'
     if (!Object.keys(fields).length) continue
     let keys = [wayKey]
     if (dropped) {

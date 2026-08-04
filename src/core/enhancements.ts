@@ -279,6 +279,17 @@ export function applyToRoads(
       p.extraM = Math.max(-3.2, Math.min(6.4, Number(fields.extra_width_m) || 0)) // 路寬微調（路肩）
     }
     if (fields.deleted !== undefined) p.deleted = Number(fields.deleted) > 0
+    // 「整段禁行機車」與「本段有機車道」互相矛盾——有機車道就代表騎士走得了，
+    // 禁行的實際語意是「汽車車道禁行」。pipeline.ts 對 couplet 吸收慢車道的主線
+    // 已做同樣的降級，但那在套 journal 之前跑，看不到 journal 才加上的機車道：
+    // LanePilot 匯入（importFlow「全車道禁行 = 整段禁行機車」）留下 way 級
+    // motorcycle=no，之後在編輯面板加機車道時只寫得到區塊級紀錄，way 級蓋不掉，
+    // 於是機車在整條路上永遠無路可走（實測外環西路 way/1454602407 南向不通）。
+    if (p.motorcycle === 'no' && (p.motoF || p.motoB)) {
+      p.motorcycle = undefined
+      p.rulesF = p.rulesF ?? ['no_moto']
+      p.rulesB = p.oneway === 'yes' ? undefined : (p.rulesB ?? ['no_moto'])
+    }
     computeDerived(p)
   }
   return n

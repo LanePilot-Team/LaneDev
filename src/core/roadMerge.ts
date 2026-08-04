@@ -1,4 +1,7 @@
 import { angleDelta, bearing, haversine } from './geo.ts'
+import {
+  applyCenterIslandJoins, CENTER_ISLAND_JOINS, type CenterIslandJoinSpec,
+} from './centerIslandJoins.ts'
 import type { EnhancementRecord } from './enhancements'
 import type { OneSideEntryAccess, RoadFeature, RoadProps } from './roads'
 
@@ -76,6 +79,10 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
       ? road.properties.oneSideEntryAccess.map((entry) => ({ ...entry })) : undefined,
     roadMergeBarrierNodes: road.properties.roadMergeBarrierNodes
       ? [...road.properties.roadMergeBarrierNodes] : undefined,
+    centerIslandJoinNodes: road.properties.centerIslandJoinNodes
+      ? [...road.properties.centerIslandJoinNodes] : undefined,
+    medianContinuityPeers: road.properties.medianContinuityPeers
+      ? road.properties.medianContinuityPeers.map((peer) => ({ ...peer })) : undefined,
     roadMergeDerived: road.properties.roadMergeDerived
       ? road.properties.roadMergeDerived.map((entry) => ({
         ...entry,
@@ -114,6 +121,9 @@ const cloneWithoutDerivedRoadMerge = (road: RoadFeature): RoadFeature => {
   if (clean.properties.roadMergeBarrierNodes?.length === 0) {
     clean.properties.roadMergeBarrierNodes = undefined
   }
+  // 貫通接點與續行對照永遠是視圖推導出來的，重建時一律清掉再重算
+  clean.properties.centerIslandJoinNodes = undefined
+  clean.properties.medianContinuityPeers = undefined
   clean.properties.roadMergeDerived = undefined
   return clean
 }
@@ -306,6 +316,9 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
   const barriers = new Set(merge.primary.properties.roadMergeBarrierNodes ?? [])
   for (const node of merge.secondary.properties.roadMergeBarrierNodes ?? []) barriers.add(node)
   merge.primary.properties.roadMergeBarrierNodes = barriers.size ? [...barriers] : undefined
+  const joins = new Set(merge.primary.properties.centerIslandJoinNodes ?? [])
+  for (const node of merge.secondary.properties.centerIslandJoinNodes ?? []) joins.add(node)
+  merge.primary.properties.centerIslandJoinNodes = joins.size ? [...joins] : undefined
   const index = roads.indexOf(merge.secondary)
   if (index >= 0) roads.splice(index, 1)
 }
@@ -359,6 +372,25 @@ const registerRoadMergeBarrier = (road: RoadFeature, nodeId: number) => {
   road.properties.roadMergeBarrierNodes = [...barriers]
 }
 
+/**
+ * 接縫兩側是同一條主路的續行。way id 相同時 oneSideEntry 本來就認得出來，
+ * 但跨 way 的捏合（外環西路 way/268219234 ↔ way/1454602407）沒有這個線索，
+ * 側街產生的 T 字限制會連主路反向一起擋掉——登記續行對照才不會誤傷。
+ */
+const registerMergeSeamPeers = (
+  primary: RoadFeature, secondary: RoadFeature, nodeId: number,
+) => {
+  if (primary === secondary) return
+  const link = (road: RoadFeature, peer: RoadFeature) => {
+    const peerKey = roadBlockKey(peer)
+    const peers = road.properties.medianContinuityPeers ?? []
+    if (peers.some((entry) => entry.nodeId === nodeId && entry.peerKey === peerKey)) return
+    road.properties.medianContinuityPeers = [...peers, { nodeId, peerKey }]
+  }
+  link(primary, secondary)
+  link(secondary, primary)
+}
+
 const registerOneSideAccess = (
   road: RoadFeature,
   nodeId: number,
@@ -404,6 +436,7 @@ const applyRoutingConstraints = (
     const secondary = candidatesFor(routingRoads, merge.secondaryKey)
     if (secondary.length === 1 && secondary[0].road !== primary[0].road) {
       registerRoadMergeBarrier(secondary[0].road, merge.junctionNodeId)
+      registerMergeSeamPeers(primary[0].road, secondary[0].road, merge.junctionNodeId)
     }
     const accessRules = accessRulesForMerge(merge)
     for (const access of accessRules) {
@@ -569,17 +602,18 @@ export async function applyRoadMergeAfterSave(
 export function buildRoadMergeViews(
   roads: RoadFeature[],
   journal: EnhancementRecord[],
+  /** 中央島貫通接點清單；稽核可傳 [] 建立「未貫通」對照組。 */
+  centerIslandJoins: CenterIslandJoinSpec[] = CENTER_ISLAND_JOINS,
 ): RoadMergeViews {
   const routingRoads = roads.map(cloneWithoutDerivedRoadMerge)
   const { working, resolved, rows } = replayRoadMerges(routingRoads, journal)
   applyRoutingConstraints(routingRoads, resolved)
   suppressOverlappedRenderStubs(working, resolved)
-  return {
-    routingRoads,
-    renderRoads: working.filter((road) => !road.properties.renderHidden),
-    resolved,
-    rows,
-  }
+  const renderRoads = working.filter((road) => !road.properties.renderHidden)
+  // 現地指定的中央島貫通接點：導航與島面各套一次（兩份視圖的區塊切法不同）
+  applyCenterIslandJoins(routingRoads, centerIslandJoins)
+  applyCenterIslandJoins(renderRoads, centerIslandJoins)
+  return { routingRoads, renderRoads, resolved, rows }
 }
 
 const MERGE_CRITICAL_FIELDS = [

@@ -790,6 +790,26 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           carLanes={editRoad.b} motoLanes={editRoad.motoCountB}
           onChange={(laneMarksB) => setEditRoad((er) => er && ({ ...er, laneMarksB }))} />
       )}
+      {editRoad.bayF !== 'none' && (
+        <LaneMarkEditor label={`${editRoad.fwdLabel}左轉偏心道`} marks={[editRoad.bayMarkF]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, bayMarkF: marks[0] ?? null }))} />
+      )}
+      {editRoad.oneway === 'no' && editRoad.bayB !== 'none' && (
+        <LaneMarkEditor label={`${editRoad.bwdLabel}左轉偏心道`} marks={[editRoad.bayMarkB]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, bayMarkB: marks[0] ?? null }))} />
+      )}
+      {editRoad.rightLaneF && (
+        <LaneMarkEditor label={`${editRoad.fwdLabel}右轉專用道`} marks={[editRoad.rightLaneMarkF]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, rightLaneMarkF: marks[0] ?? null }))} />
+      )}
+      {editRoad.oneway === 'no' && editRoad.rightLaneB && (
+        <LaneMarkEditor label={`${editRoad.bwdLabel}右轉專用道`} marks={[editRoad.rightLaneMarkB]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, rightLaneMarkB: marks[0] ?? null }))} />
+      )}
       {editRoad.motoCountF >= 2 && (
         <div className="lane-mark-group">
           <div className="edit-row"><b>{editRoad.fwdLabel}機車道路口箭頭</b></div>

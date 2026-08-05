@@ -72,16 +72,20 @@ export function LanePreviewPanel({ model }: { model: LanePreviewModel }) {
         style={{ '--lane-count': model.lanes.length } as CSSProperties}
       >
         {model.lanes.map((lane, index) => (
-          <div className="lane-preview-cell" key={index}>
+          <div className={`lane-preview-cell lane-preview-cell-${lane.state}`} key={index}>
             <img
               className="lane-preview-arrow"
-              src={(lane.active ? ACTIVE : INACTIVE)[lane.arrow]}
-              alt={`第 ${index + 1} 車道：${ARROW_LABEL[lane.arrow]}${lane.active ? '，建議' : ''}`}
+              src={(lane.state === 'inactive' ? INACTIVE : ACTIVE)[lane.arrow]}
+              alt={`第 ${index + 1} 車道：${ARROW_LABEL[lane.arrow]}，${
+                lane.state === 'primary' ? '主要建議' :
+                  lane.state === 'secondary' ? '可用替代' : '不建議'
+              }`}
             />
           </div>
         ))}
       </div>
-      {model.inferred && <div className="lane-preview-note">車道建議（系統推測）</div>}
+      {model.inferenceNote && <div className="lane-preview-note">{model.inferenceNote}</div>}
+      {model.warningNote && <div className="lane-preview-warning">{model.warningNote}</div>}
     </div>
   )
 }

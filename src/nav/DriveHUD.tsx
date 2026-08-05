@@ -81,6 +81,7 @@ export function TopBanner({ drive, twoStage, profile }: {
     distanceM: dist,
     current: drive.roadLaneGuidance,
     maneuver: m.laneGuidance,
+    preparationM: m.laneDecision?.preparationM,
   })
   const bay = !twoStage && m.bayOffM !== undefined // 偏心左轉道（兩段式不進 bay）
   const lanePreview = buildLanePreview({
@@ -90,6 +91,7 @@ export function TopBanner({ drive, twoStage, profile }: {
     maneuverKind: m.kind,
     distanceM: dist,
     twoStage,
+    laneDecision: m.laneDecision,
   })
   return (
     <div className={`banner banner-${tone}`}>

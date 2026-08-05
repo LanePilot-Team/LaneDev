@@ -130,3 +130,43 @@ test('unknown and incomplete movement strings do not throw or activate turn lane
   assert.deepEqual(model.lanes.map((lane) => lane.arrow), ['through', 'through', 'right'])
   assert.deepEqual(model.lanes.map((lane) => lane.active), [false, false, true])
 })
+
+const savedDecision = (overrides = {}) => ({
+  allowed: true,
+  reason: 'compatible',
+  primaryLaneIndex: 2,
+  secondaryLaneIndices: [1],
+  incompatibleLaneIndices: [0],
+  inferred: false,
+  preparationM: 280,
+  laneChanges: 1,
+  difficultyS: 2,
+  shortPreparation: false,
+  ...overrides,
+})
+
+test('保存決策區分主要、次要與不相容車道', () => {
+  const model = ready({ laneDecision: savedDecision() })
+
+  assert.deepEqual(model.lanes.map((lane) => lane.state),
+    ['inactive', 'secondary', 'primary'])
+})
+
+test('HUD 使用保存的準備距離而不是固定 250 公尺', () => {
+  const model = ready({
+    distanceM: 275,
+    laneDecision: savedDecision({ preparationM: 280 }),
+  })
+
+  assert.equal(model.immediateAction, 'right')
+})
+
+test('系統推測與短距離換道警告可同時顯示', () => {
+  const model = ready({
+    laneDecision: savedDecision({ inferred: true, shortPreparation: true }),
+  })
+
+  assert.equal(model.inferenceNote, '車道建議（系統推測）')
+  assert.equal(model.warningNote,
+    '前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。')
+})

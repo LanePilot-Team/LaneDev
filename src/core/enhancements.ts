@@ -187,6 +187,9 @@ export function applyToRoads(
       p.motoCountF = Math.max(0, Math.round(Number(fields.moto_forward) || 0))
       p.motoF = p.motoCountF > 0
     }
+    if (fields.moto_left_f !== undefined) {
+      p.motoLeftF = p.oneway === 'yes' && Number(fields.moto_left_f) > 0
+    }
     if (fields.moto_backward !== undefined) {
       p.motoCountB = p.oneway === 'yes'
         ? 0 : Math.max(0, Math.round(Number(fields.moto_backward) || 0))

@@ -15,7 +15,9 @@ import { isElevated } from './elevation'
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過。
  * 高楠公路：只顯式併陸橋本體兩 way（見 GAONAN_BRIDGE_IDS）——地面段有
  * 主慢分離/同向並排，泛用掃描本來就會被防呆整條擋下，列這裡免做白工 */
-const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路', '楠陽高架橋', '高楠公路'])
+const CUSTOM_SECTION_ROADS = new Set([
+  '藍田路', '大學南路', '援中路', '楠陽高架橋', '高楠公路', '翠華路',
+])
 
 /** 高楠公路陸橋本體（跨楠梓路口的成對單行，間距 ~12m）。北段短橋對
  * （103678994/103679015，間距 26m+）是實體分離雙橋、南段（294647549 等）是
@@ -26,6 +28,12 @@ const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
  * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
  * 斷面（機車道＋快慢分隔島），獨立慢車道 way 移除、側街節點移植接上主線 */
 const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
+
+/** 翠華路北段的兩組實際分向主線。南側另有交流道短接線，同名但不可一起配對。 */
+const CUEIHUA_MAINLINE_PAIRS = [
+  new Set([267715853, 28526260]),
+  new Set([267715863, 267715867]),
+]
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
  * 是推薦值非真值——實地車道數/機車道/分隔島用編輯模式逐區塊修。 */
@@ -125,6 +133,13 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
   // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——
   // 主線合併成 2+2＋機車道＋快慢分隔島（寬度可編輯），再吸收慢車道 way
+  for (const ids of CUEIHUA_MAINLINE_PAIRS) {
+    roads = mergeCouplets(roads, new Set(['翠華路']), {
+      ...SIMPLE_SECTION,
+      motoF: true, motoB: true, motoSepF: 1.0, motoSepB: 1.0,
+    }, nodeRemap, wayRemap, (r) => ids.has(r.properties.osm_id))
+  }
+  roads = absorbSideWays(roads, '翠華路', nodeRemap, wayRemap)
   for (const name of MAINLINE_ONLY_ROADS) {
     roads = mergeCouplets(roads, new Set([name]), {
       ...SIMPLE_SECTION,

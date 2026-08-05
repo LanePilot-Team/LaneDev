@@ -246,9 +246,13 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
     const total = L0 * LANE_WIDTH_M
       + (motoCount > 0 ? motoCount * MOTO_LANE_M + sep : 0)
     const base = -total / 2
-    const lane = (k: number) => base + (k - 0.5) * LANE_WIDTH_M
+    const motoLeft = !!p.motoLeftF && motoCount > 0
+    const carBase = base + (motoLeft ? motoCount * MOTO_LANE_M + sep : 0)
+    const lane = (k: number) => carBase + (k - 0.5) * LANE_WIDTH_M
     const moto = motoCount > 0
-      ? base + L0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
+      ? motoLeft
+        ? base + (motoCount - 0.5) * MOTO_LANE_M
+        : base + L0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
       : lane(L)
     const car = (k: number) => (L0 > 0 ? lane(k) : moto) // 0 車道時所有偏移落在機車道
     if (profile === 'moto') {

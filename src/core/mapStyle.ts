@@ -65,6 +65,7 @@ export function buildStyle(): StyleSpecification {
       roadPreview: { type: 'geojson', data: emptyFC as never },
       turnbays: { type: 'geojson', data: emptyFC as never },
       roadtext: { type: 'geojson', data: emptyFC as never },
+      roadlabels: { type: 'geojson', data: emptyFC as never },
       medians: { type: 'geojson', data: emptyFC as never },
       buildings: { type: 'geojson', data: emptyFC as never },
       occludedBuildings: { type: 'geojson', data: emptyFC as never },
@@ -520,8 +521,29 @@ export function buildStyle(): StyleSpecification {
       },
 
       // ── 路名 ──
+      // 車道級以下沒有地面標線可擋，沿整條路段排字即可。
       {
-        id: 'road-label', type: 'symbol', source: 'roads', minzoom: 14.5,
+        id: 'road-label', type: 'symbol', source: 'roads',
+        minzoom: 14.5, maxzoom: LANE_ZOOM + 1,
+        filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
+          ['!=', ['get', 'hideIntersectionInfo'], true]],
+        layout: {
+          'symbol-placement': 'line',
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 13,
+        },
+        paint: {
+          'text-color': C.label,
+          'text-halo-color': C.labelHalo,
+          'text-halo-width': 1.6,
+        },
+      },
+      // 車道級以上改用「已避開箭頭/停止線/印字」的中心線區段（roadtext.buildRoadLabelLines），
+      // 路名才不會落在路口正上方蓋掉轉向資訊。
+      {
+        id: 'road-label-lane', type: 'symbol', source: 'roadlabels',
+        minzoom: LANE_ZOOM + 1,
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
           ['!=', ['get', 'hideIntersectionInfo'], true]],
         layout: {

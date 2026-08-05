@@ -48,7 +48,7 @@ const bays = buildTurnBays(graph, journal)
 const rightLanes = buildRightLanes(graph, journal)
 const stopLines = buildStopLines(graph, bays, rightLanes, journal)
 const motoBoxes = buildMotoBoxes(graph, bays, rightLanes, journal)
-const arrows = buildLaneArrows(graph, bays, rightLanes, motoBoxes.dirs, journal)
+const arrows = buildLaneArrows(graph, bays, rightLanes, motoBoxes.dirs, journal, stopLines)
 const motoEntryIcons = buildMotoLaneEntryIcons(graph, journal)
 const obstacles = roadTextObstacles({
   arrows,

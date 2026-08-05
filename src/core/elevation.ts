@@ -24,12 +24,21 @@ const NODE_BLEND_M = 100
 /** 真立體交叉手動清單（中山高本線＋楠梓交流道匝道改用 highway+bridge/layer 判準，
  * 見 isElevated）。couplet 合併 keep 側保留原 osm_id，清單不受合併影響；
  * drop 側整條併入 keep 幾何，掉出清單也無妨。 */
-const ELEVATED_WAY_IDS = new Set([
+export const ELEVATED_WAY_IDS = new Set([
   // 高楠公路北側獨立陸橋（primary，layer=1）
   // way/23939182@b/257742658 已由使用者確認為高架；它是 couplet 合併
   // 保留側，加入後會連同配對方向一併使用同一座雙向高架橋面。
   // way/25724904@b/280507545 為平行的獨立機車專用高架，保持原始間距。
   23939182, 25724904, 103678994, 103679015,
+  // 上面那條機車專用高架的續行段：同一座橋在 OSM 被切成五條 way，只列頭一條的話
+  // 橋面在 node/1196965025 就結束，往南整段變平面（way/799123656 南下的實測症狀）
+  103679024, 230213636, 230216189, 230216191,
+  // 高楠陸橋南端上橋段（way/103679008@b/1196964560，OSM 名「縱貫公路」，
+  // bridge=yes layer=1）：北接 way/23939182 的橋面。漏列時北段橋面在
+  // node/1196964578 從 6m 直接斷在這段的 0m 上，這段被當平面路畫地面標線。
+  // 南端 node/1196964560 接平面的 way/268219246（高楠公路上橋引道）＝接地點，
+  // 爬升剖面由該節點起算。
+  103679008,
   // 楠陽高架橋（tertiary，layer=1/2；「楠楊高架橋」為 OSM 同橋異名，交流道疊層）
   271982150, 103678963, 103678964,
   // 陸橋/高架橋銜接匝道（primary_link，bridge=yes layer=1）：高楠陸橋↔楠陽高架的
@@ -38,6 +47,30 @@ const ELEVATED_WAY_IDS = new Set([
   103678962, 103678985, 103679016, 103679009, 765913728, 28526279,
   // 德民新橋主橋與兩側機車道（bridge=yes, layer=1）
   126247872, 126247885, 126247846, 126247898,
+  // 左營高架橋（primary，bridge=yes layer=1）：跨中華一路與翠華路匝道
+  92071680,
+  // 大中快速道路高架段＋鼎金系統匝道（trunk/trunk_link，layer=1/2）。整條主線在
+  // 翠華路、高鐵路、大中二路、華夏路、文川路、博愛四路上方連續通過，layer 2 段
+  // 再疊在自己的 layer 1 段上；漏列會讓快速道路整條貼地穿過底下的平面路口。
+  // 銜接的國道（高雄支線/鼎金系統）由 isElevated 的 motorway 判準自動抬升，
+  // 兩者共用同一個高架子網路算接地距離。
+  9846630, 24159889, 28526262, 38367691, 125061994, 125062015,
+  125062023, 125062047, 125062062, 215166832, 256319334, 256319769,
+  277512390, 277512391, 288653008, 313823898, 313823901, 313823903,
+  313823905, 457972351, 457972352, 1270874472,
+])
+
+/** 已人工確認「底下有路穿過但不抬」的 bridge/layer 路段——audit:elevated 的
+ * 立體交叉偵測會把它們當漏列嫌疑，列在這裡表示判斷過了，不是還沒處理。 */
+export const AT_GRADE_BRIDGE_WAY_IDS = new Set([
+  // 德惠路 way/23875933（tertiary，bridge=yes layer=1）：跨後勁溪，底下穿過的
+  // way/287447933、way/287673498 是溪岸的堤防道路。抬高的是堤防路往下沉，
+  // 不是德惠路往上爬——依檔頭判準「跨河橋與路面同高」，街面維持平面。
+  23875933,
+  // 中路巷 way/297229540（residential，bridge=yes layer=1）：跨中山高。國道被
+  // isElevated 無條件抬成 6m，把這條也抬到 6m 只會兩者穿模；維持平面反而讓
+  // 國道正確蓋在上面。真要處理得先讓 motorway 的高度隨 layer 走。
+  297229540,
 ])
 
 /** 是否為高架路段：國道體系（motorway/motorway_link）整段視為高架
@@ -70,6 +103,12 @@ const smoothstep = (t: number) => t * t * (3 - 2 * t)
 
 export class ElevationModel {
   private blocks = new Map<RoadFeature, BlockElev>()
+  /** way id → 該 way 的高架區塊。模型建在 renderRoads 上（mapCore.rebuildElevation），
+   * 但路線帶與車輛查高度時拿的是 routingRoads 的物件——buildRoadMergeViews 讓
+   * 兩份視圖各自 clone，物件完全不共用，純用物件當鍵一定 miss、高度回 0，
+   * 藍線與車就整段沉到橋面下。以 way id 補查即可，仍不會誤抬從橋下穿過的
+   * 平面路（那條的 osm_id 不同，查無區塊）。 */
+  private byWay = new Map<number, BlockElev[]>()
   /** 高架端節點 → 沿高架網到最近「接地節點」的距離（不接地 = 不在表內 = ∞） */
   private dGround = new Map<number, number>()
   /** 高架端節點 → 鄰接高架區塊最大全高（layer 1↔2 銜接的節點高度） */
@@ -90,6 +129,8 @@ export class ElevationModel {
         n0: p.nodes[0], n1: p.nodes[p.nodes.length - 1],
       }
       this.blocks.set(r, b)
+      if (!this.byWay.has(p.osm_id)) this.byWay.set(p.osm_id, [])
+      this.byWay.get(p.osm_id)!.push(b)
       for (const n of [b.n0, b.n1]) {
         if (!adj.has(n)) adj.set(n, [])
         adj.get(n)!.push(b)
@@ -204,11 +245,8 @@ export class ElevationModel {
     return dg >= RAMP_M ? base : base * smoothstep(dg / RAMP_M)
   }
 
-  /** 位置投影到該路段最近點後查高度（車輛用：路段身分由路線 span 提供，
-   * 不做「找最近高架」——平面路從高架正下方穿過時純位置查詢會誤抬） */
-  heightAtPos(road: RoadFeature, pos: [number, number]): number {
-    const b = this.blocks.get(road)
-    if (!b) return 0
+  /** 位置投影到區塊中心線：回傳垂距平方與沿線里程 */
+  private project(b: BlockElev, pos: [number, number]): { d2: number; at: number } {
     let bestD2 = Infinity
     let bestAt = 0
     for (let i = 1; i < b.coords.length; i++) {
@@ -224,7 +262,32 @@ export class ElevationModel {
         bestAt = b.cum[i - 1] + Math.sqrt(L2) * t
       }
     }
-    return this.heightAt(road, bestAt)
+    return { d2: bestD2, at: bestAt }
+  }
+
+  /** 該路段對應的高架區塊：先認物件，再退回同 way id 中離 pos 最近的區塊
+   * （導航視圖的 clone 物件走這條路，見 byWay 的說明）。 */
+  private blockFor(road: RoadFeature, pos: [number, number]): BlockElev | undefined {
+    const own = this.blocks.get(road)
+    if (own) return own
+    const sameWay = this.byWay.get(road.properties.osm_id)
+    if (!sameWay?.length) return undefined
+    if (sameWay.length === 1) return sameWay[0]
+    let best = sameWay[0]
+    let bestD2 = Infinity
+    for (const b of sameWay) {
+      const { d2 } = this.project(b, pos)
+      if (d2 < bestD2) { bestD2 = d2; best = b }
+    }
+    return best
+  }
+
+  /** 位置投影到該路段最近點後查高度（車輛用：路段身分由路線 span 提供，
+   * 不做「找最近高架」——平面路從高架正下方穿過時純位置查詢會誤抬） */
+  heightAtPos(road: RoadFeature, pos: [number, number]): number {
+    const b = this.blockFor(road, pos)
+    if (!b) return 0
+    return this.heightAt(b.road, this.project(b, pos).at)
   }
 }
 

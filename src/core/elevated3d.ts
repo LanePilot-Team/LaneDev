@@ -132,6 +132,10 @@ export class ElevatedLayer {
   private routeGroup = new THREE.Group()
   /** 每個高架區塊的橋面中心線取樣（經緯度）與其高度——deckHeightAt 查表用 */
   private deckProfile = new Map<RoadFeature, { pts: [number, number][]; hs: number[] }>()
+  /** way id → 該 way 的橋面剖面。橋面建在 renderRoads 上，但路線帶/車輛查高度時
+   * 拿的是 routingRoads 的 clone 物件（buildRoadMergeViews 兩份視圖不共用物件），
+   * 只用物件當鍵會全部 miss → 退回 ElevationModel → 再 miss → 0 → 藍線沉到橋下。 */
+  private deckProfileByWay = new Map<number, { pts: [number, number][]; hs: number[] }[]>()
   private originMatrix: THREE.Matrix4
   private originMerc: { x: number; y: number }
   private mercScale: number
@@ -186,6 +190,7 @@ export class ElevatedLayer {
     for (const m of this.group.children) (m as THREE.Mesh).geometry?.dispose()
     this.group.clear()
     this.deckProfile.clear()
+    this.deckProfileByWay.clear()
     this.occlusionFaded = false
   }
 
@@ -196,22 +201,29 @@ export class ElevatedLayer {
    * 路線帶就沉到橋面下、被深度測試擋掉（畫面上藍線整段消失）。
    */
   deckHeightAt(road: RoadFeature, pos: [number, number]): number | null {
-    const pr = this.deckProfile.get(road)
-    if (!pr || pr.pts.length === 0) return null
-    if (pr.pts.length === 1) return pr.hs[0]
+    // 先認物件；認不到就退回同 way id 的所有剖面，取投影最近的那條
+    const own = this.deckProfile.get(road)
+    const candidates = own ? [own] : this.deckProfileByWay.get(road.properties.osm_id) ?? []
     let bestD2 = Infinity
-    let best = pr.hs[0]
-    for (let i = 1; i < pr.pts.length; i++) {
-      const a = pr.pts[i - 1], b = pr.pts[i]
-      const ax = (pos[0] - a[0]) * KX, ay = (pos[1] - a[1]) * KY
-      const vx = (b[0] - a[0]) * KX, vy = (b[1] - a[1]) * KY
-      const L2 = vx * vx + vy * vy
-      const t = L2 > 0 ? Math.max(0, Math.min(1, (ax * vx + ay * vy) / L2)) : 0
-      const dx = ax - vx * t, dy = ay - vy * t
-      const d2 = dx * dx + dy * dy
-      if (d2 < bestD2) {
-        bestD2 = d2
-        best = pr.hs[i - 1] + (pr.hs[i] - pr.hs[i - 1]) * t
+    let best: number | null = null
+    for (const pr of candidates) {
+      if (pr.pts.length === 0) continue
+      if (pr.pts.length === 1) {
+        if (bestD2 === Infinity) best = pr.hs[0]
+        continue
+      }
+      for (let i = 1; i < pr.pts.length; i++) {
+        const a = pr.pts[i - 1], b = pr.pts[i]
+        const ax = (pos[0] - a[0]) * KX, ay = (pos[1] - a[1]) * KY
+        const vx = (b[0] - a[0]) * KX, vy = (b[1] - a[1]) * KY
+        const L2 = vx * vx + vy * vy
+        const t = L2 > 0 ? Math.max(0, Math.min(1, (ax * vx + ay * vy) / L2)) : 0
+        const dx = ax - vx * t, dy = ay - vy * t
+        const d2 = dx * dx + dy * dy
+        if (d2 < bestD2) {
+          bestD2 = d2
+          best = pr.hs[i - 1] + (pr.hs[i] - pr.hs[i - 1]) * t
+        }
       }
     }
     return best
@@ -717,10 +729,14 @@ export class ElevatedLayer {
       const secs = ds.map(section)
       // 橋面高度剖面：路線帶/車輛要貼在橋面上，就得問「這裡的橋面多高」，
       // 而不是 model.heightAt（匝道的高度域經過重映射，兩者在貼邊段差好幾公尺）
-      this.deckProfile.set(road, {
+      const profile = {
         pts: secs.map((s) => [s.lng, s.lat] as [number, number]),
         hs: secs.map((s) => s.h),
-      })
+      }
+      this.deckProfile.set(road, profile)
+      const wayId = road.properties.osm_id
+      if (!this.deckProfileByWay.has(wayId)) this.deckProfileByWay.set(wayId, [])
+      this.deckProfileByWay.get(wayId)!.push(profile)
 
       // 對向並排：合體側的橋面邊緣推到兩線中點（edge 回傳「已含收窄 r」的絕對偏移，
       // 所以用 atAbs 而不是 at——後者會再乘一次 r）

@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseImported, mergeMaps } from '../src/core/importmap'
+import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
 import { buildElevation, setActiveElevation } from '../src/core/elevation'
@@ -25,12 +25,17 @@ const check = (name: string, ok: boolean, detail = '') => {
   if (!ok) fails++
 }
 
-const shards = ['lanepilot/area_4212599.segments.jsonl', 'lanepilot/area_4212683.segments.jsonl']
-  .map((f) => parseImported(readFileSync(join(DATA, f), 'utf8')))
-  .filter((p) => p.kind === 'map') as { kind: 'map'; fc: never }[]
-const { roads } = prepareBaseRoads(roadsFromGeoJSON(mergeMaps(shards).fc))
-const seed: EnhancementRecord[] = JSON.parse(readFileSync(join(DATA, 'seed_journal.json'), 'utf8'))
-applyToRoads(roads, foldJournal(seed))
+// 2026-08-05：原本讀 lanepilot 的兩份 shard，那是舊資料集（8776 區塊、高架 125），
+// app 實際載入的是唯一靜態資料庫 road_database.json（11114 區塊、高架 150）——
+// 對著舊 shard 跑會漏掉新進清單的高架，綠燈也證明不了現場。改讀同一份資料。
+const db = JSON.parse(readFileSync(join(DATA, 'road_database.json'), 'utf8')) as {
+  segments: unknown[]
+  editor?: { journal?: EnhancementRecord[] }
+}
+const parsedDb = parseImported(db.segments.map((r) => JSON.stringify(r)).join('\n'))
+if (parsedDb.kind !== 'map') throw new Error('靜態資料庫格式錯誤')
+const { roads } = prepareBaseRoads(roadsFromGeoJSON(parsedDb.fc))
+applyToRoads(roads, foldJournal(db.editor?.journal ?? []))
 
 const model = buildElevation(roads)
 setActiveElevation(model)

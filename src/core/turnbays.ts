@@ -12,6 +12,7 @@ import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, s
 import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
+import { indexObstacles, projectNearbyObstacles } from './groundAvoid'
 import {
   buildCappedTriangleRange,
   buildHatchDistances,
@@ -1103,11 +1104,35 @@ function canonTurn(v: string): string {
  * 全路網適用；否則僅實驗範圍（藍田路）畫預設推薦值
  * （直行/最外側補右轉；左轉由偏心道的箭頭承擔，無偏心道才畫在最內車道）。
  */
+/**
+ * 現地指定：這些進口的箭頭列貼著停止線排（一般留 4m 淨距）。
+ * 實際位置仍受停止線避讓夾住，所以指定得再近也不會切到線。
+ */
+const TIGHT_ARROW_APPROACHES = new Set([
+  '386557630@1631504648~b', // 左楠路北向：停止線退得遠，箭頭要往路口靠
+])
+const TIGHT_ARROW_GAP_M = 2.6
+
+/** 地面箭頭圖示尺寸（mapStyle 的 icon-size = iconMeters(4.5, 96)）。 */
+const ARROW_HALF_LEN_M = 4.5 / 2
+const ARROW_HALF_WIDTH_M = 1.1
+/** 箭頭與停止線之間的最小淨距。 */
+const ARROW_STOP_CLEAR_M = 0.6
+
 export function buildLaneArrows(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[] = [],
   motoBoxDirs: Set<string> = new Set(),
   journal: EnhancementRecord[] = [],
+  /**
+   * 已畫好的停止線。箭頭一律退到不與任何停止線相交的位置——包含**別條路**的
+   * 停止線：偏心左轉道會把停止線的內界拉過中央線，最容易伸進對向或並排慢車道，
+   * 在那裡切到人家的箭頭。只比對自己這個進口是抓不到的（實測 35/37 是跨進口）。
+   */
+  stopLines: PaintLine[] = [],
 ): GroundArrow[] {
+  const stopGrid = indexObstacles(stopLines
+    .filter((line) => line.coords.length >= 2)
+    .map((line) => ({ points: line.coords, alongHalfM: 0.4, crossHalfM: 0 })))
   const mergeEntryNodes = new Set<number>()
   for (const edge of graph.scopeEdges(() => true, 0, 0)) {
     for (const node of edge.road.properties.oneSideEntryNodes ?? []) {
@@ -1177,7 +1202,37 @@ export function buildLaneArrows(
     const stopSkew = crossSkew(graph, e.road, e.toNode, endBrg)
     const stopAxisD = perpendicularEndDistance(
       total - arrowSetback, stopSkew, inner, outer, 0.2)
-    const d = stopAxisD - 4 - boxPush
+    const arrowGapM = TIGHT_ARROW_APPROACHES.has(directionKey) ? TIGHT_ARROW_GAP_M : 4
+    const d = stopAxisD - arrowGapM - boxPush
+    // 停止線避讓：整列箭頭共用同一個縱向位置（刻意不逐車道錯開，見上方註解），
+    // 所以退讓量取整列的最大值，退到任何一個車道都不與停止線相交為止。
+    const projectedStops = projectNearbyObstacles(stopGrid, e.coords, cum)
+    /**
+     * 把箭頭沿路軸挪到不與任何停止線相交的位置。
+     * dir = -1 往上游退（路口前的箭頭列）、+1 往下游推（路段起點的起始箭頭）。
+     * 挪不出來時維持原位——寧可有一處重疊也不要讓整列箭頭消失。
+     */
+    const clearOfStopLines = (
+      desired: number, laneOffs: number[], floor: number, dir: -1 | 1 = -1,
+    ) => {
+      const blocked = projectedStops
+        .filter((o) => laneOffs.some((off) =>
+          o.off1 >= off - ARROW_HALF_WIDTH_M && o.off0 <= off + ARROW_HALF_WIDTH_M))
+        .map((o): [number, number] => [
+          o.d0 - ARROW_HALF_LEN_M - ARROW_STOP_CLEAR_M,
+          o.d1 + ARROW_HALF_LEN_M + ARROW_STOP_CLEAR_M,
+        ])
+      let value = desired
+      for (let guard = 0; guard < 8; guard++) {
+        const hit = blocked.find(([a, b]) => value > a && value < b)
+        if (!hit) break
+        value = dir < 0 ? hit[0] : hit[1]
+      }
+      if (blocked.some(([a, b]) => value > a && value < b)) return desired
+      if (dir < 0 && value < floor) return desired
+      if (dir > 0 && value > floor) return desired
+      return value
+    }
     // 自動標線仍要求完整的 6m 緩衝；人工已儲存箭頭設定時，允許短 OSM
     // 分段使用較緊湊的配置。典型案例是「益群橋 → 短藍田路 → 援中路」，
     // 道路本身連續，但 OSM 在橋名切換處把進口切成約二十公尺的小段。
@@ -1186,6 +1241,9 @@ export function buildLaneArrows(
       e.back ? 'turn_lanes_backward' : 'turn_lanes',
     ])
     if (d < e.startSetbackM + (manualArrow ? 1.5 : 6)) continue
+    // 箭頭列的縱向下限要跟上面的門檻一致：人工設定的緊湊進口允許貼近路段起點，
+    // 用固定的 +4 會把箭頭推回停止線上（旗楠路 10.5m 進口實測）。
+    const arrowFloorM = e.startSetbackM + (manualArrow ? 1.5 : 4)
     let moves: string[]
     if (hasExplicit) {
       moves = Array.from({ length: lanes }, (_, k) => explicit![k] ?? '')
@@ -1205,10 +1263,31 @@ export function buildLaneArrows(
       // 停止線已統一垂直進入車道；箭頭列也必須共用同一縱向基準。
       // 舊版依斜交路口用 skew 把各車道箭頭前後錯開，極斜路口會將外側箭頭
       // 推到停止線上（例如 way/280277096 東向）。固定 d 可保留約 4m 淨距。
+      const motoMovesRaw = (p.oneway === 'yes' || !e.back)
+        ? p.motoTurnLanesF : p.motoTurnLanesB
+      const motoMoves = Array.from({ length: motoCount }, (_, k) =>
+        canonTurn(motoMovesRaw?.[k] ?? 'through'))
+      const motoSep = p.oneway === 'yes'
+        ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
+      const motoLeft = p.oneway === 'yes' && !!p.motoLeftF && motoCount > 0
+      const carBase = base + (motoLeft ? motoCount * MOTO_LANE_M + motoSep : 0)
+      const carOffs = Array.from({ length: lanes }, (_, k) => carBase + (k + 0.5) * LANE_WIDTH_M)
+        .filter((_, k) => !!moves[k])
+      const motoOffs = motoCount >= 2
+        ? Array.from({ length: motoCount },
+          (_, k) => motoLeft
+            ? base + (k + 0.5) * MOTO_LANE_M
+            : base + lanes * LANE_WIDTH_M + motoSep + (k + 0.5) * MOTO_LANE_M)
+          .filter((_, k) => !!motoMoves[k])
+        : []
+      const rowOffs = [...carOffs, ...motoOffs]
+      const desired = Math.max(arrowFloorM, Math.min(total - arrowSetback - 3, d))
+      const dk = rowOffs.length
+        ? clearOfStopLines(desired, rowOffs, arrowFloorM)
+        : desired
       for (let k = 0; k < lanes; k++) {
         if (!moves[k]) continue
-        const off = base + (k + 0.5) * LANE_WIDTH_M
-        const dk = Math.max(e.startSetbackM + 4, Math.min(total - arrowSetback - 3, d))
+        const off = carBase + (k + 0.5) * LANE_WIDTH_M
         out.push({
           pos: offsetAt(e.coords, cum, dk, off),
           brg: pointAlong(e.coords, cum, dk).brg,
@@ -1218,17 +1297,12 @@ export function buildLaneArrows(
       }
       // 多機車道才畫各自的路口箭頭；單一機車道維持既有無箭頭樣式。
       if (motoCount >= 2) {
-        const motoMovesRaw = (p.oneway === 'yes' || !e.back)
-          ? p.motoTurnLanesF : p.motoTurnLanesB
-        const motoMoves = Array.from({ length: motoCount }, (_, k) =>
-          canonTurn(motoMovesRaw?.[k] ?? 'through'))
-        const sep = p.oneway === 'yes'
-          ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
         for (let k = 0; k < motoCount; k++) {
           const move = motoMoves[k]
           if (!move) continue
-          const off = base + lanes * LANE_WIDTH_M + sep + (k + 0.5) * MOTO_LANE_M
-          const dk = Math.max(e.startSetbackM + 4, Math.min(total - arrowSetback - 3, d))
+          const off = motoLeft
+            ? base + (k + 0.5) * MOTO_LANE_M
+            : base + lanes * LANE_WIDTH_M + motoSep + (k + 0.5) * MOTO_LANE_M
           out.push({
             pos: offsetAt(e.coords, cum, dk, off),
             brg: pointAlong(e.coords, cum, dk).brg,
@@ -1243,7 +1317,8 @@ export function buildLaneArrows(
     if (hasMotoLeftLane) {
       const sep = p.oneway === 'yes' ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
       const motoOff = base + lanes * LANE_WIDTH_M + sep + MOTO_LANE_M / 2
-      const motoD = total - arrowSetback - 3.5
+      const motoD = clearOfStopLines(
+        total - arrowSetback - 3.5, [motoOff], e.startSetbackM + 2)
       if (motoD >= e.startSetbackM + 2) {
         out.push({
           pos: offsetAt(e.coords, cum, motoD, motoOff),
@@ -1254,7 +1329,13 @@ export function buildLaneArrows(
       }
     }
     if (showStart) {
-      const startD = e.startSetbackM + 8
+      const startCarBase = base + (p.oneway === 'yes' && p.motoLeftF
+        ? motoCount * MOTO_LANE_M + (p.motoSepF || 0) : 0)
+      const startOffs = Array.from({ length: lanes },
+        (_, k) => startCarBase + (k + 0.5) * LANE_WIDTH_M)
+      // 起始箭頭在路段開頭，退讓方向與路口箭頭相反（往下游推離對向停止線）
+      const startD = clearOfStopLines(
+        e.startSetbackM + 8, startOffs, total - e.endSetbackM - 8, 1)
       if (startD < total - e.endSetbackM - 8) {
         const startRaw = (p.oneway === 'yes' || !e.back)
           ? p.startTurnLanes
@@ -1944,6 +2025,9 @@ export function buildMotoBoxes(
     scopeFn(r) || hasTl(r) || rlWays.has(r.properties.osm_id)
       || isMajorStopRoad(r) || explicitWays.has(r.properties.osm_id))) {
     const p = e.road.properties
+    // 高架不在地面路口生成（與 isStopLineRoad/isMajorStopRoad 同語意）：那些判定
+    // 擋得住自動候選，但 hasTl／rightLanes／人工指定會另外把橋面路段帶進來
+    if (p.elevated) continue
     const dir = `${p.osm_id}${'@'}${e.toNode}${e.back ? '~b' : ''}`
     const key = `way/${p.osm_id}@node/${e.toNode}${e.back ? '~b' : ''}~m`
     const ov = over.get(key)

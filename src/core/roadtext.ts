@@ -1,10 +1,14 @@
 import type { Feature, FeatureCollection } from 'geojson'
-import {
-  angleDelta, cumulative, haversine, pointAlong, COS_LAT, LANE_WIDTH_M,
-} from './geo'
+import { angleDelta, cumulative, haversine, pointAlong, LANE_WIDTH_M } from './geo'
 import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads'
 import { offsetAt, type RightLane, type TurnBay } from './turnbays'
+import {
+  freeIntervals, indexObstacles, projectNearbyObstacles, type GroundObstacle,
+} from './groundAvoid'
 import type { RoadGraph } from './graph'
+
+/** 舊名保留：路面文字的避讓輸入就是共用的 GroundObstacle。 */
+export type RoadTextObstacle = GroundObstacle
 
 /** 舊 journal 使用的代碼仍保留，讓既有 rules_forward/backward 可向後相容。 */
 export const GROUND_RULES = [
@@ -43,96 +47,6 @@ export function roadTextLengthM(label: string): number {
   return Math.max(1, [...label].length) * ROAD_TEXT_CHAR_M
 }
 
-/**
- * 路面文字要避開的既有元素（地面箭頭、機車道入口圖示、停止線、機車停等格…）。
- * 呼叫端把已經算好的圖徵轉成這個形狀；roadtext 只負責投影到路軸上避讓，
- * 不重算任何一種元素的位置——重算就等於維護兩份會漂移的規則。
- */
-export interface RoadTextObstacle {
-  /** 佔位取樣點（單點圖示給 1 點、線段給兩端、方框給四角） */
-  points: [number, number][]
-  /** 沿路軸方向的半長（公尺） */
-  alongHalfM?: number
-  /** 橫向半寬（公尺） */
-  crossHalfM?: number
-}
-
-const KX = 111320 * COS_LAT
-const KY = 110540
-const CELL_M = 48
-
-const cellKey = (p: [number, number]) =>
-  `${Math.round((p[0] * KX) / CELL_M)},${Math.round((p[1] * KY) / CELL_M)}`
-
-/** 障礙的粗略空間索引：每條路段只投影附近的障礙，避免 N×M 全比對。 */
-function indexObstacles(obstacles: RoadTextObstacle[]) {
-  const grid = new Map<string, RoadTextObstacle[]>()
-  for (const o of obstacles) {
-    const keys = new Set<string>()
-    for (const p of o.points) {
-      const cx = Math.round((p[0] * KX) / CELL_M)
-      const cy = Math.round((p[1] * KY) / CELL_M)
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) keys.add(`${cx + dx},${cy + dy}`)
-      }
-    }
-    for (const key of keys) {
-      const bucket = grid.get(key)
-      if (bucket) bucket.push(o)
-      else grid.set(key, [o])
-    }
-  }
-  return grid
-}
-
-/**
- * 點投影到路段折線 → 沿路軸距離 d 與橫向偏移 off（右正，同 offsetAt）。
- *
- * 頭尾兩段**不夾住** t：疊在一起的兩條 way（OSM 常見的雙向 way + 兩條單行 way）
- * 會讓隔壁路的箭頭落在本路段端點之外，夾住 t 會把它算成「貼在端點、橫向很近」，
- * 於是橫向判定誤以為不同車道而不避讓——那正是印字壓到對向箭頭的來源。
- * 延伸端點線段後 d 會超出 [0, total]，橫向偏移才是真的。
- */
-function projectOnEdge(
-  p: [number, number], coords: [number, number][], cum: number[],
-): { d: number; off: number } {
-  let best = { d: 0, off: Infinity, dist: Infinity }
-  for (let i = 0; i < coords.length - 1; i++) {
-    const ax = (p[0] - coords[i][0]) * KX
-    const ay = (p[1] - coords[i][1]) * KY
-    const vx = (coords[i + 1][0] - coords[i][0]) * KX
-    const vy = (coords[i + 1][1] - coords[i][1]) * KY
-    const len2 = vx * vx + vy * vy
-    if (len2 <= 0) continue
-    const raw = (ax * vx + ay * vy) / len2
-    const t = Math.max(i === 0 ? -Infinity : 0,
-      Math.min(i === coords.length - 2 ? Infinity : 1, raw))
-    const ex = ax - vx * t
-    const ey = ay - vy * t
-    const dist = Math.hypot(ex, ey)
-    if (dist >= best.dist) continue
-    // 行進方向的右側為正：右向量 = (前進向量順時針轉 90°)
-    const len = Math.sqrt(len2)
-    best = {
-      d: cum[i] + t * len,
-      off: (ex * vy - ey * vx) / len,
-      dist,
-    }
-  }
-  return { d: best.d, off: best.off }
-}
-
-/** 區間扣除：free 內挖掉 [a, b] */
-function punch(free: [number, number][], a: number, b: number): [number, number][] {
-  const out: [number, number][] = []
-  for (const [lo, hi] of free) {
-    if (b <= lo || a >= hi) { out.push([lo, hi]); continue }
-    if (a > lo) out.push([lo, a])
-    if (b < hi) out.push([b, hi])
-  }
-  return out
-}
-
 /** 地面箭頭圖示的實際尺寸（mapStyle 的 icon-size = iconMeters(4.5, 96)）。 */
 const ARROW_LEN_M = 4.5
 const ARROW_HALF_WIDTH_M = 1.1
@@ -146,8 +60,8 @@ export function roadTextObstacles(input: {
   motoEntryIcons?: { geometry: { coordinates: number[] }; properties?: Record<string, unknown> | null }[]
   stopLines?: { coords: [number, number][] }[]
   motoBoxes?: { ring: [number, number][] | null }[]
-}): RoadTextObstacle[] {
-  const out: RoadTextObstacle[] = []
+}): GroundObstacle[] {
+  const out: GroundObstacle[] = []
   for (const arrow of input.arrows ?? []) {
     out.push({
       points: [arrow.pos],
@@ -171,6 +85,68 @@ export function roadTextObstacles(input: {
     if (box.ring && box.ring.length >= 3) out.push({ points: box.ring })
   }
   return out
+}
+
+/** 路名沿中心線排字，橫向大約佔這麼寬（13px 字在車道級縮放下的量級）。 */
+const LABEL_HALF_WIDTH_M = 3
+/** 路名與地面標線之間的最小淨距。 */
+const LABEL_CLEAR_M = 4
+/** 短於此長度的空檔不值得放路名（MapLibre 放不下也會自己丟掉）。 */
+const LABEL_MIN_LEN_M = 12
+
+/**
+ * 路名可用的中心線區段：把路段中心線扣掉地面標線佔用的縱向區間。
+ *
+ * `road-label` 圖層用 `symbol-placement: 'line'`，MapLibre 會沿著給它的線自行找
+ * 位置——線給整條路段，名稱就可能落在路口正上方蓋掉箭頭。改餵「已經避開標線的
+ * 那幾段」，位置決定權仍在 MapLibre，但它挑不到會擋住重要資訊的地方。
+ * 空檔太短就整段不給——寧可少一個路名，也不要蓋住轉向資訊。
+ */
+export function buildRoadLabelLines(
+  roads: {
+    geometry: { coordinates: number[][] }
+    properties: {
+      osm_id: number; name?: string; highway: string; width_m: number
+      roadMarkingMode: string; elevated?: boolean
+      hideIntersectionInfo?: boolean
+    }
+  }[],
+  obstacles: GroundObstacle[] = [],
+): FeatureCollection {
+  const grid = indexObstacles(obstacles)
+  const features: Feature[] = []
+  for (const road of roads) {
+    const p = road.properties
+    if (!p.name?.trim()) continue
+    const coords = road.geometry.coordinates as [number, number][]
+    if (coords.length < 2) continue
+    const cum = cumulative(coords)
+    const total = cum[cum.length - 1]
+    if (total < LABEL_MIN_LEN_M) continue
+    const projected = projectNearbyObstacles(grid, coords, cum)
+    const free = freeIntervals(
+      projected, 0, total, 0, LABEL_HALF_WIDTH_M, LABEL_CLEAR_M)
+    for (const [lo, hi] of free) {
+      if (hi - lo < LABEL_MIN_LEN_M) continue
+      const line: [number, number][] = []
+      for (let d = lo; d < hi; d += Math.max(2, (hi - lo) / 8)) {
+        line.push(pointAlong(coords, cum, d).pos)
+      }
+      line.push(pointAlong(coords, cum, hi).pos)
+      features.push({
+        type: 'Feature',
+        properties: {
+          name: p.name,
+          osm_id: p.osm_id,
+          highway: p.highway,
+          roadMarkingMode: p.roadMarkingMode,
+          hideIntersectionInfo: p.hideIntersectionInfo ?? false,
+        },
+        geometry: { type: 'LineString', coordinates: line },
+      })
+    }
+  }
+  return { type: 'FeatureCollection', features }
 }
 
 /**
@@ -217,30 +193,17 @@ export function buildRoadTexts(
     const dv = 0
     const base = p.oneway === 'yes' ? -laneSpanM(p, false) / 2 : dv + (p.centerM || 0) / 2
     const sep = p.oneway === 'yes' ? p.motoSepF || 0 : e.back ? p.motoSepB || 0 : p.motoSepF || 0
-    const offs = Array.from({ length: lanes }, (_, k) => base + (k + 0.5) * LANE_WIDTH_M)
+    const motoLeft = p.oneway === 'yes' && !!p.motoLeftF && motoCount > 0
+    const carBase = base + (motoLeft ? motoCount * MOTO_LANE_M + sep : 0)
+    const offs = Array.from({ length: lanes }, (_, k) => carBase + (k + 0.5) * LANE_WIDTH_M)
     for (let k = 0; k < motoCount; k++) {
-      offs.push(base + lanes * LANE_WIDTH_M + sep + (k + 0.5) * MOTO_LANE_M)
+      offs.push(motoLeft
+        ? base + (k + 0.5) * MOTO_LANE_M
+        : base + lanes * LANE_WIDTH_M + sep + (k + 0.5) * MOTO_LANE_M)
     }
 
     // 只投影這條路段附近的障礙（格點索引），再把它們挖成不可用區間
-    const nearby = new Set<RoadTextObstacle>()
-    for (let d = 0; d <= total; d += CELL_M / 2) {
-      for (const o of grid.get(cellKey(pointAlong(e.coords, cum, d).pos)) ?? []) nearby.add(o)
-    }
-    const projected = [...nearby].map((o) => {
-      let d0 = Infinity, d1 = -Infinity, off0 = Infinity, off1 = -Infinity
-      for (const point of o.points) {
-        const hit = projectOnEdge(point, e.coords, cum)
-        d0 = Math.min(d0, hit.d); d1 = Math.max(d1, hit.d)
-        off0 = Math.min(off0, hit.off); off1 = Math.max(off1, hit.off)
-      }
-      const alongHalf = o.alongHalfM ?? 0
-      const crossHalf = o.crossHalfM ?? 0
-      return {
-        d0: d0 - alongHalf, d1: d1 + alongHalf,
-        off0: off0 - crossHalf, off1: off1 + crossHalf,
-      }
-    })
+    const projected = projectNearbyObstacles(grid, e.coords, cum)
 
     const roadKey = p.name?.trim() || `way/${p.osm_id}`
     marks.slice(0, offs.length).forEach((mark, i) => {
@@ -252,11 +215,7 @@ export function buildRoadTexts(
       const textLen = roadTextLengthM(label)
       const laneHalf = (isMoto ? MOTO_LANE_M : LANE_WIDTH_M) / 2
       // 障礙只在橫向真的蓋到這個車道時才擋——隔壁車道的箭頭不影響本車道印字
-      let free: [number, number][] = [[s0 + 2, s1 - 2]]
-      for (const o of projected) {
-        if (o.off1 < offs[i] - laneHalf || o.off0 > offs[i] + laneHalf) continue
-        free = punch(free, o.d0 - TEXT_CLEAR_M, o.d1 + TEXT_CLEAR_M)
-      }
+      const free = freeIntervals(projected, s0 + 2, s1 - 2, offs[i], laneHalf, TEXT_CLEAR_M)
       const usable = free.filter(([lo, hi]) => hi - lo >= textLen)
       if (!usable.length) return
 

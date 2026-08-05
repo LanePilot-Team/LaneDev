@@ -26,7 +26,6 @@ const LANES_FIX: Record<number, number> = {
  * couplet 合併配不成對——把留在 shard 內的這條直接改雙向。
  * 翠華路（台17）楠梓段：實地雙向各 2 車道（2026-07-27 使用者確認）。 */
 const TWO_WAY_FIX: Record<number, { lanesF: number; lanesB: number }> = {
-  267715853: { lanesF: 2, lanesB: 2 }, // 翠華路
 }
 
 /** 已確認為 OSM 幾何殘段，不應進入顯示或路由。 */

@@ -61,6 +61,8 @@ export interface RoadProps {
   /** 各方向機車道數；motoF/B 保留作既有布林判斷並永遠與 count>0 同步。 */
   motoCountF: number
   motoCountB: number
+  /** 單向道路的機車專用道位於行進方向左側；預設仍為右側。 */
+  motoLeftF?: boolean
   /** 快慢分隔帶寬（公尺，預設 0）：汽車車道與機車道之間的實體島空間，
    * 該向有機車道才有意義（journal moto_sep_f/b；主慢分離 couplet 合併預設 1.0）。
    * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
@@ -554,6 +556,14 @@ function sliceByDist(
  * 半寬 + 1.2m——路口框與楔形內不殘留黃分向線/白車道線。所有道路等級都適用，
  * 小巷也不能讓標線穿過路口；同一路純續接（幾何近乎平行）則保持標線連續。
  */
+/**
+ * 現地指定：這些端點的「近乎平行分岔」實地是路口，車道線要在此收邊。
+ * key = `${osm_id}@${nodeId}`。收邊量仍由該節點實際的交叉路寬推導，不寫死。
+ */
+const PARALLEL_CROSS_ENDS = new Set([
+  '386557630@1631504648', // 左楠路 × 外環西路：兩條不同的路以極小夾角分岔
+])
+
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
   // 複合／分離式主路在 OSM 可能只以單側窄 way 與支路共點，通用半寬會低估路口範圍。
   // 僅增加標線退界，不裁道路面，也不改變導航拓樸。
@@ -575,6 +585,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
    * 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，收邊線平行交叉路
    * ＝停止線的延長線）。trim=0 = 不收。 */
   const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
+    // 現地指定：夾角 >25° 才算交叉路，是為了讓「同一條路換 way id」的續接點保持
+    // 標線連續；但少數路口的兩條**不同**道路就是以極小夾角分岔（左楠路 ×
+    // 外環西路），那裡的車道線必須跟停止線一樣收邊，不能穿過路口。
+    const forceCross = PARALLEL_CROSS_ENDS.has(`${self.properties.osm_id}@${n}`)
     // 捏合主路只是經過側巷入口：主路所有標線保持連續，不將此節點
     // 當成交叉路口退縮。側巷仍會在自己的 endInfo 中依主路寬度收邊。
     const hasDistinctRoad = (nodeUse.get(n) ?? []).some((road) =>
@@ -597,7 +611,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
           : bearing(cs2[idx - 1], cs2[idx])
         let d = Math.abs(angleDelta(fwdBrg, brg))
         if (d > 90) d = 180 - d
-        if (d <= 25) continue // 同一路續接或近乎平行的分岔，不形成需清空的路口楔形
+        if (!forceCross && d <= 25) continue // 同一路續接或近乎平行的分岔，不形成需清空的路口楔形
         w = Math.max(w, q.width_m)
         anyCross = true
         if (d > bestPerp) { bestPerp = d; crossBrg = brg }
@@ -717,11 +731,18 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       // 單行道：斷面置中
       const total = f * LANE_WIDTH_M + p.motoCountF * MOTO_LANE_M + sepF
       const left = -total / 2
-      for (let k = 1; k < f; k++) push(RIGHT * (left + k * LANE_WIDTH_M), 'lane')
+      const motoLeft = !!p.motoLeftF && p.motoCountF > 0
+      const carBase = left + (motoLeft ? p.motoCountF * MOTO_LANE_M + sepF : 0)
+      for (let k = 1; k < f; k++) push(RIGHT * (carBase + k * LANE_WIDTH_M), 'lane')
       // 0 車道時機車道左界 = 斷面左緣，不需分隔線
-      if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
+      if (p.motoF && f > 0 && sepF === 0) {
+        push(RIGHT * (motoLeft ? carBase : left + f * LANE_WIDTH_M), 'moto')
+      }
       for (let k = 1; k < p.motoCountF; k++) {
-        push(RIGHT * (left + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M), 'lane')
+        const off = motoLeft
+          ? left + k * MOTO_LANE_M
+          : left + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M
+        push(RIGHT * off, 'lane')
       }
     } else {
       const b = p.lanesBackward

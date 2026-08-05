@@ -413,6 +413,9 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
   const edges = graph.scopeEdges((r) =>
     r.properties.oneway === 'no' && (r.properties.centerM || 0) > 0 &&
     r.properties.roadMarkingMode !== 'none' &&
+    // 高架：中央帶由 elevated3d 畫在橋面上，地面鋪島會在橋下留一條島面
+    // （高楠陸橋 way/23939182、楠楊高架橋 way/103678964 實例）
+    !r.properties.elevated &&
     r.properties.centerKind === 'island')
   for (const e of edges) {
     if (e.back) continue // 以順向 frame 統一處理一次

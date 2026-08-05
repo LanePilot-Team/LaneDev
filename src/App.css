@@ -169,6 +169,7 @@ body {
 }
 .place-source.osm { background: #e8f5e9; color: #287a36; }
 .place-source.tdx { background: #e8f0ff; color: #2458a6; }
+.place-source.mixed { background: #eee9ff; color: #6740a5; }
 .place-message { padding: 16px 12px; color: #6f7a89; font-size: 13px; text-align: center; }
 .place-message.error { color: #b3261e; }
 .place-attribution {

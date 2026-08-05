@@ -28,6 +28,13 @@ export interface PlaceRecord {
   updatedAt?: string
   fetchedAt: string
   rawCategory?: string
+  sourceRefs?: Array<{ source: PlaceSource; sourceId: string; id: string }>
+  memberIds?: string[]
+  mergedCount?: number
+  priority?: number
+  tier?: 'major' | 'area' | 'local' | 'detail'
+  icon?: string
+  hidden?: boolean
 }
 
 export interface PlaceDatabase {
@@ -86,7 +93,7 @@ export function searchPlaces(
   const normalizedQuery = normalizePlaceText(query)
   if (!normalizedQuery) return []
   return places
-    .filter((place) => placeSearchText(place).includes(normalizedQuery))
+    .filter((place) => !place.hidden && placeSearchText(place).includes(normalizedQuery))
     .sort((a, b) =>
       scorePlace(a, normalizedQuery) - scorePlace(b, normalizedQuery) ||
       a.name.localeCompare(b.name, 'zh-Hant'),

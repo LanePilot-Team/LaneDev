@@ -1,10 +1,14 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { canonicalizePlaces, placesToGeoJSON } from './place_merge.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outputDir = path.join(root, 'public', 'data', 'places')
 const outputPath = path.join(outputDir, 'places.json')
+const rawOutputPath = path.join(outputDir, 'raw-places.json')
+const geoJsonOutputPath = path.join(outputDir, 'places.geojson')
+const overridesPath = path.join(outputDir, 'place_overrides.json')
 const roadDatabasePath = path.join(root, 'public', 'data', 'road_database.json')
 const envPath = path.join(root, '.env.local')
 
@@ -20,8 +24,9 @@ const TDX_API_ROOT = 'https://tdx.transportdata.tw/api'
 const args = new Set(process.argv.slice(2))
 const osmOnly = args.has('--osm-only')
 const tdxOnly = args.has('--tdx-only')
-const updateOsm = !tdxOnly
-const updateTdx = !osmOnly
+const rebuildOnly = args.has('--rebuild')
+const updateOsm = !tdxOnly && !rebuildOnly
+const updateTdx = !osmOnly && !rebuildOnly
 
 if (args.has('--help')) {
   console.log(`LaneDev 地標資料手動更新
@@ -30,6 +35,7 @@ if (args.has('--help')) {
   npm run places:update             更新 OSM 與 TDX
   npm run places:update -- --osm-only
   npm run places:update -- --tdx-only
+  npm run places:update -- --rebuild 只套用合併規則與人工 override
 
 TDX 認證由 .env.local 或環境變數讀取：
   TDX_CLIENT_ID=...
@@ -38,7 +44,9 @@ TDX 認證由 .env.local 或環境變數讀取：
   process.exit(0)
 }
 
-if (osmOnly && tdxOnly) throw new Error('--osm-only 與 --tdx-only 不能同時使用')
+if ([osmOnly, tdxOnly, rebuildOnly].filter(Boolean).length > 1) {
+  throw new Error('--osm-only、--tdx-only 與 --rebuild 不能同時使用')
+}
 
 async function loadLocalEnv() {
   try {
@@ -482,13 +490,19 @@ function validatePlaces(places, source) {
   }
 }
 
-async function readPrevious() {
+async function readJsonFile(filePath) {
   try {
-    return JSON.parse(await fs.readFile(outputPath, 'utf8'))
+    return JSON.parse(await fs.readFile(filePath, 'utf8'))
   } catch (error) {
     if (error?.code === 'ENOENT') return null
     throw error
   }
+}
+
+async function writeJsonAtomic(filePath, value) {
+  const temporaryPath = `${filePath}.tmp`
+  await fs.writeFile(temporaryPath, `${JSON.stringify(value)}\n`)
+  await fs.rename(temporaryPath, filePath)
 }
 
 function guardAgainstLargeDrop(previousPlaces, nextPlaces, source) {
@@ -506,13 +520,21 @@ await fs.mkdir(outputDir, { recursive: true })
 const fetchedAt = new Date().toISOString()
 const roadDatabase = JSON.parse(await fs.readFile(roadDatabasePath, 'utf8'))
 const bounds = roadBounds(roadDatabase)
-const previous = await readPrevious()
-const previousPlaces = Array.isArray(previous?.places) ? previous.places : []
+const previous = await readJsonFile(outputPath)
+const previousRaw = await readJsonFile(rawOutputPath)
+const previousPlaces = Array.isArray(previousRaw?.places)
+  ? previousRaw.places
+  : Array.isArray(previous?.places) ? previous.places : []
+const overrides = await readJsonFile(overridesPath) ?? {}
+
+if (rebuildOnly && !previousPlaces.length) {
+  throw new Error('沒有可重建的快取資料；請先執行一次 OSM／TDX 更新')
+}
 
 let osmPlaces = previousPlaces.filter((place) => place.source === 'osm')
 let tdxPlaces = previousPlaces.filter((place) => place.source === 'tdx')
-let osmMetadata = previous?.sources?.osm ?? null
-let tdxMetadata = previous?.sources?.tdx ?? null
+let osmMetadata = previousRaw?.sources?.osm ?? previous?.sources?.osm ?? null
+let tdxMetadata = previousRaw?.sources?.tdx ?? previous?.sources?.tdx ?? null
 
 if (updateOsm) {
   console.log('更新 OSM 地標（楠梓區＋左營區）...')
@@ -545,24 +567,42 @@ if (updateTdx) {
   console.log(`  TDX：${tdxPlaces.length} 筆`)
 }
 
-const placeById = new Map()
-for (const place of [...osmPlaces, ...tdxPlaces]) placeById.set(place.id, place)
-const places = [...placeById.values()].sort((a, b) =>
-  a.name.localeCompare(b.name, 'zh-Hant') || a.id.localeCompare(b.id),
-)
+const rawPlaceById = new Map()
+for (const place of [...osmPlaces, ...tdxPlaces]) rawPlaceById.set(place.id, place)
+const rawPlaces = [...rawPlaceById.values()].sort((a, b) => a.id.localeCompare(b.id))
+const canonical = canonicalizePlaces(rawPlaces, overrides)
+validatePlaces(canonical.places, '合併後')
+for (const warning of canonical.warnings) console.warn(`  override 警告：${warning}`)
+
+const countCanonicalForSource = (source) => canonical.places.filter((place) =>
+  place.sourceRefs.some((reference) => reference.source === source),
+).length
+if (osmMetadata) osmMetadata.canonicalCount = countCanonicalForSource('osm')
+if (tdxMetadata) tdxMetadata.canonicalCount = countCanonicalForSource('tdx')
 
 const output = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: fetchedAt,
   regions: roadDatabase.regions ?? [],
   bounds,
   sources: { osm: osmMetadata, tdx: tdxMetadata },
-  places,
+  mergeStats: canonical.stats,
+  places: canonical.places,
 }
 
-const temporaryPath = `${outputPath}.tmp`
-await fs.writeFile(temporaryPath, `${JSON.stringify(output)}\n`)
-await fs.rename(temporaryPath, outputPath)
+const rawOutput = {
+  schemaVersion: 1,
+  generatedAt: fetchedAt,
+  sources: { osm: osmMetadata, tdx: tdxMetadata },
+  places: rawPlaces,
+}
+await writeJsonAtomic(rawOutputPath, rawOutput)
+await writeJsonAtomic(geoJsonOutputPath, placesToGeoJSON(canonical.places))
+await writeJsonAtomic(outputPath, output)
 
 console.log(`完成：${outputPath}`)
-console.log(`總計：${places.length} 筆（OSM ${osmPlaces.length}、TDX ${tdxPlaces.length}）`)
+console.log(
+  `合併：${canonical.stats.rawCount} 筆原始資料 → ` +
+  `${canonical.stats.canonicalCount} 筆地標（移除 ${canonical.stats.removedDuplicates} 筆重複）`,
+)
+console.log(`來源：OSM ${osmPlaces.length}、TDX ${tdxPlaces.length}`)

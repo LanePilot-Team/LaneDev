@@ -39,11 +39,18 @@ npx tsx scripts/import_audit.ts   # LanePilot 標註吃入命中率
 npm run places:update                 # OSM＋TDX
 npm run places:update -- --osm-only  # 只更新 OSM
 npm run places:update -- --tdx-only  # 只更新 TDX
+npm run places:update -- --rebuild   # 不連網，只重套合併規則與人工 override
 ```
 
 更新結果會寫入 `public/data/places/places.json`。OSM 抓取楠梓區與左營區的具名
 POI；TDX 抓取高雄市觀光、車站、公車站與公有停車場資料，再裁切至目前路網範圍。
 腳本先完整驗證新資料才替換舊檔，任一主要來源失敗時會保留上一版。
+
+原始來源快取保存在 `public/data/places/raw-places.json`；更新時會依名稱、類別與
+距離產生 canonical 地標，並輸出 `places.geojson` 給全地圖 POI 圖層。人工例外寫在
+`public/data/places/place_overrides.json`：`mergeGroups` 強制合併、`keepSeparate`
+阻止誤合併、`patches` 可改名／座標／優先度或設為隱藏。修改後執行 `--rebuild`
+即可驗證，不會重新消耗 OSM／TDX API 額度。
 
 **關閉 dev server**：終端機 Ctrl+C；找不到終端機時：
 

@@ -113,7 +113,7 @@ test('機車兩段式左轉只能由可直行車道進入待轉區', () => {
     road(30, [2, 4], [junction, [120.001, 22.001]], ['through']),
   ])
   const allowed = new RoadGraph([
-    road(10, [1, 2], [[120, 22], junction], ['through', 'right']),
+    road(10, [1, 2], [[120, 22], junction], ['through', 'through;right', 'right']),
     road(30, [2, 4], [junction, [120.001, 22.001]], ['through']),
   ])
 
@@ -123,6 +123,8 @@ test('機車兩段式左轉只能由可直行車道進入待轉區', () => {
   assert.equal(blockedResult.route, null)
   assert.equal(blockedResult.failure, 'lane-direction')
   assert.ok(allowedResult.route)
+  assert.equal(allowedResult.route.maneuvers[0].laneDecision.twoStage, true)
+  assert.equal(allowedResult.route.maneuvers[0].laneDecision.primaryLaneIndex, 1)
 })
 
 test('已接受的轉向保存主要、次要與不相容車道', () => {

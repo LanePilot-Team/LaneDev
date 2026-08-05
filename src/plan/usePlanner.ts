@@ -4,13 +4,14 @@ import { useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 import {
   mergeRoutes, laneBand,
-  type RouteResult, type Maneuver, type Profile,
+  type RouteResult, type Maneuver, type Profile, type LaneRoutePolicy,
 } from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
 import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 import { isZoneEnabled } from '../core/zones'
+import { routeFailureText } from './routeFailure'
 
 export interface Stop { id: number; pos: [number, number] | null }
 
@@ -26,6 +27,7 @@ export interface Planner {
   routeError: string | null
   profile: Profile
   profileRef: RefObject<Profile>
+  routePolicy: LaneRoutePolicy
   dragStopRef: RefObject<number | null>
   dragOverStop: number | null
   setDragOverStop: (fn: number | null | ((v: number | null) => number | null)) => void
@@ -62,6 +64,24 @@ export function usePlanner(core: MapCore): Planner {
   const [dragOverStop, setDragOverStop] = useState<number | null>(null)
   const stopAllDriversRef = useRef<() => void>(() => {})
 
+  function twoStageForApproach(input: {
+    nodeId: number
+    fromBearing: number
+    kind: Maneuver['kind']
+    motoLeftTurnLane: boolean
+  }): boolean {
+    if (input.kind !== 'left' && input.kind !== 'uturn' && input.kind !== 'slight-left') return false
+    if (input.motoLeftTurnLane) return false
+    return core.zonesRef.current.some((z) =>
+      isZoneEnabled(z) &&
+      z.intersectionId === input.nodeId &&
+      Math.abs(angleDelta(z.from.bearing, input.fromBearing)) < 50)
+  }
+
+  const routePolicyRef = useRef<LaneRoutePolicy>({
+    isTwoStage: twoStageForApproach,
+  })
+
   // ── 停靠點操作（只用 ref，讓地圖 handler 安全呼叫）──
   function setStops(next: Stop[]) {
     stopsRef.current = next
@@ -93,13 +113,18 @@ export function usePlanner(core: MapCore): Planner {
     if (!g || pts.some((p) => !p)) { clearRouteLine(); return }
     const legs: RouteResult[] = []
     for (let i = 0; i < pts.length - 1; i++) {
-      const leg = g.route(pts[i]!, pts[i + 1]!, profileRef.current)
-      if (!leg) {
+      const result = g.routeDetailed(
+        pts[i]!,
+        pts[i + 1]!,
+        profileRef.current,
+        routePolicyRef.current,
+      )
+      if (!result.route) {
         clearRouteLine()
-        setRouteError(`第 ${i + 1} 段規劃失敗，請調整位置`)
+        setRouteError(routeFailureText(result.failure, i + 1))
         return
       }
-      legs.push(leg)
+      legs.push(result.route)
     }
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
     annotateTwoStage(route)
@@ -206,24 +231,25 @@ export function usePlanner(core: MapCore): Planner {
    */
   function computeTwoStage(m: Maneuver, prof: Profile): boolean {
     if (prof !== 'moto') return false
-    if (m.kind !== 'left' && m.kind !== 'uturn' && m.kind !== 'slight-left') return false
-    // 有人工標註的機車左轉專用道時，應靠右直接進入專用道，不採兩段式待轉。
-    if (m.motoLeftTurnLane) return false
-    return core.zonesRef.current.some((z) =>
-      isZoneEnabled(z) &&
-      m.nodeId !== undefined && z.intersectionId === m.nodeId &&
-      m.fromBearing !== undefined &&
-      Math.abs(angleDelta(z.from.bearing, m.fromBearing)) < 50)
+    if (m.nodeId === undefined || m.fromBearing === undefined || m.kind === 'arrive') return false
+    return twoStageForApproach({
+      nodeId: m.nodeId,
+      fromBearing: m.fromBearing,
+      kind: m.kind,
+      motoLeftTurnLane: m.motoLeftTurnLane ?? false,
+    })
   }
 
   function isTwoStage(m: Maneuver | null): boolean {
-    return !!m && computeTwoStage(m, profile)
+    return !!m && (m.twoStage ?? computeTwoStage(m, profile))
   }
 
   /** 路線建好後標記兩段式旗標與偏心左轉道（變道規則與絲帶都靠它；bay 要在
    * 兩段式之後標——兩段式左轉不進 bay） */
   function annotateTwoStage(route: RouteResult) {
-    for (const m of route.maneuvers) m.twoStage = computeTwoStage(m, profileRef.current)
+    for (const m of route.maneuvers) {
+      m.twoStage = m.laneDecision?.twoStage ?? computeTwoStage(m, profileRef.current)
+    }
     annotateBays(route, core.baysRef.current)
     annotateRightLanes(route, core.rightLanesRef.current)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__route = route
@@ -238,7 +264,8 @@ export function usePlanner(core: MapCore): Planner {
 
   return {
     stops, stopsRef, activeStop, routeRef, routeSummary, routeError,
-    profile, profileRef, dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
+    profile, profileRef, routePolicy: routePolicyRef.current,
+    dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
     startPick, clearAllRoute, addVia, resetStop, removeStop, moveStop, handlePickClick,
     computeTwoStage, isTwoStage, annotateTwoStage, toggleProfile,
   }

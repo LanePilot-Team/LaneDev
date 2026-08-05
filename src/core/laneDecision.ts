@@ -31,6 +31,7 @@ export interface LaneDecision {
   laneChanges: number
   difficultyS: number
   shortPreparation: boolean
+  twoStage: boolean
   /** 轉彎後在下一道路上的建議落點；RoadGraph 可依下一個 maneuver 前瞻調整。 */
   postTurnLaneIndex?: number
 }
@@ -122,10 +123,11 @@ function allowedResult(
     laneChanges,
     difficultyS: laneChanges * 2 + deficitS,
     shortPreparation,
+    twoStage: input.twoStage,
   }
 }
 
-function rejectedResult(laneCount: number): LaneDecision {
+function rejectedResult(laneCount: number, twoStage = false): LaneDecision {
   return {
     allowed: false,
     reason: 'explicitly-incompatible',
@@ -136,6 +138,7 @@ function rejectedResult(laneCount: number): LaneDecision {
     laneChanges: 0,
     difficultyS: 0,
     shortPreparation: false,
+    twoStage,
   }
 }
 
@@ -144,7 +147,7 @@ export function resolveLaneDecision(input: LaneDecisionInput): LaneDecision {
   const laneCount = Number.isFinite(laneCountValue) && laneCountValue >= 1
     ? Math.floor(laneCountValue)
     : 0
-  if (laneCount === 0) return rejectedResult(0)
+  if (laneCount === 0) return rejectedResult(0, input.twoStage)
 
   const parsed = Array.from(
     { length: laneCount },
@@ -185,7 +188,7 @@ export function resolveLaneDecision(input: LaneDecisionInput): LaneDecision {
       const incompatible = parsed.flatMap((moves, index) => moves.size > 0 ? [index] : [])
       return allowedResult(input, candidates, incompatible, true, 'innermost')
     }
-    return rejectedResult(laneCount)
+    return rejectedResult(laneCount, input.twoStage)
   }
 
   const compatible = parsed.flatMap((moves, index) => moves.has(effectiveMove)
@@ -221,5 +224,5 @@ export function resolveLaneDecision(input: LaneDecisionInput): LaneDecision {
     )
   }
 
-  return rejectedResult(laneCount)
+  return rejectedResult(laneCount, input.twoStage)
 }

@@ -3,7 +3,13 @@
 // 持有，透過參數傳進來（這裡不重複定義 ref，避免兩邊各存一份不同步）。
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Map as MLMap, GeoJSONSource } from 'maplibre-gl'
-import { RoadGraph, laneBand, type RouteResult, type Profile } from '../core/graph'
+import {
+  RoadGraph,
+  laneBand,
+  type LaneRoutePolicy,
+  type RouteResult,
+  type Profile,
+} from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
 import { Driver, type DriveState } from './drive'
 import { GpsDriver } from './gpsNav'
@@ -13,6 +19,7 @@ import type { Mode } from '../app/mapCore'
 import type { Stop } from '../plan/usePlanner'
 import { activeNavigationOcclusion } from '../core/occlusion'
 import { isZoneEnabled, type Zone } from '../core/zones'
+import { routeFailureText } from '../plan/routeFailure'
 
 /** 路口決策：接近下個轉彎多近（公尺）才顯示「不照指引走」按鈕 */
 const DECISION_BUTTON_RANGE_M = 30
@@ -32,6 +39,7 @@ export interface UseDriveParams {
   graphRef: RefObject<RoadGraph | null>
   zonesRef: RefObject<Zone[]>
   profileRef: RefObject<Profile>
+  routePolicy: LaneRoutePolicy
   stopsRef: RefObject<Stop[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
   lastGestureRef: RefObject<number>
@@ -220,8 +228,13 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const to = p.stopsRef.current[p.stopsRef.current.length - 1]?.pos
     const g = p.graphRef.current
     if (!to || !g) return
-    const route = g.route(pos, to, p.profileRef.current)
-    if (!route) return
+    const result = g.routeDetailed(pos, to, p.profileRef.current, p.routePolicy)
+    const route = result.route
+    if (!route) {
+      setGpsMsg(routeFailureText(result.failure, 1))
+      return
+    }
+    setGpsMsg(null)
     p.annotateTwoStage(route)
     p.routeRef.current = route
     drawRouteLine(route)

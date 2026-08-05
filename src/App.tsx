@@ -70,6 +70,7 @@ export default function App() {
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
     zonesRef: core.zonesRef,
     profileRef: planner.profileRef, stopsRef: planner.stopsRef,
+    routePolicy: planner.routePolicy,
     vehicleLayerRef: core.vehicleLayerRef, lastGestureRef: core.lastGestureRef,
     annotateTwoStage: planner.annotateTwoStage,
     setZoneHighlight: core.setZoneHighlight,

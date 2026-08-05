@@ -31,6 +31,8 @@ export interface LaneDecision {
   laneChanges: number
   difficultyS: number
   shortPreparation: boolean
+  /** 轉彎後在下一道路上的建議落點；RoadGraph 可依下一個 maneuver 前瞻調整。 */
+  postTurnLaneIndex?: number
 }
 
 interface LaneCandidate {

@@ -11,7 +11,11 @@ import {
   type LaneGuidanceIndex,
   type ResolvedLaneGuidance,
 } from './laneGuidance.ts'
-import { resolveLaneDecision, type LaneAction } from './laneDecision.ts'
+import {
+  resolveLaneDecision,
+  type LaneAction,
+  type LaneDecision,
+} from './laneDecision.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -114,6 +118,11 @@ interface Edge {
   twin?: Edge
 }
 
+interface TransitionPlan {
+  decision: LaneDecision
+  entryLaneIndex?: number
+}
+
 interface DirectedLaneProjection {
   edge: Edge
   seg: number
@@ -202,6 +211,8 @@ export interface Maneuver {
   lanesForward: number
   turnLanes?: string[]
   laneGuidance?: ResolvedLaneGuidance
+  /** 搜尋階段採用的唯一車道建議；HUD 與導航線都必須消費同一份決策。 */
+  laneDecision?: LaneDecision
 }
 
 /** scope 內的方向邊（中央槽化線/地面車道箭頭渲染用） */
@@ -918,14 +929,23 @@ export class RoadGraph {
     const edgeIdentity = (edge: Edge) =>
       `${edge.road.properties.navSegmentKey}:${edge.road.properties.blockNode}`
       + `:${edge.from}>${edge.to}:${edge.back ? 1 : 0}`
-    const stateKey = (node: number, incoming: Edge) => `${node}|${edgeIdentity(incoming)}`
-    const states = new Map<string, { node: number; incoming: Edge }>()
+    const stateKey = (node: number, incoming: Edge, entryLaneIndex?: number) =>
+      `${node}|${edgeIdentity(incoming)}|lane:${entryLaneIndex ?? 'unknown'}`
+    const states = new Map<string, {
+      node: number
+      incoming: Edge
+      entryLaneIndex?: number
+    }>()
     const g = new Map<string, number>()
-    const cameFrom = new Map<string, { previous: string; edge: Edge }>()
+    const cameFrom = new Map<string, {
+      previous: string
+      edge: Edge
+      transition?: TransitionPlan
+    }>()
     const startPart = new Map<string, Edge>()
     const open = new Map<string, number>()
     for (const s of startEntries) {
-      const key = stateKey(s.node, s.part)
+      const key = stateKey(s.node, s.part, undefined)
       if (s.part.timeS < (g.get(key) ?? Infinity)) {
         states.set(key, { node: s.node, incoming: s.part })
         g.set(key, s.part.timeS)
@@ -935,7 +955,12 @@ export class RoadGraph {
       }
     }
     const closed = new Set<string>()
-    let bestGoal: { cost: number; stateKey: string; part: Edge } | null = null
+    let bestGoal: {
+      cost: number
+      stateKey: string
+      part: Edge
+      transition?: TransitionPlan
+    } | null = null
 
     while (open.size > 0) {
       let currentKey = '', curF = Infinity
@@ -951,12 +976,21 @@ export class RoadGraph {
             current.incoming, ge.part, current.node,
             this.roadMergeBarrierNodes.has(current.node),
           )) continue
-          if (enforceLaneDirection && !this.laneTransitionAllowed(
-            current.incoming, ge.part, current.node, profile, policy,
-          )) continue
+          const transition = enforceLaneDirection
+            ? this.laneTransitionPlan(
+              current.incoming,
+              ge.part,
+              current.node,
+              profile,
+              policy,
+              current.entryLaneIndex,
+            )
+            : undefined
+          if (enforceLaneDirection && !transition?.decision.allowed) continue
           const total = g.get(currentKey)! + ge.part.timeS
+            + (transition?.decision.difficultyS ?? 0)
           if (!bestGoal || total < bestGoal.cost) {
-            bestGoal = { cost: total, stateKey: currentKey, part: ge.part }
+            bestGoal = { cost: total, stateKey: currentKey, part: ge.part, transition }
           }
         }
       }
@@ -966,16 +1000,29 @@ export class RoadGraph {
           current.incoming, e, current.node,
           this.roadMergeBarrierNodes.has(current.node),
         )) continue
-        if (enforceLaneDirection && !this.laneTransitionAllowed(
-          current.incoming, e, current.node, profile, policy,
-        )) continue
-        const nextKey = stateKey(e.to, e)
+        const transition = enforceLaneDirection
+          ? this.laneTransitionPlan(
+            current.incoming,
+            e,
+            current.node,
+            profile,
+            policy,
+            current.entryLaneIndex,
+          )
+          : undefined
+        if (enforceLaneDirection && !transition?.decision.allowed) continue
+        const nextKey = stateKey(e.to, e, transition?.entryLaneIndex)
         if (closed.has(nextKey)) continue
         const tentative = g.get(currentKey)! + e.timeS
+          + (transition?.decision.difficultyS ?? 0)
         if (tentative < (g.get(nextKey) ?? Infinity)) {
-          states.set(nextKey, { node: e.to, incoming: e })
+          states.set(nextKey, {
+            node: e.to,
+            incoming: e,
+            entryLaneIndex: transition?.entryLaneIndex,
+          })
           g.set(nextKey, tentative)
-          cameFrom.set(nextKey, { previous: currentKey, edge: e })
+          cameFrom.set(nextKey, { previous: currentKey, edge: e, transition })
           open.set(nextKey, tentative
             + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
         }
@@ -984,24 +1031,27 @@ export class RoadGraph {
     if (!bestGoal) return null
 
     const chain: Edge[] = [bestGoal.part]
+    const transitions: (TransitionPlan | undefined)[] = [bestGoal.transition]
     let currentKey = bestGoal.stateKey
     while (!startPart.has(currentKey)) {
       const previous = cameFrom.get(currentKey)
       if (!previous) return null // 理論上不會發生
       chain.unshift(previous.edge)
+      transitions.unshift(previous.transition)
       currentKey = previous.previous
     }
     chain.unshift(startPart.get(currentKey)!)
-    return this.assemble(chain.filter((e) => e.coords.length >= 2), profile)
+    return this.assemble(chain, profile, transitions)
   }
 
-  private laneTransitionAllowed(
+  private laneTransitionPlan(
     incoming: Edge,
     outgoing: Edge,
     nodeId: number,
     profile: Profile,
     policy: LaneRoutePolicy,
-  ): boolean {
+    currentLaneIndex?: number,
+  ): TransitionPlan {
     const incomingCoords = incoming.coords
     const incomingBearing = bearing(
       incomingCoords[incomingCoords.length - 2],
@@ -1040,19 +1090,41 @@ export class RoadGraph {
       }) ?? false
       : false
 
-    return resolveLaneDecision({
+    const decision = resolveLaneDecision({
       action,
       profile,
       laneCount: guidance.laneCount,
       laneMovements: guidance.laneMovements,
       guidanceSource: guidance.source,
-      availableM: Number.POSITIVE_INFINITY,
+      currentLaneIndex,
+      availableM: incoming.lengthM,
       speedKmh: Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30,
       twoStage,
-    }).allowed
+    })
+    const outgoingProps = outgoing.road.properties
+    const outgoingLaneCount = Math.max(1,
+      outgoing.back ? outgoingProps.lanesBackward : outgoingProps.lanesForward)
+    let entryLaneIndex = currentLaneIndex === undefined
+      ? undefined
+      : Math.min(outgoingLaneCount - 1, currentLaneIndex)
+    if (action !== 'through') {
+      entryLaneIndex = profile === 'moto' || action === 'right'
+        ? outgoingLaneCount - 1
+        : 0
+    } else if (profile === 'moto') {
+      entryLaneIndex = outgoingLaneCount - 1
+    }
+    return {
+      decision: { ...decision, postTurnLaneIndex: entryLaneIndex },
+      entryLaneIndex,
+    }
   }
 
-  private assemble(edges: Edge[], profile: Profile): RouteResult | null {
+  private assemble(
+    edges: Edge[],
+    profile: Profile,
+    transitions: (TransitionPlan | undefined)[] = [],
+  ): RouteResult | null {
     if (edges.length === 0) return null
     const coords: [number, number][] = [edges[0].coords[0]]
     const spans: RouteResult['spans'] = []
@@ -1082,7 +1154,7 @@ export class RoadGraph {
       coords, cum,
       lengthM: cum[cum.length - 1],
       timeS: edges.reduce((s, e) => s + e.timeS, 0),
-      maneuvers: buildManeuvers(edges, profile, this.laneGuidanceIndex),
+      maneuvers: buildManeuvers(edges, profile, this.laneGuidanceIndex, transitions),
       spans,
       ...this.buildDiverges(edges, profile),
     }
@@ -1462,6 +1534,7 @@ function buildManeuvers(
   edges: Edge[],
   profile: Profile,
   laneGuidanceIndex: LaneGuidanceIndex,
+  transitions: (TransitionPlan | undefined)[] = [],
 ): Maneuver[] {
   type Cand = { m: Maneuver; inBrg: number; outBrg: number; d: number }
   const cands: Cand[] = []
@@ -1505,6 +1578,7 @@ function buildManeuvers(
             roadLaneCount,
             osmMovements,
           }),
+          laneDecision: transitions[i - 1]?.decision,
         },
         inBrg, outBrg, d,
       })
@@ -1514,6 +1588,17 @@ function buildManeuvers(
   // 錯位路口/巷弄接駁常拆成兩個相近的轉向（例：微左後右轉）。逼近時 HUD 一直
   // 顯示第一個，到轉向點才換——駕駛看到的方向是錯的。近距離成對合併成「淨轉向」：
   // 淨角度歸直行者整組移除（錯位直行），其餘以角度較大者為錨、依淨角度重新分類。
+  for (let i = cands.length - 2; i >= 0; i--) {
+    const currentDecision = cands[i].m.laneDecision
+    const nextDecision = cands[i + 1].m.laneDecision
+    const nextLane = nextDecision?.primaryLaneIndex
+    if (!currentDecision || !nextDecision || nextLane === undefined) continue
+    if (cands[i + 1].m.distM - cands[i].m.distM >= nextDecision.preparationM) continue
+    cands[i].m.laneDecision = {
+      ...currentDecision,
+      postTurnLaneIndex: nextLane,
+    }
+  }
   for (let i = 0; i + 1 < cands.length; ) {
     const a = cands[i], b = cands[i + 1]
     if (b.m.distM - a.m.distM >= MERGE_GAP_M) { i++; continue }

@@ -124,3 +124,54 @@ test('機車兩段式左轉只能由可直行車道進入待轉區', () => {
   assert.equal(blockedResult.failure, 'lane-direction')
   assert.ok(allowedResult.route)
 })
+
+test('已接受的轉向保存主要、次要與不相容車道', () => {
+  const graph = new RoadGraph([
+    road(10, [1, 2], [[120, 22], junction], ['through', 'through;right', 'right']),
+    road(20, [2, 3], [junction, [120.001, 21.999]], ['through']),
+  ])
+
+  const route = graph.route(start, southGoal, 'car')
+
+  assert.ok(route)
+  assert.equal(route.maneuvers[0].laneDecision.primaryLaneIndex, 2)
+  assert.deepEqual(route.maneuvers[0].laneDecision.secondaryLaneIndices, [1])
+  assert.deepEqual(route.maneuvers[0].laneDecision.incompatibleLaneIndices, [0])
+})
+
+test('A* 保留進入車道狀態並避開短距離跨兩車道方案', () => {
+  const split = [120, 22]
+  const final = [120.001, 22]
+  const graph = new RoadGraph([
+    road(100, [0, 1], [[120, 21.999], split], ['left', 'right']),
+    road(110, [1, 11, 12, 2], [split, [119.9999, 22], [120.0005, 22], final],
+      ['through', 'through', 'right']),
+    road(120, [1, 21, 22, 23, 2], [split, [120.0001, 22], [120.0001, 22.0009], [120.0005, 22], final],
+      ['through', 'through', 'right']),
+    road(130, [2, 3], [final, [120.001, 21.999]], ['through']),
+  ])
+
+  const result = graph.routeDetailed([120, 21.9991], [120.001, 21.9991], 'car')
+  const route = result.route
+
+  assert.ok(route, result.failure)
+  assert.equal(route.spans[1].road?.properties.osm_id, 120)
+  assert.equal(route.maneuvers.at(-2).laneDecision.shortPreparation, false)
+})
+
+test('相近的右轉接左轉會以前瞻車道作為轉彎後落點', () => {
+  const first = [120.001, 22]
+  const second = [120.001, 21.9995]
+  const graph = new RoadGraph([
+    road(200, [1, 2], [[120, 22], first], ['through', 'through;right', 'right']),
+    road(210, [2, 3], [first, second], ['left', 'left;through', 'through']),
+    road(220, [3, 4], [second, [120.002, 21.9995]], ['through']),
+  ])
+
+  const route = graph.route([120.0001, 22], [120.0019, 21.9995], 'car')
+
+  assert.ok(route)
+  assert.equal(route.maneuvers.length, 3)
+  assert.equal(route.maneuvers[0].laneDecision.postTurnLaneIndex, 0)
+  assert.equal(route.maneuvers[1].laneDecision.primaryLaneIndex, 0)
+})

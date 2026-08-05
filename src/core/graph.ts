@@ -310,13 +310,33 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
 }
 
 /** 進彎變道目標（右轉→最右、左轉→bay/最左、兩段式→最右準備進待轉格） */
-function turnTarget(
-  m: Maneuver, span: { offM: number; leftM: number; rightM: number },
+function laneIndexOffset(
+  span: RouteResult['spans'][number],
+  laneIndex: number,
 ): number {
-  if (m.kind === 'right' || m.kind === 'slight-right') return m.rightOffM ?? span.rightM
+  const count = Math.max(1, span.laneGuidance?.laneCount ?? 1)
+  const clamped = Math.max(0, Math.min(count - 1, laneIndex))
+  if (count === 1) return span.leftM
+  return span.leftM + (span.rightM - span.leftM) * clamped / (count - 1)
+}
+
+function turnTarget(
+  m: Maneuver,
+  span: RouteResult['spans'][number],
+): number {
+  if ((m.kind === 'right' || m.kind === 'slight-right') && m.rightOffM !== undefined) {
+    return m.rightOffM
+  }
   if (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn') {
     if (m.motoLeftTurnLane) return span.rightM
-    return m.twoStage ? span.rightM : (m.bayOffM ?? span.leftM)
+    if (m.bayOffM !== undefined) return m.bayOffM
+  }
+  if (m.laneDecision?.primaryLaneIndex !== undefined) {
+    return laneIndexOffset(span, m.laneDecision.primaryLaneIndex)
+  }
+  if (m.kind === 'right' || m.kind === 'slight-right') return span.rightM
+  if (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn') {
+    return m.twoStage ? span.rightM : span.leftM
   }
   return span.offM
 }
@@ -1377,6 +1397,10 @@ export function laneBand(route: RouteResult): LaneBandResult {
         let [rampStart, rampEnd] = hasBayWin
           ? [next.man!.bayMouthM! + (next.man!.bayTaperM ?? 15), next.man!.bayMouthM!]
           : leadWindow(v, target - cruise, !next.man)
+        if (!hasBayWin && next.man?.laneDecision) {
+          rampStart = next.man.laneDecision.preparationM
+          rampEnd = Math.min(rampEnd, rampStart)
+        }
         if (!hasBayWin) {
           // 提前量的起點不得早於：上一個事件（連續路口會變成整段左右擺）、
           // 以及最後一個經過的匝道交織點（長途在兩個交流道之後才下去時，
@@ -1403,9 +1427,11 @@ export function laneBand(route: RouteResult): LaneBandResult {
         if (e < EXIT_MERGE_M) {
           const p = prev.man
           const from = !p ? passOff ?? cruise
-            : p.kind === 'right' || p.kind === 'slight-right' || p.twoStage ? span.rightM
-            : p.kind === 'left' || p.kind === 'slight-left' || p.kind === 'uturn' ? span.leftM
-            : cruise
+            : p.laneDecision?.postTurnLaneIndex !== undefined
+              ? laneIndexOffset(span, p.laneDecision.postTurnLaneIndex)
+              : p.kind === 'right' || p.kind === 'slight-right' || p.twoStage ? span.rightM
+                : p.kind === 'left' || p.kind === 'slight-left' || p.kind === 'uturn' ? span.leftM
+                  : cruise
           off = from + (cruise - from) * Math.max(0, e / EXIT_MERGE_M)
         }
       }

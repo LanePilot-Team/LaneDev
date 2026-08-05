@@ -8,6 +8,7 @@
     "dev": "vite",
     "test:lane-preview": "node --test src/nav/lanePreview.test.mjs",
     "test:lane-guidance": "node --test scripts/build_lane_guidance.test.mjs src/core/laneGuidance.test.mjs",
+    "test:places": "node --test scripts/place_merge.test.mjs",
     "prebuild": "npm run lane-guidance:data",
     "build": "tsc -b && vite build",
     "collect-environment": "node scripts/collect-nanzih-environment-data.mjs",

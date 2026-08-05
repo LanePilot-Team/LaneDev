@@ -9,8 +9,14 @@ import {
   type PlaceRecord,
 } from './places'
 
-function sourceLabel(source: PlaceRecord['source']) {
-  return source === 'osm' ? 'OSM' : 'TDX'
+function sourceInfo(place: PlaceRecord) {
+  const references = place.sourceRefs?.length ? place.sourceRefs : [{ source: place.source }]
+  const sources = [...new Set(references
+    .map((reference) => reference.source))]
+  return {
+    label: sources.map((source) => source === 'osm' ? 'OSM' : 'TDX').join('＋'),
+    className: sources.length > 1 ? 'mixed' : sources[0],
+  }
 }
 
 export function PlaceSearch({ core, mapLoading }: {
@@ -121,8 +127,9 @@ export function PlaceSearch({ core, mapLoading }: {
           {dataState === 'ready' && results.length === 0 && (
             <div className="place-message">找不到符合「{query.trim()}」的地點</div>
           )}
-          {results.map((place) => (
-            <button
+          {results.map((place) => {
+            const source = sourceInfo(place)
+            return <button
               type="button"
               role="option"
               aria-selected={selected?.id === place.id}
@@ -135,9 +142,9 @@ export function PlaceSearch({ core, mapLoading }: {
                 <b>{place.name}</b>
                 <small>{place.address || CATEGORY_LABELS[place.category]}</small>
               </span>
-              <span className={`place-source ${place.source}`}>{sourceLabel(place.source)}</span>
+              <span className={`place-source ${source.className}`}>{source.label}</span>
             </button>
-          ))}
+          })}
           {results.length > 0 && (
             <div className="place-attribution">共顯示 {results.length} 筆 · © OpenStreetMap contributors · 交通部 TDX</div>
           )}

@@ -11,6 +11,7 @@ import {
   type LaneGuidanceIndex,
   type ResolvedLaneGuidance,
 } from './laneGuidance.ts'
+import { resolveLaneDecision, type LaneAction } from './laneDecision.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -20,6 +21,22 @@ const SPEED_KMH: Record<string, number> = {
 const MAX_SPEED_MS = 90 / 3.6
 
 export type Profile = 'car' | 'moto'
+
+export type RouteFailureReason = 'no-projection' | 'unreachable' | 'lane-direction'
+
+export interface LaneRoutePolicy {
+  isTwoStage?: (input: {
+    nodeId: number
+    fromBearing: number
+    kind: 'left' | 'right' | 'slight-left' | 'slight-right' | 'uturn'
+    motoLeftTurnLane: boolean
+  }) => boolean
+}
+
+export interface RouteSearchResult {
+  route: RouteResult | null
+  failure?: RouteFailureReason
+}
 
 /** 某方向可供機車使用的汽車車道索引（0-based）；自定義「禁行機車」同步作導航限制。 */
 function motoLegalCarLanes(r: RoadFeature, back: boolean): number[] {
@@ -816,10 +833,26 @@ export class RoadGraph {
     return { pos: hit.lanePos, bearing: hit.bearing, road: hit.edge.name }
   }
 
-  route(fromP: [number, number], toP: [number, number], profile: Profile = 'car'): RouteResult | null {
+  route(
+    fromP: [number, number],
+    toP: [number, number],
+    profile: Profile = 'car',
+    policy: LaneRoutePolicy = {},
+  ): RouteResult | null {
+    return this.routeDetailed(fromP, toP, profile, policy).route
+  }
+
+  routeDetailed(
+    fromP: [number, number],
+    toP: [number, number],
+    profile: Profile = 'car',
+    policy: LaneRoutePolicy = {},
+  ): RouteSearchResult {
     const sA = this.projectToDirectedLane(fromP, profile)
     const projectedGoals = this.projectToDirectedLanes(toP, profile)
-    if (!sA || projectedGoals.length === 0) return null
+    if (!sA || projectedGoals.length === 0) {
+      return { route: null, failure: 'no-projection' }
+    }
     const primaryGoal = projectedGoals[0]
     const goals = primaryGoal.edge.road.properties.oneway === 'no'
       && (primaryGoal.edge.road.properties.centerM || 0) <= 0
@@ -827,10 +860,14 @@ export class RoadGraph {
       ? projectedGoals
       : [primaryGoal]
     for (const goal of goals) {
-      const result = this.routeToProjection(sA, goal, toP, profile)
-      if (result) return result
+      const result = this.routeToProjection(sA, goal, toP, profile, policy, true)
+      if (result) return { route: result }
     }
-    return null
+    for (const goal of goals) {
+      const roadOnly = this.routeToProjection(sA, goal, toP, profile, policy, false)
+      if (roadOnly) return { route: null, failure: 'lane-direction' }
+    }
+    return { route: null, failure: 'unreachable' }
   }
 
   private routeToProjection(
@@ -838,6 +875,8 @@ export class RoadGraph {
     sB: DirectedLaneProjection,
     toP: [number, number],
     profile: Profile,
+    policy: LaneRoutePolicy,
+    enforceLaneDirection: boolean,
   ): RouteResult | null {
 
     // 同一條（順向）邊且順序正確 → 直接一段
@@ -912,6 +951,9 @@ export class RoadGraph {
             current.incoming, ge.part, current.node,
             this.roadMergeBarrierNodes.has(current.node),
           )) continue
+          if (enforceLaneDirection && !this.laneTransitionAllowed(
+            current.incoming, ge.part, current.node, profile, policy,
+          )) continue
           const total = g.get(currentKey)! + ge.part.timeS
           if (!bestGoal || total < bestGoal.cost) {
             bestGoal = { cost: total, stateKey: currentKey, part: ge.part }
@@ -923,6 +965,9 @@ export class RoadGraph {
         if (!transitionAllowed(
           current.incoming, e, current.node,
           this.roadMergeBarrierNodes.has(current.node),
+        )) continue
+        if (enforceLaneDirection && !this.laneTransitionAllowed(
+          current.incoming, e, current.node, profile, policy,
         )) continue
         const nextKey = stateKey(e.to, e)
         if (closed.has(nextKey)) continue
@@ -948,6 +993,63 @@ export class RoadGraph {
     }
     chain.unshift(startPart.get(currentKey)!)
     return this.assemble(chain.filter((e) => e.coords.length >= 2), profile)
+  }
+
+  private laneTransitionAllowed(
+    incoming: Edge,
+    outgoing: Edge,
+    nodeId: number,
+    profile: Profile,
+    policy: LaneRoutePolicy,
+  ): boolean {
+    const incomingCoords = incoming.coords
+    const incomingBearing = bearing(
+      incomingCoords[incomingCoords.length - 2],
+      incomingCoords[incomingCoords.length - 1],
+    )
+    const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
+    const classifiedKind = classifyTurn(angleDelta(incomingBearing, outgoingBearing))
+    const kind = classifiedKind === 'arrive' ? null : classifiedKind
+    const action: LaneAction = kind === 'left' || kind === 'slight-left'
+      ? 'left'
+      : kind === 'right' || kind === 'slight-right'
+        ? 'right'
+        : kind === 'uturn'
+          ? 'uturn'
+          : 'through'
+    const p = incoming.road.properties
+    const roadLaneCount = incoming.back ? p.lanesBackward : p.lanesForward
+    const osmMovements = incoming.back ? p.turnLanesB : p.turnLanes
+    const direction = incoming.back ? 'backward' : 'forward'
+    const guidance = resolveLaneGuidance(this.laneGuidanceIndex, {
+      wayId: p.osm_id,
+      intersectionNodeId: nodeId,
+      direction,
+      roadLaneCount,
+      osmMovements,
+    })
+    const incomingMarks = incoming.back ? p.laneMarksB : p.laneMarksF
+    const motoLeftTurnLane = profile === 'moto' && (incomingMarks?.some(
+      (mark) => mark?.text.trim() === '機慢車左轉專用道') ?? false)
+    const twoStage = profile === 'moto' && kind !== null
+      ? policy.isTwoStage?.({
+        nodeId,
+        fromBearing: incomingBearing,
+        kind,
+        motoLeftTurnLane,
+      }) ?? false
+      : false
+
+    return resolveLaneDecision({
+      action,
+      profile,
+      laneCount: guidance.laneCount,
+      laneMovements: guidance.laneMovements,
+      guidanceSource: guidance.source,
+      availableM: Number.POSITIVE_INFINITY,
+      speedKmh: Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30,
+      twoStage,
+    }).allowed
   }
 
   private assemble(edges: Edge[], profile: Profile): RouteResult | null {

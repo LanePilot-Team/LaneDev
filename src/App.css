@@ -118,6 +118,7 @@ body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); cursor: pointer;
 }
 .toolbar button.on { background: #1058b8; color: #fff; }
+.app[data-mode='pick'] .maplibregl-canvas { cursor: crosshair; }
 
 /* ── 地標搜尋 ── */
 .place-search {
@@ -176,6 +177,40 @@ body {
   padding: 8px 8px 4px; border-top: 1px solid #eef1f5;
   color: #99a3b1; font-size: 10px; text-align: center;
 }
+.place-route-choice {
+  margin-top: 8px; padding: 13px; border-radius: 14px; background: #fff;
+  box-shadow: 0 6px 24px rgba(23, 32, 48, 0.22);
+}
+.place-route-target { display: flex; align-items: center; gap: 10px; }
+.place-route-pin { color: #ef4444; font-size: 18px; flex: none; }
+.place-route-target > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.place-route-target small { color: #8a94a3; font-size: 10.5px; font-style: normal; }
+.place-route-target b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.place-route-target em {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #7a8494; font-size: 11.5px; font-style: normal;
+}
+.place-route-target > button {
+  border: 0; border-radius: 8px; padding: 6px 9px; background: #eef1f5;
+  color: #526070; font-size: 11.5px; cursor: pointer;
+}
+.place-route-choice > p {
+  margin: 13px 0 8px; color: #667386; font-size: 12px; font-weight: 700;
+}
+.place-route-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.place-route-methods button {
+  min-width: 0; min-height: 74px; border: 1px solid #dbe2ea; border-radius: 11px;
+  padding: 9px; display: grid; grid-template-columns: 25px 1fr; align-items: center;
+  column-gap: 5px; text-align: left; background: #f7f9fb; color: #667386;
+}
+.place-route-methods button > span { grid-row: 1 / 3; font-size: 23px; text-align: center; }
+.place-route-methods button b { min-width: 0; font-size: 12px; }
+.place-route-methods button small { font-size: 10.5px; color: #98a2b0; }
+.place-route-methods button:disabled { opacity: .58; }
+.place-route-methods button.active {
+  border-color: #76a7ef; background: #eef5ff; color: #1058b8; cursor: pointer;
+}
+.place-route-methods button.active small { color: #5378a9; }
 
 @media (max-width: 720px) {
   .place-search { width: calc(100vw - 24px); }
@@ -191,6 +226,7 @@ body {
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
 }
 .hint.warn { background: rgba(190, 50, 50, 0.92); }
+.route-pick-hint { background: rgba(16, 88, 184, 0.92); }
 .mini {
   border: none; border-radius: 999px; padding: 5px 12px;
   background: rgba(255, 255, 255, 0.18); color: #fff;
@@ -254,6 +290,9 @@ body {
 .sp-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
 .sp-label { font-weight: 700; min-width: 52px; }
 .sp-pos { flex: 1; color: #7a8494; font-size: 12px; }
+.sp-pos.named { min-width: 0; display: grid; gap: 2px; }
+.sp-pos.named b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #334155; font-size: 12.5px; }
+.sp-pos.named small { color: #8a94a3; font-size: 10.5px; }
 .sp-done { color: #22c55e; font-size: 12.5px; font-weight: 700; flex: none; }
 .sp-add {
   width: 100%; margin-top: 6px; padding: 8px;

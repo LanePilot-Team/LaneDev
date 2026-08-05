@@ -57,6 +57,73 @@ export const CATEGORY_LABELS: Record<PlaceCategory, string> = {
   other: '其他',
 }
 
+/** 所有可直接點擊的全地圖 POI 圖層。 */
+export const POI_LAYER_IDS = [
+  'poi-major',
+  'poi-area',
+  'poi-local',
+  'poi-detail',
+] as const
+
+const PLACE_CATEGORIES = new Set<PlaceCategory>(
+  Object.keys(CATEGORY_LABELS) as PlaceCategory[],
+)
+
+/**
+ * 將 MapLibre 查詢到的 POI feature 還原成導航可使用的精簡地標。
+ * 詳細地址等欄位會由 PlaceSearch 已載入的 places.json 依 id 補齊。
+ */
+export function placeFromPoiFeature(feature: {
+  id?: string | number
+  properties: Record<string, unknown> | null
+  geometry: { type: string; coordinates?: unknown }
+}): PlaceRecord | null {
+  const properties = feature.properties
+  const coordinates = feature.geometry.coordinates
+  if (
+    !properties || feature.geometry.type !== 'Point' ||
+    !Array.isArray(coordinates) || coordinates.length < 2 ||
+    typeof coordinates[0] !== 'number' || !Number.isFinite(coordinates[0]) ||
+    typeof coordinates[1] !== 'number' || !Number.isFinite(coordinates[1])
+  ) return null
+
+  const id = String(properties.id ?? feature.id ?? '')
+  const name = typeof properties.name === 'string' ? properties.name.trim() : ''
+  if (!id || !name) return null
+
+  const rawCategory = properties.category
+  const category = typeof rawCategory === 'string' && PLACE_CATEGORIES.has(rawCategory as PlaceCategory)
+    ? rawCategory as PlaceCategory
+    : 'other'
+  const sources = String(properties.sources ?? '')
+    .split('+')
+    .filter((source): source is PlaceSource => source === 'osm' || source === 'tdx')
+  const source = sources[0] ?? (id.includes('tdx') ? 'tdx' : 'osm')
+
+  return {
+    id,
+    source,
+    sourceId: id,
+    name,
+    aliases: [],
+    category,
+    position: [coordinates[0], coordinates[1]],
+    fetchedAt: '',
+    sourceRefs: (sources.length ? sources : [source]).map((item) => ({
+      source: item,
+      sourceId: id,
+      id: `${item}:${id}`,
+    })),
+    mergedCount: typeof properties.mergedCount === 'number' ? properties.mergedCount : undefined,
+    priority: typeof properties.priority === 'number' ? properties.priority : undefined,
+    tier: properties.tier === 'major' || properties.tier === 'area' ||
+      properties.tier === 'local' || properties.tier === 'detail'
+      ? properties.tier
+      : undefined,
+    icon: typeof properties.icon === 'string' ? properties.icon : undefined,
+  }
+}
+
 export function normalizePlaceText(value: string): string {
   return value
     .normalize('NFKC')

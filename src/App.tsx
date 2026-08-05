@@ -10,6 +10,11 @@ import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
 import { useDrive } from './nav/useDrive'
 import { DriveHUD } from './nav/DriveHUD'
 import { PlaceSearch } from './places/PlaceSearch'
+import {
+  POI_LAYER_IDS,
+  placeFromPoiFeature,
+  type PlaceRecord,
+} from './places/places'
 import { useEditor } from './edit/useEditor'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
@@ -24,6 +29,7 @@ export default function App() {
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m) }
 
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
+  const [selectedPlace, setSelectedPlace] = useState<PlaceRecord | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null) // 匯入地圖的檔案選擇器
   const [importMsg, setImportMsg] = useState<string | null>(null)
 
@@ -32,7 +38,16 @@ export default function App() {
     useMapCore(containerRef, (e, map) => {
       const m = modeRef.current
       const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
-      if (m === 'browse') setRoadInfo(queryRoadInfoAt(map, e.point))
+      if (m === 'browse') {
+        const placeFeature = map.queryRenderedFeatures(e.point, { layers: [...POI_LAYER_IDS] })[0]
+        const place = placeFeature ? placeFromPoiFeature(placeFeature) : null
+        if (place) {
+          showPlaceSelection(place)
+          return
+        }
+        clearPlaceSelection()
+        setRoadInfo(queryRoadInfoAt(map, e.point))
+      }
       else if (m === 'edit') editor.handleEditClick(map, e, p)
       else if (m === 'pick') planner.handlePickClick(p)
     })
@@ -54,8 +69,36 @@ export default function App() {
   })
   planner.stopAllDriversRef.current = stopAllDrivers
 
+  function showPlaceSelection(place: PlaceRecord) {
+    const map = core.mapRef.current
+    if (!map?.getSource('placeSelection')) return
+    core.src('placeSelection').setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: {
+          id: place.id,
+          name: place.name,
+          source: place.source,
+          category: place.category,
+        },
+        geometry: { type: 'Point', coordinates: place.position },
+      }],
+    } as never)
+    setSelectedPlace(place)
+    setRoadInfo(null)
+  }
+
+  function clearPlaceSelection() {
+    if (core.mapRef.current?.getSource('placeSelection')) {
+      core.src('placeSelection').setData({ type: 'FeatureCollection', features: [] } as never)
+    }
+    setSelectedPlace(null)
+  }
+
   function endDrive() {
     planner.clearAllRoute() // 內部已呼叫 stopAllDrivers()
+    clearPlaceSelection()
     setMode('browse')
     core.mapRef.current?.setLayoutProperty('oneway-arrow', 'visibility', 'visible')
     core.mapRef.current?.setLayoutProperty('road-label', 'visibility', 'visible')
@@ -65,6 +108,7 @@ export default function App() {
   function switchMode(m: Mode) {
     if (modeRef.current === 'drive') endDrive()
     if (m !== 'pick') planner.clearAllRoute()
+    if (m !== 'browse' || modeRef.current === 'pick') clearPlaceSelection()
     setRoadInfo(null)
     editor.closeAll()
     core.refreshZones()
@@ -74,8 +118,25 @@ export default function App() {
 
   function startPick(demo: boolean) {
     planner.clearAllRoute()
+    clearPlaceSelection()
     setMode('pick')
     planner.startPick(demo)
+  }
+
+  function startPlacePick(place: PlaceRecord) {
+    setRoadInfo(null)
+    editor.closeAll()
+    core.refreshZones()
+    core.refreshVehicles()
+    setMode('pick')
+    planner.startPlacePick({ id: place.id, name: place.name, position: place.position })
+    core.mapRef.current?.flyTo({
+      center: place.position,
+      zoom: 13.6,
+      pitch: 0,
+      bearing: 0,
+      essential: true,
+    })
   }
 
   function flyToDemoArea() {
@@ -95,12 +156,21 @@ export default function App() {
   }
 
   return (
-    <div className="app" data-zone-tick={zoneTick}>
+    <div className="app" data-zone-tick={zoneTick} data-mode={mode}>
       <div ref={containerRef} className="map" />
 
       {loading && <div className="loading">載入楠梓＋左營路網中…</div>}
 
-      {mode !== 'drive' && <PlaceSearch core={core} mapLoading={loading} />}
+      {mode === 'browse' && (
+        <PlaceSearch
+          core={core}
+          mapLoading={loading}
+          selected={selectedPlace}
+          onSelect={showPlaceSelection}
+          onClear={clearPlaceSelection}
+          onChooseStart={startPlacePick}
+        />
+      )}
 
       {/* ── 導航 HUD ── */}
       {mode === 'drive' && (
@@ -155,6 +225,13 @@ export default function App() {
       )}
 
       {/* ── 側面板：路線規劃 ── */}
+      {mode === 'pick' && planner.activeStop !== null &&
+        planner.stops.some((stop) => stop.placeId) && (
+        <div className="hint route-pick-hint">
+          <span aria-hidden="true">◎</span> 點選地圖上的起點
+          <button className="mini" onClick={() => switchMode('browse')}>取消</button>
+        </div>
+      )}
       {mode === 'pick' && (
         <PlanPanel planner={planner} onClose={() => switchMode('browse')}
           startDrive={startDrive} startGpsNav={startGpsNav} />

@@ -48,6 +48,12 @@ function lineLenM(cs: [number, number][]): number {
 }
 
 const PAIR_MAX_M = 30 // 對向線間距上限（藍田路實測 ~8-12m）
+/** 夾心防呆：中線取樣間距、判定「壓在別條路上」的距離、要中止所需的覆蓋率。
+ * 真正的成對單行中線是空的，只有橫向路口會短暫掠過（實測 ≤14%）；被夾住的
+ * 主線則是全長貼著（清豐路 100%、德民新橋 100%）。 */
+const SANDWICH_STEP_M = 10
+const SANDWICH_CLEAR_M = 3.5
+const SANDWICH_COVER_MIN = 0.6
 
 /** 被合併掉（drop 側）way 的重映射：外部標註（LanePilot）還掛在舊 way id 上，
  * 匯入時用這張表轉到合併後的 keep way。
@@ -94,23 +100,139 @@ export interface CoupletSection {
   centerFromGap?: { roadW: number; min: number; max: number }
 }
 
+export interface SandwichReport {
+  /** 中線取樣點數（每 SANDWICH_STEP_M 一點） */
+  samples: number
+  /** 落在別條路 SANDWICH_CLEAR_M 內的取樣比例 */
+  coverage: number
+  /** 舊規則：某條路獨佔了首/中/末 3 點中的 ≥2 點 */
+  legacyHit: RoadFeature | null
+  /** 依佔用點數排序的「壓在中線上的路」 */
+  blame: { road: RoadFeature; hits: number }[]
+  sandwiched: boolean
+}
+
 /**
- * 合併 scope 內的成對單行 way。section 是合併後的預設斷面
- * （藍田路：2+2+中央 3.2m 偏心帶；大學南路：2+2+機車道+實體島），
- * 個別 way 可再用 journal 覆寫。
+ * 夾心偵測：把 keep/drop 兩線的中點連成中線，量它有多長被「別條路」佔著。
  *
- * remapOut：node id 重映射收集器（舊 id → 新 id）。合併會把 drop 側路口 node
- * 併到 keep 側既有 node、去重退化段——journal 區塊鍵/偏心道鍵/待轉區都存 node id，
- * 呼叫端要用這張表遷移既有標註（enhancements.remapJournalNodes）。
+ * 成對單行的中線是空的——只有橫向路口會短暫掠過（全圖實測 ≤29%）；被夾住的
+ * 主線則是全長貼著（清豐路 100%、德民新橋機車道 94%、新莊一路 94%）。
+ *
+ * 舊版只取首/中/末三點、且要求**同一條 way** 命中 ≥2 點，被夾的路一旦在 OSM 上
+ * 分成多段就整個失效：清豐路的兩條側車道（相距 ~29m）夾著 lanes=4 的主線，中線
+ * 全長壓在主線上 0.1～0.6m，但三個樣本分別落在 way/799032592、1446434013、
+ * 1464614129 三條不同的 way 上，每條都只中 1 點 → 防呆放行，整條路被畫成兩份。
+ * 現在改看整體覆蓋率；舊規則保留為第二個觸發條件，因為它在中線很短時比覆蓋率
+ * 靈敏（鼎新橋只有 4 個取樣點，覆蓋 50% 達不到門檻，但天祥二路確實壓在中線上）。
  */
-export function mergeCouplets(
+export function sandwichReport(
+  roads: RoadFeature[], keep: RoadFeature[], drop: RoadFeature[],
+): SandwichReport | null {
+  const scopeSet = new Set<RoadFeature>([...keep, ...drop])
+  const midlines: [number, number][][] = []
+  for (const w of keep) {
+    const mids: [number, number][] = []
+    for (const p of w.geometry.coordinates as [number, number][]) {
+      let best: { d: number; pos: [number, number] } | null = null
+      for (const o of drop) {
+        const hit = projectToLine(p, o.geometry.coordinates as [number, number][])
+        if (hit.d < PAIR_MAX_M && (!best || hit.d < best.d)) best = hit
+      }
+      if (best) mids.push([(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2])
+    }
+    if (mids.length >= 3) midlines.push(mids)
+  }
+  if (!midlines.length) return null
+
+  // 以固定間距沿中線取樣，覆蓋率才是「長度比例」而不是「頂點比例」——路口附近
+  // 頂點密集，用頂點數會讓一個路口的權重蓋過整段直線。
+  const samples: [number, number][] = []
+  for (const mids of midlines) {
+    for (let i = 0; i < mids.length - 1; i++) {
+      const a = mids[i], b = mids[i + 1]
+      const span = Math.hypot((b[0] - a[0]) * KX, (b[1] - a[1]) * KY)
+      const steps = Math.max(1, Math.round(span / SANDWICH_STEP_M))
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps
+        samples.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
+      }
+    }
+    samples.push(mids[mids.length - 1])
+  }
+  // 粗篩：只留頂點落在中線包絡內的候選路，否則每個樣本都要掃全圖
+  const box = samples.reduce((acc, [x, y]) => ({
+    minX: Math.min(acc.minX, x), maxX: Math.max(acc.maxX, x),
+    minY: Math.min(acc.minY, y), maxY: Math.max(acc.maxY, y),
+  }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity })
+  const padX = 60 / KX, padY = 60 / KY
+  const candidates = roads.filter((r) => {
+    if (scopeSet.has(r)) return false
+    const rc = r.geometry.coordinates as [number, number][]
+    if (rc.length < 2 || lineLenM(rc) < 30) return false
+    return rc.some(([x, y]) => x >= box.minX - padX && x <= box.maxX + padX
+      && y >= box.minY - padY && y <= box.maxY + padY)
+  })
+  const nearest = (s: [number, number]) => {
+    let hit: RoadFeature | null = null
+    let bestD = SANDWICH_CLEAR_M
+    for (const r of candidates) {
+      const d = projectToLine(s, r.geometry.coordinates as [number, number][]).d
+      if (d < bestD) { bestD = d; hit = r }
+    }
+    return hit
+  }
+  const hits = new Map<RoadFeature, number>()
+  let covered = 0
+  for (const s of samples) {
+    const hit = nearest(s)
+    if (!hit) continue
+    covered++
+    hits.set(hit, (hits.get(hit) ?? 0) + 1)
+  }
+  const blame = [...hits.entries()]
+    .map(([road, n]) => ({ road, hits: n }))
+    .sort((a, b) => b.hits - a.hits)
+
+  // 舊規則：最長中線的首/中/末 3 點，同一條 way 命中 ≥2 點
+  const longestMid = midlines.reduce((a, b) => (b.length > a.length ? b : a))
+  const legacy = [longestMid[0], longestMid[Math.floor(longestMid.length / 2)],
+    longestMid[longestMid.length - 1]]
+  const legacyCount = new Map<RoadFeature, number>()
+  for (const s of legacy) {
+    const hit = nearest(s)
+    if (hit) legacyCount.set(hit, (legacyCount.get(hit) ?? 0) + 1)
+  }
+  const legacyHit = [...legacyCount.entries()].find(([, n]) => n >= 2)?.[0] ?? null
+
+  const coverage = covered / samples.length
+  return {
+    samples: samples.length,
+    coverage,
+    legacyHit,
+    blame,
+    sandwiched: coverage >= SANDWICH_COVER_MIN || legacyHit !== null,
+  }
+}
+
+/** mergeCouplets 的成對分組結果——稽核要重現同一套判斷，不能各算各的。 */
+export interface CoupletGrouping {
+  keep: RoadFeature[]
+  drop: RoadFeature[]
+  /** 非 null 時代表「同向並排」防呆已中止合併 */
+  sameDirParallelPair: [number, number] | null
+}
+
+/**
+ * 把 scope 內的同名 oneway way 分成 keep／drop 兩組（步驟 1～1.5）。
+ * mergeCouplets 與 couplet_audit 共用，避免稽核自行複製一份會漂移的分組邏輯。
+ * wayRemapOut 有給時，通過落單保護的 drop way 會登記進去（合併的副作用）。
+ */
+export function coupletGrouping(
   roads: RoadFeature[],
   scopeNames: Set<string>,
-  section: CoupletSection = { lanesF: 2, lanesB: 2, centerM: 3.2 },
-  remapOut?: Map<number, number>,
-  wayRemapOut?: Map<number, DropRemap>,
   include?: (r: RoadFeature) => boolean,
-): RoadFeature[] {
+  wayRemapOut?: Map<number, DropRemap>,
+): CoupletGrouping | null {
   const scope = roads.filter((r) => {
     const p = r.properties
     // 圓環弧段常帶著路名（中央路圓環 = 4 條 oneway 弧）：對切合併會把圓環壓扁，
@@ -122,7 +244,7 @@ export function mergeCouplets(
     return scopeNames.has(p.name ?? '') && p.oneway === 'yes'
       && r.geometry.coordinates.length >= 2
   })
-  if (scope.length < 2) return roads
+  if (scope.length < 2) return null
 
   // 1) 依行進方位角分兩組（相對最長 way 的方向 ±90°）——鏈有缺口也不會混組；
   //    整條路總轉彎 < 90° 時成立（藍田路 ~61°→90°，OK）
@@ -132,24 +254,24 @@ export function mergeCouplets(
   const ref = wayBearing(longest)
   const g0 = scope.filter((r) => Math.abs(angleDelta(ref, wayBearing(r))) < 90)
   const g1 = scope.filter((r) => Math.abs(angleDelta(ref, wayBearing(r))) >= 90)
-  if (g0.length === 0 || g1.length === 0) return roads
+  if (g0.length === 0 || g1.length === 0) return null
   // 高雄大學路型防呆：同向兩條長 way 平行貼近 = 多線並排（主線＋慢車道/機車道
   // 各自成線），兩線 couplet 模型硬併會產生重疊路體，整條路放棄合併
-  const par = sameDirParallel(g0) ?? sameDirParallel(g1)
-  if (par) {
-    console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：`
-      + `way/${par[0]} 與 way/${par[1]} 同向並排（多線道路，需顯式配對處理）`)
-    return roads
-  }
-  const lengthOf = (rs: RoadFeature[]) =>
+  const sameDirParallelPair = sameDirParallel(g0) ?? sameDirParallel(g1)
+  const vertexCount = (rs: RoadFeature[]) =>
     rs.reduce((s, r) => s + (r.geometry.coordinates as [number, number][]).length, 0)
-  const keep = lengthOf(g0) >= lengthOf(g1) ? g0 : g1
-  let drop = keep === g0 ? g1 : g0
+  const keep = vertexCount(g0) >= vertexCount(g1) ? g0 : g1
+  if (sameDirParallelPair) {
+    return { keep, drop: keep === g0 ? g1 : g0, sameDirParallelPair }
+  }
 
   // 1.5) 落單保護：drop 側 way 的頂點過半沒貼到 keep 側（同名的獨立支段，
   // 例：加昌路往南的單行支線——只有路口那端碰到主軸）→ 不是成對單行的一半，
   // 原樣保留不刪。有配對的才進 wayRemapOut（舊 way id → keep way，匯入標註用）。
-  drop = drop.filter((w) => {
+  // ⚠ 覆蓋率只看距離，投影可以夾在 keep 的端點上：首尾相接的續行段整條都在
+  // 對方起點 PAIR_MAX_M 內 → 覆蓋率 100% 被誤判成對向線。轉彎超過 90° 的走廊
+  // 會踩到（見 pipeline.NO_COUPLET_ROADS），泛用判準要改請先量全圖 wayRemap 差異。
+  const drop = (keep === g0 ? g1 : g0).filter((w) => {
     const keepHits = new Set<number>()
     let near = 0
     const cs = w.geometry.coordinates as [number, number][]
@@ -168,6 +290,36 @@ export function mergeCouplets(
       { keepIds: [...keepHits], dropReversed: !!w.properties.reversed })
     return true
   })
+  return { keep, drop, sameDirParallelPair: null }
+}
+
+/**
+ * 合併 scope 內的成對單行 way。section 是合併後的預設斷面
+ * （藍田路：2+2+中央 3.2m 偏心帶；大學南路：2+2+機車道+實體島），
+ * 個別 way 可再用 journal 覆寫。
+ *
+ * remapOut：node id 重映射收集器（舊 id → 新 id）。合併會把 drop 側路口 node
+ * 併到 keep 側既有 node、去重退化段——journal 區塊鍵/偏心道鍵/待轉區都存 node id，
+ * 呼叫端要用這張表遷移既有標註（enhancements.remapJournalNodes）。
+ */
+export function mergeCouplets(
+  roads: RoadFeature[],
+  scopeNames: Set<string>,
+  section: CoupletSection = { lanesF: 2, lanesB: 2, centerM: 3.2 },
+  remapOut?: Map<number, number>,
+  wayRemapOut?: Map<number, DropRemap>,
+  include?: (r: RoadFeature) => boolean,
+): RoadFeature[] {
+  // 1) 分組＋同向並排防呆＋落單保護（見 coupletGrouping）
+  const grouping = coupletGrouping(roads, scopeNames, include, wayRemapOut)
+  if (!grouping) return roads
+  if (grouping.sameDirParallelPair) {
+    const [a, b] = grouping.sameDirParallelPair
+    console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：`
+      + `way/${a} 與 way/${b} 同向並排（多線道路，需顯式配對處理）`)
+    return roads
+  }
+  const { keep, drop } = grouping
   if (drop.length === 0) return roads
   const dropSet = new Set(drop)
 
@@ -195,41 +347,15 @@ export function mergeCouplets(
     })
   }
 
-  // 1.6) 夾心防呆：合併後的中線若壓在「別條路」上（例：德民新橋機車道成對
-  // 分列汽車橋兩側，中線正好落在汽車橋正中），代表這對線夾著別的路，
-  // 不是一對車道——整條路放棄合併。取最長且有配對的 keep way 抽樣中點檢查。
-  const byLen = [...keep].sort((a, b) =>
-    lineLenM(b.geometry.coordinates as [number, number][])
-    - lineLenM(a.geometry.coordinates as [number, number][]))
-  const scopeSet = new Set<RoadFeature>([...keep, ...drop])
-  for (const w of byLen) {
-    const cs = w.geometry.coordinates as [number, number][]
-    const mids: [number, number][] = []
-    for (const p of cs) {
-      let best: { d: number; pos: [number, number] } | null = null
-      for (const o of drop) {
-        const hit = projectToLine(p, o.geometry.coordinates as [number, number][])
-        if (hit.d < PAIR_MAX_M && (!best || hit.d < best.d)) best = hit
-      }
-      if (best) mids.push([(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2])
-    }
-    if (mids.length < 3) continue // 這條配對不足，換下一條長的
-    const samples = [mids[0], mids[Math.floor(mids.length / 2)], mids[mids.length - 1]]
-    for (const r of roads) {
-      if (scopeSet.has(r)) continue
-      const rc = r.geometry.coordinates as [number, number][]
-      if (rc.length < 2 || lineLenM(rc) < 30) continue
-      // 粗篩：離中點樣本太遠的路直接跳過
-      if (Math.hypot((rc[0][0] - samples[1][0]) * KX, (rc[0][1] - samples[1][1]) * KY) > 2000) continue
-      let near = 0
-      for (const s of samples) if (projectToLine(s, rc).d < 3.5) near++
-      if (near >= 2) {
-        console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：中線壓在 `
-          + `way/${r.properties.osm_id}（${r.properties.name ?? '無名'}）上——成對線夾著別條路`)
-        return roads
-      }
-    }
-    break // 只檢查一條代表 way
+  // 1.6) 夾心防呆（見 sandwichReport）：這對線若夾著別條路就整路放棄合併
+  const sandwich = sandwichReport(roads, keep, drop)
+  if (sandwich?.sandwiched) {
+    const worst = sandwich.blame.slice(0, 3)
+      .map(({ road }) => `way/${road.properties.osm_id}（${road.properties.name ?? '無名'}）`)
+    console.warn(`couplet 合併中止（${[...scopeNames].join('/')}）：中線 `
+      + `${(100 * sandwich.coverage).toFixed(0)}%（${sandwich.samples} 點）壓在 `
+      + `${worst.join('、')} 上——成對線夾著別條路`)
+    return roads
   }
 
   // 2) keep 組頂點移到中點（有對向投影才移），記錄 node 新座標；

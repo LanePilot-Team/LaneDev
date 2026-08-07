@@ -195,9 +195,36 @@ export function buildStyle(): StyleSpecification {
       // ── 車道級路面 ──
       // 高架路段（elevated）不畫地面路體——3D 橋面（elevated3d）全長取代，
       // 平面「影子」會造成雙重路體（2026-07-18 使用者回饋移除）
+
+      // ── 地下道／隧道（roads.isTunnel）──
+      // 3D 下沉不做；改用疊放順序表達立體關係：整組畫在地面路體「之前」，
+      // 交會處自然被上面那條蓋掉（紙本地圖的標準隧道畫法）。
+      // 沒被蓋到的路段靠虛線描邊分辨——實線邊 = 地面、虛線邊 = 在地下。
+      {
+        id: 'tunnel-casing', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
+        filter: ['all', ['==', ['get', 'surfaceKind'], 'casing'], ['get', 'underground']],
+        paint: { 'fill-color': C.casing },
+      },
+      {
+        id: 'tunnel-surface', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
+        filter: ['all', ['==', ['get', 'surfaceKind'], 'surface'], ['get', 'underground']],
+        paint: { 'fill-color': C.surface },
+      },
+      {
+        // 隧道段的車道線與側緣：與路面同一層組，才不會標線浮在上面那條路上。
+        // 側緣（tunnel-edge）是 buildDividers 用中心線平移畫的兩條側線——
+        // 不是把路面多邊形描邊，那樣兩端的 buffer 圓頭會變成一道圓弧路緣。
+        id: 'tunnel-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
+        filter: ['get', 'underground'],
+        paint: {
+          'fill-color': ['match', ['get', 'kind'],
+            'center', C.centerLine, 'center-double', C.centerLine, C.laneLine],
+          'fill-opacity': ['match', ['get', 'kind'], 'tunnel-edge', 0.55, 1],
+        },
+      },
       {
         id: 'road-casing', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
-        filter: ['==', ['get', 'surfaceKind'], 'casing'],
+        filter: ['all', ['==', ['get', 'surfaceKind'], 'casing'], ['!', ['get', 'underground']]],
         paint: { 'fill-color': C.casing },
       },
       // ── 偏心左轉道（Enhancement Layer）──
@@ -209,7 +236,7 @@ export function buildStyle(): StyleSpecification {
       },
       {
         id: 'road-surface', type: 'fill', source: 'roadSurfaces', minzoom: LANE_ZOOM,
-        filter: ['==', ['get', 'surfaceKind'], 'surface'],
+        filter: ['all', ['==', ['get', 'surfaceKind'], 'surface'], ['!', ['get', 'underground']]],
         paint: { 'fill-color': C.surface },
       },
       {
@@ -264,25 +291,25 @@ export function buildStyle(): StyleSpecification {
       // ── 車道線（載入時用 turf lineOffset 生成）──
       {
         id: 'lane-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
-        filter: ['==', ['get', 'kind'], 'lane'],
+        filter: ['all', ['==', ['get', 'kind'], 'lane'], ['!', ['get', 'underground']]],
         paint: {
           'fill-color': C.laneLine,
         },
       },
       {
         id: 'center-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
-        filter: ['==', ['get', 'kind'], 'center'],
+        filter: ['all', ['==', ['get', 'kind'], 'center'], ['!', ['get', 'underground']]],
         paint: { 'fill-color': C.centerLine },
       },
       {
         id: 'center-divider-double', type: 'fill', source: 'dividers', minzoom: 15.5,
-        filter: ['==', ['get', 'kind'], 'center-double'],
+        filter: ['all', ['==', ['get', 'kind'], 'center-double'], ['!', ['get', 'underground']]],
         paint: { 'fill-color': C.centerLine },
       },
       {
         // 機車道分隔：白實線
         id: 'moto-divider', type: 'fill', source: 'dividers', minzoom: 15.5,
-        filter: ['==', ['get', 'kind'], 'moto'],
+        filter: ['all', ['==', ['get', 'kind'], 'moto'], ['!', ['get', 'underground']]],
         paint: { 'fill-color': C.laneLine },
       },
       // 編輯模式即時預覽：只重算目前選取的道路區塊。
@@ -526,7 +553,8 @@ export function buildStyle(): StyleSpecification {
         id: 'road-label', type: 'symbol', source: 'roads',
         minzoom: 14.5, maxzoom: LANE_ZOOM + 1,
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
-          ['!=', ['get', 'hideIntersectionInfo'], true]],
+          ['!=', ['get', 'hideIntersectionInfo'], true],
+          ['!=', ['get', 'hideRoadLabel'], true]],
         layout: {
           'symbol-placement': 'line',
           'text-field': ['get', 'name'],
@@ -545,7 +573,8 @@ export function buildStyle(): StyleSpecification {
         id: 'road-label-lane', type: 'symbol', source: 'roadlabels',
         minzoom: LANE_ZOOM + 1,
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
-          ['!=', ['get', 'hideIntersectionInfo'], true]],
+          ['!=', ['get', 'hideIntersectionInfo'], true],
+          ['!=', ['get', 'hideRoadLabel'], true]],
         layout: {
           'symbol-placement': 'line',
           'text-field': ['get', 'name'],

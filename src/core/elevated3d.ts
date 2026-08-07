@@ -35,6 +35,14 @@ const MEDIAN_FADE_M = 2
 const MEDIAN_CLEAR_M = 1.5
 /** 中央分隔護欄的半寬（兩向各畫一半，於中線接合） */
 const MEDIAN_RAIL_HALF = 0.15
+/** 疊合判定的淨距門檻（公尺，量到鄰接橋面**邊緣**；負值 = 已在對方路面內）。
+ * 三者分開調：側裙板只要沒插進對方路面就可以留（貼齊時仍是外緣）；護欄與標線
+ * 「不能畫在任何一方的路面上」，所以要再往外留一段淨距才畫。 */
+const EDGE_BURY_TOL_M = 0
+/** 護欄：與鄰接橋面邊緣的淨距小於此就不建（含護欄自身厚度與一點視覺餘裕） */
+const RAIL_CLEAR_M = 0.5
+/** 標線：疊合區不畫線，同樣留一點餘裕免得線頭正好壓在接縫上 */
+const MARK_CLEAR_M = 0.4
 
 const KX = 111320 * COS_LAT
 const KY = 110540
@@ -68,7 +76,7 @@ class TriBuf {
 /** 斷面：中心點場景座標 + 行進右向單位向量 + 高度 + 橫向縮放（接地收窄） */
 interface Section {
   x: number; z: number; rx: number; rz: number; h: number; r: number
-  /** 斷面中心的經緯度（橋面高度剖面用；場景座標 x/z 已無法反推貼邊推移後的位置） */
+  /** 斷面中心的經緯度（橋面高度剖面用；場景座標是 Mercator 公尺，不另反推） */
   lng: number; lat: number
 }
 
@@ -106,17 +114,6 @@ function projToPolyArc(p: [number, number], poly: [number, number][]): PolyProj 
   return best
 }
 
-/** 折線靠某端 ~100m 的片段（匝道裁切的 through 邊緣導引線） */
-function nearEnd(cs: [number, number][], atStart: boolean): [number, number][] {
-  const ordered = atStart ? cs : [...cs].reverse()
-  const out: [number, number][] = [ordered[0]]
-  let acc = 0
-  for (let i = 1; i < ordered.length && acc < 100; i++) {
-    acc += Math.hypot((ordered[i][0] - ordered[i - 1][0]) * KX, (ordered[i][1] - ordered[i - 1][1]) * KY)
-    out.push(ordered[i])
-  }
-  return out
-}
 
 export class ElevatedLayer {
   id = 'elevated-decks'
@@ -196,9 +193,9 @@ export class ElevatedLayer {
 
   /**
    * 該路段在 pos 處的「橋面實際高度」（公尺）；null = 這條路沒有建橋面。
-   * 用 deck mesh 的同一組斷面取樣內插——匝道的高度域在貼邊滑行段有重映射
-   * （hAt 把 [dA,dB] 拉伸到整條 way），直接問 ElevationModel 會低估好幾公尺，
-   * 路線帶就沉到橋面下、被深度測試擋掉（畫面上藍線整段消失）。
+   * 用 deck mesh 的同一組斷面取樣內插——接地端裁切（DECK_END_TRIM_ENDS）把接地點
+   * 往內移，取樣點之間也是線性內插，直接問 ElevationModel 會有落差；路線帶只要
+   * 沉到橋面下就被深度測試擋掉（畫面上藍線整段消失）。
    */
   deckHeightAt(road: RoadFeature, pos: [number, number]): number | null {
     // 先認物件；認不到就退回同 way id 的所有剖面，取投影最近的那條
@@ -295,9 +292,80 @@ export class ElevatedLayer {
     const whiteBuf = new TriBuf() // 白標線（邊線/車道虛線）
     const yellowBuf = new TriBuf() // 黃標線（雙向分向線）
 
-    // ── 匝道併入節點分析 ──
-    // through = 同名（無名用 way id）在節點「一進一出」的直行主線；其餘 = joiner 匝道。
-    // joiner 橋面裁到 through 邊緣（不再插到主線中心）＋ through 側護欄在併入口開缺。
+    interface DeckRef { road: RoadFeature; cs: [number, number][]; half: number }
+    /** 匯流/分岔（共用節點且三線以上）的鄰接橋面——標線的疊合判定用：
+     * 使用者要的是「交接的地方不畫線」，不是全圖只要疊到就不畫。 */
+    const deckNeighbours = new Map<RoadFeature, DeckRef[]>()
+    /** 路面真的重疊到的橋面（不限共用節點）——側裙板與護欄的判定用：
+     * 「柵欄不要畫到任何一方的路面上」，並排高架（高楠陸橋 vs 旁邊的機車高架、
+     * 德民新橋 vs 兩側機車道）沒有共用節點，但護欄一樣會站到對方路面上。 */
+    const deckOverlaps = new Map<RoadFeature, DeckRef[]>()
+    /** way id → 該 way 的所有高架區塊 */
+    const blocksOfWay = new Map<number, DeckRef[]>()
+    for (const { road } of model.entries()) {
+      const id = road.properties.osm_id
+      if (!blocksOfWay.has(id)) blocksOfWay.set(id, [])
+      blocksOfWay.get(id)!.push({
+        road, cs: road.geometry.coordinates as [number, number][],
+        half: road.properties.width_m / 2,
+      })
+    }
+    {
+      const refs: (DeckRef & { box: [number, number, number, number] })[] = []
+      for (const { road } of model.entries()) {
+        const cs = road.geometry.coordinates as [number, number][]
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+        for (const c of cs) {
+          x0 = Math.min(x0, c[0]); y0 = Math.min(y0, c[1])
+          x1 = Math.max(x1, c[0]); y1 = Math.max(y1, c[1])
+        }
+        refs.push({ road, cs, half: road.properties.width_m / 2, box: [x0, y0, x1, y1] })
+      }
+      for (let i = 0; i < refs.length; i++) {
+        for (let j = i + 1; j < refs.length; j++) {
+          const a = refs[i], b = refs[j]
+          // 兩條中心線要接近到「路面會碰到」才算；bbox 先粗篩
+          const reach = a.half + b.half + 1
+          const padX = reach / KX, padY = reach / KY
+          if (a.box[0] - padX > b.box[2] || a.box[2] + padX < b.box[0]
+            || a.box[1] - padY > b.box[3] || a.box[3] + padY < b.box[1]) continue
+          // 首尾相接的續行段（同一條路的前後區塊、或路口的兩條臂）在節點附近
+          // 本來就會碰到，那不算「並排疊合」——只算離共用節點 ≥12m 之外、
+          // 而且持續並排 ≥12m 的部分，否則整條續接路的護欄會被消掉。
+          const shared: [number, number][] = []
+          const bn = new Set(b.road.properties.nodes)
+          a.road.properties.nodes.forEach((n, k) => {
+            if (bn.has(n)) shared.push(a.cs[k] ?? a.cs[0])
+          })
+          const farFromJoint = (p: [number, number]) =>
+            shared.every((s) => Math.hypot((p[0] - s[0]) * KX, (p[1] - s[1]) * KY) > 12)
+          const sideBySide = (
+            self: DeckRef, other: DeckRef, keep: (p: [number, number]) => boolean,
+          ) => {
+            let run = 0
+            const cum = cumulative(self.cs)
+            for (let d = 0; d <= cum[cum.length - 1]; d += 4) {
+              const { pos } = pointAlong(self.cs, cum, d)
+              if (keep(pos) && projToPolyArc(pos, other.cs).lat <= reach) run += 4
+            }
+            return run
+          }
+          if (sideBySide(a, b, farFromJoint) < 4 && sideBySide(b, a, farFromJoint) < 4) continue
+          if (!deckOverlaps.has(a.road)) deckOverlaps.set(a.road, [])
+          if (!deckOverlaps.has(b.road)) deckOverlaps.set(b.road, [])
+          deckOverlaps.get(a.road)!.push(b)
+          deckOverlaps.get(b.road)!.push(a)
+        }
+      }
+    }
+
+    // ── 匝道匯流／分岔節點分析 ──
+    // 作法比照平面（roads.buildRoadSurfaces + buildDividers）：
+    //   路面**各走各的中心線、各用各的寬度**，重疊處自然疊成一塊（同一種材質同色，
+    //   法線都朝上，共面重疊不會看出接縫）；標線與護欄才在路口收邊。
+    // 舊版反過來——把匯流的匝道推到對方邊緣「貼著滑行」、把 Y 形的兩臂搬到主幹
+    // 左右半邊，橋面因此離開自己的中心線最多 9.65m，畫出來就是扭曲、沒接好。
+    // 那些機制（trims/flushes、yArmAlign/openYEnds、railGaps）已整批移除。
     interface EndRef { road: RoadFeature; cs: [number, number][]; w: number; name: string; atStart: boolean }
     const byNode = new Map<number, EndRef[]>()
     for (const { road } of model.entries()) {
@@ -309,29 +377,12 @@ export class ElevatedLayer {
         byNode.get(n)!.push({ road, cs, w: p.width_m, name, atStart })
       }
     }
-    /** 匝道貼合：atStart 端（或 end 端）自切點起「貼著 through 邊緣」滑行到節點側方。
-     * guide = 匝道實際貼著的那條導引線（單一條，避免兩條之間跳動）；
-     * gDir = 該導引線段方向相對 through 行向的正負（導引線一律從節點往外排）；
-     * side = 匝道在 through 行向的哪一側；jHalf = 匝道半寬（貼邊目標距 = wHalf+jHalf） */
-    const trims = new Map<RoadFeature, {
-      atStart: boolean; guide: [number, number][]; gDir: 1 | -1
-      wHalf: number; jHalf: number; side: 1 | -1
-    }[]>()
-    /** 護欄缺口：自該區塊「節點端」起算的弧長區間 [d0, d1] */
-    const railGaps = new Map<RoadFeature, { side: 1 | -1; atStart: boolean; d0: number; d1: number }[]>()
     /** 寬度融接：through 兩側寬度不同（岔口一分為二、車道數變化）時，
      * 窄側在節點端放寬到寬側的半寬、沿 ~30m 收回自身寬——不做會是寬度階梯硬接 */
     const widens = new Map<RoadFeature, { atStart: boolean; fromHalf: number }[]>()
-    /** True Y junction endpoints stay open so their three deck strips form one continuous deck. */
-    const openYEnds = new Map<RoadFeature, Set<boolean>>()
-    /** Align each Y arm to the left/right half of the common stem at the fork. */
-    const yArmAlign = new Map<RoadFeature, {
-      atStart: boolean
-      shiftE: number
-      shiftN: number
-      tipE: number
-      tipN: number
-    }[]>()
+    /** 路口收邊：該端是三線以上相接的節點時，標線自節點退縮這麼多公尺
+     * （比照 roads.buildDividers 的「交叉路最大半寬 + 1.2m」）。 */
+    const markSetback = new Map<RoadFeature, { atStart: boolean; m: number }[]>()
     const outwardDir = (r: EndRef): [number, number] => {
       const cs = r.atStart ? r.cs : [...r.cs].reverse()
       const probe = cs[Math.min(cs.length - 1, 1)]
@@ -344,132 +395,45 @@ export class ElevatedLayer {
       (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1]))) * 180) / Math.PI
     for (const refs of byNode.values()) {
       if (refs.length < 2) continue
-      // A genuine elevated Y has one stem opposing two arms.  Treating it as a
-      // through road plus a side joiner creates the asymmetric sliver seen at
-      // motorway forks.  Split the stem width equally between both arms instead.
-      if (refs.length >= 3) {
-        const dirs = refs.map(outwardDir)
-        let stem = -1
-        let armA = -1, armB = -1
-        let best = Infinity
-        for (let i = 0; i < refs.length; i++) {
-          for (let j = 0; j < refs.length; j++) {
-            if (j === i) continue
-            for (let k = j + 1; k < refs.length; k++) {
-              if (k === i) continue
-              const armAngle = angleDeg(dirs[j], dirs[k])
-              const stemA = angleDeg(dirs[i], dirs[j])
-              const stemB = angleDeg(dirs[i], dirs[k])
-              const rightE = dirs[i][1], rightN = -dirs[i][0]
-              const sideA = dirs[j][0] * rightE + dirs[j][1] * rightN
-              const sideB = dirs[k][0] * rightE + dirs[k][1] * rightN
-              const stemW = refs[i].w
-              const armsW = refs[j].w + refs[k].w
-              // Width conservation distinguishes a real one-deck-to-two-arms
-              // fork from ordinary equal-width motorway segment seams.
-              const widthCompatible = refs[j].w <= stemW * 0.78
-                && refs[k].w <= stemW * 0.78
-                && armsW >= stemW * 0.72
-                && armsW <= stemW * 1.38
-              // Narrow motorway splits can be only a few degrees apart.
-              if (armAngle > 1.5 && armAngle < 125 && stemA > 95 && stemB > 95
-                && sideA * sideB < -0.0001 && widthCompatible) {
-                const score = armAngle + Math.abs(stemA - stemB) * 0.35
-                if (score < best) { best = score; stem = i; armA = j; armB = k }
-              }
-            }
-          }
-        }
-        if (stem >= 0) {
-          const stemRef = refs[stem]
-          const stemDir = dirs[stem]
-          // Right-hand normal of the stem's outward direction.
-          const rightE = stemDir[1], rightN = -stemDir[0]
-          const armHalf = stemRef.w / 4
-          for (const i of [stem, armA, armB]) {
-            const r = refs[i]
-            if (!openYEnds.has(r.road)) openYEnds.set(r.road, new Set())
-            openYEnds.get(r.road)!.add(r.atStart)
-            if (i === stem) continue
-            // Put the arm centre on the corresponding half of the stem instead
-            // of leaving both arm centres on the same OSM node.
-            const side = dirs[i][0] * rightE + dirs[i][1] * rightN >= 0 ? 1 : -1
-            if (!yArmAlign.has(r.road)) yArmAlign.set(r.road, [])
-            yArmAlign.get(r.road)!.push({
-              atStart: r.atStart,
-              shiftE: rightE * side * armHalf,
-              shiftN: rightN * side * armHalf,
-              // At the tip both arms initially follow into/out of the common stem.
-              tipE: -stemDir[0],
-              tipN: -stemDir[1],
-            })
-            if (Math.abs(r.w / 2 - armHalf) >= 0.02) {
-              if (!widens.has(r.road)) widens.set(r.road, [])
-              widens.get(r.road)!.push({ atStart: r.atStart, fromHalf: armHalf })
-            }
-          }
-          continue
-        }
-      }
+      // through = 同名的一進一出，取最順直的那一組（用來做寬度融接）。
+      // 陣列順序不代表幾何：匯流點常有兩條同名同寬的進入線（直行主線＋併入匝道）。
       let thr: [EndRef, EndRef] | null = null
+      let thrTurn = Infinity
       for (const nm of new Set(refs.map((r) => r.name))) {
-        const ins = refs.filter((r) => r.name === nm && !r.atStart)
-        const outs = refs.filter((r) => r.name === nm && r.atStart)
-        if (ins.length && outs.length) { thr = [ins[0], outs[0]]; break }
+        for (const i of refs.filter((r) => r.name === nm && !r.atStart)) {
+          for (const o of refs.filter((r) => r.name === nm && r.atStart)) {
+            // 一進一出的 outwardDir 相反，順直 = 夾角接近 180°
+            const turn = 180 - angleDeg(outwardDir(i), outwardDir(o))
+            if (turn < thrTurn) { thrTurn = turn; thr = [i, o] }
+          }
+        }
       }
-      if (!thr) continue
-      if (thr[0].w !== thr[1].w) {
+      // 寬度融接只在「單純的續接」做（一進一出、沒有第三條）：岔口有第三條時
+      // 三片橋面本來就會疊在一起補滿，再放寬窄側只會多戳出一塊。
+      if (thr && refs.length === 2 && thr[0].w !== thr[1].w) {
         const [wide, narrow] = thr[0].w > thr[1].w ? [thr[0], thr[1]] : [thr[1], thr[0]]
         if (!widens.has(narrow.road)) widens.set(narrow.road, [])
         widens.get(narrow.road)!.push({ atStart: narrow.atStart, fromHalf: wide.w / 2 })
       }
-      const joiners = refs.filter((r) => r !== thr![0] && r !== thr![1])
-      if (!joiners.length) continue
-      const wHalf = Math.max(thr[0].w, thr[1].w) / 2
-      const outCs = thr[1].cs
-      const node = outCs[0]
-      const D = bearing(outCs[0], outCs[1]) // through 行向（出節點）
-      const dE = Math.sin((D * Math.PI) / 180), dN = Math.cos((D * Math.PI) / 180)
-      const guides = [nearEnd(thr[0].cs, thr[0].atStart), nearEnd(thr[1].cs, thr[1].atStart)]
-      for (const j of joiners) {
-        // 側判定：匝道離節點 ~12m 處在 through 行向的左/右（cross<0 = 右）
-        const jcum = cumulative(j.cs)
-        const jLen = jcum[jcum.length - 1]
-        const probeD = j.atStart ? Math.min(12, jLen / 2) : jLen - Math.min(12, jLen / 2)
-        const probe = pointAlong(j.cs, jcum, probeD).pos
-        const pE = (probe[0] - node[0]) * KX, pN = (probe[1] - node[1]) * KY
-        const side: 1 | -1 = dE * pN - dN * pE < 0 ? 1 : -1
-        // 貼邊導引線只取一條：匝道實際趴著的那條（探測點距離較近者）。
-        // guides[0] = in 區塊（行向朝節點 → 導引線與行向相反，gDir=-1）、
-        // guides[1] = out 區塊（gDir=+1）
-        const pIn = projToPolyArc(probe, guides[0])
-        const pOut = projToPolyArc(probe, guides[1])
-        const trail = pIn.lat <= pOut.lat
-          ? { guide: guides[0], gDir: -1 as const }
-          : { guide: guides[1], gDir: 1 as const }
-        if (!trims.has(j.road)) trims.set(j.road, [])
-        trims.get(j.road)!.push({
-          atStart: j.atStart, guide: trail.guide, gDir: trail.gDir,
-          wHalf, jHalf: j.w / 2, side,
-        })
-        // 護欄缺口：匝道貼邊滑行後，橋面自「切點」到節點側方全程貼著 through
-        // 邊緣——這整段投影弧長區間 [d0,d1] 都要開（匝道趴在哪個區塊哪一側，
-        // 缺口就自然落在那裡；另一側區塊只會有節點附近幾米的小圓角）
-        const reach = wHalf + j.w + 1
-        const sMax = Math.min(120, jLen / 2)
-        for (const t of thr) {
-          const guide = nearEnd(t.cs, t.atStart)
-          let g0 = Infinity, g1 = -Infinity
-          for (let s = 0; s <= sMax; s += 2) {
-            const d = j.atStart ? s : jLen - s
-            const { lat, arc } = projToPolyArc(pointAlong(j.cs, jcum, d).pos, guide)
-            if (lat < reach) { g0 = Math.min(g0, arc - 1); g1 = Math.max(g1, arc + 2) }
+      // 路口收邊（三線以上相接）：比照平面 buildDividers——標線退到
+      // 「交叉路最大半寬 + 1.2m」，路口範圍內不留車道線/邊線。
+      if (refs.length >= 3) {
+        for (const r of refs) {
+          const others = refs.filter((o) => o !== r)
+          const m = Math.max(...others.map((o) => o.w / 2)) + 1.2
+          if (!markSetback.has(r.road)) markSetback.set(r.road, [])
+          markSetback.get(r.road)!.push({ atStart: r.atStart, m })
+          // 同節點的其他道路 = 疊合對象。收的是「那幾條 way 的所有區塊」而不是
+          // 只有正好在此節點結束的那一塊——區塊邊界是路口切出來的，匝道往往
+          // 貼著相鄰的下一塊走，只收端點那塊會漏掉那一段的護欄/標線。
+          const list = deckNeighbours.get(r.road) ?? []
+          for (const o of others) {
+            for (const blk of blocksOfWay.get(o.road.properties.osm_id) ?? []) {
+              if (blk.road === r.road || list.some((x) => x.road === blk.road)) continue
+              list.push(blk)
+            }
           }
-          if (g1 <= g0) continue
-          g0 = Math.max(0, g0)
-          g1 = Math.min(g0 + 80, g1)
-          if (!railGaps.has(t.road)) railGaps.set(t.road, [])
-          railGaps.get(t.road)!.push({ side, atStart: t.atStart, d0: g0, d1: g1 })
+          deckNeighbours.set(r.road, list)
         }
       }
     }
@@ -478,7 +442,7 @@ export class ElevatedLayer {
     // 中山高在 OSM 是兩條對向 oneway，各自成橋的話中間會開一道天窗、還立兩排護欄。
     // 幾何/拓撲不動（合併成雙向 way 會讓 A* 允許逆向行駛，見 pipeline coupletCandidates），
     // 只在「畫」的時候把兩向橋面各自延伸到兩線中點接成一座，中線立紐澤西護欄。
-    // 只吃 motorway 本線：匝道（motorway_link）維持原本的貼邊/裁切樣式。
+    // 只吃 motorway 本線：匝道（motorway_link）走一般的疊合，不併中線。
     const allDecks = [...model.entries()].map((e) => e.road)
     const carriages = allDecks.filter((r) =>
       r.properties.highway === 'motorway' && r.properties.oneway === 'yes')
@@ -587,103 +551,23 @@ export class ElevatedLayer {
       const cum = cumulative(coords)
       const halfW = p.width_m / 2
 
-      // 匝道貼合切點：併入端沿線掃到「離 through 中心線 ≥ 半寬＋匝道半寬」
-      // （相切位置）。切點之外（近節點側）橋面不移除，改為貼著主線邊緣滑行
       let dA = 0, dB = lenM
-      const flushes: {
-        atStart: boolean
-        /** 該貼合自己的切點（d 座標）：貼邊區間 = 切點到端點 */
-        bound: number
-        /** 匝道行進方向與 through 繪圖方向相反（楠陽雙向合併橋的對向匝道）——
-         * 貼邊段 brg 要翻 180° 對齊匝道自身行向，否則與自然段銜接處斷面
-         * 左右腳交叉、橋面扭轉；護欄跳空的左右側也要跟著翻 */
-        flip: boolean
-        t: NonNullable<ReturnType<typeof trims.get>>[number]
-      }[] = []
-      for (const t of trims.get(road) ?? []) {
-        const target = t.wHalf + t.jHalf + 0.02
-        let cut = 0
-        const maxScan = Math.min(lenM / 2, 120)
-        for (let s = 0; s <= maxScan; s += 2) {
-          const d = t.atStart ? s : lenM - s
-          const { pos } = pointAlong(coords, cum, d)
-          cut = s
-          if (projToPolyArc(pos, t.guide).lat >= target) break
-        }
-        if (t.atStart) dA = Math.max(dA, cut)
-        else dB = Math.min(dB, lenM - cut)
-        const boundD = t.atStart ? cut : lenM - cut
-        // 切點處匝道自然行向 vs through 繪圖方向（D-frame 導引線首段）內積
-        const nat = pointAlong(coords, cum, Math.max(0.5, Math.min(lenM - 0.5, boundD))).brg
-        const natRad = (nat * Math.PI) / 180
-        let gE = (t.guide[1][0] - t.guide[0][0]) * KX
-        let gN = (t.guide[1][1] - t.guide[0][1]) * KY
-        const gL = Math.hypot(gE, gN) || 1
-        gE = (gE / gL) * t.gDir
-        gN = (gN / gL) * t.gDir
-        const flip = Math.sin(natRad) * gE + Math.cos(natRad) * gN < 0
-        flushes.push({ atStart: t.atStart, bound: boundD, flip, t })
-      }
+      // 現地指定的接地端裁切（DECK_END_TRIM_ENDS）：橋面停在平面路的路面邊緣，
+      // 不鋪進對方路面。heightAt 已把接地點移到裁切處，這裡只縮取樣範圍
+      const endTrim = model.endTrim(road)
+      if (endTrim.t0 !== undefined) dA = Math.max(dA, endTrim.t0)
+      if (endTrim.t1 !== undefined) dB = Math.min(dB, lenM - endTrim.t1)
       if (dB - dA < STEP_M) continue
-      // 高度域重映射：匝道在「切點」（主線邊緣旁）就達到節點高度，之後貼邊
-      // 滑行段全程與主線同高（超出域夾住 = 節點高度）
-      const span = dB - dA
-      const hAt = (d: number) =>
-        model.heightAt(road, Math.max(0, Math.min(lenM, ((d - dA) * lenM) / span)))
+      const hAt = (d: number) => model.heightAt(road, Math.max(0, Math.min(lenM, d)))
       const taper = model.groundTaper(road)
       const roadWidens = widens.get(road) ?? []
-      const yAligns = yArmAlign.get(road) ?? []
-      // 幾何取樣範圍：貼邊滑行段延伸到原始端點（節點正側方），不裁掉
-      const gA = flushes.some((f) => f.atStart) ? 0 : dA
-      const gB = flushes.some((f) => !f.atStart) ? lenM : dB
+      const gA = dA, gB = dB
 
-      // 斷面取樣：底下所有帶狀件共用（頂點對齊，接縫才不會裂）
+      // 斷面取樣：底下所有帶狀件共用（頂點對齊，接縫才不會裂）。
+      // 中心線/走向一律取自路段本身——**任何情況都不把橋面推離自己的中心線**，
+      // 匯流與分岔靠相鄰橋面自然疊合補滿（見上方節點分析的說明）
       const section = (d: number): Section => {
-        let { pos, brg } = pointAlong(coords, cum, d)
-        // Move a Y arm onto the left/right half of the stem and blend its
-        // tangent to the stem at the shared endpoint.  This works for both
-        // atStart and atEnd arms, so merge and diverge directions match.
-        for (const a of yAligns) {
-          const eD = a.atStart ? d : lenM - d
-          const L = Math.min(32, lenM / 2)
-          if (eD >= L) continue
-          const q = 1 - eD / L
-          pos = [pos[0] + (a.shiftE * q) / KX, pos[1] + (a.shiftN * q) / KY]
-          const rad = (brg * Math.PI) / 180
-          let natE = Math.sin(rad), natN = Math.cos(rad)
-          // pointAlong follows coordinate order; reverse the desired outward
-          // tangent for an arm whose shared node is at its end.
-          const targetSign = a.atStart ? 1 : -1
-          const targetE = a.tipE * targetSign, targetN = a.tipN * targetSign
-          natE = natE * (1 - q) + targetE * q
-          natN = natN * (1 - q) + targetN * q
-          brg = (Math.atan2(natE, natN) * 180) / Math.PI
-        }
-        // 貼邊滑行：切點到節點側方之間，中心推到主線邊緣外、走向改沿主線。
-        // 區間內「一律」夾（不看單點距離——自然線在目標距附近擺動時，夾/不夾
-        // 交替會讓橋面扭轉）。並向端點「削尖」：內緣貼住主線邊不動、外緣
-        // 隨 tip 收斂到近 0 寬——匯入楔形
-        let flushTip = 1
-        for (const f of flushes) {
-          const inFlush = f.atStart ? d < f.bound : d > f.bound
-          if (!inFlush) continue
-          const t = f.t
-          const flushLen = f.atStart ? f.bound : lenM - f.bound
-          if (flushLen < 1e-6) continue
-          const tip = Math.max(0.04, (f.atStart ? d : lenM - d) / flushLen)
-          const pr = projToPolyArc(pos, t.guide)
-          const target = t.wHalf + 0.02 + t.jHalf * tip
-          // 統一到「through 行向」座標系（gDir 修正導引線排列方向），再取
-          // side 側的垂直向外推——兩種端別（on/off-ramp）行向都與 through 同向
-          const tE = pr.dE * t.gDir, tN = pr.dN * t.gDir
-          const uE = t.side > 0 ? tN : -tN
-          const uN = t.side > 0 ? -tE : tE
-          pos = [pr.q[0] + (uE * target) / KX, pr.q[1] + (uN * target) / KY]
-          // brg 對齊匝道自身行向（對向匝道翻 180°）——位置推移（u）維持 D-frame
-          const bE = f.flip ? -tE : tE, bN = f.flip ? -tN : tN
-          brg = (Math.atan2(bE, bN) * 180) / Math.PI
-          flushTip = Math.min(flushTip, tip)
-        }
+        const { pos, brg } = pointAlong(coords, cum, d)
         const [e, n] = this.toScene(pos[0], pos[1])
         const rad = (brg * Math.PI) / 180
         const h = hAt(d)
@@ -697,7 +581,6 @@ export class ElevatedLayer {
         if (taper.gw1 !== undefined && dB - d < TAPER_RANGE_M) {
           r = Math.min(r, (taper.gw1 / 2 + (halfW - taper.gw1 / 2) * fr) / halfW)
         }
-        r = Math.min(r, flushTip)
         // 寬度融接：節點端放寬到鄰接寬側（r > 1），沿 ~30m 線性收回自身寬
         for (const w of roadWidens) {
           const eD = w.atStart ? d : lenM - d
@@ -721,14 +604,14 @@ export class ElevatedLayer {
       const hasCenterRail = p.oneway !== 'yes' && p.centerKind === 'island' && ctrHalf > 0
       const dvOff = p.divOffM || 0
 
-      // 取樣（gA~gB，含貼邊滑行段）：高架區塊的地面路體已隱藏
+      // 取樣（gA~gB）：高架區塊的地面路體已隱藏
       // （RoadProps.elevated 過濾），橋面連近地爬升段一起建
       const ds: number[] = []
       for (let d = gA; d <= gB; d += STEP_M) ds.push(d)
       if (ds[ds.length - 1] < gB) ds.push(gB)
       const secs = ds.map(section)
       // 橋面高度剖面：路線帶/車輛要貼在橋面上，就得問「這裡的橋面多高」，
-      // 而不是 model.heightAt（匝道的高度域經過重映射，兩者在貼邊段差好幾公尺）
+      // 而不是 model.heightAt（取樣內插與接地端裁切都會讓兩者有落差）
       const profile = {
         pts: secs.map((s) => [s.lng, s.lat] as [number, number]),
         hs: secs.map((s) => s.h),
@@ -737,6 +620,33 @@ export class ElevatedLayer {
       const wayId = road.properties.osm_id
       if (!this.deckProfileByWay.has(wayId)) this.deckProfileByWay.set(wayId, [])
       this.deckProfileByWay.get(wayId)!.push(profile)
+
+      /**
+       * 斷面上偏移 off 處，距離最近的鄰接橋面「邊緣」還有多少（負 = 已在對方路面內）。
+       * 匯流/分岔處兩片橋面疊合，落在對方路面上的東西一律不畫——側裙板與護欄會
+       * 變成一道穿過路面的假牆，車道線則會在疊合區交叉成一團。
+       * 等同平面的作法：疊起來的路面只留最外圈輪廓，內部的邊界與標線都收掉。
+       * 只比對「共用節點的鄰接橋面」——全圖兩兩比對太慢，且不相干的平行橋
+       * （中山高本線 vs 匝道）本來就該各自留護欄。
+       */
+      const clearIn = (list: DeckRef[], s: Section, off: number): number => {
+        if (!list.length) return Infinity
+        // off 是斷面座標；換算成經緯度（右向 = (rx, rz) 對應東/南）
+        const q: [number, number] =
+          [s.lng + (s.rx * off) / KX, s.lat + (-s.rz * off) / KY]
+        let best = Infinity
+        for (const { road: o, cs, half } of list) {
+          if (o === road) continue
+          best = Math.min(best, projToPolyArc(q, cs).lat - half)
+        }
+        return best
+      }
+      /** 標線／側裙／護欄共用：任何路面真的疊到的橋面（含三線相接的鄰接橋面）。
+       * 疊合區只留最外圈輪廓，內部不畫線也不立牆——與平面同一套邏輯。 */
+      const bodyNeighbours = [...new Set([
+        ...(deckOverlaps.get(road) ?? []), ...(deckNeighbours.get(road) ?? []),
+      ])]
+      const clearOf = (s: Section, off: number) => clearIn(bodyNeighbours, s, off)
 
       // 對向並排：合體側的橋面邊緣推到兩線中點（edge 回傳「已含收窄 r」的絕對偏移，
       // 所以用 atAbs 而不是 at——後者會再乘一次 r）
@@ -752,46 +662,54 @@ export class ElevatedLayer {
       /** 該側是不是「與對向接合的中線」（護欄/側裙要改樣式） */
       const isSeam = (i: number, side: 1 | -1) => meds[i]?.side === side && meds[i]!.merged
 
-      const gaps = railGaps.get(road) ?? []
+      /** 這一節的該側側裙板要不要畫：兩端**任一**端已在鄰接橋面內就不畫
+       * （用 or 不用 and——寧可提早收掉，也不要有半截牆插進對方路面） */
+      const skirtBuried = (i: number, side: 1 | -1) =>
+        clearOf(secs[i - 1], edge(i - 1, side)) < EDGE_BURY_TOL_M
+        || clearOf(secs[i], edge(i, side)) < EDGE_BURY_TOL_M
+      /** 護欄同上，但量的是護欄自己的位置，而且要與對方路面留出淨距——
+       * 「柵欄不要畫到任何一方的路面上」 */
+      const railBuried = (i: number, side: 1 | -1) => {
+        const off = (j: number) => edge(j, side) - side * 0.12 * secs[j].r
+        return clearOf(secs[i - 1], off(i - 1)) < RAIL_CLEAR_M
+          || clearOf(secs[i], off(i)) < RAIL_CLEAR_M
+      }
+      /** 中央/中線護欄同理：它長在自己路面的中間，但在匯流口一樣會伸到對方路面上 */
+      const midRailBuried = (i: number, off: number) =>
+        clearOf(secs[i - 1], off) < RAIL_CLEAR_M || clearOf(secs[i], off) < RAIL_CLEAR_M
+
       for (let i = 1; i < secs.length; i++) {
         const a = secs[i - 1], b = secs[i]
-        const dMid = (ds[i - 1] + ds[i]) / 2
         const aL = edge(i - 1, -1), aR = edge(i - 1, 1)
         const bL = edge(i, -1), bR = edge(i, 1)
+        const buriedL = skirtBuried(i, -1)
+        const buriedR = skirtBuried(i, 1)
+        const railL = railBuried(i, -1)
+        const railR = railBuried(i, 1)
         // 橋面（頂）＋底面＋兩側裙板（底/側從橋下可見——陸橋下平面路口）。
         // 合體側不畫裙板：那裡是橋面中央，立一片垂直板會在橋底出現一道假邊
         deckBuf.quad(atAbs(a, aL, 0), atAbs(a, aR, 0), atAbs(b, bL, 0), atAbs(b, bR, 0))
         sideBuf.quad(atAbs(a, aR, -DECK_T), atAbs(a, aL, -DECK_T),
           atAbs(b, bR, -DECK_T), atAbs(b, bL, -DECK_T))
-        if (!isSeam(i - 1, -1) && !isSeam(i, -1)) {
+        if (!isSeam(i - 1, -1) && !isSeam(i, -1) && !buriedL) {
           sideBuf.quad(atAbs(a, aL, -DECK_T), atAbs(a, aL, 0),
             atAbs(b, bL, -DECK_T), atAbs(b, bL, 0))
         }
-        if (!isSeam(i - 1, 1) && !isSeam(i, 1)) {
+        if (!isSeam(i - 1, 1) && !isSeam(i, 1) && !buriedR) {
           sideBuf.quad(atAbs(a, aR, 0), atAbs(a, aR, -DECK_T),
             atAbs(b, bR, 0), atAbs(b, bR, -DECK_T))
         }
         // 護欄：兩側直立板（DoubleSide 材質）。近地漸升（觸地端壓到 0 → 銜接感）；
-        // 匝道併入口所在側開缺（讓車上得來）
+        // 邊緣被鄰接橋面蓋住的那一段不建（匯流口自然成為開缺，車上得來）
         const rhA = RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
         const rhB = RAIL_H * Math.min(1, b.h / RAIL_RAMP_H)
-        const arcL = (g: { atStart: boolean }) => (g.atStart ? dMid : lenM - dMid)
-        // 匝道自身在貼邊滑行段：面向主線那側的護欄不建，否則會在兩橋面之間
-        // 立一道牆。斷面左右以「匝道行向」為準——對向匝道（flip）左右對調
-        const inFlushInner = (want: 1 | -1) => flushes.some((f) =>
-          (f.atStart ? dMid < f.bound : dMid > f.bound)
-          && (f.flip ? f.t.side : -f.t.side as 1 | -1) === want)
-        const gapL = inFlushInner(-1)
-          || gaps.some((g) => g.side === -1 && arcL(g) >= g.d0 && arcL(g) <= g.d1)
-        const gapR = inFlushInner(1)
-          || gaps.some((g) => g.side === 1 && arcL(g) >= g.d0 && arcL(g) <= g.d1)
         // 護欄內縮量跟著收窄係數（= 原本 at(±halfW∓0.12) 的寫法），
-        // 貼邊楔形尖端才不會因為固定 12cm 內縮而翻到另一側
-        if (!gapL && !isSeam(i - 1, -1) && !isSeam(i, -1)) {
+        // 端點楔形尖端才不會因為固定 12cm 內縮而翻到另一側
+        if (!railL && !isSeam(i - 1, -1) && !isSeam(i, -1)) {
           railBuf.quad(atAbs(a, aL + 0.12 * a.r, 0), atAbs(a, aL + 0.12 * a.r, rhA),
             atAbs(b, bL + 0.12 * b.r, 0), atAbs(b, bL + 0.12 * b.r, rhB))
         }
-        if (!gapR && !isSeam(i - 1, 1) && !isSeam(i, 1)) {
+        if (!railR && !isSeam(i - 1, 1) && !isSeam(i, 1)) {
           railBuf.quad(atAbs(a, aR - 0.12 * a.r, rhA), atAbs(a, aR - 0.12 * a.r, 0),
             atAbs(b, bR - 0.12 * b.r, rhB), atAbs(b, bR - 0.12 * b.r, 0))
         }
@@ -799,6 +717,7 @@ export class ElevatedLayer {
         // 於中線接合成一道完整護欄——不必指定誰負責，也不會兩片重疊 z-fighting
         for (const side of [-1, 1] as const) {
           if (!isSeam(i - 1, side) || !isSeam(i, side)) continue
+          if (midRailBuried(i, edge(i, side) - side * MEDIAN_RAIL_HALF)) continue
           const cA = CENTER_RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
           const cB = CENTER_RAIL_H * Math.min(1, b.h / RAIL_RAMP_H)
           const e0 = side < 0 ? aL : aR, e1 = side < 0 ? bL : bR
@@ -807,7 +726,7 @@ export class ElevatedLayer {
           railBuf.quad(atAbs(a, w0, cA), atAbs(a, e0, cA), atAbs(b, w1, cB), atAbs(b, e1, cB))
         }
         // 中央護欄：分向線位置（divOffM）兩側板＋頂蓋（同樣近地漸升）
-        if (hasCenterRail) {
+        if (hasCenterRail && !midRailBuried(i, dvOff)) {
           const cA = CENTER_RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
           const cB = CENTER_RAIL_H * Math.min(1, b.h / RAIL_RAMP_H)
           railBuf.quad(at(a, dvOff - ctrHalf, 0), at(a, dvOff - ctrHalf, cA),
@@ -818,10 +737,11 @@ export class ElevatedLayer {
             at(b, dvOff - ctrHalf, cB), at(b, dvOff + ctrHalf, cB))
         }
       }
-      // 首尾斷面封口（側裙端面）——寬度跟著該斷面的實際邊緣（含合體側延伸）
+      // 首尾斷面封口（側裙端面）——寬度跟著該斷面的實際邊緣（含合體側延伸）。
+      // 端點被鄰接橋面蓋住時不封口：那裡是疊合區的內部，封了就是一道假端面
       for (const [i, sgn] of [[0, -1], [secs.length - 1, 1]] as const) {
-        const atStart = i === 0
-        if (openYEnds.get(road)?.has(atStart)) continue
+        if (clearOf(secs[i], edge(i, -1)) < EDGE_BURY_TOL_M
+          && clearOf(secs[i], edge(i, 1)) < EDGE_BURY_TOL_M) continue
         const s = secs[i], eL = edge(i, -1), eR = edge(i, 1)
         sideBuf.quad(atAbs(s, sgn < 0 ? eL : eR, 0), atAbs(s, sgn < 0 ? eR : eL, 0),
           atAbs(s, sgn < 0 ? eL : eR, -DECK_T), atAbs(s, sgn < 0 ? eR : eL, -DECK_T))
@@ -860,23 +780,37 @@ export class ElevatedLayer {
           }
         }
       }
+      // 路口收邊：三線相接的端點附近不畫標線（比照平面 buildDividers）——
+      // 匯流／分岔處三片橋面疊在一起，各畫各的車道線就會交叉成一團
+      let mA = dA, mB = dB
+      for (const sb of markSetback.get(road) ?? []) {
+        if (sb.atStart) mA = Math.max(mA, dA + sb.m)
+        else mB = Math.min(mB, dB - sb.m)
+      }
       for (const mk of marks) {
+        if (mB - mA < 1) break
         const buf = mk.color === 'yellow' ? yellowBuf : whiteBuf
         const w = mk.color === 'yellow' ? 0.13 : 0.08 // 半寬
         const seg = (d0: number, d1: number) => {
           const a = section(d0), b2 = section(d1)
+          // 疊合區不畫線：兩片橋面併在一起時，各畫各的邊線/車道線會在中間交叉。
+          // 節點端的退縮只管路口那一小段，兩條匝道並行貼近的整段要靠這個收掉
+          if (clearOf(a, mk.off) < MARK_CLEAR_M || clearOf(b2, mk.off) < MARK_CLEAR_M) return
           buf.quad(at(a, mk.off - w, 0.03), at(a, mk.off + w, 0.03),
             at(b2, mk.off - w, 0.03), at(b2, mk.off + w, 0.03))
         }
         if (mk.dash) {
-          for (let d = dA; d + DASH_ON <= dB; d += DASH_CYCLE) seg(d, d + DASH_ON)
+          for (let d = mA; d + DASH_ON <= mB; d += DASH_CYCLE) seg(d, d + DASH_ON)
         } else {
-          // 實線直接沿取樣斷面連續鋪（頂點與橋面共用取樣，跟著爬升）
+          // 實線沿取樣斷面連續鋪（頂點與橋面共用取樣，跟著爬升），收邊處補一小段
+          let prev = mA
           for (let i = 1; i < secs.length; i++) {
-            const a = secs[i - 1], b2 = secs[i]
-            buf.quad(at(a, mk.off - w, 0.03), at(a, mk.off + w, 0.03),
-              at(b2, mk.off - w, 0.03), at(b2, mk.off + w, 0.03))
+            const d0 = Math.max(ds[i - 1], mA), d1 = Math.min(ds[i], mB)
+            if (d1 - d0 < 0.05) continue
+            seg(d0, d1)
+            prev = d1
           }
+          if (mB - prev > 0.05) seg(prev, mB)
         }
       }
 
@@ -1031,7 +965,7 @@ export function activeElevatedLayer(): ElevatedLayer | null { return activeLayer
 /**
  * 路面高度（公尺）：高架段以「橋面實際高度」為準，其餘 0。
  * 車輛（drive/gpsNav → models3d 的 z）與路線帶共用這個入口，兩者才會同高——
- * 直接問 ElevationModel 會漏掉匝道貼邊段的高度域重映射。沒建 3D 橋面時退回模型。
+ * 直接問 ElevationModel 會漏掉接地端裁切與取樣內插。沒建 3D 橋面時退回模型。
  */
 export function surfaceHeightAt(road: RoadFeature, pos: [number, number]): number {
   if (!road.properties.elevated) return 0

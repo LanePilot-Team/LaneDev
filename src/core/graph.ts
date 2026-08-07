@@ -13,6 +13,7 @@ import {
   type LaneGuidanceIndex,
   type ResolvedLaneGuidance,
 } from './laneGuidance.ts'
+import { profileTurnAllowed } from './turnRestrictions.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -63,8 +64,14 @@ function transitionAllowed(
   outgoing: Edge,
   nodeId: number,
   barrierNode: boolean,
+  profile: Profile,
 ): boolean {
   if (!incoming) return true
+  if (!profileTurnAllowed(
+    profile, nodeId,
+    incoming.road, incoming.back,
+    outgoing.road, outgoing.back,
+  )) return false
   const incomingBarrier = medianBarrierAt(incoming.road, nodeId)
   const outgoingBarrier = medianBarrierAt(outgoing.road, nodeId)
   if (barrierNode) {
@@ -411,6 +418,21 @@ export class RoadGraph {
   hasDistinctRoadAt(nodeId: number, carrier: RoadFeature): boolean {
     return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])].some((edge) =>
       edge.road.properties.osm_id !== carrier.properties.osm_id)
+  }
+
+  /** 指定節點是否接有符合條件的道路；出邊與入邊都看，避免單行道漏判。 */
+  hasRoadAt(nodeId: number, predicate: (road: RoadFeature) => boolean): boolean {
+    return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]
+      .some((edge) => predicate(edge.road))
+  }
+
+  /** 指定節點符合條件道路的最大實際寬度。 */
+  maxRoadWidthAt(nodeId: number, predicate: (road: RoadFeature) => boolean): number {
+    let width = 0
+    for (const edge of [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]) {
+      if (predicate(edge.road)) width = Math.max(width, edge.road.properties.width_m)
+    }
+    return width
   }
 
   private push(e: Edge) {
@@ -922,6 +944,7 @@ export class RoadGraph {
           if (!transitionAllowed(
             current.incoming, ge.part, current.node,
             this.roadMergeBarrierNodes.has(current.node),
+            profile,
           )) continue
           const total = g.get(currentKey)! + ge.part.timeS
           if (!bestGoal || total < bestGoal.cost) {
@@ -934,6 +957,7 @@ export class RoadGraph {
         if (!transitionAllowed(
           current.incoming, e, current.node,
           this.roadMergeBarrierNodes.has(current.node),
+          profile,
         )) continue
         const nextKey = stateKey(e.to, e)
         if (closed.has(nextKey)) continue

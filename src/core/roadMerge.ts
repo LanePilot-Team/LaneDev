@@ -941,6 +941,55 @@ export function roadMergeComponentBlockKeys(
   return [...new Set(ordered)].filter((key) => component.has(key))
 }
 
+/**
+ * 編輯器連續捏合時使用的目前主線幾何。
+ *
+ * 導航視圖刻意保留 A、B 各自的道路；第一次捏合後若使用者再從 B 選 C，直接拿
+ * 導航 B 的舊端點量距離會看不到已由 A＋B 延伸到 C 旁的另一端。這裡只替預覽
+ * 找出該捏合元件唯一的繪圖承載線，不改導航來源或捏合重播語意。
+ */
+export function roadMergeRenderCarrier(
+  rows: RoadMergeReplayRow[], road: RoadFeature, renderRoads: RoadFeature[],
+): RoadFeature {
+  const component = new Set(roadMergeComponentBlockKeys(rows, road))
+  const candidates = renderRoads.filter((candidate) =>
+    component.has(roadBlockKey(candidate)))
+  return candidates.length === 1 ? candidates[0] : road
+}
+
+export interface RoadMergeMotoBoxTarget {
+  wayId: number
+  nodeId: number
+  back: boolean
+}
+
+/** Map the selected block's two travel directions onto the visible merged road ends. */
+export function roadMergeMotoBoxTargets(
+  rows: RoadMergeReplayRow[], road: RoadFeature, renderRoads: RoadFeature[],
+): { forward: RoadMergeMotoBoxTarget; backward: RoadMergeMotoBoxTarget } {
+  const carrier = roadMergeRenderCarrier(rows, road, renderRoads)
+  const carrierNodes = carrier.properties.nodes
+  const selectedNodes = road.properties.nodes
+  const carrierFirst = carrierNodes[0] ?? selectedNodes[0] ?? 0
+  const carrierLast = carrierNodes[carrierNodes.length - 1]
+    ?? selectedNodes[selectedNodes.length - 1] ?? 0
+  const selectedFirstIndex = carrierNodes.indexOf(selectedNodes[0])
+  const selectedLastIndex = carrierNodes.lastIndexOf(selectedNodes[selectedNodes.length - 1])
+  const sameDirection = selectedFirstIndex < 0 || selectedLastIndex < 0
+    ? true
+    : selectedFirstIndex <= selectedLastIndex
+  const wayId = carrier.properties.osm_id
+  return sameDirection
+    ? {
+      forward: { wayId, nodeId: carrierLast, back: false },
+      backward: { wayId, nodeId: carrierFirst, back: true },
+    }
+    : {
+      forward: { wayId, nodeId: carrierFirst, back: true },
+      backward: { wayId, nodeId: carrierLast, back: false },
+    }
+}
+
 export function roadMergeEditDrafts(
   rows: RoadMergeReplayRow[],
   road: RoadFeature,

@@ -109,6 +109,7 @@ export function buildRoadLabelLines(
       osm_id: number; name?: string; highway: string; width_m: number
       roadMarkingMode: string; elevated?: boolean
       hideIntersectionInfo?: boolean
+      hideRoadLabel?: boolean
     }
   }[],
   obstacles: GroundObstacle[] = [],
@@ -117,7 +118,7 @@ export function buildRoadLabelLines(
   const features: Feature[] = []
   for (const road of roads) {
     const p = road.properties
-    if (!p.name?.trim()) continue
+    if (!p.name?.trim() || p.hideRoadLabel) continue
     const coords = road.geometry.coordinates as [number, number][]
     if (coords.length < 2) continue
     const cum = cumulative(coords)

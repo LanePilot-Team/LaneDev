@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextStackIndex, EMPTY_CURSOR, describeStackRoad, highwayLabel } from './stackPick.ts'
+import {
+  nextStackIndex, EMPTY_CURSOR, describeStackRoad, highwayLabel, collectStackedRoads,
+} from './stackPick.ts'
 
 const KEYS = 'way/1@b/10|way/2@b/20|way/3@b/30'
 const at = (x, y, index, keys = KEYS) => ({ x, y, keys, index })
@@ -49,4 +51,28 @@ test('說明文字可分辨同名主線與側車道', () => {
 test('匝道與未知道路分級都有可讀標籤', () => {
   assert.equal(highwayLabel('primary_link'), '主要匝道')
   assert.equal(highwayLabel('raceway'), 'raceway')
+})
+
+test('地下道 surface 可進入車道樣式選取堆疊', () => {
+  const underground = {
+    type: 'Feature',
+    properties: {
+      osm_id: 256795151, blockNode: 2624297481, name: '地下機車道',
+      highway: 'service', lanesForward: 1, lanesBackward: 0, oneway: 'yes',
+    },
+    geometry: { type: 'LineString', coordinates: [[120.3232, 22.7222], [120.323, 22.723]] },
+  }
+  const calls = []
+  const map = {
+    getLayer: () => ({}),
+    queryRenderedFeatures: (_point, options) => {
+      calls.push(options.layers)
+      return options.layers.includes('tunnel-surface')
+        ? [{ properties: { osm_id: 256795151, blockNode: 2624297481 } }]
+        : []
+    },
+  }
+  const result = collectStackedRoads(map, { x: 100, y: 100 }, [underground])
+  assert.deepEqual(result, [underground])
+  assert.ok(calls.every((layers) => layers.includes('tunnel-surface')))
 })

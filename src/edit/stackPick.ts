@@ -4,7 +4,9 @@ import { haversine } from '../core/geo.ts'
 
 const NEAR_PX = 4
 export const CYCLE_PX = 8
-const PICK_LAYERS = ['road-surface', 'roads-simple']
+// Underground roads only exist in tunnel-surface at lane-edit zoom.
+// Elevated roads remain in the Three.js layer and are intentionally unchanged here.
+const PICK_LAYERS = ['tunnel-surface', 'road-surface', 'roads-simple']
 
 export interface StackPick {
   key: string

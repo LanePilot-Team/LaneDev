@@ -1,8 +1,12 @@
 // 高架橋面貼合審計（npx tsx scripts/deck_audit.ts）：
 // 2026-07-25 「指引線沉入高架之下」的回歸驗證——
-//   路線帶/車輛的高度必須等於「橋面實際高度」。匝道的橋面高度域在貼邊滑行段
-//   有重映射（hAt 把 [dA,dB] 拉伸成整條 way），所以 ElevationModel.heightAtPos
-//   在那裡會低估：低於橋面 > 0.1m 的取樣點就會被深度測試擋掉，藍線整段消失。
+//   路線帶/車輛的高度必須等於「橋面實際高度」，低於橋面 > 0.1m 的取樣點會被
+//   深度測試擋掉，藍線整段消失。
+//   ⚠ 2026-08-07：舊來源會嚴重低估的成因（匝道貼邊滑行段的高度域重映射，hAt 把
+//   [dA,dB] 拉伸成整條 way）已隨「匯流改用橋面疊合」一起移除，兩個來源現在本來
+//   就該一致（實測只剩 6 點 ≤0.1m 的取樣內插誤差）。原本的對照組「舊來源真的會
+//   沉入橋面下」因此失去前提，改成斷言兩者一致；主張仍是 surfaceHeightAt 必須
+//   就是橋面高度。
 // 方法：與 app 相同管線建底圖 → 建 ElevatedLayer（不需 GL context，mesh 幾何是純算）
 //   → 對每條高架路段沿線比對 deckHeightAt（新來源）與 heightAtPos（舊來源）。
 import { readFileSync } from 'node:fs'
@@ -81,7 +85,10 @@ console.log(`取樣 ${samples} 點（有橋面的高架區塊 ${withDeck}/${elev
 console.log(`舊來源（ElevationModel.heightAtPos）低於橋面的點：${sunk}（最深 ${maxSink.toFixed(1)}m）、` +
   `高於橋面最多 ${maxLift.toFixed(1)}m`)
 for (const w of worst.slice(0, 10)) console.log('   ' + w)
-check('確認舊來源真的會沉入橋面下（否則本審計無意義）', sunk > 0, `${sunk} 點`)
+check('橋面高度與 ElevationModel 一致（高度域不再重映射）',
+  maxSink <= 0.3 && maxLift <= 0.3,
+  `最深沉入 ${maxSink.toFixed(2)}m、最高浮起 ${maxLift.toFixed(2)}m（門檻 0.3m）`
+  + `｜低於橋面的點 ${sunk}/${samples}`)
 check('新來源 surfaceHeightAt 與橋面完全一致',
   !worst.some((w) => w.startsWith('surfaceHeightAt')))
 

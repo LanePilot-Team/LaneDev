@@ -45,6 +45,9 @@ export const REMOVED_WAY_IDS = new Set([
  */
 const COLLAPSED_INTERSECTION_NODES: [number, number][] = [
   [1398634938, 1398634137], // 德民路 × 中昌街
+  // 經建路 × 興西路：雙向化後兩個原始側向節點形成約 9m 的假折角。
+  // 保留 1451069052，讓既有 block 編輯紀錄繼續適用。
+  [1451069052, 1451069485],
 ]
 
 /** 已有共用 node，但支路仍停在合併前車道座標的路口；以最寬主路座標為準吸附。 */
@@ -65,6 +68,9 @@ const SNAPPED_INTERSECTION_NODES = [
  */
 const PINNED_ORIGINAL_NODES: Record<number, [number, number]> = {
   265748817: [120.3105336, 22.7266391], // 德民路 × 海專路
+  // 旗楠路接土庫一路的短尾段：couplet 投影會把這個唯一中間點推到對向線外，
+  // 形成往東折回再往西的閃電形。端點與拓撲不動，只恢復原始順直座標。
+  8806916619: [120.3327612, 22.7355082],
 }
 
 export function collapseKnownIntersections(
@@ -158,6 +164,24 @@ export function collapseKnownIntersections(
   }
 }
 
+/**
+ * 現地補插的中間節點：自訂道路（new_road）要接在既有 way 的**路段中間**時用。
+ *
+ * RoadGraph 完全靠「共用 node id」連通（`usage > 1` 就在該點切邊），所以接點必須
+ * 先存在於既有 way 的 nodes 上。編輯器的拉線工具只吸附既有頂點（ROAD_SNAP_M 15m），
+ * 路段中間吸不到，畫出來的路會是孤立的——看得到但導航永遠找不到。
+ *
+ * 插在 applyFixups（couplet 合併之前），所以之後的幾何位移會一起帶著跑；
+ * 因為只有這一條 way 引用它，`splitAtIntersections` 的 usage 仍是 1，**不會多切一塊**，
+ * 既有區塊鍵與 journal 覆寫都不受影響（已全圖 A/B 驗證）。
+ * node id 用 -2_000_00x 區間，與 new_road 自己的頂點（-1_000_00x）錯開。
+ */
+const INSERTED_NODES: { wayId: number; afterNode: number; nodeId: number; pos: [number, number] }[] = [
+  // 經建路 × 興西路 右轉專用道（way/-9）的兩個接點
+  { wayId: 362686116, afterNode: 1451069485, nodeId: -2000001, pos: [120.3321544, 22.7228758] },
+  { wayId: 362686118, afterNode: 1451069052, nodeId: -2000002, pos: [120.3324306, 22.7226928] },
+]
+
 /** way 起點錯位殘尾：裁到指定 OSM node，保留後續主體。 */
 const TRIM_WAY_START_NODE: Record<number, number> = {
   // Remove the tiny continuation across 外環西路; its round cap protrudes past the main road.
@@ -167,6 +191,17 @@ const TRIM_WAY_START_NODE: Record<number, number> = {
 
 /** 載入後、couplet 合併前呼叫（預設底圖與「匯入地圖」同一套） */
 export function applyFixups(roads: RoadFeature[]) {
+  for (const spec of INSERTED_NODES) {
+    for (const r of roads) {
+      const p = r.properties
+      if (p.osm_id !== spec.wayId || p.nodes.includes(spec.nodeId)) continue
+      const i = p.nodes.indexOf(spec.afterNode)
+      if (i < 0 || i >= r.geometry.coordinates.length - 1) continue
+      p.nodes = [...p.nodes.slice(0, i + 1), spec.nodeId, ...p.nodes.slice(i + 1)]
+      const cs = r.geometry.coordinates as [number, number][]
+      r.geometry.coordinates = [...cs.slice(0, i + 1), [...spec.pos], ...cs.slice(i + 1)]
+    }
+  }
   for (const r of roads) {
     const p = r.properties
     const trimNode = TRIM_WAY_START_NODE[p.osm_id]

@@ -11,7 +11,7 @@
 //   - 連續高架（匝道銜接國道、layer 1 接 layer 2）中間不下地：接地距離用
 //     整個高架子網路的沿線最短路（多源 Dijkstra）算，不是逐區塊各自爬升。
 import type { RoadFeature } from './roads'
-import { COS_LAT, cumulative, bearing, angleDelta } from './geo'
+import { COS_LAT, cumulative, bearing, angleDelta, pointAlong } from './geo'
 
 /** OSM layer → 公尺（1≈6m、2≈12m；缺省/0 視同 1 層） */
 export const LAYER_HEIGHT_M = 6
@@ -60,6 +60,24 @@ export const ELEVATED_WAY_IDS = new Set([
   313823905, 457972351, 457972352, 1270874472,
 ])
 
+/**
+ * 現地指定：這些接地端的橋面要裁到「路面邊緣」，不要鋪進交會道路的路面裡。
+ * key = `${osm_id}@${nodeId}`（同 roads.PARALLEL_CROSS_ENDS 的寫法）。
+ *
+ * 匝道落地端與平面路共用節點時，節點在交會道路的**中心線**上，橋面鋪到節點
+ * 就是整片壓在對方路面上（way/230290999 末端實測插進旗楠路 13m）。橋面之間
+ * 已有貼邊裁切（elevated3d 的 trims），但那只在兩邊都是高架時成立。
+ *
+ * 裁切量不寫死：由該節點實際的平面路寬推導（沿匝道往回走到中心線離開所有
+ * 路面為止），所以編輯車道數改了路寬，裁切量會跟著走。
+ */
+const DECK_END_TRIM_ENDS = new Set([
+  // 楠梓交流道下匝道南端 × 旗楠路（土庫八街口北側）：整片橋面插進旗楠路路面
+  '230290999@280277330',
+  // 旗楠路上匝道（上楠梓交流道）東端 × 旗楠路：同上，起端插進路面
+  '131904685@1451068275',
+])
+
 /** 已人工確認「底下有路穿過但不抬」的 bridge/layer 路段——audit:elevated 的
  * 立體交叉偵測會把它們當漏列嫌疑，列在這裡表示判斷過了，不是還沒處理。 */
 export const AT_GRADE_BRIDGE_WAY_IDS = new Set([
@@ -84,6 +102,23 @@ export function isElevated(p: RoadFeature['properties']): boolean {
 const KX = 111320 * COS_LAT // 經度 1 度 ≈ 公尺
 const KY = 110540
 
+/** 接地端裁切的掃描上限（公尺）——超過這個距離就當作量錯了，不裁 */
+const DECK_TRIM_MAX_M = 40
+
+/** 點到折線的最近距離（公尺） */
+function distToLineM(p: [number, number], cs: [number, number][]): number {
+  let best = Infinity
+  const px = p[0] * KX, py = p[1] * KY
+  for (let i = 0; i + 1 < cs.length; i++) {
+    const ax = cs[i][0] * KX, ay = cs[i][1] * KY
+    const vx = cs[i + 1][0] * KX - ax, vy = cs[i + 1][1] * KY - ay
+    const len2 = vx * vx + vy * vy
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2)) : 0
+    best = Math.min(best, Math.hypot(px - (ax + vx * t), py - (ay + vy * t)))
+  }
+  return best
+}
+
 interface BlockElev {
   road: RoadFeature
   coords: [number, number][]
@@ -97,6 +132,9 @@ interface BlockElev {
    * （橋比地面路寬時，端點不收窄會懸空蓋到旁邊的平面路上） */
   gw0?: number
   gw1?: number
+  /** 接地端橋面裁切長度（公尺，見 DECK_END_TRIM_ENDS） */
+  trim0?: number
+  trim1?: number
 }
 
 const smoothstep = (t: number) => t * t * (3 - 2 * t)
@@ -210,6 +248,32 @@ export class ElevationModel {
         }
       }
     }
+
+    // 6) 現地指定的接地端橋面裁切：沿橋往回走，走到中心線離開該節點上「所有」
+    //    平面路的路面為止（每 0.5m 取樣）。量的是本塊自己的幾何，所以裁切量
+    //    會隨編輯後的路寬改變；找不到出口就不裁（維持原樣，不會憑空縮短）。
+    for (const b of this.blocks.values()) {
+      for (const [n, atStart] of [[b.n0, true], [b.n1, false]] as const) {
+        if ((this.dGround.get(n) ?? Infinity) !== 0) continue
+        if (!DECK_END_TRIM_ENDS.has(`${b.road.properties.osm_id}@${n}`)) continue
+        const surfaces: { cs: [number, number][]; half: number }[] = []
+        for (const r of roads) {
+          if (this.blocks.has(r) || !r.properties.nodes.includes(n)) continue
+          const cs = r.geometry.coordinates as [number, number][]
+          if (cs.length >= 2) surfaces.push({ cs, half: r.properties.width_m / 2 })
+        }
+        if (!surfaces.length) continue
+        const maxTrim = Math.min(b.lenM / 2, DECK_TRIM_MAX_M)
+        let trim: number | undefined
+        for (let s = 0; s <= maxTrim; s += 0.5) {
+          const { pos } = pointAlong(b.coords, b.cum, atStart ? s : b.lenM - s)
+          if (surfaces.every((g) => distToLineM(pos, g.cs) > g.half)) { trim = s; break }
+        }
+        if (trim === undefined) continue
+        if (atStart) b.trim0 = trim
+        else b.trim1 = trim
+      }
+    }
   }
 
   /** 有任何高架區塊才需要建 3D 圖層/查高度 */
@@ -226,6 +290,12 @@ export class ElevationModel {
     return b ? { gw0: b.gw0, gw1: b.gw1 } : {}
   }
 
+  /** 接地端橋面裁切長度（沒指定 = undefined，橋面鋪到端節點） */
+  endTrim(road: RoadFeature): { t0?: number; t1?: number } {
+    const b = this.blocks.get(road)
+    return b ? { t0: b.trim0, t1: b.trim1 } : {}
+  }
+
   /** 該路段沿線 d 公尺處的高度；非高架路段回傳 0 */
   heightAt(road: RoadFeature, d: number): number {
     const b = this.blocks.get(road)
@@ -237,11 +307,13 @@ export class ElevationModel {
     const base = b.hM +
       (h0 - b.hM) * Math.max(0, 1 - x / NODE_BLEND_M) +
       (h1 - b.hM) * Math.max(0, 1 - (b.lenM - x) / NODE_BLEND_M)
-    // 接地爬升：距最近接地點的「沿高架網」距離 → smoothstep 升到全高
-    const dg = Math.min(
-      (this.dGround.get(b.n0) ?? Infinity) + x,
-      (this.dGround.get(b.n1) ?? Infinity) + (b.lenM - x),
-    )
+    // 接地爬升：距最近接地點的「沿高架網」距離 → smoothstep 升到全高。
+    // 端點被裁切（DECK_END_TRIM_ENDS）時接地點就在裁切處，不在端節點——
+    // 扣掉裁切長度，橋面／路線帶／車輛三者才會在同一點落地。
+    const dg = Math.max(0, Math.min(
+      (this.dGround.get(b.n0) ?? Infinity) + x - (b.trim0 ?? 0),
+      (this.dGround.get(b.n1) ?? Infinity) + (b.lenM - x) - (b.trim1 ?? 0),
+    ))
     return dg >= RAMP_M ? base : base * smoothstep(dg / RAMP_M)
   }
 

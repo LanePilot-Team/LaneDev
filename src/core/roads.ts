@@ -11,6 +11,9 @@ import {
 } from './geo.ts'
 
 export const MOTO_LANE_M = 2.2
+/** 路面多邊形比車道斷面多出的寬度（casing 外框／surface 鋪面） */
+const CASING_EXTRA_M = 2.4
+const SURFACE_EXTRA_M = 0.8
 
 export interface LaneMark {
   text: string
@@ -138,13 +141,15 @@ export interface RoadProps {
   bridge?: string
   /** OSM layer=*（疊序整數，可負；缺省 0 = 平面）。高度合成見 elevation.ts */
   layer: number
-  /** OSM tunnel=*（隧道/地下道）。視覺下沉本版不做（TODO），僅傳遞資料 */
+  /** OSM tunnel=*（隧道/地下道）。3D 下沉不做，只以 2D 疊放順序表達（見 isTunnel） */
   tunnel?: string
   /** 高架路段（elevation.isElevated，pipeline 切塊後標記）：地面車道級渲染
    * （路面/分隔線/印字/單行箭頭）全部略過，由 elevated3d 的 3D 橋面取代 */
   elevated?: boolean
   /** 顯示端不在人工確認的複合寬路口區塊上放道路名稱／線上箭頭。 */
   hideIntersectionInfo?: boolean
+  /** Only hide floating road-name symbols; keep pavement text, geometry, and navigation name. */
+  hideRoadLabel?: boolean
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
    * undefined = 無人工設定（motorcycle=no 時 fallback 印禁行機車）；[] = 明確無 */
   rulesF?: string[]
@@ -181,7 +186,22 @@ export interface RoadProps {
 
 export type RoadFeature = Feature<LineString> & { properties: RoadProps }
 
-type RoadSurfaceProps = RoadProps & { surfaceKind: 'casing' | 'surface' }
+/**
+ * 地下道／隧道：路面與標線都改畫在地面圖層「之下」，交會處自然被上面那條蓋住。
+ *
+ * 與高架（elevation.ELEVATED_WAY_IDS 人工清單）刻意不同——高架抬錯 6m 是災難
+ * （跨河橋一律抬會全錯），所以只認人工清單；疊放順序畫錯最壞只是「該在上面的
+ * 畫到下面」，成本低到可以直接吃 OSM 標籤，不必維護清單。
+ * 全圖 27 個區塊命中，其中 10 條真的與不共用節點的路平面交叉（33 組）。
+ */
+export const isTunnel = (p: RoadProps): boolean =>
+  p.tunnel === 'yes' || p.tunnel === 'building_passage' || p.layer < 0
+
+type RoadSurfaceProps = RoadProps & {
+  surfaceKind: 'casing' | 'surface'
+  /** 畫在地面圖層之下（mapStyle 的 tunnel-* 圖層組）——見 isTunnel */
+  underground: boolean
+}
 
 const DEFAULT_LANES: Record<string, number> = {
   motorway: 4, trunk: 4, primary: 4, secondary: 3, tertiary: 2,
@@ -379,7 +399,7 @@ export function buildRoadSurfaces(
       if (!polygon) continue
       features.push({
         ...polygon,
-        properties: { ...road.properties, surfaceKind },
+        properties: { ...road.properties, surfaceKind, underground: isTunnel(road.properties) },
       })
     }
   }
@@ -468,12 +488,27 @@ export function collapseShortDeadEnds(roads: RoadFeature[], maxLengthM = 60): nu
  * 移除未命名的短死端殘段。從度數 1 的死端起，沿未命名低等級道路追蹤到正式
  * 路網；只有整條支線鏈的總長不超過上限才移除，避免逐段剝掉長距離無名道路。
  */
+/**
+ * 現地確認存在、不可當成無名短支線移除的 way。
+ *
+ * 移除支線同時也移除了「那個節點是路口」這件事：節點的相異鄰接掉到 2 之後，
+ * `graph.intersections()` 不再認它，於是該處**標線不收邊（兩段看起來合成一條）、
+ * 停止線畫不出來、機車停等格連面板選項都不出現**（`motoBoxPanelLimits` 的
+ * topo 為 false 時上限直接歸零）。
+ */
+const KEEP_UNNAMED_SPUR_WAY_IDS = new Set([
+  // 楠陽路 × node/12556600783 的無名巷（service，約 30m，2026-08-07 使用者確認存在）。
+  // 被移除後楠陽路兩個區塊在此以 1° 續接，標線整段連續、兩端都放不了停止線/停等格。
+  951446697,
+])
+
 export function removeUnnamedShortSpurs(
   roads: RoadFeature[], maxLengthM = 60,
 ): { roads: RoadFeature[]; removed: number } {
   const eligibleHighways = new Set(['residential', 'living_street', 'service', 'unclassified'])
   const eligible = (r: RoadFeature) => {
     const p = r.properties
+    if (KEEP_UNNAMED_SPUR_WAY_IDS.has(p.osm_id)) return false
     return !p.name?.trim() && p.nodes.length >= 2 && r.geometry.coordinates.length >= 2 &&
       eligibleHighways.has(p.highway)
   }
@@ -636,6 +671,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   let info0 = ZERO
   let info1 = ZERO
   let curId = 0
+  let curTunnel = false
   let roadMarkingMode: RoadProps['roadMarkingMode'] = 'all'
   let axisShift = 0
   let roadHalfWidth = 0
@@ -688,13 +724,15 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
         : lineOffset(feat, renderOff, { units: 'meters' })
       features.push({
         type: 'Feature', geometry: line.geometry,
-        properties: { kind, osm_id: curId }, // osm_id 供除錯/離線稽核，樣式不使用
+        // osm_id 供除錯/離線稽核，樣式不使用；tunnel 決定畫在地面層之上或之下
+        properties: { kind, osm_id: curId, underground: curTunnel },
       })
     } catch { /* 退化幾何略過 */ }
   }
   for (const road of roads) {
     const p = road.properties
     curId = p.osm_id
+    curTunnel = isTunnel(p)
     roadMarkingMode = p.roadMarkingMode
     axisShift = p.oneway === 'no' ? -(p.divOffM || 0) : 0
     roadHalfWidth = p.width_m / 2
@@ -722,6 +760,15 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
         cum = cumulative(cs0)
         L = cum[cum.length - 1]
       }
+    }
+    // 地下道兩側緣線：畫在 buildRoadSurfaces 的 surface 多邊形「側邊」位置。
+    // 不能直接把那個多邊形當輪廓描邊——turf buffer 兩端是圓頭，描出來就是
+    // 銜接處一道圓弧路緣（2026-08-07 使用者回報）。改用中心線平移，只有兩條
+    // 側線、沒有端帽；端點被相鄰路段的路面蓋掉，銜接自然平順。
+    if (curTunnel) {
+      const edgeOff = (p.width_m + SURFACE_EXTRA_M) / 2
+      push(edgeOff, 'tunnel-edge')
+      push(-edgeOff, 'tunnel-edge')
     }
     const f = p.lanesForward // 可為 0（該向純機車道）
     // 快慢分隔帶 >0 時該向不畫機車道白線——島面（buildMotoSepIslands）取代
@@ -834,7 +881,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
           const boundary = lineOffset(curve, side, { units: 'meters' })
           features.push({
             type: 'Feature', geometry: boundary.geometry,
-            properties: { kind: 'moto', osm_id: main.properties.osm_id },
+            properties: {
+              kind: 'moto', osm_id: main.properties.osm_id,
+              tunnel: isTunnel(main.properties),
+            },
           })
         }
       }

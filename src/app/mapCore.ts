@@ -443,8 +443,10 @@ export function useMapCore(
     src('dividers').setData(groundMarkingPolygons(
       dividerFeatures,
       (p) => p?.kind === 'center' ? 0.3
+        : p?.kind === 'tunnel-edge' ? 0.12 // 地下道側緣：比車道線細一點
         : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
-      (p) => p?.kind === 'lane',
+      // 車道線與地下道側緣都是虛線（後者用虛線表示「在地面之下」）
+      (p) => p?.kind === 'lane' || p?.kind === 'tunnel-edge',
     ) as never)
   }, [src])
 

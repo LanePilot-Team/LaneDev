@@ -1,7 +1,7 @@
 // 高架清單審計（npm run audit:elevated）：ELEVATED_WAY_IDS 是人工清單，漏一條 way
 // 就會在橋中央留下「橋面斷在半空、該段照畫地面標線、導航貼地穿過橋墩」的破口
 // （way/103679008 高楠陸橋南端、way/230213636 等機車高架續行段都是這樣被發現的）。
-// 三項檢查：
+// 五項檢查：
 //   A. 橋面中斷——高架區塊的端節點接到「自己也是 bridge/layer 卻沒被抬」的區塊：
 //      同一座橋被 OSM 切成多條 way 而清單只收了幾條。漏列最直接的症狀，主檢查。
 //   B. 疑似漏列——bridge=yes/layer>0 但不在清單，且底下真的有別條路穿過
@@ -12,6 +12,10 @@
 //   D. 橋面路段殘留地面圖徵——高架的標線由 elevated3d 畫在橋面上，任何 builder
 //      若沒擋 p.elevated，就會在橋「底下」多鋪一份中央島/停等格/箭頭，導航時
 //      看起來像一條錯位的底層道路（buildCenterIslands、buildMotoBoxes 實例）。
+//   E. 橋面推移——匯流/分岔的橋面必須貼在自己的中心線上（作法比照平面：疊合補滿、
+//      標線護欄才收邊）。舊版把匝道推到對方邊緣滑行，橋面最多偏 9.65m。
+//   F. 護欄/標線落在別片橋面上——疊合區只留最外圈輪廓，護欄站在對方路面上就是
+//      一道穿過橋面的牆，標線則在匯流口交叉成一團。量的是實際 mesh 頂點。
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,7 +38,9 @@ import { buildRoadLabelLines, buildRoadTexts, roadTextObstacles } from '../src/c
 import {
   AT_GRADE_BRIDGE_WAY_IDS, buildElevation, ELEVATED_WAY_IDS, isElevated,
 } from '../src/core/elevation'
-import { cumulative } from '../src/core/geo'
+import maplibregl from 'maplibre-gl'
+import { ElevatedLayer } from '../src/core/elevated3d'
+import { COS_LAT, NANZI_CENTER, cumulative } from '../src/core/geo'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const argument = (name: string, fallback: string) =>
@@ -202,6 +208,105 @@ for (const [name, keys] of surfaces) {
 }
 check('高架區塊沒有殘留地面圖徵', strays.length === 0,
   strays.length ? `${strays.length} 個 builder\n   ${strays.join('\n   ')}` : `${surfaces.length} 個 builder 全乾淨`)
+
+// E. 橋面必須貼在自己的中心線上（2026-08-07）
+// 匯流/分岔的處理方式改成「橋面各走各的中心線、疊合處自然補滿，標線與護欄才收邊」
+// （比照平面 buildRoadSurfaces + buildDividers）。舊版把匝道推到對方邊緣貼著滑行、
+// 把 Y 形兩臂搬到主幹左右半邊，橋面最多離開自己的中心線 9.65m ——畫出來就是
+// 使用者回報的「扭曲、沒接好」。這一項是那次改動的回歸防線。
+{
+  const layer = new ElevatedLayer()
+  layer.setModel(model)
+  const profiles = (layer as unknown as {
+    deckProfile: Map<RoadFeature, { pts: [number, number][]; hs: number[] }>
+  }).deckProfile
+  const KX = 111320 * COS_LAT
+  const KY = 110540
+  const distToLine = (p: [number, number], cs: [number, number][]) => {
+    let best = Infinity
+    for (let i = 0; i + 1 < cs.length; i++) {
+      const ax = cs[i][0] * KX, ay = cs[i][1] * KY
+      const vx = cs[i + 1][0] * KX - ax, vy = cs[i + 1][1] * KY - ay
+      const l2 = vx * vx + vy * vy
+      const t = l2
+        ? Math.max(0, Math.min(1, ((p[0] * KX - ax) * vx + (p[1] * KY - ay) * vy) / l2)) : 0
+      best = Math.min(best, Math.hypot(p[0] * KX - (ax + vx * t), p[1] * KY - (ay + vy * t)))
+    }
+    return best
+  }
+  const originMerc = maplibregl.MercatorCoordinate.fromLngLat(
+    { lng: NANZI_CENTER[0], lat: NANZI_CENTER[1] }, 0)
+  const mercScale = originMerc.meterInMercatorCoordinateUnits()
+  /** elevated3d 的場景座標（東, -北 公尺，錨在 NANZI_CENTER 的 Mercator）→ 經緯度 */
+  const sceneToLngLat = (x: number, z: number): [number, number] => {
+    const ll = new maplibregl.MercatorCoordinate(
+      originMerc.x + x * mercScale, originMerc.y + z * mercScale, 0).toLngLat()
+    return [ll.lng, ll.lat]
+  }
+  const drifted: string[] = []
+  let decks = 0
+  for (const { road } of model.entries()) {
+    const profile = profiles.get(road)
+    if (!profile) continue
+    decks++
+    let off = 0
+    for (const point of profile.pts) {
+      off = Math.max(off, distToLine(point, road.geometry.coordinates as [number, number][]))
+    }
+    if (off > 0.05) drifted.push(`${key(road)}｜${label(road)}｜偏離 ${off.toFixed(2)}m`)
+  }
+  check('橋面中心線就是路段中心線（匯流靠疊合，不推移橋面）', drifted.length === 0,
+    drifted.length ? `${drifted.length}/${decks} 條偏離\n   ${drifted.slice(0, 6).join('\n   ')}`
+      : `${decks} 條全部貼線`)
+
+  // F. 護欄與標線不得落在別片橋面的路面上（2026-08-07 使用者要求）
+  // 疊合區只留最外圈輪廓：護欄站在對方路面上就是一道穿過橋面的牆，
+  // 標線則會在匯流口交叉成一團。量的是實際 mesh 頂點，不是規則本身。
+  // 首尾相接的續行段（同一 way 的前後區塊、跨 way 邊界的續接）在共用節點附近
+  // 必然互相碰到，那是同一條路的接縫、標線護欄本來就要連續通過，不計。
+  const meshes = (layer as unknown as { group: { children: unknown[] } }).group.children
+  const boxes = [...model.entries()].map(({ road }) => {
+    const cs = road.geometry.coordinates as [number, number][]
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const c of cs) {
+      x0 = Math.min(x0, c[0]); y0 = Math.min(y0, c[1])
+      x1 = Math.max(x1, c[0]); y1 = Math.max(y1, c[1])
+    }
+    const pad = 0.0005
+    return { road, cs, half: road.properties.width_m / 2, box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad] }
+  })
+  const straySpots = new Map<string, number>()
+  let vertices = 0
+  // group.children 依 setModel 的 add 順序：橋面/側裙/護欄/橋墩/白標線/黃標線
+  for (const index of [2, 4, 5]) {
+    const geometry = (meshes[index] as { geometry?: { getAttribute(n: string): {
+      count: number; getX(i: number): number; getZ(i: number): number } | undefined } })?.geometry
+    const pos = geometry?.getAttribute('position')
+    if (!pos) continue
+    for (let i = 0; i < pos.count; i++) {
+      const p = sceneToLngLat(pos.getX(i), pos.getZ(i))
+      vertices++
+      const hit = boxes.filter((d) =>
+        p[0] >= d.box[0] && p[0] <= d.box[2] && p[1] >= d.box[1] && p[1] <= d.box[3]
+        && distToLine(p, d.cs) < d.half - 0.2)
+      for (const a of hit) {
+        for (const b of hit) {
+          if (a === b || a.road.properties.osm_id === b.road.properties.osm_id) continue
+          const an = new Set(a.road.properties.nodes)
+          if (b.road.properties.nodes.some((n) => an.has(n))) continue
+          const k = [key(a.road), key(b.road)].sort().join(' + ')
+          straySpots.set(k, (straySpots.get(k) ?? 0) + 1)
+        }
+      }
+    }
+  }
+  check('護欄與標線都沒有畫到別片橋面的路面上', straySpots.size === 0,
+    straySpots.size
+      ? `${[...straySpots.values()].reduce((s, v) => s + v, 0)}/${vertices} 個頂點\n   `
+        + [...straySpots].sort((a, b) => b[1] - a[1]).slice(0, 6)
+          .map(([k, c]) => `${c} 點：${k}`).join('\n   ')
+      : `${vertices} 個頂點全部乾淨`)
+}
 
 // 對照組：量測有鑑別力——把清單清空後，A/B 兩項必須大量報錯
 check('對照組確實抓得到問題（量測有鑑別力）',

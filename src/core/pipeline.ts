@@ -9,14 +9,14 @@ import { applyFixups, collapseKnownIntersections, REMOVED_WAY_IDS } from './fixu
 import {
   collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
 } from './roads'
-import { MEDIAN_SCOPE_ROADS } from './medians'
 import { isElevated } from './elevation'
 
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過。
  * 高楠公路：只顯式併陸橋本體兩 way（見 GAONAN_BRIDGE_IDS）——地面段有
  * 主慢分離/同向並排，泛用掃描本來就會被防呆整條擋下，列這裡免做白工 */
 const CUSTOM_SECTION_ROADS = new Set([
-  '藍田路', '大學南路', '援中路', '楠陽高架橋', '高楠公路', '翠華路',
+  '藍田路', '大學南路', '援中路', '楠陽高架橋', '高楠公路', '翠華路', '旗楠路',
+  '土庫一路',
 ])
 
 /** 高楠公路陸橋本體（跨楠梓路口的成對單行，間距 ~12m）。北段短橋對
@@ -29,11 +29,77 @@ const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
  * 斷面（機車道＋快慢分隔島），獨立慢車道 way 移除、側街節點移植接上主線 */
 const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
+/**
+ * 一律不做 couplet 合併的路名：機慢車道走廊本來就是單向一條，沒有「對向的另一半」。
+ *
+ * 泛用同名合併的分組只看**整條 way 的走向**（相對最長 way ±90°），轉彎超過 90°
+ * 的走廊會被切到不同組；短的那截又整條落在對方起點的 PAIR_MAX_M 內（投影全夾在
+ * 端點）→ 覆蓋率 100%，被當成 drop side 整條刪掉。
+ * 機車專用道(往橋頭/楠梓車站方向) way/1495039671（39.5m，接在 way/23787573 西端
+ * 與 way/1495039674 東端之間）就是這樣消失的，整條走廊在朝新路口斷成兩截。
+ * 全圖這個名稱底下只有這一筆合併，所以整名排除沒有副作用。
+ */
+const NO_COUPLET_ROADS = new Set([
+  '機車專用道(往橋頭/楠梓車站方向)',
+  '機車專用道(往高雄市區、楠梓方向)',
+])
+
 /** 翠華路北段的兩組實際分向主線。南側另有交流道短接線，同名但不可一起配對。 */
 const CUEIHUA_MAINLINE_PAIRS = [
   new Set([267715853, 28526260]),
   new Set([267715863, 267715867]),
 ]
+
+/**
+ * 建楠路由四組相反方向的 oneway 組成；若整個路名一次分組，前後相接的同向
+ * 分段會被防呆誤判為「同向並排」。逐組限定來源 way 可保留防呆門檻，並讓
+ * mergeCouplets 原有的 nodeRemap 把沿線側巷接回合體中心線。
+ */
+const JIANNAN_PAIRS = [
+  new Set([23787570, 271982142]),
+  new Set([27527298, 271982144]),
+  // 東端的兩條短橫段各只有兩個取樣點，必須與相接彎道同組，才有足夠
+  // 投影覆蓋率完成配對。
+  new Set([27527294, 230282047, 271982140, 1456608388]),
+]
+
+/** 土庫一路中央的成對汽車主線；同名 unclassified 為外側道路，不參與合體。 */
+const TUKU_MAINLINE_IDS = new Set([126247863, 126247891, 1464614123])
+
+/**
+ * 旗楠路的機慢車道（motorcycle=yes／汽車主線是 motorcycle=no）。OSM 把它標成
+ * 與主線同名同 highway=primary 的單行 way，只靠 highway 篩選會被當成分向主線的
+ * 一半：couplet 會把它的中心線投影到「機車道 ↔ 對向主線」的中點，整條被拉進
+ * 合體主線的路面裡（實測側距只剩 3～5m，主線半寬 10.3m → 全長壓在路面內）。
+ * 機慢車道是主線外側的獨立車道，不是對向線，排除在配對之外。
+ */
+const QINAN_MOTO_LANE_IDS = new Set([25706466])
+
+/**
+ * 旗楠路／土庫一路口的 OSM 分向線在合體後留下數條重疊 block。只移除經人工
+ * 點名且已驗證不承擔路口進出連接的區塊；其餘短接頭保留，避免切斷土庫一路。
+ */
+const QINAN_TUKU_REMOVED_BLOCKS = new Set([
+  // 重疊主線：保留 way/271982114 的連續中心線。
+  'way/25706466@b/1400036190',
+  'way/25706466@b/8198448992',
+  // 重疊主線：保留 way/25706464@b/1400036165。
+  'way/25706466@b/1400036869',
+  // 土庫一路主線合體會把 1400036869 重映射成 1400036531；仍是上面同一塊。
+  'way/25706466@b/1400036531',
+  // 不承擔必要轉向的碎塊；移除後四個土庫一路進出方向仍可達。
+  'way/25706466@b/265591751',
+  'way/24436713@b/280277447',
+])
+
+const blockKey = (road: RoadFeature) =>
+  `way/${road.properties.osm_id}@b/${road.properties.blockNode}`
+
+/** Hide only the floating names on this pair of overlapping motorcycle-lane blocks. */
+const HIDDEN_FLOATING_ROAD_LABEL_BLOCKS = new Set([
+  'way/776417983@b/1196964599',
+  'way/103679020@b/1196964599',
+])
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
  * 是推薦值非真值——實地車道數/機車道/分隔島用編輯模式逐區塊修。 */
@@ -52,6 +118,7 @@ function coupletCandidates(roads: RoadFeature[]): string[] {
     const p = r.properties
     if (p.oneway !== 'yes' || !p.name) continue
     if (CUSTOM_SECTION_ROADS.has(p.name) || MAINLINE_ONLY_ROADS.has(p.name)) continue
+    if (NO_COUPLET_ROADS.has(p.name)) continue
     // 高快速公路的分向是實體事實（機車也禁行），雙向化會讓汽車可逆向繞行
     if (/^(motorway|trunk)/.test(p.highway)) continue
     if (p.junction === 'roundabout' || p.nodes[0] === p.nodes[p.nodes.length - 1]) continue
@@ -109,7 +176,7 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     raw.filter((r) => !REMOVED_WAY_IDS.has(r.properties.osm_id)),
     new Set(['藍田路']), undefined, nodeRemap, wayRemap,
   )
-  roads = mergeCouplets(roads, MEDIAN_SCOPE_ROADS, {
+  roads = mergeCouplets(roads, new Set(['大學南路']), {
     lanesF: 2, lanesB: 2, centerM: 2.4, centerKind: 'island',
     motoF: true, motoB: true,
     centerFromGap: { roadW: 8.6, min: 1.6, max: 8 }, // roadW = 2車道+機車道斷面寬
@@ -131,6 +198,18 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   roads = mergeCouplets(roads, new Set(['高楠公路']), {
     lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'island',
   }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
+  // 旗楠路的 primary 是一組連續分向幹道；同名 residential 短側線不是對向主線，
+  // 若整個路名一起分組會觸發「同向並排」防呆而整條不合併。
+  // 機慢車道同樣是 primary，但不是對向主線（見 QINAN_MOTO_LANE_IDS）。
+  roads = mergeCouplets(roads, new Set(['旗楠路']), {
+    lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'hatch',
+    centerFromGap: { roadW: 6.4, min: 0.6, max: 3.2 },
+  }, nodeRemap, wayRemap, (r) => r.properties.highway === 'primary'
+    && !QINAN_MOTO_LANE_IDS.has(r.properties.osm_id))
+  roads = mergeCouplets(roads, new Set(['土庫一路']), {
+    lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'hatch',
+    centerFromGap: { roadW: 9.6, min: 0.6, max: 3.2 },
+  }, nodeRemap, wayRemap, (r) => TUKU_MAINLINE_IDS.has(r.properties.osm_id))
   // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——
   // 主線合併成 2+2＋機車道＋快慢分隔島（寬度可編輯），再吸收慢車道 way
   for (const ids of CUEIHUA_MAINLINE_PAIRS) {
@@ -140,6 +219,10 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     }, nodeRemap, wayRemap, (r) => ids.has(r.properties.osm_id))
   }
   roads = absorbSideWays(roads, '翠華路', nodeRemap, wayRemap)
+  for (const ids of JIANNAN_PAIRS) {
+    roads = mergeCouplets(roads, new Set(['建楠路']), SIMPLE_SECTION,
+      nodeRemap, wayRemap, (r) => ids.has(r.properties.osm_id))
+  }
   for (const name of MAINLINE_ONLY_ROADS) {
     roads = mergeCouplets(roads, new Set([name]), {
       ...SIMPLE_SECTION,
@@ -168,6 +251,12 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
   // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
   let blocks = splitAtIntersections(roads)
+  blocks = blocks.filter((road) => !QINAN_TUKU_REMOVED_BLOCKS.has(blockKey(road)))
+  for (const road of blocks) {
+    if (HIDDEN_FLOATING_ROAD_LABEL_BLOCKS.has(blockKey(road))) {
+      road.properties.hideRoadLabel = true
+    }
+  }
   blocks = removeUnnamedShortSpurs(blocks).roads
   collapseShortDeadEnds(blocks)
   // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，

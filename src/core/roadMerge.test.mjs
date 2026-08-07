@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import {
   activeMergeForRoad, buildRoadMergeViews, planRoadMergeSeamUndo,
   previewRoadMerge, resolveRoadMerges, roadMergeComponentBlockKeys,
-  roadMergeEditDrafts, roadMergeEditableRoads,
+  roadMergeEditDrafts, roadMergeEditableRoads, roadMergeMotoBoxTargets,
+  roadMergeRenderCarrier,
 } from './roadMerge.ts'
 import * as roadMergeModule from './roadMerge.ts'
 
@@ -310,6 +311,47 @@ test('連鎖捏合依原始時序重播，不用最終快照誤判較早次段',
 
   assert.deepEqual(result.rows.map((row) => row.status), ['replayable', 'replayable'])
   assert.equal(result.resolved.length, 2)
+})
+
+test('從已捏合鏈保留的主線選取第三段時以目前繪圖主線判定相接距離', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const firstJournal = v2Chain(blocks.slice(0, 2))
+  const view = buildRoadMergeViews(blocks, firstJournal)
+  const selectedMain = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const third = view.routingRoads.find((item) => item.properties.blockNode === 3)
+  assert.ok(selectedMain)
+  assert.ok(third)
+
+  const stalePreview = previewRoadMerge(
+    view.routingRoads, firstJournal, selectedMain, third)
+  assert.equal(stalePreview.ok, false)
+  assert.match(stalePreview.reason, /相距/)
+
+  const carrier = roadMergeRenderCarrier(view.rows, selectedMain, view.renderRoads)
+  assert.deepEqual(carrier.properties.nodes, [1, 2, 3])
+  const preview = previewRoadMerge(view.routingRoads, firstJournal, carrier, third)
+  assert.equal(preview.ok, true)
+})
+
+test('moto-box settings on any merged block target only the visible carrier ends', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const middle = view.routingRoads.find((item) => item.properties.blockNode === 2)
+  assert.ok(middle)
+
+  assert.deepEqual(roadMergeMotoBoxTargets(view.rows, middle, view.renderRoads), {
+    forward: { wayId: 100, nodeId: 4, back: false },
+    backward: { wayId: 100, nodeId: 1, back: true },
+  })
 })
 
 test('delete tombstone 會停用舊捏合但保留日誌原文', () => {

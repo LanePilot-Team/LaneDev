@@ -18,6 +18,7 @@ import { roadsFromGeoJSON, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
 import { foldJournal, applyToRoads, applyRoadMerges } from '../src/core/enhancements'
 import { buildRoadMergeViews } from '../src/core/roadMerge'
+import { haversine } from '../src/core/geo'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const arg = (name: string, dflt: string) =>
@@ -42,6 +43,8 @@ applyRoadMerges(roads, journal)
 const auditRoads = roads
 
 const blockKey = (r: RoadFeature) => `way/${r.properties.osm_id}@b/${r.properties.blockNode}`
+const lineLengthM = (cs: [number, number][]) =>
+  cs.slice(1).reduce((total, point, index) => total + haversine(cs[index], point), 0)
 const live = new Map(auditRoads.map((r) => [blockKey(r), r]))
 const folded = foldJournal(journal)
 const nameOf = (r?: RoadFeature) => r?.properties.name ?? '未命名'
@@ -137,6 +140,29 @@ for (const o of deletedOrphans) {
 for (const o of by('candidate_remap_needs_review')) {
   if (o.deleted) continue
   console.log(`   ✔ ${o.key}（${o.fields} 個欄位）→ ${o.new_target}（${o.new_road}）`)
+}
+
+// 反方向的失效：deleted:1 原本落在幾公尺的破碎小段上（那才是這個工具的用途），
+// 但區塊邊界一變（couplet 不再配對、路口增刪），同一個鍵可能改指到一整段真的路，
+// 於是那段路無聲消失。2026-08-06 實測：清豐路的 couplet 改成不合併之後，
+// way/271982158@b/2264426952 從 0m 的退化殘段變成 263m 的側車道，整段就不見了。
+// 刪除是給「實地根本不存在的破碎小段」用的，所以夠長的生效刪除一律要人工看過。
+const LONG_DELETE_M = 30
+const longDeletes = auditRoads
+  .filter((r: RoadFeature) => r.properties.deleted)
+  .map((r: RoadFeature) => {
+    const cs = r.geometry.coordinates as [number, number][]
+    return { road: r, key: blockKey(r), lengthM: lineLengthM(cs) }
+  })
+  .filter((row) => row.lengthM >= LONG_DELETE_M)
+  .sort((a, b) => b.lengthM - a.lengthM)
+console.log(`\n⚠ 生效中但長度 ≥${LONG_DELETE_M}m 的 deleted:1`
+  + `（刪除是給破碎小段用的，這些要確認不是區塊邊界變動誤傷）：${longDeletes.length}`)
+for (const row of longDeletes) {
+  const p = row.road.properties
+  const cs = row.road.geometry.coordinates as [number, number][]
+  console.log(`   ${row.key}｜${row.lengthM.toFixed(0)}m｜${p.name ?? '未命名'}`
+    + `（${p.highway}）@ ${cs[0][1].toFixed(6)},${cs[0][0].toFixed(6)}`)
 }
 
 if (JSON_OUT) {

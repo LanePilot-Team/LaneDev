@@ -5,7 +5,57 @@
 // 現在面板每次 render 都呼叫這支重算，規則本身因此需要獨立的測試守著。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { motoBoxLaneLimits } from './turnbays.ts'
+import { makeMotoBoxSlot, motoBoxLaneLimits } from './turnbays.ts'
+import { RoadGraph } from './graph.ts'
+import { buildRoadMergeViews, previewRoadMerge } from './roadMerge.ts'
+
+test('all-unknown access preserves legacy motorcycle=no and manual lane fallback', () => {
+  const legacy = motoBoxLaneLimits(
+    2, true, undefined, true, ['unknown', 'unknown'],
+  )
+  assert.equal(legacy.motoOnly, true)
+  assert.equal(legacy.maxLanes, 1)
+
+  const manual = motoBoxLaneLimits(
+    2, true, [null, { text: 'manual designated', color: '#fff' }], true,
+    ['unknown', 'unknown'],
+  )
+  assert.equal(manual.firstLegalLane, 1)
+  assert.equal(manual.maxLanes, 2)
+})
+
+const mergeRoad = (osmId, blockNode, nodes, coords, access) => ({
+  type: 'Feature', geometry: { type: 'LineString', coordinates: coords },
+  properties: {
+    osm_id: osmId, blockNode, nodes, name: 'merge road', highway: 'tertiary',
+    oneway: 'no', lanes: 4, lanesForward: 2, lanesBackward: 2,
+    motoF: false, motoB: false, motoCountF: 0, motoCountB: 0,
+    motoSepF: 0, motoSepB: 0, motorcycleAccessByLaneF: access,
+    motorcycleAccessByLaneB: ['yes', 'yes'], roadMarkingMode: 'all',
+    centerM: 0, centerKind: 'hatch', islandBayMode: false,
+    centerExtendStart: false, centerExtendEnd: false, extraM: 0, divOffM: 0,
+    width_m: 14, layer: 0, navSegmentKey: `way/${osmId}`, splitIndex: 0,
+    sourceSegments: [{ osmId, navSegmentKey: `way/${osmId}`, splitIndex: 0, nodeRefs: nodes }],
+  },
+})
+
+test('visual merge secondary endpoint uses the secondary approach motorcycle access', () => {
+  const primary = mergeRoad(100, 10, [10, 20], [[120, 22], [120, 22.001]], ['yes', 'yes'])
+  const secondary = mergeRoad(200, 20, [20, 30], [[120, 22.001], [120, 22.002]], ['no', 'yes'])
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+  assert.equal(preview.ok, true)
+  const record = { ...preview.record, seq: 1, ts: '2026-01-01T00:00:00.000Z', author: 'test' }
+  const view = buildRoadMergeViews([primary, secondary], [record], [])
+  const carrier = view.renderRoads[0]
+  const graph = new RoadGraph(view.renderRoads)
+  const slot = makeMotoBoxSlot(graph)({
+    road: carrier, back: false, fromNode: 10, toNode: 30,
+    coords: carrier.geometry.coordinates, startSetbackM: 0, endSetbackM: 5,
+  })
+
+  assert.equal(slot.firstLegalLane, 1)
+  assert.equal(slot.maxLanes, 1)
+})
 
 const noMoto = { text: '禁行機車', color: '#facc15' }
 

@@ -3,7 +3,9 @@ import {
   applyCenterIslandJoins, CENTER_ISLAND_JOINS, type CenterIslandJoinSpec,
 } from './centerIslandJoins.ts'
 import type { EnhancementRecord } from './enhancements'
-import type { OneSideEntryAccess, RoadFeature, RoadProps } from './roads'
+import type {
+  OneSideEntryAccess, RoadFeature, RoadMergeApproachPolicy, RoadProps,
+} from './roads'
 
 export interface ResolvedRoadMerge {
   mergeKey: string
@@ -72,6 +74,13 @@ const cloneRoad = (road: RoadFeature): RoadFeature => ({
       // 來源幾何只用於追溯消歧，建立視圖時不會修改；共用可避免每次預覽
       // 都複製整份 OSM 幾何，尤其 UI 在捏合前後連續建圖時會造成記憶體尖峰。
       coordinates: source.coordinates,
+    })),
+    roadMergeApproachPolicies: road.properties.roadMergeApproachPolicies?.map((policy) => ({
+      ...policy,
+      laneMarks: policy.laneMarks ? [...policy.laneMarks] : undefined,
+      motorcycleAccessByLane: policy.motorcycleAccessByLane
+        ? [...policy.motorcycleAccessByLane] : undefined,
+      rules: policy.rules ? [...policy.rules] : undefined,
     })),
     oneSideEntryNodes: road.properties.oneSideEntryNodes
       ? [...road.properties.oneSideEntryNodes] : undefined,
@@ -285,6 +294,35 @@ const resolveSideAccess = (
 
 const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge) => {
   if (merge.primary === merge.secondary) return
+  const approachPolicy = (
+    road: RoadFeature, at: 'start' | 'end',
+  ): RoadMergeApproachPolicy => {
+    const p = road.properties
+    const back = at === 'start'
+    const inherited = p.roadMergeApproachPolicies?.find((policy) =>
+      policy.nodeId === (back ? p.nodes[0] : p.nodes[p.nodes.length - 1]))
+    if (inherited) return inherited
+    return {
+      nodeId: back ? p.nodes[0] : p.nodes[p.nodes.length - 1],
+      sourceWayId: p.osm_id,
+      direction: back ? 'backward' : 'forward',
+      laneCount: p.oneway === 'yes' ? p.lanesForward
+        : back ? p.lanesBackward : p.lanesForward,
+      moto: p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF,
+      motoSep: (p.oneway === 'yes' ? p.motoSepF : back ? p.motoSepB : p.motoSepF) || 0,
+      laneMarks: p.oneway === 'yes' || !back ? p.laneMarksF : p.laneMarksB,
+      motorcycleAccessByLane: p.oneway === 'yes' || !back
+        ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB,
+      rules: p.oneway === 'yes' || !back ? p.rulesF : p.rulesB,
+      motorcycle: p.motorcycle,
+    }
+  }
+  const primaryOuter = merge.primaryAt === 'start' ? 'end' : 'start'
+  const secondaryOuter = merge.secondaryAt === 'start' ? 'end' : 'start'
+  const endpointPolicies = [
+    approachPolicy(merge.primary, primaryOuter),
+    approachPolicy(merge.secondary, secondaryOuter),
+  ]
   const primaryCoordinates = merge.primary.geometry.coordinates as [number, number][]
   const secondaryCoordinates0 = merge.secondary.geometry.coordinates as [number, number][]
   const secondaryCoordinates = merge.secondaryAt === 'start'
@@ -319,6 +357,7 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
   const joins = new Set(merge.primary.properties.centerIslandJoinNodes ?? [])
   for (const node of merge.secondary.properties.centerIslandJoinNodes ?? []) joins.add(node)
   merge.primary.properties.centerIslandJoinNodes = joins.size ? [...joins] : undefined
+  merge.primary.properties.roadMergeApproachPolicies = endpointPolicies
   const index = roads.indexOf(merge.secondary)
   if (index >= 0) roads.splice(index, 1)
 }

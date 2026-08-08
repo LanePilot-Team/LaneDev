@@ -395,7 +395,8 @@ export function buildLaneBaseIndex(records: LaneBaseRecord[]): LaneBaseIndex {
 /** Stable, geometry-independent LanePilot waiting-zone candidates. */
 export function laneBaseZoneCandidates(index: LaneBaseIndex): LaneBaseZoneCandidate[] {
   const candidates = [...index.movementByApproachKey.values()].flat()
-    .filter((rule) => rule.movement === 'left' && rule.waitingZoneExists === 'yes')
+    .filter((rule) => (rule.movement === 'left' || rule.movement === 'uturn')
+      && rule.waitingZoneExists === 'yes')
     .map((rule): LaneBaseZoneCandidate => ({
       id: `zone-lp-${encodeURIComponent(rule.movementKey)}`,
       sourceKey: rule.sourceKey,
@@ -413,13 +414,19 @@ export function laneBaseZoneCandidates(index: LaneBaseIndex): LaneBaseZoneCandid
 
 export function twoStageForLaneBaseApproach(
   index: LaneBaseIndex,
-  input: { wayId: number; intersectionNodeId: number; direction: LaneDirection },
+  input: {
+    wayId: number
+    intersectionNodeId: number
+    direction: LaneDirection
+    movement: string
+  },
 ): boolean {
   const rules = index.movementByApproachKey.get(approachKey(
     input.wayId, input.intersectionNodeId, input.direction,
   )) ?? []
-  return rules.some((rule) => rule.motorcycleTurnRule === 'two_stage_required'
-    || rule.motorcycleTurnRule === 'two_stage_optional')
+  return rules.some((rule) => rule.movement === input.movement
+    && (rule.motorcycleTurnRule === 'two_stage_required'
+      || rule.motorcycleTurnRule === 'two_stage_optional'))
 }
 
 export function resolveLaneBase(

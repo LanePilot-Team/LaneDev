@@ -53,6 +53,21 @@ export interface LaneBaseZoneBuildResult extends ZoneImportResult {
   unresolvedSourceKeys: string[]
 }
 
+/** Combine road-field and derived-zone accounting without hiding geometry failures. */
+export function mergeLaneBaseZoneAudit(
+  roadUnresolvedSourceKeys: string[],
+  index: LaneBaseIndex,
+  zoneUnresolvedSourceKeys: string[],
+): string[] {
+  const movementSourceKeys = new Set(
+    [...index.movementByApproachKey.values()].flat().map((rule) => rule.sourceKey),
+  )
+  return [...new Set([
+    ...roadUnresolvedSourceKeys.filter((key) => !movementSourceKeys.has(key)),
+    ...zoneUnresolvedSourceKeys,
+  ])].sort()
+}
+
 /** Visible editor state: immutable LanePilot base, then human overrides, then tombstones. */
 export function overlayWaitingZones(
   baseZones: Zone[], humanZones: Zone[], deletedIds: Set<string>,
@@ -200,7 +215,7 @@ export function zonesFromAnnotations(args: {
 
   for (const rec of records) {
     for (const rule of rec.movementRules) {
-      if (rule.movement !== 'left') continue
+      if (rule.movement !== 'left' && rule.movement !== 'uturn') continue
       const want = rule.motorcycle_turn_rule === 'two_stage_required'
         || rule.motorcycle_turn_rule === 'two_stage_optional'
         || rule.waiting_zone_exists === 'yes'

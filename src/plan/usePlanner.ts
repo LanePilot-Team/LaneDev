@@ -85,6 +85,7 @@ export function usePlanner(core: MapCore): Planner {
       wayId: input.wayId,
       intersectionNodeId: input.nodeId,
       direction: input.direction,
+      movement: input.kind === 'slight-left' ? 'left' : input.kind,
     })
   }
 

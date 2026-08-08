@@ -29,6 +29,20 @@ export interface RoadSourceSegment {
   coordinates?: [number, number][]
 }
 
+/** Direction-normalized lane policy retained for each outer endpoint of a visual road merge. */
+export interface RoadMergeApproachPolicy {
+  nodeId: number
+  sourceWayId: number
+  direction: 'forward' | 'backward'
+  laneCount: number
+  moto: boolean
+  motoSep: number
+  laneMarks?: (LaneMark | null)[]
+  motorcycleAccessByLane?: string[]
+  rules?: string[]
+  motorcycle?: string
+}
+
 export type LaneFieldSource =
   | 'human-block' | 'human-way'
   | 'lanepilot-approach' | 'lanepilot-segment'
@@ -188,6 +202,8 @@ export interface RoadProps {
   /** 前處理（尤其 couplet 攤平）前的靜態 segment 來源。
    * 編輯器用它精確定位畫面節點實際屬於哪一筆靜態 OSM，禁止以同名道路猜測。 */
   sourceSegments: RoadSourceSegment[]
+  /** Derived render-only policy for resolving the real approach at merged outer endpoints. */
+  roadMergeApproachPolicies?: RoadMergeApproachPolicy[]
   /** 人工刪除的路口到路口區塊；載入後會從渲染與導航路網排除。 */
   deleted?: boolean
   /** 只從繪圖視圖隱藏；導航與來源追溯仍保留此道路。 */

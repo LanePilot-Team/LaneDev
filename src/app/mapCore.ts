@@ -26,7 +26,7 @@ import {
   type RoadMergeReplayRow, type RoadMergeViews,
 } from '../core/roadMerge'
 import {
-  buildRawWays, humanWaitingZones, overlayWaitingZones, zonesFromLaneBase,
+  buildRawWays, humanWaitingZones, mergeLaneBaseZoneAudit, overlayWaitingZones, zonesFromLaneBase,
   type RawWay,
 } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
@@ -536,14 +536,12 @@ export function useMapCore(
       baseZonesRef.current, human, loadDeletedZoneIds(),
     )
     refreshZones(false)
-    const movementSourceKeys = new Set(
-      [...applied.index.movementByApproachKey.values()].flat()
-        .map((rule) => rule.sourceKey),
-    )
     return {
       ...applied.report,
-      unresolvedSourceKeys: applied.report.unresolvedSourceKeys.filter(
-        (key) => !movementSourceKeys.has(key),
+      unresolvedSourceKeys: mergeLaneBaseZoneAudit(
+        applied.report.unresolvedSourceKeys,
+        applied.index,
+        zoneResult.unresolvedSourceKeys,
       ),
     }
   }, [refreshZones, replaceBaseMap])

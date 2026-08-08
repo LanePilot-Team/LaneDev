@@ -8,6 +8,7 @@
 import { computeDerived, type RoadFeature } from './roads'
 import { angleDelta, bearing, haversine } from './geo'
 import type { Zone } from './zones'
+import { humanWaitingZones } from './zoneimport'
 import type { PlacedVehicle } from './vehicles'
 import type { TurnBay, RightLane } from './turnbays'
 import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
@@ -597,18 +598,20 @@ export function journalForMergedRoads(journal: EnhancementRecord[]): Enhancement
 
 /** 匯出整包 Enhancement：journal 歷程 + 折疊最新值 + 待轉區 + 車輛模型
  * + 偏心左轉道 + 右轉附加車道 */
-export function exportEnhancements(
+export function buildEnhancementPayload(
   journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
   bays: TurnBay[] = [], rightLanes: RightLane[] = [],
   author: string = getAuthor(),
+  baseZones: Zone[] = [],
 ) {
+  const editorZones = humanWaitingZones(baseZones, zones)
   const payload = {
     format: 'navsim-enhancement-v0.5',
     exported_at: new Date().toISOString(),
     author,
     journal,
     latest: Object.fromEntries(foldJournal(journal)),
-    waiting_zones: zones.map((z) => ({
+    waiting_zones: editorZones.map((z) => ({
       id: z.id,
       intersection_osm_node: z.intersectionId,
       // 觸發條件：從 approach 行向進入該路口的左轉
@@ -645,6 +648,17 @@ export function exportEnhancements(
       source: 'manual',
     })),
   }
+  return payload
+}
+
+export function exportEnhancements(
+  journal: EnhancementRecord[], zones: Zone[], vehicles: PlacedVehicle[] = [],
+  bays: TurnBay[] = [], rightLanes: RightLane[] = [],
+  author: string = getAuthor(), baseZones: Zone[] = [],
+) {
+  const payload = buildEnhancementPayload(
+    journal, zones, vehicles, bays, rightLanes, author, baseZones,
+  )
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)

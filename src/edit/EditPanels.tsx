@@ -210,7 +210,8 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
             setAuthor(author)
             core.journalRef.current = stampAuthor(core.journalRef.current, author)
             exportEnhancements(core.journalRef.current, core.zonesRef.current,
-              core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current, author)
+              core.vehiclesRef.current, core.baysRef.current, core.rightLanesRef.current, author,
+              core.baseZonesRef.current)
           }}>
           匯出 ({core.journalRef.current.length + zoneCount + vehicleCount})
         </button>

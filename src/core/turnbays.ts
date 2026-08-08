@@ -2078,7 +2078,7 @@ export function motoBoxLaneLimits(
     if (laneMarks?.[k]) return laneMarks[k]?.text.trim() === '禁行機車'
     const access = motorcycleAccessByLane?.[k]
     if (access && access !== 'unknown') return access === 'no'
-    return laneMarks || motorcycleAccessByLane ? false : legacyNoMoto
+    return legacyNoMoto
   }
   let autoKL = lanes
   for (let k = lanes - 1; k >= 0; k--) {
@@ -2102,18 +2102,27 @@ export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot
   const inter = new Set(graph.intersections().map((i) => i.id))
   return (e: ScopeEdge): MotoBoxSlot => {
     const p = e.road.properties
+    const endpointPolicy = p.roadMergeApproachPolicies?.find((policy) =>
+      policy.nodeId === e.toNode)
     const mergeThrough = (p.oneSideEntryNodes?.includes(e.toNode) ?? false)
       && graph.hasDistinctRoadAt(e.toNode, e.road)
-    const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
-    const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
-    const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
+    const lanes = endpointPolicy?.laneCount
+      ?? (p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward)
+    const moto = endpointPolicy?.moto
+      ?? (p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF)
+    const sep = endpointPolicy?.motoSep
+      ?? ((p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0)
     // 每車道「禁行機車」判定：顯式車道標記優先，否則舊制 rules/motorcycle=no
     // 展開為全車道禁行（同 buildRoadTexts 的相容規則）
-    const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
-    const motorcycleAccess = p.oneway === 'yes' || !e.back
-      ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB
-    const legacyRules = p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB
-    const legacyNoMoto = (legacyRules ?? (p.motorcycle === 'no' ? ['no_moto'] : []))
+    const explicitMarks = endpointPolicy?.laneMarks
+      ?? (p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB)
+    const motorcycleAccess = endpointPolicy?.motorcycleAccessByLane
+      ?? (p.oneway === 'yes' || !e.back
+        ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB)
+    const legacyRules = endpointPolicy?.rules
+      ?? (p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB)
+    const legacyNoMoto = (legacyRules
+      ?? ((endpointPolicy?.motorcycle ?? p.motorcycle) === 'no' ? ['no_moto'] : []))
       .includes('no_moto')
     const limits = motoBoxLaneLimits(
       lanes, !!moto, explicitMarks, legacyNoMoto, motorcycleAccess,

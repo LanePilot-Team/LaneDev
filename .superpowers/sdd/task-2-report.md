@@ -62,3 +62,36 @@ The Task 2 commit contains this report and only the task-scoped files listed abo
 ## Concerns
 
 None. This task deliberately exposes the pure domain API only; runtime consumers remain for later tasks.
+
+## Review remediation after `6f03563`
+
+Review findings were addressed without widening runtime or canonical-data scope:
+
+- Profile-less movement-rule records now derive direction from the unique valid `movement_rules[].approach_direction`; conflicting valid rule directions produce an explicit error and no record.
+- Every invalid lane-profile direction now produces a source/profile-indexed error, including when another profile from the same source is successfully extracted.
+- Extraction now accepts exactly the two annotation types present in the current LanePilot source (`nav_segment_annotation` and `nav_context_annotation`). Unsupported or non-annotation object types produce an explicit error and no record.
+
+### Review RED evidence
+
+Command:
+
+```text
+node --test src/core/laneBase.test.mjs
+```
+
+Result before the fixes: exit 1, 9 tests total, 5 passed and 4 failed for the expected review gaps:
+
+1. Movement-only rule direction was not derived, so only 1 rather than 2 records was extracted.
+2. Conflicting valid movement-rule directions returned only `invalid direction` instead of the required conflict error.
+3. A valid plus invalid profile produced no profile-indexed error.
+4. A structurally similar `nav_segment` object incorrectly became a `LaneBaseRecord`.
+
+### Review GREEN evidence
+
+Command:
+
+```text
+node --test src/core/laneBase.test.mjs src/core/laneGuidance.test.mjs
+```
+
+Exact result: exit 0, 17 tests total, 17 passed, 0 failed, 0 skipped, 0 todo.

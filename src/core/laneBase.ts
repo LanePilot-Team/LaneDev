@@ -126,6 +126,11 @@ const scopeOf = (value: unknown): LaneGuidanceScope | undefined => {
     : undefined
 }
 
+const SUPPORTED_ANNOTATION_TYPES = new Set([
+  'nav_segment_annotation',
+  'nav_context_annotation',
+])
+
 const sourceBaseKey = (source: UnknownRecord | undefined, index: number): string => {
   const identity = source && isObject(source.object_identity) ? source.object_identity : {}
   const navSegmentKey = String(identity.nav_segment_key ?? '')
@@ -159,6 +164,11 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       continue
     }
     const identity = source.object_identity
+    const objectType = String(identity.object_type ?? '')
+    if (!SUPPORTED_ANNOTATION_TYPES.has(objectType)) {
+      errors.push(`${sourceKey}: unsupported object type ${objectType || '(missing)'}`)
+      continue
+    }
     const wayId = numericId(
       isObject(identity.source_osm) ? identity.source_osm.osm_id : identity.nav_segment_key,
       'way',
@@ -183,11 +193,12 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
     const rules = movementRules(source)
     const profiles = laneProfiles(source)
     let extracted = false
-    let invalidDirection = false
-    for (const profile of profiles) {
+    let invalidProfileDirection = false
+    for (const [profileIndex, profile] of profiles.entries()) {
       const direction = profile.direction ?? identity.approach_direction
       if (!isLaneDirection(direction)) {
-        invalidDirection = true
+        invalidProfileDirection = true
+        errors.push(`${sourceKey}: profile ${profileIndex + 1}: invalid direction`)
         continue
       }
       const laneCount = validLaneCount(profile.lane_count)
@@ -215,8 +226,18 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       extracted = true
     }
 
-    if (!extracted && rules.length) {
-      const direction = identity.approach_direction
+    if (!extracted && !profiles.length && rules.length) {
+      let direction = identity.approach_direction
+      if (direction === undefined) {
+        const ruleDirections = [...new Set(rules
+          .map((rule) => rule.approach_direction)
+          .filter(isLaneDirection))]
+        if (ruleDirections.length > 1) {
+          errors.push(`${sourceKey}: conflicting movement-rule directions`)
+          continue
+        }
+        direction = ruleDirections[0]
+      }
       if (!isLaneDirection(direction)) {
         errors.push(`${sourceKey}: invalid direction`)
         continue
@@ -239,10 +260,8 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       extracted = true
     }
 
-    if (!extracted) {
-      errors.push(`${sourceKey}: ${invalidDirection
-        ? 'invalid direction'
-        : 'no consumable lane profile or movement rules'}`)
+    if (!extracted && !invalidProfileDirection) {
+      errors.push(`${sourceKey}: no consumable lane profile or movement rules`)
     }
   }
 

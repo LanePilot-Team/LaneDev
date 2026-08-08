@@ -73,9 +73,12 @@ test('extracts legacy profile direction and accounts for a movement-only annotat
     }),
     annotation({
       nav_segment_key: 'way/11', source_osm: { osm_id: 11 }, split_index: 1,
-      approach_direction: 'backward',
     }, {}, {
-      movement_rules: [{ movement: 'left', motorcycle_turn_rule: 'two_stage_required' }],
+      movement_rules: [{
+        approach_direction: 'backward',
+        movement: 'left',
+        motorcycle_turn_rule: 'two_stage_required',
+      }],
     }),
   ])
 
@@ -84,10 +87,51 @@ test('extracts legacy profile direction and accounts for a movement-only annotat
   assert.equal(result.records[0].direction, 'backward')
   assert.deepEqual(result.records[1], record({
     sourceKey: 'way/11#1', wayId: 11, direction: 'backward', scope: 'legacy',
-    movementRules: [{ movement: 'left', motorcycle_turn_rule: 'two_stage_required' }],
+    movementRules: [{
+      approach_direction: 'backward',
+      movement: 'left',
+      motorcycle_turn_rule: 'two_stage_required',
+    }],
   }))
   assert.deepEqual(result.errors, [])
   assert.deepEqual([...result.accountedSourceKeys], ['way/10#0', 'way/11#1'])
+})
+
+test('rejects conflicting valid directions in movement-only rules', () => {
+  const result = extractLaneBase([annotation({}, {}, {
+    movement_rules: [
+      { approach_direction: 'forward', movement: 'through' },
+      { approach_direction: 'backward', movement: 'left' },
+    ],
+  })])
+
+  assert.deepEqual(result.records, [])
+  assert.deepEqual([...result.accountedSourceKeys], ['way/10#0'])
+  assert.match(result.errors.join('\n'), /conflicting movement-rule directions/)
+})
+
+test('reports an invalid profile direction even when another profile is valid', () => {
+  const result = extractLaneBase([annotation({}, {
+    lane_profiles: [
+      { direction: 'forward', lane_count: 2 },
+      { direction: 'sideways', lane_movements: ['left'] },
+    ],
+  })])
+
+  assert.equal(result.records.length, 1)
+  assert.equal(result.records[0].direction, 'forward')
+  assert.deepEqual([...result.accountedSourceKeys], ['way/10#0'])
+  assert.match(result.errors.join('\n'), /profile 2: invalid direction/)
+})
+
+test('rejects a structurally similar non-annotation object type', () => {
+  const result = extractLaneBase([annotation({ object_type: 'nav_segment' }, {
+    lane_profiles: [{ direction: 'forward', lane_count: 2 }],
+  })])
+
+  assert.deepEqual(result.records, [])
+  assert.deepEqual([...result.accountedSourceKeys], ['way/10#0'])
+  assert.match(result.errors.join('\n'), /unsupported object type nav_segment/)
 })
 
 test('reports every unusable source instead of silently dropping it', () => {

@@ -69,7 +69,7 @@ test('keeps annotation source out of the inference note', () => {
 })
 
 test('infers a rightmost combined lane and marks the result inferred', () => {
-  const model = ready({ turnLanes: undefined })
+  const model = ready({ turnLanes: undefined, guidanceSource: 'inferred' })
   assert.equal(model.inferred, true)
   assert.deepEqual(model.lanes.map((lane) => lane.arrow), ['through', 'through', 'through-right'])
   assert.deepEqual(model.lanes.map((lane) => lane.active), [false, false, true])
@@ -167,6 +167,7 @@ test('HUD 使用保存的準備距離而不是固定 250 公尺', () => {
 
 test('系統推測與短距離換道警告可同時顯示', () => {
   const model = ready({
+    guidanceSource: 'inferred',
     laneDecision: savedDecision({ inferred: true, shortPreparation: true }),
   })
 
@@ -181,9 +182,19 @@ test('only shows the exact inference note from inferred effective guidance', () 
     laneDecision: savedDecision({ inferred: false }),
   })
 
-  assert.equal(INFERENCE_NOTE, '蝟餌絞?冽葫鞈?嚗?靘?湔?蝺?擏.')
-  assert.equal(inferred.inferenceNote, INFERENCE_NOTE)
+  assert.equal(inferred.inferenceNote, '系統推測資料，請依現場標線行駛')
   assert.equal(inferred.inferred, true)
+})
+
+test('missing effective provenance does not invent an inference warning', () => {
+  const model = ready({
+    turnLanes: undefined,
+    guidanceSource: undefined,
+    laneDecision: savedDecision({ inferred: true }),
+  })
+
+  assert.equal(model.inferred, false)
+  assert.equal(model.inferenceNote, undefined)
 })
 
 test('does not reclassify explicit effective guidance from an inferred decision', () => {

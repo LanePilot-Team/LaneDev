@@ -52,7 +52,7 @@ export interface LanePreviewModel {
 
 const MAX_LANES = 10
 const TURN_GUIDANCE_M = 250
-export const INFERENCE_NOTE = '蝟餌絞?冽葫鞈?嚗?靘?湔?蝺?擏.'
+export const INFERENCE_NOTE = '系統推測資料，請依現場標線行駛'
 
 type NormalMove = 'left' | 'through' | 'right' | 'reverse'
 
@@ -137,9 +137,8 @@ function applyLaneStates(
   }))
 }
 
-function guidanceIsInferred(input: LanePreviewInput, fallback: boolean): boolean {
-  if (input.guidanceSource !== undefined) return input.guidanceSource === 'inferred'
-  return input.laneDecision?.inferred ?? fallback
+function guidanceIsInferred(input: LanePreviewInput): boolean {
+  return input.guidanceSource === 'inferred'
 }
 
 export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
@@ -167,7 +166,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const realMovements = Array.isArray(turnLanes) && turnLanes.length > 0
 
   if (!realMovements) {
-    const inferred = guidanceIsInferred(input, true)
+    const inferred = guidanceIsInferred(input)
     return {
       status: 'ready',
       lanes: applyLaneStates(
@@ -193,7 +192,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   )
   const hasKnownMovement = parsed.some((moves) => moves.size > 0)
   if (!hasKnownMovement) {
-    const inferred = guidanceIsInferred(input, true)
+    const inferred = guidanceIsInferred(input)
     return {
       status: 'ready',
       lanes: applyLaneStates(
@@ -226,7 +225,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     return { arrow: arrowFor(moves), active, state: active ? 'secondary' : 'inactive' }
   })
 
-  const inferred = guidanceIsInferred(input, false)
+  const inferred = guidanceIsInferred(input)
 
   return {
     status: 'ready',

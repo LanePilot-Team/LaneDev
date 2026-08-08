@@ -47,12 +47,12 @@ import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/inters
 import { groundMarkingPolygons } from '../core/groundMarkings'
 import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
 import {
-  loadStaticRoadDatabase, staticAnnotations, staticSegments, updateStaticEditor,
+  loadStaticRoadDatabase, staticAnnotations, staticSegments,
 } from '../core/staticDatabase'
 import {
-  buildLaneGuidanceIndex, remapLaneGuidanceRecords,
-  type LaneGuidanceIndex, type LaneGuidanceRecord,
-} from '../core/laneGuidance'
+  applyLaneBaseToRoads, buildLaneBaseIndex, extractLaneBase, remapLaneBase,
+  type LaneBaseApplyReport, type LaneBaseRecord,
+} from '../core/laneBase'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 
@@ -201,35 +201,33 @@ async function loadDefaultRoads() {
   return roadsFromGeoJSON(parsed.fc)
 }
 
-/** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
-async function loadLaneGuidanceRecords(): Promise<LaneGuidanceRecord[]> {
-  try {
-    const response = await fetch(asset('/data/lanepilot/lane-guidance.json'))
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const records: unknown = await response.json()
-    if (!Array.isArray(records)) throw new Error('根節點不是陣列')
-    return records as LaneGuidanceRecord[]
-  } catch (error) {
-    console.warn('車道標註索引載入失敗，改用 OSM／系統推測', error)
-    return []
-  }
-}
-
-function guidanceIndexForRoads(
-  records: LaneGuidanceRecord[],
+function applyLaneBaseRecords(
+  records: LaneBaseRecord[],
   roads: RoadFeature[],
   nodeRemap: Map<number, number>,
   wayRemap: Map<number, DropRemap>,
-): LaneGuidanceIndex {
-  return buildLaneGuidanceIndex(remapLaneGuidanceRecords(records, {
+): LaneBaseApplyReport {
+  const remapped = remapLaneBase(records, {
     existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
     nodeRemap,
     wayRemap,
-  }))
+  })
+  if (remapped.errors.length || remapped.unmappedSourceKeys.length) {
+    const detail = [...new Set([
+      ...remapped.errors,
+      ...remapped.unmappedSourceKeys.map((key) => `${key}: unmapped`),
+    ])].join('；')
+    throw new Error(`Lane Base 重映射失敗：${detail}`)
+  }
+  return applyLaneBaseToRoads(roads, buildLaneBaseIndex(remapped.records))
 }
+
+/** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
 
 export interface MapCore {
   mapRef: RefObject<MLMap | null>
+  /** 尚未套用 Lane Base／人工 journal 的 prepared roads，用於 session 匯入重建。 */
+  preparedRoadsRef: RefObject<RoadFeature[]>
   roadsRef: RefObject<RoadFeature[]>
   renderRoadsRef: RefObject<RoadFeature[]>
   mergeReplayRef: RefObject<RoadMergeReplayRow[]>
@@ -264,6 +262,8 @@ export interface MapCore {
   redrawRoads: () => void
   /** 換 Base Layer：換路網、重建圖、重算 bay（匯入地圖用） */
   replaceBaseMap: (roads: RoadFeature[]) => boolean
+  /** 以目前 prepared roads 重建 session-only Lane Base，再套用人工 journal。 */
+  replaceSessionLaneBase: (records: LaneBaseRecord[]) => LaneBaseApplyReport
   /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
   previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
   /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
@@ -286,6 +286,7 @@ export function useMapCore(
   onMapClick: (e: MapMouseEvent, map: MLMap) => void,
 ): MapCoreState {
   const mapRef = useRef<MLMap | null>(null)
+  const preparedRoadsRef = useRef<RoadFeature[]>([])
   const roadsRef = useRef<RoadFeature[]>([])
   const renderRoadsRef = useRef<RoadFeature[]>([])
   const mergeReplayRef = useRef<RoadMergeReplayRow[]>([])
@@ -306,8 +307,6 @@ export function useMapCore(
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
-  const laneGuidanceRecordsRef = useRef<LaneGuidanceRecord[]>([])
-  const laneGuidanceIndexRef = useRef<LaneGuidanceIndex>(buildLaneGuidanceIndex([]))
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -478,7 +477,7 @@ export function useMapCore(
     roadsRef.current = mergeView.routingRoads
     renderRoadsRef.current = mergeView.renderRoads
     mergeReplayRef.current = mergeView.rows
-    graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
+    graphRef.current = new RoadGraph(roadsRef.current)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
     for (const row of mergeView.rows) {
@@ -492,24 +491,36 @@ export function useMapCore(
 
   const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
     roadsRef.current = roads.filter((road) => !road.properties.deleted)
-    laneGuidanceIndexRef.current = guidanceIndexForRoads(
-      laneGuidanceRecordsRef.current, roadsRef.current,
-      nodeRemapRef.current, wayRemapRef.current,
-    )
     return refreshRoadMergeViews()
   }, [refreshRoadMergeViews])
+
+  const replaceSessionLaneBase = useCallback((records: LaneBaseRecord[]) => {
+    const roads = structuredClone(preparedRoadsRef.current)
+    const report = applyLaneBaseRecords(
+      records, roads, nodeRemapRef.current, wayRemapRef.current,
+    )
+    const folded = foldJournal(journalRef.current)
+    const roadsAll = [
+      ...roads,
+      ...newRoadsFromFolded(folded, nodeRemapRef.current),
+    ]
+    applyToRoads(roadsAll, folded)
+    if (!replaceBaseMap(roadsAll)) throw new Error('套用 Lane Base 後無法重建道路捏合視圖')
+    return report
+  }, [replaceBaseMap])
 
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
     coreRef.current = {
-      mapRef, roadsRef, renderRoadsRef, mergeReplayRef,
+      mapRef, preparedRoadsRef, roadsRef, renderRoadsRef, mergeReplayRef,
       graphRef, zonesRef, selectedZoneRef, highlightedZoneRef,
       journalRef, baysRef,
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
       src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
-      redrawRoads, replaceBaseMap, previewJournal, refreshRoadMergeViews,
+      redrawRoads, replaceBaseMap, replaceSessionLaneBase,
+      previewJournal, refreshRoadMergeViews,
     }
   }
 
@@ -559,11 +570,10 @@ export function useMapCore(
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
-      const [roadsRaw, buildingsRaw, laneGuidanceRecords] = await Promise.all([
+      const [roadsRaw, buildingsRaw] = await Promise.all([
         loadDefaultRoads(),
         fetch(asset('/data/nanzih_buildings_height.geojson')).then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
-        loadLaneGuidanceRecords(),
       ])
       // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
       // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
@@ -625,6 +635,24 @@ export function useMapCore(
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
       rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
       const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
+      preparedRoadsRef.current = structuredClone(roads)
+      const extraction = extractLaneBase([...staticAnnotations()])
+      if (extraction.errors.length) {
+        const error = new Error(
+          `Canonical Lane Base 萃取失敗：${extraction.errors.join('；')}`,
+        )
+        window.alert(error.message)
+        throw error
+      }
+      try {
+        applyLaneBaseRecords(extraction.records, roads, nodeRemap, wayRemap)
+      } catch (cause) {
+        const error = new Error(
+          `Canonical Lane Base 載入失敗：${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+        window.alert(error.message)
+        throw error
+      }
       if (import.meta.env.DEV) {
         const bounds = {
           minLng: Infinity, minLat: Infinity,
@@ -644,17 +672,14 @@ export function useMapCore(
       roadsRef.current = roads
       nodeRemapRef.current = nodeRemap
       wayRemapRef.current = wayRemap
-      laneGuidanceRecordsRef.current = laneGuidanceRecords
-      laneGuidanceIndexRef.current = guidanceIndexForRoads(
-        laneGuidanceRecords, roads, nodeRemap, wayRemap,
-      )
-      // 除錯開關：?journal=off 完全不套標註（連 seed 都不載），看純 OSM 原始狀態。
-      // 同學的 LanePilot annotation（author=lanepilot）實驗期間一律不套。
+      // 除錯開關：?journal=off 不套人工 journal；canonical Lane Base 仍是底圖的一部分。
       const journalOff = location.search.includes('journal=off')
-      // 遷移在過濾之前：remapJournalNodes 會回存整份 journal（含 lanepilot 紀錄）
       journalRef.current = journalOff
         ? []
-        : remapJournalNodes(loadJournal(), nodeRemap)
+        : remapJournalNodes(
+            loadJournal().filter((record) => record.author !== 'lanepilot'),
+            nodeRemap,
+          )
       const folded = foldJournal(journalRef.current)
       const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
       applyToRoads(roadsAll, folded)
@@ -676,7 +701,7 @@ export function useMapCore(
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
-      graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
+      graphRef.current = new RoadGraph(roadsRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
@@ -695,42 +720,6 @@ export function useMapCore(
         }
         return id === z.intersectionId ? z : { ...z, intersectionId: id }
       })
-      // Rebuild LanePilot lane profiles from the canonical annotations, then
-      // append browser-made records last so the effective value is exactly what
-      // the editor shows. Persist the combined result into the same database.
-      // 正常情況直接使用靜態資料庫內已轉換完成的 LanePilot journal。
-      // 僅相容舊資料庫：沒有任何匯入紀錄時才做一次性轉換。
-      if (!journalOff && !journalRef.current.some((r) => r.author === 'lanepilot')) {
-        try {
-          const canonicalAnnotations = staticAnnotations()
-          if (canonicalAnnotations.length) {
-            const parsed = parseImported(
-              canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n'),
-            )
-            if (parsed.kind === 'annotations') {
-              const manualJournal = [...journalRef.current]
-              journalRef.current = []
-              const { importAnnotations } = await import('./importFlow')
-              importAnnotations(coreRef.current, {
-                switchMode: () => undefined,
-                setImportMsg: (message) => {
-                  if (message) console.info(message)
-                },
-              }, parsed.records, 'road_database.json')
-              const importedJournal = journalRef.current.filter((r) => r.author === 'lanepilot')
-              journalRef.current = [...importedJournal, ...manualJournal].map((record, index) => ({
-                ...record,
-                seq: index + 1,
-              }))
-              updateStaticEditor({ journal: journalRef.current })
-              applyToRoads(roadsRef.current, foldJournal(journalRef.current))
-              replaceBaseMap(roadsRef.current)
-            }
-          }
-        } catch (error) {
-          console.warn('Canonical LanePilot 車道標註套用失敗；沿用人工資料', error)
-        }
-      }
       // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
       // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
       // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。

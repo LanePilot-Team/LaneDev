@@ -4,15 +4,13 @@ import maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
   parseImported, mergeMaps,
-  type AnnotationRecord as ImportedAnnotation, type LaneProfile,
-} from '../core/importmap'
-import { roadsFromGeoJSON, type RoadFeature } from '../core/roads'
-import { prepareBaseRoads } from '../core/pipeline'
-import { appendRecord, applyToRoads, foldJournal } from '../core/enhancements'
-import { newRoadsFromFolded } from '../core/newroads'
-import { saveZones } from '../core/zones'
-import { buildRawWays, zonesFromAnnotations } from '../core/zoneimport'
-import type { MapCore, Mode } from './mapCore'
+  type AnnotationRecord as ImportedAnnotation,
+} from '../core/importmap.ts'
+import { roadsFromGeoJSON } from '../core/roads.ts'
+import { prepareBaseRoads } from '../core/pipeline.ts'
+import { extractLaneBase } from '../core/laneBase.ts'
+import { buildRawWays, zonesFromAnnotations } from '../core/zoneimport.ts'
+import type { MapCore, Mode } from './mapCore.ts'
 
 export interface ImportUi {
   switchMode: (m: Mode) => void
@@ -62,12 +60,12 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
   const prep = prepareBaseRoads(roadsRaw)
   core.nodeRemapRef.current = prep.nodeRemap
   core.wayRemapRef.current = prep.wayRemap
-  // 自訂新增道路一併混入（吸附的 node 若不在新底圖範圍內，該路仍渲染但不連通）
-  const folded = foldJournal(core.journalRef.current)
-  const roads = [...prep.roads, ...newRoadsFromFolded(folded, prep.nodeRemap)]
-  applyToRoads(roads, folded)
+  core.preparedRoadsRef.current = structuredClone(prep.roads)
   ui.switchMode('browse') // 內部已處理「行駛中先 endDrive」，涵蓋模擬與 GPS 兩種模式
-  core.replaceBaseMap(roads)
+  // 自訂匯入的底圖不沿用 canonical 道路的 Lane Base；混選 annotations 時
+  // importFiles 會在下一步以同一份 prepared roads 建立本次工作階段的 Lane Base。
+  core.replaceSessionLaneBase([])
+  const roads = core.roadsRef.current
   const first = roads[0].geometry.coordinates[0] as [number, number]
   const b = new maplibregl.LngLatBounds(first, first)
   for (const r of roads) for (const c of r.geometry.coordinates) b.extend(c as [number, number])
@@ -79,7 +77,7 @@ function importBaseMap(core: MapCore, ui: ImportUi, features: Feature<LineString
 
 /**
  * 匯入 LanePilot 標註（annotations.jsonl，legacy 與 schema v2 皆可）：
- *   lane_profiles   → journal 車道覆寫（記 author=lanepilot，可追溯/可重匯）
+ *   lane_profiles   → 本次工作階段的 Lane Base（不寫 editor journal）
  *   movement_rules  → 兩段式左轉/待轉區 → zones（位置由路口幾何自動計算）
  */
 export function importAnnotations(
@@ -88,89 +86,29 @@ export function importAnnotations(
   records: ImportedAnnotation[],
   fileName: string,
 ) {
-  // way 依路口切塊後同 osm_id 有多個區塊，全部收（進入行向要逐塊找 node）
-  const byId = new Map<number, RoadFeature[]>()
-  for (const r of core.roadsRef.current) {
-    const id = r.properties.osm_id
-    if (!byId.has(id)) byId.set(id, [])
-    byId.get(id)!.push(r)
-  }
-
-  // 1) 車道覆寫：同路段同方向以「整段 scope」優先（approach scope 是路口前的區域資訊）
-  const profByWay = new Map<string, Map<string, { p: LaneProfile; whole: boolean }>>()
-  for (const rec of records) {
-    const whole = rec.contextScope !== 'intersection_approach'
-    for (const p of rec.laneProfiles) {
-      if (!p?.direction) continue
-      let dirs = profByWay.get(rec.segmentKey)
-      if (!dirs) profByWay.set(rec.segmentKey, dirs = new Map())
-      const cur = dirs.get(p.direction)
-      if (!cur || (whole && !cur.whole)) dirs.set(p.direction, { p, whole })
-    }
-  }
   const nodeRemap = core.nodeRemapRef.current
   const wayRemap = core.wayRemapRef.current
-  let laneApplied = 0
-  // 略過原因分類計數（訊息要能回答「為什麼掉了」——標註格式檢討的依據）
-  const skip = { seg: 0 }
-  for (const [wayKey, dirs] of profByWay) {
-    const segId = Number(wayKey.split('/')[1])
-    // 被 couplet 合併掉的 way：標註轉掛到對向 keep way（方向要翻，見下）
-    const dropped = byId.has(segId) ? undefined : wayRemap.get(segId)
-    if (!byId.has(segId) && !dropped) { skip.seg++; continue }
-    const f = dirs.get('forward')?.p
-    const bwd = dirs.get('backward')?.p
-    const fields: Record<string, string | number> = {}
-    if (f?.lane_count) fields.lanes_forward = f.lane_count
-    if (bwd?.lane_count) fields.lanes_backward = bwd.lane_count
-    if (f?.lane_movements?.some((x) => x && x !== 'unknown')) {
-      fields.turn_lanes = f.lane_movements.map((x) => (x === 'unknown' ? '' : x)).join('|')
-    }
-    if (bwd?.lane_movements?.some((x) => x && x !== 'unknown')) {
-      fields.turn_lanes_backward = bwd.lane_movements.map((x) => (x === 'unknown' ? '' : x)).join('|')
-    }
-    const motoForwardLanes = f?.motorcycle_access_by_lane
-      ?.filter((access) => access === 'designated').length ?? 0
-    const motoBackwardLanes = bwd?.motorcycle_access_by_lane
-      ?.filter((access) => access === 'designated').length ?? 0
-    if (motoForwardLanes > 0) fields.moto_forward = motoForwardLanes
-    if (motoBackwardLanes > 0) fields.moto_backward = motoBackwardLanes
-    const access = [...(f?.motorcycle_access_by_lane ?? []), ...(bwd?.motorcycle_access_by_lane ?? [])]
-    // 全車道禁行 = 整段禁行機車。這是 way 級紀錄，區塊級編輯蓋不掉——之後在
-    // 面板加機車道時，enhancements.applyToRoads 會把它降級成「汽車車道禁行」。
-    if (access.length && access.every((x) => x === 'no')) fields.motorcycle = 'no'
-    if (!Object.keys(fields).length) continue
-    let keys = [wayKey]
-    if (dropped) {
-      // drop 側標註（OSM 原始方向）換到 keep way：對向 drop（couplet）行進方向
-      // = 合併後 backward、同向吸收（sameDir，慢車道）= forward；
-      // dropReversed（oneway=-1，載入已反轉）再翻轉一次，兩者 XOR 決定是否對調
-      const aligned = dropped.dropReversed ? !(dropped.sameDir ?? false) : (dropped.sameDir ?? false)
-      if (!aligned) {
-        const swap = (a: string, b: string) => {
-          const va = fields[a], vb = fields[b]
-          delete fields[a]; delete fields[b]
-          if (vb !== undefined) fields[a] = vb
-          if (va !== undefined) fields[b] = va
-        }
-        swap('lanes_forward', 'lanes_backward')
-        swap('turn_lanes', 'turn_lanes_backward')
-        swap('moto_forward', 'moto_backward')
-      }
-      keys = dropped.keepIds.filter((id) => byId.has(id)).map((id) => `way/${id}`)
-      if (!keys.length) { skip.seg++; continue }
-    }
-    for (const key of keys) {
-      core.journalRef.current = appendRecord(core.journalRef.current,
-        { op: 'set', target: { type: 'road', key }, fields }, 'lanepilot')
-    }
-    laneApplied++
+  const extraction = extractLaneBase(records.map((record) => ({
+    object_identity: {
+      object_type: record.contextScope ? 'nav_context_annotation' : 'nav_segment_annotation',
+      nav_segment_key: record.segmentKey,
+      split_index: Number(record.sourceKey?.match(/#(-?\d+)$/)?.[1] ?? 0),
+      source_osm: { osm_id: record.segmentKey },
+      ...(record.contextScope ? { context_scope: record.contextScope } : {}),
+      ...(record.approachNodeKey
+        ? { applies_to_intersection_key: record.approachNodeKey } : {}),
+      ...(record.approachDirection
+        ? { approach_direction: record.approachDirection } : {}),
+    },
+    lane_nav_tags: {
+      lane_detail_tags: { lane_profiles: record.laneProfiles },
+      taiwan_motorcycle_tags: { movement_rules: record.movementRules },
+    },
+  })))
+  if (extraction.errors.length) {
+    throw new Error(`Lane Base 萃取失敗：${extraction.errors.join('；')}`)
   }
-  if (laneApplied) {
-    applyToRoads(core.roadsRef.current, foldJournal(core.journalRef.current))
-    core.redrawRoads()
-    core.refreshBays()
-  }
+  const laneReport = core.replaceSessionLaneBase(extraction.records)
 
   // 2) 待轉區：左轉且（兩段式必須/皆可 或 現場有待轉格）→ 對回路口的左轉配對
   //（核心邏輯在 core/zoneimport.ts，與啟動自動吃入/離線稽核共用）
@@ -186,17 +124,19 @@ export function importAnnotations(
     : { zones: [], skips: [] }
   if (res.zones.length) {
     core.zonesRef.current = [...core.zonesRef.current, ...res.zones]
-    saveZones(core.zonesRef.current)
     core.refreshZones()
   }
   const count = (r: string) => res.skips.filter((s) => s.reason === r).length
-  const skipped = skip.seg + res.skips.length
+  const skipped = res.skips.length
   const detail = [
-    skip.seg ? `路段不在底圖 ${skip.seg}` : '',
     count('node') ? `缺路口鍵 ${count('node')}` : '',
     count('noLeft') ? `路口無左轉配對 ${count('noLeft')}` : '',
     count('dir') ? `進入方向對不上 ${count('dir')}` : '',
   ].filter(Boolean).join('、')
-  ui.setImportMsg(`已匯入標註 ${fileName}：車道覆寫 ${laneApplied} 路段、待轉區 +${res.zones.length}`
-    + (skipped ? `（略過 ${skipped}：${detail}）` : ''))
+  ui.setImportMsg(
+    `已匯入標註 ${fileName}：Lane Base 套用 ${laneReport.appliedRoadDirections} 個道路方向、`
+    + `待轉區 +${res.zones.length}`
+    + (skipped ? `（略過 ${skipped}：${detail}）` : '')
+    + '；車道標註僅限本次工作階段，正式保存需重新建置 canonical Lane Base',
+  )
 }

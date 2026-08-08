@@ -7,12 +7,8 @@ import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads.ts
 import {
   medianBarrierAt, medianContinuationAt, oneSideEntryTransitionAllowed,
 } from './oneSideEntry.ts'
-import {
-  buildLaneGuidanceIndex,
-  resolveLaneGuidance,
-  type LaneGuidanceIndex,
-  type ResolvedLaneGuidance,
-} from './laneGuidance.ts'
+import type { ResolvedLaneGuidance } from './laneGuidance.ts'
+import { guidanceForRoadDirection } from './laneBase.ts'
 import {
   resolveLaneDecision,
   type LaneAction,
@@ -413,15 +409,7 @@ export class RoadGraph {
     endSetbackM: number
   } | null>()
 
-  // 明確欄位宣告，不用 constructor parameter property：node --test 的
-  // strip-only 型別剝除不支援 parameter property，會讓整個檔案無法被測試載入。
-  private laneGuidanceIndex: LaneGuidanceIndex
-
-  constructor(
-    roads: RoadFeature[],
-    laneGuidanceIndex: LaneGuidanceIndex = buildLaneGuidanceIndex([]),
-  ) {
-    this.laneGuidanceIndex = laneGuidanceIndex
+  constructor(roads: RoadFeature[]) {
     const usage = new Map<number, number>()
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -1123,16 +1111,7 @@ export class RoadGraph {
           ? 'uturn'
           : 'through'
     const p = incoming.road.properties
-    const roadLaneCount = incoming.back ? p.lanesBackward : p.lanesForward
-    const osmMovements = incoming.back ? p.turnLanesB : p.turnLanes
-    const direction = incoming.back ? 'backward' : 'forward'
-    const guidance = resolveLaneGuidance(this.laneGuidanceIndex, {
-      wayId: p.osm_id,
-      intersectionNodeId: nodeId,
-      direction,
-      roadLaneCount,
-      osmMovements,
-    })
+    const guidance = guidanceForRoadDirection(incoming.road, incoming.back)
     const incomingMarks = incoming.back ? p.laneMarksB : p.laneMarksF
     const motoLeftTurnLane = profile === 'moto' && (incomingMarks?.some(
       (mark) => mark?.text.trim() === '機慢車左轉專用道') ?? false)
@@ -1186,9 +1165,6 @@ export class RoadGraph {
     for (const e of edges) {
       coords.push(...e.coords.slice(1))
       const lo = laneOffsets(e, profile)
-      const p = e.road.properties
-      const roadLaneCount = e.back ? p.lanesBackward : p.lanesForward
-      const osmMovements = e.back ? p.turnLanesB : p.turnLanes
       spans.push({
         toIdx: coords.length - 1,
         offM: lo.cruise,
@@ -1196,12 +1172,7 @@ export class RoadGraph {
         rightM: lo.right,
         road: e.road,
         back: e.back,
-        laneGuidance: resolveLaneGuidance(this.laneGuidanceIndex, {
-          wayId: p.osm_id,
-          direction: e.back ? 'backward' : 'forward',
-          roadLaneCount,
-          osmMovements,
-        }),
+        laneGuidance: guidanceForRoadDirection(e.road, e.back),
       })
     }
     const cum = cumulative(coords)
@@ -1209,7 +1180,7 @@ export class RoadGraph {
       coords, cum,
       lengthM: cum[cum.length - 1],
       timeS: edges.reduce((s, e) => s + e.timeS, 0),
-      maneuvers: buildManeuvers(edges, profile, this.laneGuidanceIndex, transitions),
+      maneuvers: buildManeuvers(edges, profile, transitions),
       spans,
       ...this.buildDiverges(edges, profile),
     }
@@ -1652,7 +1623,6 @@ function classifyEdgeTransition(incoming: Edge, outgoing: Edge): Maneuver['kind'
 function buildManeuvers(
   edges: Edge[],
   profile: Profile,
-  laneGuidanceIndex: LaneGuidanceIndex,
   transitions: (TransitionPlan | undefined)[] = [],
 ): Maneuver[] {
   type Cand = { m: Maneuver; inBrg: number; outBrg: number; d: number }
@@ -1690,13 +1660,7 @@ function buildManeuvers(
           // HUD 車道格：取「進入行向」的車道數與轉向（逆向邊用 backward 組）
           lanesForward: roadLaneCount,
           turnLanes: osmMovements,
-          laneGuidance: resolveLaneGuidance(laneGuidanceIndex, {
-            wayId: roadProps.osm_id,
-            intersectionNodeId: nodeId,
-            direction: prev.back ? 'backward' : 'forward',
-            roadLaneCount,
-            osmMovements,
-          }),
+          laneGuidance: guidanceForRoadDirection(prev.road, prev.back),
           laneDecision: transitions[i - 1]?.decision,
         },
         inBrg, outBrg, d,

@@ -117,7 +117,9 @@ export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
 }
 
 export const staticSegments = () => database?.segments ?? []
-export const staticAnnotations = () => database?.annotations ?? []
+/** Canonical raw annotations are read-only runtime input; editor APIs never persist session imports here. */
+export const staticAnnotations = (): readonly Record<string, unknown>[] =>
+  database?.annotations ?? []
 export const staticJournal = () => database?.editor.journal ?? []
 export const staticZones = () => database?.editor.waiting_zones ?? []
 export const staticDeletedZoneIds = () => database?.editor.deleted_waiting_zone_ids ?? []

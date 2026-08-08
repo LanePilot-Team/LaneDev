@@ -444,7 +444,11 @@ export function guidanceForRoadDirection(
   const p = road.properties
   const laneCount = back ? p.lanesBackward : p.lanesForward
   const laneMovements = back ? p.turnLanesB : p.turnLanes
-  const sources = back ? p.laneFieldSourcesB : p.laneFieldSourcesF
+  const sources = (back ? p.laneFieldSourcesB : p.laneFieldSourcesF) ?? {
+    laneCount: 'inferred',
+    laneMovements: laneMovements === undefined ? 'inferred' : 'osm',
+    motorcycleAccess: 'inferred',
+  }
   const source = guidanceSource(sources)
   return {
     laneCount,

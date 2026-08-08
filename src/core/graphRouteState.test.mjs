@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { RoadGraph } from './graph.ts'
+import { buildLaneGuidanceIndex } from './laneGuidance.ts'
 
 const P = {
   start: [120.0001, 22],
@@ -20,6 +21,12 @@ const road = (osmId, nodes, coordinates, access = undefined) => ({
     lanes: 1,
     lanesForward: 1,
     lanesBackward: 0,
+    laneFieldSourcesF: {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    },
+    laneFieldSourcesB: {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    },
     motoF: false,
     motoB: false,
     motoCountF: 0,
@@ -219,4 +226,38 @@ test('點選的終點方向可達時仍優先使用該方向', () => {
 
   assert.ok(route)
   assert.deepEqual(route.spans.map((span) => span.back), [false])
+})
+
+test('逆向 span guidance 讀取有效道路屬性而不讀舊索引', () => {
+  const destination = twoWayRoad(500, [1, 2], [[120, 22], [120.002, 22]])
+  destination.properties.lanesBackward = 2
+  destination.properties.turnLanesB = ['left', 'through']
+  destination.properties.laneFieldSourcesB = {
+    laneCount: 'lanepilot-segment',
+    laneMovements: 'human-way',
+    motorcycleAccess: 'inferred',
+  }
+  const legacyIndex = buildLaneGuidanceIndex([{
+    wayId: 500,
+    direction: 'backward',
+    scope: 'segment_direction',
+    laneCount: 1,
+    laneMovements: ['right'],
+  }])
+  const graph = new RoadGraph([destination], legacyIndex)
+  const laneOffsetLat = 1.6 / 110540
+
+  const route = graph.route(
+    [120.0018, 22 + laneOffsetLat],
+    [120.0002, 22 + laneOffsetLat],
+    'car',
+  )
+
+  assert.ok(route)
+  assert.equal(route.spans[0].back, true)
+  assert.deepEqual(route.spans[0].laneGuidance, {
+    laneCount: 2,
+    laneMovements: ['left', 'through'],
+    source: 'annotation',
+  })
 })

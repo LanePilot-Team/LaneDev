@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { RoadGraph } from './graph.ts'
+import { buildLaneGuidanceIndex } from './laneGuidance.ts'
 
 const road = (osmId, nodes, coordinates, turnLanes) => ({
   type: 'Feature',
@@ -12,6 +13,13 @@ const road = (osmId, nodes, coordinates, turnLanes) => ({
     lanes: turnLanes?.length ?? 1,
     lanesForward: turnLanes?.length ?? 1,
     lanesBackward: 0,
+    laneFieldSourcesF: {
+      laneCount: 'osm', laneMovements: turnLanes ? 'osm' : 'inferred',
+      motorcycleAccess: 'inferred',
+    },
+    laneFieldSourcesB: {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    },
     motoF: false,
     motoB: false,
     motoCountF: 0,
@@ -139,6 +147,40 @@ test('已接受的轉向保存主要、次要與不相容車道', () => {
   assert.equal(route.maneuvers[0].laneDecision.primaryLaneIndex, 2)
   assert.deepEqual(route.maneuvers[0].laneDecision.secondaryLaneIndices, [1])
   assert.deepEqual(route.maneuvers[0].laneDecision.incompatibleLaneIndices, [0])
+})
+
+test('有效道路屬性與舊索引矛盾時，車道決策及 HUD payload 只採道路屬性', () => {
+  const incoming = road(410, [1, 2], [[120, 22], junction], [
+    'through', 'through;right', 'right',
+  ])
+  incoming.properties.laneFieldSourcesF = {
+    laneCount: 'lanepilot-segment',
+    laneMovements: 'human-block',
+    motorcycleAccess: 'inferred',
+  }
+  const legacyIndex = buildLaneGuidanceIndex([{
+    wayId: 410,
+    direction: 'forward',
+    scope: 'intersection_approach',
+    intersectionNodeId: 2,
+    laneCount: 3,
+    laneMovements: ['right', 'through', 'through'],
+  }])
+  const graph = new RoadGraph([
+    incoming,
+    road(420, [2, 3], [junction, southGoal], ['through']),
+  ], legacyIndex)
+
+  const route = graph.route(start, [120.001, 21.9991], 'car')
+
+  assert.ok(route)
+  assert.equal(route.maneuvers[0].laneDecision.primaryLaneIndex, 2)
+  assert.deepEqual(route.maneuvers[0].laneGuidance, {
+    laneCount: 3,
+    laneMovements: ['through', 'through;right', 'right'],
+    source: 'annotation',
+  })
+  assert.deepEqual(route.spans[0].laneGuidance, route.maneuvers[0].laneGuidance)
 })
 
 test('A* 保留進入車道狀態並避開短距離跨兩車道方案', () => {

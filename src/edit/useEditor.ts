@@ -2,7 +2,7 @@
 // 狀態、地圖點擊分派與 journal 寫入。
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
-import type { Profile, TurnOption } from '../core/graph'
+import { RoadGraph, type Profile, type TurnOption } from '../core/graph'
 import {
   appendRecord, appendRecords, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
 } from '../core/enhancements'
@@ -16,7 +16,9 @@ import { materializeJournalRecords } from '../core/journalBatch'
 import { flushStaticEditorSave } from '../core/staticDatabase'
 import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
 import {
-  groundMoves, makeMotoBoxSlot, motoBoxLaneLimits, stopLineEdges,
+  groundMoves, makeMotoBoxSlot, motoBoxApproachPolicy, motoBoxClampRange,
+  motoBoxEditorLimits, motoBoxInitialRange, motoBoxSaveFields, stopLineEdges,
+  type MotoBoxApproachPolicy,
 } from '../core/turnbays'
 import { haversine, bearing as geoBearing } from '../core/geo'
 import type { PlacedVehicle } from '../core/vehicles'
@@ -86,7 +88,7 @@ export interface MotoBoxPanelLimits {
 /**
  * 從**目前面板狀態**推出停等格的可選範圍。每次 render 重算，所以勾了禁行機車、
  * 加減車道、開關右轉專用道、切換道路繪圖開關都會立刻反映在 stepper 上下限。
- * 規則本體是 core/turnbays 的 motoBoxLaneLimits，與 buildMotoBoxes 同一份。
+ * 規則本體與 buildMotoBoxes 同樣以實際合併端點的政策計算。
  */
 export function motoBoxPanelLimits(er: EditRoadState, back: boolean): MotoBoxPanelLimits {
   const oneway = er.oneway === 'yes'
@@ -94,27 +96,19 @@ export function motoBoxPanelLimits(er: EditRoadState, back: boolean): MotoBoxPan
   const moto = oneway || !back ? er.motoF : er.motoB
   const motoCount = oneway || !back ? er.motoCountF : er.motoCountB
   const rightLane = oneway || !back ? er.rightLaneF : er.rightLaneB
-  const marks = oneway || !back ? er.laneMarksF : er.laneMarksB
   const topo = oneway || !back ? er.motoBoxTopoF : er.motoBoxTopoB
-  // 面板的 laneMarks 一定已具體化（選取時用 legacyMarks 補齊），所以舊制旗標傳 false
-  const limits = motoBoxLaneLimits(lanes, moto, marks, false)
+  const policy = oneway || !back ? er.motoBoxPolicyF : er.motoBoxPolicyB
   // 刻意不看 roadMarkingMode：buildMotoBoxes 對「人工明確啟用」的格子會跳過
   // slot.eligible（含標線模式）繼續畫，所以就算切成不顯示也要留著編輯入口，
   // 否則使用者管不到已經存在的格子。標線模式的影響由面板的提示說明。
-  return {
-    max: topo ? limits.maxLanes : 0,
-    min: limits.firstLegalLane,
-    slots: lanes + motoCount + (rightLane ? 1 : 0),
-  }
+  return motoBoxEditorLimits({ ...policy, lanes, moto, motoCount }, topo, rightLane)
 }
 
 /** 把已選範圍夾回目前合法區間（車道數/禁行機車改變後，舊範圍可能整段失效） */
 export function clampMotoBoxRange(
   start: number, end: number, limits: MotoBoxPanelLimits,
 ): { start: number; end: number } {
-  const hi = Math.min(end, limits.slots)
-  const lo = Math.max(limits.min, Math.min(start, hi - 1))
-  return { start: Math.max(0, lo), end: Math.max(lo + 1, hi) }
+  return motoBoxClampRange(start, end, limits)
 }
 
 export function resizeLaneMarks(marks: (LaneMark | null)[], n: number): (LaneMark | null)[] {
@@ -183,6 +177,8 @@ export interface EditRoadState {
    * （勾了禁行機車、停等格仍然可以延伸過去）。改由 motoBoxLimitsOf 現算。
    */
   motoBoxTopoF: boolean; motoBoxTopoB: boolean
+  /** 實際繪製 carrier 兩端的政策；合併道路不可退回被點選的 primary。 */
+  motoBoxPolicyF: MotoBoxApproachPolicy; motoBoxPolicyB: MotoBoxApproachPolicy
   /** 路口末端才分出的右轉專用道（獨立於整段基本車道數）。 */
   rightLaneF: boolean; rightLaneB: boolean
   rightLaneF0: boolean; rightLaneB0: boolean
@@ -631,38 +627,44 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         core.motoBoxesRef.current.find((m) => m.dir === dirKey)
       const motoBoxTargets = roadMergeMotoBoxTargets(
         core.mergeReplayRef.current, road, core.renderRoadsRef.current)
+      const renderCarrier = roadMergeRenderCarrier(
+        core.mergeReplayRef.current, road, core.renderRoadsRef.current)
+      const motoBoxPolicyF = motoBoxApproachPolicy(
+        renderCarrier, motoBoxTargets.forward.nodeId, motoBoxTargets.forward.back)
+      const motoBoxPolicyB = motoBoxApproachPolicy(
+        renderCarrier, motoBoxTargets.backward.nodeId, motoBoxTargets.backward.back)
       const motoDir = (target: typeof motoBoxTargets.forward) =>
         `${target.wayId}@${target.nodeId}${target.back ? '~b' : ''}`
       const mbF = mbOf(motoDir(motoBoxTargets.forward))
       const mbB = mbOf(motoDir(motoBoxTargets.backward))
       const rlF = core.rightLanesRef.current.find((r) =>
-        r.wayId === p2.osm_id && r.nodeId === nodeLast && !r.back)
+        r.wayId === motoBoxTargets.forward.wayId
+        && r.nodeId === motoBoxTargets.forward.nodeId
+        && r.back === motoBoxTargets.forward.back)
       const rlB = core.rightLanesRef.current.find((r) =>
-        r.wayId === p2.osm_id && r.nodeId === nodeFirst && r.back)
+        r.wayId === motoBoxTargets.backward.wayId
+        && r.nodeId === motoBoxTargets.backward.nodeId
+        && r.back === motoBoxTargets.backward.back)
       // 某些方向不在自動生成 scope，motoBoxesRef 沒有候選；改用與 buildMotoBoxes
       // 同一份判定（makeMotoBoxSlot）算人工新增的上限——不合資格的行向回 0，
       // 面板就不顯示 stepper，不會出現「設得上去、存檔後被刷回關閉」。
-      const motoBoxSlot = g ? makeMotoBoxSlot(g) : null
+      const renderGraph = new RoadGraph(core.renderRoadsRef.current)
+      const renderEdges = stopLineEdges(renderGraph, (candidate) => candidate === renderCarrier)
+      const motoBoxSlot = makeMotoBoxSlot(renderGraph)
       // 拓撲資格只能在這裡算（要 RoadGraph）；上下限交給面板現算。
       // 快慢分隔島只影響自動產生；人工編輯仍應能選擇是否繪製停等格
       // （buildMotoBoxes 會以明確的 moto_box journal 設定覆蓋自動篩選）。
-      const topoOf = (back: boolean) => {
-        const edge = back ? backwardEdge : forwardEdge
-        return !!motoBoxSlot && !!edge && motoBoxSlot(edge).topoEligible
+      const topoOf = (target: typeof motoBoxTargets.forward) => {
+        const edge = renderEdges.find((candidate) =>
+          candidate.toNode === target.nodeId && candidate.back === target.back)
+        return !!edge && motoBoxSlot(edge).topoEligible
       }
-      const motoBoxTopoF = topoOf(false)
-      const motoBoxTopoB = topoOf(true)
-      const defaultRange = (back: boolean) => {
-        const lanes = p2.oneway === 'yes'
-          ? p2.lanesForward : back ? p2.lanesBackward : p2.lanesForward
-        const moto = p2.oneway === 'yes' ? p2.motoF : back ? p2.motoB : p2.motoF
-        const marks = p2.oneway === 'yes' || !back ? p2.laneMarksF : p2.laneMarksB
-        const rules = p2.oneway === 'yes' || !back ? rulesF : rulesB
-        const limits = motoBoxLaneLimits(lanes, moto, marks, rules.includes('no_moto'))
-        return { start: limits.firstLegalLane, end: lanes + (moto ? 1 : 0) }
-      }
-      const inferredF = defaultRange(false)
-      const inferredB = defaultRange(true)
+      const motoBoxTopoF = topoOf(motoBoxTargets.forward)
+      const motoBoxTopoB = topoOf(motoBoxTargets.backward)
+      const inferredF = motoBoxInitialRange(motoBoxEditorLimits(
+        motoBoxPolicyF, motoBoxTopoF, !!rlF))
+      const inferredB = motoBoxInitialRange(motoBoxEditorLimits(
+        motoBoxPolicyB, motoBoxTopoB, !!rlB))
       const motoBoxF = mbF?.coveredLanes ?? 0
       const motoBoxB = mbB?.coveredLanes ?? 0
       const activeMerge = activeMergeForRoad(core.mergeReplayRef.current, road) ?? null
@@ -723,7 +725,7 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
         motoBoxEndF0: mbF?.endLane ?? inferredF.end,
         motoBoxStartB0: mbB?.startLane ?? inferredB.start,
         motoBoxEndB0: mbB?.endLane ?? inferredB.end,
-        motoBoxTopoF, motoBoxTopoB,
+        motoBoxTopoF, motoBoxTopoB, motoBoxPolicyF, motoBoxPolicyB,
         rightLaneF: !!rlF, rightLaneB: !!rlB,
         rightLaneF0: !!rlF, rightLaneB0: !!rlB,
         rightLaneLenF: Math.round(rlF?.lenM ?? 20),
@@ -957,39 +959,38 @@ export function useEditor(core: MapCore, profileRef: RefObject<Profile>, modeRef
     const writeMotoBox = (
       target: { wayId: number; nodeId: number; back: boolean }, v: number, v0: number,
       start: number, end: number, start0: number, end0: number,
+      limits: MotoBoxPanelLimits,
     ) => {
-      if (v === v0 && start === start0 && end === end0) return
+      const fields = motoBoxSaveFields(v > 0, start, end, limits)
+      if (fields.lanes === v0
+        && fields.start_lane === start0 && fields.end_lane === end0) return
       core.journalRef.current = appendRecord(core.journalRef.current, {
         op: 'set',
         target: {
           type: 'moto_box',
           key: `way/${target.wayId}@node/${target.nodeId}${target.back ? '~b' : ''}~m`,
         },
-        fields: v > 0
-          ? { lanes: Math.max(0, end - start), start_lane: start, end_lane: end }
-          : { lanes: 0, start_lane: 0, end_lane: 0 },
+        fields,
       })
     }
     // 存檔的範圍要用「同一次編輯後仍合法」的值：面板顯示的是夾取後的區間，
     // 若直接寫未夾取的 state，勾了禁行機車或減少車道後就會存進建置端會拒絕的範圍。
     const boxLimitsF = motoBoxPanelLimits(editRoad, false)
     const boxLimitsB = motoBoxPanelLimits(editRoad, true)
-    const boxRangeF = clampMotoBoxRange(
-      editRoad.motoBoxStartF, editRoad.motoBoxEndF, boxLimitsF)
-    const boxRangeB = clampMotoBoxRange(
-      editRoad.motoBoxStartB, editRoad.motoBoxEndB, boxLimitsB)
     writeMotoBox(
       motoBoxTargets.forward,
       boxLimitsF.max > 0 ? editRoad.motoBoxF : 0, editRoad.motoBoxF0,
-      boxRangeF.start, boxRangeF.end,
+      editRoad.motoBoxStartF, editRoad.motoBoxEndF,
       editRoad.motoBoxStartF0, editRoad.motoBoxEndF0,
+      boxLimitsF,
     )
     if (editRoad.oneway === 'no') {
       writeMotoBox(
         motoBoxTargets.backward,
         boxLimitsB.max > 0 ? editRoad.motoBoxB : 0, editRoad.motoBoxB0,
-        boxRangeB.start, boxRangeB.end,
+        editRoad.motoBoxStartB, editRoad.motoBoxEndB,
         editRoad.motoBoxStartB0, editRoad.motoBoxEndB0,
+        boxLimitsB,
       )
     }
     // 導航與繪圖是不同物件；一般道路要同時更新兩份，捏合道路還要涵蓋

@@ -3,7 +3,7 @@
 import maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import {
-  parseImported, mergeMaps,
+  parseImported, mergeMaps, toLaneBaseAnnotationInput,
   type AnnotationRecord as ImportedAnnotation,
 } from '../core/importmap.ts'
 import { roadsFromGeoJSON } from '../core/roads.ts'
@@ -86,23 +86,7 @@ export function importAnnotations(
   records: ImportedAnnotation[],
   fileName: string,
 ) {
-  const extraction = extractLaneBase(records.map((record) => ({
-    object_identity: {
-      object_type: record.contextScope ? 'nav_context_annotation' : 'nav_segment_annotation',
-      nav_segment_key: record.segmentKey,
-      split_index: Number(record.sourceKey?.match(/#(-?\d+)$/)?.[1] ?? 0),
-      source_osm: { osm_id: record.segmentKey },
-      ...(record.contextScope ? { context_scope: record.contextScope } : {}),
-      ...(record.approachNodeKey
-        ? { applies_to_intersection_key: record.approachNodeKey } : {}),
-      ...(record.approachDirection
-        ? { approach_direction: record.approachDirection } : {}),
-    },
-    lane_nav_tags: {
-      lane_detail_tags: { lane_profiles: record.laneProfiles },
-      taiwan_motorcycle_tags: { movement_rules: record.movementRules },
-    },
-  })))
+  const extraction = extractLaneBase(toLaneBaseAnnotationInput(records))
   if (extraction.errors.length) {
     throw new Error(`Lane Base 萃取失敗：${extraction.errors.join('；')}`)
   }

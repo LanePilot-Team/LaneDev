@@ -188,6 +188,22 @@ test('zone geometry failures remain unresolved in the combined session audit', (
   ), ['lane-only'])
 })
 
+test('a source with lane fields and a resolved movement zone keeps its road unresolved', () => {
+  const index = laneBase.buildLaneBaseIndex([{
+    sourceKey: 'mixed-source', wayId: 10, intersectionNodeId: 99,
+    direction: 'forward', scope: 'intersection_approach', laneCount: 2,
+    movementRules: [{
+      movement_key: 'mixed-source-left', applies_to_intersection_key: 'node/99',
+      approach_segment_key: 'way/10', approach_direction: 'forward', movement: 'left',
+      motorcycle_turn_rule: 'two_stage_required', waiting_zone_exists: 'yes',
+    }],
+  }])
+
+  assert.deepEqual(zoneimport.mergeLaneBaseZoneAudit(
+    ['mixed-source'], index, [],
+  ), ['mixed-source'])
+})
+
 test('visible overlay applies base, human replacement/addition, then tombstones', () => {
   assert.equal(typeof zoneimport.overlayWaitingZones, 'function')
   const baseA = zone('zone-lp-a')

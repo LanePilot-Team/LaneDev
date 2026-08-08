@@ -309,6 +309,7 @@ const applyVisualMergeInPlace = (roads: RoadFeature[], merge: ResolvedRoadMerge)
       laneCount: p.oneway === 'yes' ? p.lanesForward
         : back ? p.lanesBackward : p.lanesForward,
       moto: p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF,
+      motoCount: p.oneway === 'yes' ? p.motoCountF : back ? p.motoCountB : p.motoCountF,
       motoSep: (p.oneway === 'yes' ? p.motoSepF : back ? p.motoSepB : p.motoSepF) || 0,
       laneMarks: p.oneway === 'yes' || !back ? p.laneMarksF : p.laneMarksB,
       motorcycleAccessByLane: p.oneway === 'yes' || !back

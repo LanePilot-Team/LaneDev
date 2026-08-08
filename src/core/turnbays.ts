@@ -9,7 +9,7 @@
 import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
 import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
-import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads'
+import { laneSpanM, MOTO_LANE_M, type LaneMark, type RoadFeature } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
 import { indexObstacles, projectNearbyObstacles } from './groundAvoid'
@@ -2056,6 +2056,21 @@ export interface MotoBoxLaneLimits {
   motoOnly: boolean
 }
 
+export interface MotoBoxApproachPolicy {
+  lanes: number
+  moto: boolean
+  motoCount: number
+  laneMarks?: (LaneMark | null)[]
+  motorcycleAccessByLane?: string[]
+  legacyNoMoto: boolean
+}
+
+export interface MotoBoxEditorDirectionLimits {
+  max: number
+  min: number
+  slots: number
+}
+
 /**
  * 停等格能涵蓋到哪幾條車道。**騎士不得穿越禁行機車車道進入停等格**，所以合法
  * 範圍是「從最外側往內掃到第一條禁行機車車道為止」。
@@ -2094,6 +2109,78 @@ export function motoBoxLaneLimits(
   }
 }
 
+/** Resolve the real road/direction policy represented by a visual-merge endpoint. */
+export function motoBoxApproachPolicy(
+  road: RoadFeature, nodeId: number, back: boolean,
+): MotoBoxApproachPolicy {
+  const p = road.properties
+  const endpoint = p.roadMergeApproachPolicies?.find((policy) => policy.nodeId === nodeId)
+  if (endpoint) {
+    return {
+      lanes: endpoint.laneCount,
+      moto: endpoint.moto,
+      motoCount: endpoint.motoCount ?? (endpoint.moto ? 1 : 0),
+      laneMarks: endpoint.laneMarks,
+      motorcycleAccessByLane: endpoint.motorcycleAccessByLane,
+      legacyNoMoto: (endpoint.rules ?? (endpoint.motorcycle === 'no' ? ['no_moto'] : []))
+        .includes('no_moto'),
+    }
+  }
+  const forward = p.oneway === 'yes' || !back
+  const rules = forward ? p.rulesF : p.rulesB
+  const motoCount = forward ? p.motoCountF : p.motoCountB
+  return {
+    lanes: forward ? p.lanesForward : p.lanesBackward,
+    moto: forward ? p.motoF : p.motoB,
+    motoCount,
+    laneMarks: forward ? p.laneMarksF : p.laneMarksB,
+    motorcycleAccessByLane: forward
+      ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB,
+    legacyNoMoto: (rules ?? (p.motorcycle === 'no' ? ['no_moto'] : []))
+      .includes('no_moto'),
+  }
+}
+
+export function motoBoxEditorLimits(
+  policy: MotoBoxApproachPolicy, topoEligible: boolean, rightLane: boolean,
+): MotoBoxEditorDirectionLimits {
+  const limits = motoBoxLaneLimits(
+    policy.lanes, policy.moto, policy.laneMarks,
+    policy.legacyNoMoto, policy.motorcycleAccessByLane,
+  )
+  return {
+    max: topoEligible ? limits.maxLanes : 0,
+    min: limits.firstLegalLane,
+    slots: policy.lanes + policy.motoCount + (rightLane ? 1 : 0),
+  }
+}
+
+export function motoBoxInitialRange(
+  limits: MotoBoxEditorDirectionLimits,
+): { start: number; end: number } {
+  return { start: limits.min, end: Math.max(limits.min + 1, limits.slots) }
+}
+
+export function motoBoxClampRange(
+  start: number, end: number, limits: MotoBoxEditorDirectionLimits,
+): { start: number; end: number } {
+  const hi = Math.min(end, limits.slots)
+  const lo = Math.max(limits.min, Math.min(start, hi - 1))
+  return { start: Math.max(0, lo), end: Math.max(lo + 1, hi) }
+}
+
+export function motoBoxSaveFields(
+  enabled: boolean, start: number, end: number, limits: MotoBoxEditorDirectionLimits,
+): { lanes: number; start_lane: number; end_lane: number } {
+  if (!enabled || limits.max < 1) return { lanes: 0, start_lane: 0, end_lane: 0 }
+  const range = motoBoxClampRange(start, end, limits)
+  return {
+    lanes: Math.max(0, range.end - range.start),
+    start_lane: range.start,
+    end_lane: range.end,
+  }
+}
+
 /**
  * graph 級前置（路口集合）只算一次，回傳逐行向的停等格判定函式。
  * useEditor 的面板與 buildMotoBoxes 都走這裡，兩邊的規則不會再各走各的。
@@ -2102,30 +2189,18 @@ export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot
   const inter = new Set(graph.intersections().map((i) => i.id))
   return (e: ScopeEdge): MotoBoxSlot => {
     const p = e.road.properties
-    const endpointPolicy = p.roadMergeApproachPolicies?.find((policy) =>
-      policy.nodeId === e.toNode)
+    const policy = motoBoxApproachPolicy(e.road, e.toNode, e.back)
     const mergeThrough = (p.oneSideEntryNodes?.includes(e.toNode) ?? false)
       && graph.hasDistinctRoadAt(e.toNode, e.road)
-    const lanes = endpointPolicy?.laneCount
-      ?? (p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward)
-    const moto = endpointPolicy?.moto
-      ?? (p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF)
+    const lanes = policy.lanes
+    const moto = policy.moto
+    const endpointPolicy = p.roadMergeApproachPolicies?.find((item) => item.nodeId === e.toNode)
     const sep = endpointPolicy?.motoSep
       ?? ((p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0)
     // 每車道「禁行機車」判定：顯式車道標記優先，否則舊制 rules/motorcycle=no
     // 展開為全車道禁行（同 buildRoadTexts 的相容規則）
-    const explicitMarks = endpointPolicy?.laneMarks
-      ?? (p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB)
-    const motorcycleAccess = endpointPolicy?.motorcycleAccessByLane
-      ?? (p.oneway === 'yes' || !e.back
-        ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB)
-    const legacyRules = endpointPolicy?.rules
-      ?? (p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB)
-    const legacyNoMoto = (legacyRules
-      ?? ((endpointPolicy?.motorcycle ?? p.motorcycle) === 'no' ? ['no_moto'] : []))
-      .includes('no_moto')
     const limits = motoBoxLaneLimits(
-      lanes, !!moto, explicitMarks, legacyNoMoto, motorcycleAccess,
+      lanes, moto, policy.laneMarks, policy.legacyNoMoto, policy.motorcycleAccessByLane,
     )
     const total = cumulative(e.coords)[e.coords.length - 1]
     // 縱向：停止線退 GAP 再退一整格深，前面還要留 4m 給車道箭頭（同 d0 檢查）
@@ -2211,16 +2286,15 @@ export function buildMotoBoxes(
     if (slot.sepIsland && !explicitlyEnabled) continue
     const { maxLanes, firstLegalLane } = slot
     if (maxLanes < 1) continue // 2) 無合法停等空間（人工設定同樣不可涵蓋禁行機車車道）
-    const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
+    const approachPolicy = motoBoxApproachPolicy(e.road, e.toNode, e.back)
+    const lanes = approachPolicy.lanes
     const span = laneSpanM(p, e.back)
     // 同一 way/節點可能有多個切塊候選；只有真正成為候選後才標記，避免先遇到
     // 不合格的切塊而把後續有效的進入方向誤判為重複（同 buildStopLines）。
     seen.add(dir)
     // 新格式用左→右的 [start_lane,end_lane) 指定任意連續範圍；舊格式 lanes
     // 仍相容，解讀為合法汽車道最外側 N 道。右轉附加道不再預設納入停等格。
-    const motoSlots = p.oneway === 'yes'
-      ? p.motoCountF
-      : e.back ? p.motoCountB : p.motoCountF
+    const motoSlots = approachPolicy.motoCount
     const moto = motoSlots > 0
     const slotCount = lanes + motoSlots + (rl ? 1 : 0)
     let startLane = firstLegalLane

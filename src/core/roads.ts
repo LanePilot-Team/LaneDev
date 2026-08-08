@@ -36,6 +36,7 @@ export interface RoadMergeApproachPolicy {
   direction: 'forward' | 'backward'
   laneCount: number
   moto: boolean
+  motoCount: number
   motoSep: number
   laneMarks?: (LaneMark | null)[]
   motorcycleAccessByLane?: string[]

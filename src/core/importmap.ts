@@ -31,6 +31,8 @@ export interface AnnotationRecord {
   contextScope?: string
   /** Stable source identity retained for pure annotation-domain accounting. */
   sourceKey?: string
+  navContextKey?: string
+  splitIndex: number
   approachNodeKey?: string
   approachDirection?: string
   laneProfiles: LaneProfile[]
@@ -53,7 +55,12 @@ function annotationRecord(rec: Record<string, unknown>): AnnotationRecord | null
   return {
     segmentKey,
     contextScope: identity?.context_scope ? String(identity.context_scope) : undefined,
-    sourceKey: `${segmentKey}#${Number(identity?.split_index ?? 0) || 0}`,
+    sourceKey: identity?.nav_context_key
+      ? String(identity.nav_context_key)
+      : `${segmentKey}#${Number(identity?.split_index ?? 0) || 0}`,
+    navContextKey: identity?.nav_context_key
+      ? String(identity.nav_context_key) : undefined,
+    splitIndex: Number(identity?.split_index ?? 0) || 0,
     approachNodeKey: identity?.applies_to_intersection_key
       ? String(identity.applies_to_intersection_key)
       : undefined,
@@ -63,6 +70,28 @@ function annotationRecord(rec: Record<string, unknown>): AnnotationRecord | null
     laneProfiles: (detail.lane_profiles as LaneProfile[] | undefined) ?? [],
     movementRules: (taiwan.movement_rules as MovementRule[] | undefined) ?? [],
   }
+}
+
+/** Restore the complete annotation identity expected by the normalized Lane Base extractor. */
+export function toLaneBaseAnnotationInput(records: AnnotationRecord[]) {
+  return records.map((record) => ({
+    object_identity: {
+      object_type: record.contextScope ? 'nav_context_annotation' : 'nav_segment_annotation',
+      nav_segment_key: record.segmentKey,
+      split_index: record.splitIndex,
+      source_osm: { osm_id: record.segmentKey },
+      ...(record.navContextKey ? { nav_context_key: record.navContextKey } : {}),
+      ...(record.contextScope ? { context_scope: record.contextScope } : {}),
+      ...(record.approachNodeKey
+        ? { applies_to_intersection_key: record.approachNodeKey } : {}),
+      ...(record.approachDirection
+        ? { approach_direction: record.approachDirection } : {}),
+    },
+    lane_nav_tags: {
+      lane_detail_tags: { lane_profiles: record.laneProfiles },
+      taiwan_motorcycle_tags: { movement_rules: record.movementRules },
+    },
+  }))
 }
 
 /** 單筆 nav_segment → 底圖 Feature（jsonl 逐行與靜態資料庫 segments 共用） */

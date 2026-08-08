@@ -59,11 +59,25 @@ export function mergeLaneBaseZoneAudit(
   index: LaneBaseIndex,
   zoneUnresolvedSourceKeys: string[],
 ): string[] {
-  const movementSourceKeys = new Set(
-    [...index.movementByApproachKey.values()].flat().map((rule) => rule.sourceKey),
-  )
+  const records = [
+    ...index.approachByKey.values(),
+    ...index.segmentByKey.values(),
+    ...index.legacyByKey.values(),
+  ]
+  const bySource = new Map<string, typeof records>()
+  for (const record of records) {
+    const group = bySource.get(record.sourceKey) ?? []
+    group.push(record)
+    bySource.set(record.sourceKey, group)
+  }
+  const movementOnlySourceKeys = new Set([...bySource]
+    .filter(([, group]) => group.some((record) => record.movementRules.length > 0)
+      && group.every((record) => record.laneCount === undefined
+        && record.laneMovements === undefined
+        && record.motorcycleAccessByLane === undefined))
+    .map(([sourceKey]) => sourceKey))
   return [...new Set([
-    ...roadUnresolvedSourceKeys.filter((key) => !movementSourceKeys.has(key)),
+    ...roadUnresolvedSourceKeys.filter((key) => !movementOnlySourceKeys.has(key)),
     ...zoneUnresolvedSourceKeys,
   ])].sort()
 }
@@ -111,6 +125,7 @@ export function zonesFromLaneBase(args: {
       records: [{
         segmentKey: `way/${candidate.approachWayId}`,
         sourceKey: candidate.sourceKey,
+        splitIndex: 0,
         contextScope: 'intersection_approach',
         approachNodeKey: `node/${candidate.intersectionNodeId}`,
         approachDirection: candidate.direction,

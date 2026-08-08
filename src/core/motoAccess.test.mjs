@@ -3,6 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyToRoads, foldJournal } from './enhancements.ts'
 import { motoAllowed } from './graph.ts'
+import * as laneBase from './laneBase.ts'
 
 const road = (osmId, blockNode, overrides = {}) => ({
   type: 'Feature',
@@ -50,6 +51,31 @@ const road = (osmId, blockNode, overrides = {}) => ({
     nodes: [blockNode, 2],
     ...overrides,
   },
+})
+
+test('Lane Base motorcycle access is applied before human journal authority', () => {
+  const r = road(99, 1, {
+    laneFieldSourcesF: {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    },
+    laneFieldSourcesB: {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    },
+  })
+  laneBase.applyLaneBaseToRoads([r], laneBase.buildLaneBaseIndex([{
+    sourceKey: 'way/99/forward', wayId: 99, direction: 'forward',
+    scope: 'segment_direction', motorcycleAccessByLane: ['no', 'no'], movementRules: [],
+  }]))
+
+  assert.equal(motoAllowed(r, false), false)
+  assert.deepEqual(r.properties.motorcycleAccessByLaneF, ['no', 'no'])
+
+  applyToRoads([r], foldJournal([record(1, 'way/99@b/1', {
+    motorcycle_access_by_lane_forward: 'yes|designated',
+  })]))
+  assert.equal(motoAllowed(r, false), true)
+  assert.deepEqual(r.properties.motorcycleAccessByLaneF, ['yes', 'designated'])
+  assert.equal(r.properties.laneFieldSourcesF.motorcycleAccess, 'human-block')
 })
 
 const record = (seq, key, fields) => ({

@@ -2071,10 +2071,15 @@ export function motoBoxLaneLimits(
   laneMarks: (LaneMark | null)[] | undefined,
   /** 舊制 motorcycle=no / rules 展開為「全車道禁行」 */
   legacyNoMoto: boolean,
+  /** Lane Base／人工 journal 的逐車道機車通行權限。 */
+  motorcycleAccessByLane?: string[],
 ): MotoBoxLaneLimits {
-  const noMotoAt = (k: number): boolean => laneMarks
-    ? laneMarks[k]?.text.trim() === '禁行機車'
-    : legacyNoMoto
+  const noMotoAt = (k: number): boolean => {
+    if (laneMarks?.[k]) return laneMarks[k]?.text.trim() === '禁行機車'
+    const access = motorcycleAccessByLane?.[k]
+    if (access && access !== 'unknown') return access === 'no'
+    return laneMarks || motorcycleAccessByLane ? false : legacyNoMoto
+  }
   let autoKL = lanes
   for (let k = lanes - 1; k >= 0; k--) {
     if (noMotoAt(k)) break
@@ -2105,10 +2110,14 @@ export function makeMotoBoxSlot(graph: RoadGraph): (e: ScopeEdge) => MotoBoxSlot
     // 每車道「禁行機車」判定：顯式車道標記優先，否則舊制 rules/motorcycle=no
     // 展開為全車道禁行（同 buildRoadTexts 的相容規則）
     const explicitMarks = p.oneway === 'yes' || !e.back ? p.laneMarksF : p.laneMarksB
+    const motorcycleAccess = p.oneway === 'yes' || !e.back
+      ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB
     const legacyRules = p.oneway === 'yes' || !e.back ? p.rulesF : p.rulesB
     const legacyNoMoto = (legacyRules ?? (p.motorcycle === 'no' ? ['no_moto'] : []))
       .includes('no_moto')
-    const limits = motoBoxLaneLimits(lanes, !!moto, explicitMarks, legacyNoMoto)
+    const limits = motoBoxLaneLimits(
+      lanes, !!moto, explicitMarks, legacyNoMoto, motorcycleAccess,
+    )
     const total = cumulative(e.coords)[e.coords.length - 1]
     // 縱向：停止線退 GAP 再退一整格深，前面還要留 4m 給車道箭頭（同 d0 檢查）
     const fitsLengthwise =

@@ -48,6 +48,30 @@ export interface LaneBaseIndex {
   approachByKey: Map<string, LaneBaseRecord>
   segmentByKey: Map<string, LaneBaseRecord>
   legacyByKey: Map<string, LaneBaseRecord>
+  movementByApproachKey: Map<string, LaneBaseMovementRule[]>
+  movementRuleErrors: string[]
+}
+
+export interface LaneBaseMovementRule {
+  sourceKey: string
+  movementKey: string
+  approachWayId: number
+  intersectionNodeId: number
+  direction: LaneDirection
+  movement: string
+  motorcycleTurnRule?: string
+  waitingZoneExists?: string
+}
+
+export interface LaneBaseZoneCandidate {
+  id: string
+  sourceKey: string
+  movementKey: string
+  approachWayId: number
+  intersectionNodeId: number
+  direction: LaneDirection
+  movement: string
+  twoStage: boolean
 }
 
 export interface LaneBaseFieldValues {
@@ -143,6 +167,8 @@ const SUPPORTED_ANNOTATION_TYPES = new Set([
 
 const sourceBaseKey = (source: UnknownRecord | undefined, index: number): string => {
   const identity = source && isObject(source.object_identity) ? source.object_identity : {}
+  const contextKey = String(identity.nav_context_key ?? '')
+  if (contextKey) return contextKey
   const navSegmentKey = String(identity.nav_segment_key ?? '')
   const wayId = numericId(
     isObject(identity.source_osm) ? identity.source_osm.osm_id : undefined,
@@ -297,6 +323,9 @@ export function remapLaneBase(
       : options.nodeRemap.get(record.intersectionNodeId) ?? record.intersectionNodeId
     const withNode = (next: Omit<LaneBaseRecord, 'intersectionNodeId'>): LaneBaseRecord => ({
       ...next,
+      movementRules: next.movementRules.map((rule) => remapMovementRule(
+        rule, record, next.wayId, next.direction, options.nodeRemap,
+      )),
       ...(intersectionNodeId === undefined ? {} : { intersectionNodeId }),
     })
     if (options.existingWayIds.has(record.wayId)) {
@@ -330,6 +359,8 @@ export function buildLaneBaseIndex(records: LaneBaseRecord[]): LaneBaseIndex {
   const approachByKey = new Map<string, LaneBaseRecord>()
   const segmentByKey = new Map<string, LaneBaseRecord>()
   const legacyByKey = new Map<string, LaneBaseRecord>()
+  const movementByApproachKey = new Map<string, LaneBaseMovementRule[]>()
+  const movementRuleErrors: string[] = []
   for (const record of records) {
     assertRecord(record)
     const target = record.scope === 'intersection_approach'
@@ -340,8 +371,55 @@ export function buildLaneBaseIndex(records: LaneBaseRecord[]): LaneBaseIndex {
       : segmentKey(record.wayId, record.direction)
     if (target.has(key)) throw new Error(`duplicate lane-base record ${recordKey(record)}`)
     target.set(key, record)
+    for (const rule of record.movementRules) {
+      const normalized = normalizeMovementRule(record, rule)
+      if (typeof normalized === 'string') {
+        movementRuleErrors.push(normalized)
+        continue
+      }
+      const movementKey = approachKey(
+        normalized.approachWayId,
+        normalized.intersectionNodeId,
+        normalized.direction,
+      )
+      const rules = movementByApproachKey.get(movementKey) ?? []
+      if (!rules.some((item) => item.movementKey === normalized.movementKey)) {
+        rules.push(normalized)
+        movementByApproachKey.set(movementKey, rules)
+      }
+    }
   }
-  return { approachByKey, segmentByKey, legacyByKey }
+  return { approachByKey, segmentByKey, legacyByKey, movementByApproachKey, movementRuleErrors }
+}
+
+/** Stable, geometry-independent LanePilot waiting-zone candidates. */
+export function laneBaseZoneCandidates(index: LaneBaseIndex): LaneBaseZoneCandidate[] {
+  const candidates = [...index.movementByApproachKey.values()].flat()
+    .filter((rule) => rule.movement === 'left' && rule.waitingZoneExists === 'yes')
+    .map((rule): LaneBaseZoneCandidate => ({
+      id: `zone-lp-${encodeURIComponent(rule.movementKey)}`,
+      sourceKey: rule.sourceKey,
+      movementKey: rule.movementKey,
+      approachWayId: rule.approachWayId,
+      intersectionNodeId: rule.intersectionNodeId,
+      direction: rule.direction,
+      movement: rule.movement,
+      twoStage: rule.motorcycleTurnRule === 'two_stage_required'
+        || rule.motorcycleTurnRule === 'two_stage_optional',
+    }))
+  return [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()]
+    .sort((a, b) => a.id.localeCompare(b.id))
+}
+
+export function twoStageForLaneBaseApproach(
+  index: LaneBaseIndex,
+  input: { wayId: number; intersectionNodeId: number; direction: LaneDirection },
+): boolean {
+  const rules = index.movementByApproachKey.get(approachKey(
+    input.wayId, input.intersectionNodeId, input.direction,
+  )) ?? []
+  return rules.some((rule) => rule.motorcycleTurnRule === 'two_stage_required'
+    || rule.motorcycleTurnRule === 'two_stage_optional')
 }
 
 export function resolveLaneBase(
@@ -565,6 +643,59 @@ function recordFields(record: LaneBaseRecord | undefined): LaneBaseFieldValues |
     ...(record.motorcycleAccessByLane === undefined
       ? {} : { motorcycleAccessByLane: record.motorcycleAccessByLane }),
     ...(record.movementRules.length ? { movementRules: record.movementRules } : {}),
+  }
+}
+
+function normalizeMovementRule(
+  record: LaneBaseRecord,
+  rule: MovementRule,
+): LaneBaseMovementRule | string {
+  const raw = rule as MovementRule & Record<string, unknown>
+  const approachWayId = numericId(raw.approach_segment_key, 'way') ?? record.wayId
+  const intersectionNodeId = numericId(raw.applies_to_intersection_key, 'node')
+    ?? record.intersectionNodeId
+  const direction = raw.approach_direction ?? record.direction
+  const movement = String(raw.movement ?? '')
+  if (intersectionNodeId === undefined) {
+    return `${record.sourceKey}: movement rule ${movement || '(missing)'} has no intersection node`
+  }
+  if (!isLaneDirection(direction)) {
+    return `${record.sourceKey}: movement rule ${movement || '(missing)'} has invalid direction`
+  }
+  if (!movement) return `${record.sourceKey}: movement rule has no movement`
+  const toSegmentKey = String(raw.to_segment_key ?? '?')
+  const fallbackKey = `way/${approachWayId}@node/${intersectionNodeId}/${direction}`
+    + `->${toSegmentKey}/${movement}`
+  return {
+    sourceKey: record.sourceKey,
+    movementKey: String(raw.movement_key ?? '') || fallbackKey,
+    approachWayId,
+    intersectionNodeId,
+    direction,
+    movement,
+    ...(raw.motorcycle_turn_rule === undefined
+      ? {} : { motorcycleTurnRule: String(raw.motorcycle_turn_rule) }),
+    ...(raw.waiting_zone_exists === undefined
+      ? {} : { waitingZoneExists: String(raw.waiting_zone_exists) }),
+  }
+}
+
+function remapMovementRule(
+  rule: MovementRule,
+  original: LaneBaseRecord,
+  wayId: number,
+  direction: LaneDirection,
+  nodeRemap: Map<number, number>,
+): MovementRule {
+  const raw = rule as MovementRule & Record<string, unknown>
+  const rawNode = numericId(raw.applies_to_intersection_key, 'node')
+    ?? original.intersectionNodeId
+  const nodeId = rawNode === undefined ? undefined : nodeRemap.get(rawNode) ?? rawNode
+  return {
+    ...rule,
+    approach_segment_key: `way/${wayId}`,
+    approach_direction: direction,
+    ...(nodeId === undefined ? {} : { applies_to_intersection_key: `node/${nodeId}` }),
   }
 }
 

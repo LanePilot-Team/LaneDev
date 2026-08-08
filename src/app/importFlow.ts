@@ -9,7 +9,7 @@ import {
 import { roadsFromGeoJSON } from '../core/roads.ts'
 import { prepareBaseRoads } from '../core/pipeline.ts'
 import { extractLaneBase } from '../core/laneBase.ts'
-import { buildRawWays, zonesFromAnnotations } from '../core/zoneimport.ts'
+import { buildRawWays } from '../core/zoneimport.ts'
 import type { MapCore, Mode } from './mapCore.ts'
 
 export interface ImportUi {
@@ -86,8 +86,6 @@ export function importAnnotations(
   records: ImportedAnnotation[],
   fileName: string,
 ) {
-  const nodeRemap = core.nodeRemapRef.current
-  const wayRemap = core.wayRemapRef.current
   const extraction = extractLaneBase(records.map((record) => ({
     object_identity: {
       object_type: record.contextScope ? 'nav_context_annotation' : 'nav_segment_annotation',
@@ -109,34 +107,9 @@ export function importAnnotations(
     throw new Error(`Lane Base 萃取失敗：${extraction.errors.join('；')}`)
   }
   const laneReport = core.replaceSessionLaneBase(extraction.records)
-
-  // 2) 待轉區：左轉且（兩段式必須/皆可 或 現場有待轉格）→ 對回路口的左轉配對
-  //（核心邏輯在 core/zoneimport.ts，與啟動自動吃入/離線稽核共用）
-  const res = core.graphRef.current
-    ? zonesFromAnnotations({
-        records,
-        graph: core.graphRef.current,
-        roads: core.roadsRef.current,
-        nodeRemap, wayRemap,
-        rawWays: core.rawWaysRef.current,
-        existing: core.zonesRef.current,
-      })
-    : { zones: [], skips: [] }
-  if (res.zones.length) {
-    core.zonesRef.current = [...core.zonesRef.current, ...res.zones]
-    core.refreshZones()
-  }
-  const count = (r: string) => res.skips.filter((s) => s.reason === r).length
-  const skipped = res.skips.length
-  const detail = [
-    count('node') ? `缺路口鍵 ${count('node')}` : '',
-    count('noLeft') ? `路口無左轉配對 ${count('noLeft')}` : '',
-    count('dir') ? `進入方向對不上 ${count('dir')}` : '',
-  ].filter(Boolean).join('、')
   ui.setImportMsg(
     `已匯入標註 ${fileName}：Lane Base 套用 ${laneReport.appliedRoadDirections} 個道路方向、`
-    + `待轉區 +${res.zones.length}`
-    + (skipped ? `（略過 ${skipped}：${detail}）` : '')
+    + '待轉區與兩段式政策已由同一份 Lane Base 重建'
     + '；車道標註僅限本次工作階段，正式保存需重新建置 canonical Lane Base',
   )
 }

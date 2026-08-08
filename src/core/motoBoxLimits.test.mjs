@@ -16,6 +16,14 @@ test('沒有禁行機車時整個斷面都可涵蓋', () => {
   assert.equal(limits.motoOnly, false)
 })
 
+test('Lane Base 禁行機車陣列會限制停等格可涵蓋車道', () => {
+  const limits = motoBoxLaneLimits(
+    3, false, [null, null, null], false, ['no', 'yes', 'designated'],
+  )
+  assert.equal(limits.firstLegalLane, 1)
+  assert.equal(limits.maxLanes, 2)
+})
+
 test('最內側禁行機車時，格子只能從第 2 道起算', () => {
   const limits = motoBoxLaneLimits(3, true, [noMoto, null, null, null], false)
   assert.equal(limits.firstLegalLane, 1, '禁行機車車道不可跨越')

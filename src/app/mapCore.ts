@@ -25,7 +25,10 @@ import {
   buildRoadMergeViews, selectPreparedRoadMergeView,
   type RoadMergeReplayRow, type RoadMergeViews,
 } from '../core/roadMerge'
-import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
+import {
+  buildRawWays, humanWaitingZones, overlayWaitingZones, zonesFromLaneBase,
+  type RawWay,
+} from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
@@ -51,7 +54,7 @@ import {
 } from '../core/staticDatabase'
 import {
   applyLaneBaseToRoads, buildLaneBaseIndex, extractLaneBase, remapLaneBase,
-  type LaneBaseApplyReport, type LaneBaseRecord,
+  type LaneBaseApplyReport, type LaneBaseIndex, type LaneBaseRecord,
 } from '../core/laneBase'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
@@ -206,7 +209,7 @@ function applyLaneBaseRecords(
   roads: RoadFeature[],
   nodeRemap: Map<number, number>,
   wayRemap: Map<number, DropRemap>,
-): LaneBaseApplyReport {
+): { report: LaneBaseApplyReport; index: LaneBaseIndex } {
   const remapped = remapLaneBase(records, {
     existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
     nodeRemap,
@@ -219,7 +222,14 @@ function applyLaneBaseRecords(
     ])].join('；')
     throw new Error(`Lane Base 重映射失敗：${detail}`)
   }
-  return applyLaneBaseToRoads(roads, buildLaneBaseIndex(remapped.records))
+  const index = buildLaneBaseIndex(remapped.records)
+  if (index.movementRuleErrors.length) {
+    throw new Error(`Lane Base movement rule 無法解析：${index.movementRuleErrors.join('；')}`)
+  }
+  return {
+    report: applyLaneBaseToRoads(roads, index),
+    index,
+  }
 }
 
 /** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
@@ -232,7 +242,10 @@ export interface MapCore {
   renderRoadsRef: RefObject<RoadFeature[]>
   mergeReplayRef: RefObject<RoadMergeReplayRow[]>
   graphRef: RefObject<RoadGraph | null>
+  laneBaseIndexRef: RefObject<LaneBaseIndex>
   zonesRef: RefObject<Zone[]>
+  /** 每次 Lane Base 重建所得唯讀待轉區；不寫入 editor persistence。 */
+  baseZonesRef: RefObject<Zone[]>
   selectedZoneRef: RefObject<string | null>
   highlightedZoneRef: RefObject<string | null>
   journalRef: RefObject<EnhancementRecord[]>
@@ -254,7 +267,7 @@ export interface MapCore {
    * couplet/退化清理清掉的 way 在底圖與 wayRemap 都查不到） */
   rawWaysRef: RefObject<Map<number, RawWay>>
   src: (id: string) => GeoJSONSource
-  refreshZones: () => void
+  refreshZones: (persist?: boolean) => void
   setZoneHighlight: (id: string | null) => void
   refreshBays: () => void
   refreshVehicles: () => void
@@ -291,7 +304,9 @@ export function useMapCore(
   const renderRoadsRef = useRef<RoadFeature[]>([])
   const mergeReplayRef = useRef<RoadMergeReplayRow[]>([])
   const graphRef = useRef<RoadGraph | null>(null)
+  const laneBaseIndexRef = useRef<LaneBaseIndex>(buildLaneBaseIndex([]))
   const zonesRef = useRef<Zone[]>([])
+  const baseZonesRef = useRef<Zone[]>([])
   const selectedZoneRef = useRef<string | null>(null)
   const highlightedZoneRef = useRef<string | null>(null)
   const journalRef = useRef<EnhancementRecord[]>([])
@@ -320,7 +335,7 @@ export function useMapCore(
 
   const src = useCallback((id: string) => mapRef.current!.getSource(id) as GeoJSONSource, [])
 
-  const refreshZones = useCallback(() => {
+  const refreshZones = useCallback((persist = true) => {
     if (!mapRef.current) return
     if (
       highlightedZoneRef.current
@@ -338,7 +353,7 @@ export function useMapCore(
         : properties?.kind === 'outline' ? 0.18
           : null,
     ) as never)
-    saveZones(zonesRef.current)
+    if (persist) saveZones(humanWaitingZones(baseZonesRef.current, zonesRef.current))
     setZoneCount(zonesRef.current.length)
     setZoneTick((t) => t + 1)
   }, [src])
@@ -496,7 +511,7 @@ export function useMapCore(
 
   const replaceSessionLaneBase = useCallback((records: LaneBaseRecord[]) => {
     const roads = structuredClone(preparedRoadsRef.current)
-    const report = applyLaneBaseRecords(
+    const applied = applyLaneBaseRecords(
       records, roads, nodeRemapRef.current, wayRemapRef.current,
     )
     const folded = foldJournal(journalRef.current)
@@ -506,14 +521,38 @@ export function useMapCore(
     ]
     applyToRoads(roadsAll, folded)
     if (!replaceBaseMap(roadsAll)) throw new Error('套用 Lane Base 後無法重建道路捏合視圖')
-    return report
-  }, [replaceBaseMap])
+    const human = humanWaitingZones(baseZonesRef.current, zonesRef.current)
+    const zoneResult = graphRef.current && !location.search.includes('lpzones=off')
+      ? zonesFromLaneBase({
+          index: applied.index,
+          graph: graphRef.current,
+          roads: roadsRef.current,
+          rawWays: rawWaysRef.current,
+        })
+      : { zones: [], skips: [], accountedSourceKeys: [], unresolvedSourceKeys: [] }
+    laneBaseIndexRef.current = applied.index
+    baseZonesRef.current = zoneResult.zones
+    zonesRef.current = overlayWaitingZones(
+      baseZonesRef.current, human, loadDeletedZoneIds(),
+    )
+    refreshZones(false)
+    const movementSourceKeys = new Set(
+      [...applied.index.movementByApproachKey.values()].flat()
+        .map((rule) => rule.sourceKey),
+    )
+    return {
+      ...applied.report,
+      unresolvedSourceKeys: applied.report.unresolvedSourceKeys.filter(
+        (key) => !movementSourceKeys.has(key),
+      ),
+    }
+  }, [refreshZones, replaceBaseMap])
 
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
     coreRef.current = {
       mapRef, preparedRoadsRef, roadsRef, renderRoadsRef, mergeReplayRef,
-      graphRef, zonesRef, selectedZoneRef, highlightedZoneRef,
+      graphRef, laneBaseIndexRef, zonesRef, baseZonesRef, selectedZoneRef, highlightedZoneRef,
       journalRef, baysRef,
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
@@ -644,8 +683,9 @@ export function useMapCore(
         window.alert(error.message)
         throw error
       }
+      let canonicalLaneBase: ReturnType<typeof applyLaneBaseRecords>
       try {
-        applyLaneBaseRecords(extraction.records, roads, nodeRemap, wayRemap)
+        canonicalLaneBase = applyLaneBaseRecords(extraction.records, roads, nodeRemap, wayRemap)
       } catch (cause) {
         const error = new Error(
           `Canonical Lane Base 載入失敗：${cause instanceof Error ? cause.message : String(cause)}`,
@@ -653,6 +693,7 @@ export function useMapCore(
         window.alert(error.message)
         throw error
       }
+      laneBaseIndexRef.current = canonicalLaneBase.index
       if (import.meta.env.DEV) {
         const bounds = {
           minLng: Infinity, minLat: Infinity,
@@ -707,7 +748,7 @@ export function useMapCore(
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
       // remap 表沒涵蓋的（drop 側互接節點合併後直接消失）用位置吸附最近路口補救
       const knownInter = new Set(intersectionsRef.current.map((i) => i.id))
-      zonesRef.current = loadZones().map((z) => {
+      const humanZones = loadZones().map((z) => {
         // remap 後仍要驗證存在——目標節點可能又被退化清理消滅（鏈斷）
         let id = nodeRemap.get(z.intersectionId) ?? z.intersectionId
         if (!knownInter.has(id)) {
@@ -720,50 +761,26 @@ export function useMapCore(
         }
         return id === z.intersectionId ? z : { ...z, intersectionId: id }
       })
-      // 啟動自動吃入 LanePilot 標註待轉區（?lpzones=off 關閉）：
-      // zone-lp-* 每次啟動由最新標註檔重建（stale 的舊匯入自我修復），
-      // 手動放置的 zone 保留且去重時優先。車道覆寫維持不套用（journal 過濾政策）。
-      // 已寫進唯一靜態資料來源的待轉區不必每次由 annotations 重新配對。
-      if (!location.search.includes('lpzones=off')
-        && !zonesRef.current.some((z) => z.id.startsWith('zone-lp-'))) {
-        try {
-          const canonicalAnnotations = staticAnnotations()
-          const annotationText =
-            canonicalAnnotations.map((record) => JSON.stringify(record)).join('\n')
-          if (annotationText) {
-            const parsed = parseImported(annotationText)
-            if (parsed.kind === 'annotations') {
-              const manual = zonesRef.current.filter((z) => !z.id.startsWith('zone-lp-'))
-              const savedImported = new Map(
-                zonesRef.current
-                  .filter((z) => z.id.startsWith('zone-lp-'))
-                  .map((z) => [z.id, z]),
-              )
-              const deleted = loadDeletedZoneIds()
-              const res = zonesFromAnnotations({
-                records: parsed.records,
-                graph: graphRef.current,
-                roads: roadsAll,
-                nodeRemap, wayRemap,
-                rawWays: rawWaysRef.current,
-                existing: manual,
-              })
-              // 靜態標註只提供初始值；同 ID 的人工位置、尺寸、形狀、旋轉與啟停狀態優先。
-              // 明確刪除的 ID 由 tombstone 排除，避免重新整理後被自動匯入復活。
-              const imported = res.zones
-                .filter((z) => !deleted.has(z.id))
-                .map((z) => savedImported.get(z.id) ?? z)
-              zonesRef.current = [...manual, ...imported]
-              if (res.skips.length) {
-                console.warn(`LanePilot 待轉區標註略過 ${res.skips.length} 筆`, res.skips)
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('LanePilot 標註自動載入失敗（沿用 localStorage 既有待轉區）', e)
-        }
+      const zoneResult = location.search.includes('lpzones=off')
+        ? { zones: [], skips: [], accountedSourceKeys: [], unresolvedSourceKeys: [] }
+        : zonesFromLaneBase({
+            index: canonicalLaneBase.index,
+            graph: graphRef.current,
+            roads: roadsRef.current,
+            rawWays: rawWaysRef.current,
+          })
+      baseZonesRef.current = zoneResult.zones
+      zonesRef.current = overlayWaitingZones(
+        baseZonesRef.current, humanZones, loadDeletedZoneIds(),
+      )
+      if (zoneResult.skips.length || zoneResult.unresolvedSourceKeys.length) {
+        console.warn('Lane Base 待轉區仍有未解析規則', {
+          skips: zoneResult.skips,
+          sourceKeys: zoneResult.unresolvedSourceKeys,
+        })
       }
-      refreshZones()
+      // 初始繪製不得把 derived Lane Base zones 寫進 editor waiting_zones。
+      refreshZones(false)
       refreshBays()
       // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
       const eLayer = new ElevatedLayer()

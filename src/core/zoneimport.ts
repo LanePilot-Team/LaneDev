@@ -8,6 +8,7 @@ import type { RoadGraph, TurnOption } from './graph'
 import type { DropRemap } from './couplet'
 import { makeZoneCtx, planZone, type Zone } from './zones'
 import { angleDelta, bearing as geoBearing, haversine } from './geo'
+import { laneBaseZoneCandidates, type LaneBaseIndex } from './laneBase.ts'
 
 /** 底圖前處理「之前」的原始 way 幾何（載入時反轉 oneway=-1 之後）。
  * couplet 合併/退化清理會讓部分 way 從底圖消失（連 wayRemap 都沒有——
@@ -45,6 +46,91 @@ export interface ZoneSkip {
 export interface ZoneImportResult {
   zones: Zone[]
   skips: ZoneSkip[]
+}
+
+export interface LaneBaseZoneBuildResult extends ZoneImportResult {
+  accountedSourceKeys: string[]
+  unresolvedSourceKeys: string[]
+}
+
+/** Visible editor state: immutable LanePilot base, then human overrides, then tombstones. */
+export function overlayWaitingZones(
+  baseZones: Zone[], humanZones: Zone[], deletedIds: Set<string>,
+): Zone[] {
+  const visible = new Map<string, Zone>()
+  for (const zone of baseZones) visible.set(zone.id, zone)
+  for (const zone of humanZones) {
+    const base = visible.get(zone.id)
+    // Before Task 5, derived zone-lp-* rows were persisted in editor.waiting_zones.
+    // Only a current stable base id may now be treated as an intentional replacement.
+    if (zone.id.startsWith('zone-lp-') && !base) continue
+    visible.set(zone.id, { ...(base ?? {}), ...zone } as Zone)
+  }
+  for (const id of deletedIds) visible.delete(id)
+  return [...visible.values()]
+}
+
+/** Extract only editor-owned additions/replacements from a visible overlaid zone list. */
+export function humanWaitingZones(baseZones: Zone[], visibleZones: Zone[]): Zone[] {
+  const baseById = new Map(baseZones.map((zone) => [zone.id, zone]))
+  return visibleZones.filter((zone) => {
+    const base = baseById.get(zone.id)
+    return !base || JSON.stringify(base) !== JSON.stringify(zone)
+  })
+}
+
+/** Build geometric zones from the already-normalized Lane Base; no annotation parsing occurs here. */
+export function zonesFromLaneBase(args: {
+  index: LaneBaseIndex
+  graph: RoadGraph
+  roads: RoadFeature[]
+  rawWays?: Map<number, RawWay>
+  existing?: Zone[]
+}): LaneBaseZoneBuildResult {
+  const zones: Zone[] = []
+  const skips: ZoneSkip[] = []
+  const resolvedGeometry = new Set<string>()
+  const candidates = laneBaseZoneCandidates(args.index)
+  for (const candidate of candidates) {
+    const result = zonesFromAnnotations({
+      records: [{
+        segmentKey: `way/${candidate.approachWayId}`,
+        sourceKey: candidate.sourceKey,
+        contextScope: 'intersection_approach',
+        approachNodeKey: `node/${candidate.intersectionNodeId}`,
+        approachDirection: candidate.direction,
+        laneProfiles: [],
+        movementRules: [{
+          applies_to_intersection_key: `node/${candidate.intersectionNodeId}`,
+          approach_segment_key: `way/${candidate.approachWayId}`,
+          approach_direction: candidate.direction,
+          movement: candidate.movement,
+          motorcycle_turn_rule: candidate.twoStage ? 'two_stage_required' : 'normal',
+          waiting_zone_exists: 'yes',
+        }],
+      }],
+      graph: args.graph,
+      roads: args.roads,
+      nodeRemap: new Map(),
+      wayRemap: new Map(),
+      rawWays: args.rawWays,
+      existing: [...(args.existing ?? []), ...zones],
+    })
+    skips.push(...result.skips)
+    if (result.zones.length) {
+      const derived = { ...result.zones[0], id: candidate.id }
+      zones.push(derived)
+      resolvedGeometry.add(candidate.sourceKey)
+    }
+  }
+  const candidateSources = new Set(candidates.map((candidate) => candidate.sourceKey))
+  return {
+    zones,
+    skips,
+    accountedSourceKeys: [...candidateSources].sort(),
+    unresolvedSourceKeys: [...candidateSources]
+      .filter((key) => !resolvedGeometry.has(key)).sort(),
+  }
 }
 
 /** way 上某節點的「進入行向」（forward = 沿座標順向抵達該點）。

@@ -12,6 +12,7 @@ import { angleDelta } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 import { isZoneEnabled } from '../core/zones'
 import { routeFailureText } from './routeFailure'
+import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
 
 export interface Stop { id: number; pos: [number, number] | null }
 
@@ -66,16 +67,25 @@ export function usePlanner(core: MapCore): Planner {
 
   function twoStageForApproach(input: {
     nodeId: number
+    wayId: number
+    direction: 'forward' | 'backward'
     fromBearing: number
     kind: Maneuver['kind']
     motoLeftTurnLane: boolean
   }): boolean {
     if (input.kind !== 'left' && input.kind !== 'uturn' && input.kind !== 'slight-left') return false
     if (input.motoLeftTurnLane) return false
-    return core.zonesRef.current.some((z) =>
-      isZoneEnabled(z) &&
-      z.intersectionId === input.nodeId &&
-      Math.abs(angleDelta(z.from.bearing, input.fromBearing)) < 50)
+    const humanZone = core.zonesRef.current.some((z) =>
+      !z.id.startsWith('zone-lp-') && isZoneEnabled(z)
+        && z.intersectionId === input.nodeId
+        && Math.abs(angleDelta(z.from.bearing, input.fromBearing)) < 50
+    )
+    if (humanZone) return true
+    return twoStageForLaneBaseApproach(core.laneBaseIndexRef.current, {
+      wayId: input.wayId,
+      intersectionNodeId: input.nodeId,
+      direction: input.direction,
+    })
   }
 
   const routePolicyRef = useRef<LaneRoutePolicy>({
@@ -234,6 +244,8 @@ export function usePlanner(core: MapCore): Planner {
     if (m.nodeId === undefined || m.fromBearing === undefined || m.kind === 'arrive') return false
     return twoStageForApproach({
       nodeId: m.nodeId,
+      wayId: m.approachWayId ?? 0,
+      direction: m.approachDirection ?? 'forward',
       fromBearing: m.fromBearing,
       kind: m.kind,
       motoLeftTurnLane: m.motoLeftTurnLane ?? false,

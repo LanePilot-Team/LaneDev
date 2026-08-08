@@ -30,6 +30,8 @@ export type RouteFailureReason = 'no-projection' | 'unreachable' | 'lane-directi
 export interface LaneRoutePolicy {
   isTwoStage?: (input: {
     nodeId: number
+    wayId: number
+    direction: 'forward' | 'backward'
     fromBearing: number
     kind: 'left' | 'right' | 'slight-left' | 'slight-right' | 'uturn'
     motoLeftTurnLane: boolean
@@ -47,8 +49,11 @@ function motoLegalCarLanes(r: RoadFeature, back: boolean): number[] {
   const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
   const marks = p.oneway === 'yes' || !back ? p.laneMarksF : p.laneMarksB
   const rules = p.oneway === 'yes' || !back ? p.rulesF : p.rulesB
+  const access = p.oneway === 'yes' || !back
+    ? p.motorcycleAccessByLaneF : p.motorcycleAccessByLaneB
   if (!marks && rules?.includes('no_moto')) return []
   return Array.from({ length: lanes }, (_, k) => k)
+    .filter((k) => access?.[k] !== 'no')
     .filter((k) => marks?.[k]?.text.trim() !== '禁行機車')
 }
 
@@ -198,6 +203,9 @@ export interface Maneuver {
   pos?: [number, number]
   /** 進入路口時的行向（度）——待轉區方向比對用 */
   fromBearing?: number
+  /** 正規化 Lane Base 兩段式政策所需的進入 way／方向。 */
+  approachWayId?: number
+  approachDirection?: 'forward' | 'backward'
   /** 是否為兩段式左轉（由 App 依待轉區標註在路線建立後標記） */
   twoStage?: boolean
   /** 進入方向設有「機車左轉專用」車道；機車左轉時應靠右進入該專用道。 */
@@ -1118,6 +1126,8 @@ export class RoadGraph {
     const twoStage = profile === 'moto' && kind !== null
       ? policy.isTwoStage?.({
         nodeId,
+        wayId: p.osm_id,
+        direction: incoming.back ? 'backward' : 'forward',
         fromBearing: incomingBearing,
         kind,
         motoLeftTurnLane,
@@ -1655,6 +1665,8 @@ function buildManeuvers(
           nodeId,
           pos: next.coords[0],
           fromBearing: inBrg,
+          approachWayId: roadProps.osm_id,
+          approachDirection: prev.back ? 'backward' : 'forward',
           motoLeftTurnLane: profile === 'moto' && (incomingMarks?.some(
             (mark) => mark?.text.trim() === '機車左轉專用') ?? false),
           // HUD 車道格：取「進入行向」的車道數與轉向（逆向邊用 backward 組）

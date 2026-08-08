@@ -151,3 +151,14 @@ test('高速跨多車道會延長準備距離', () => {
   assert.equal(result.shortPreparation, true)
   assert.ok(result.difficultyS > 0)
 })
+
+test('多條直行右轉混合車道時，右轉優先選最外側', () => {
+  const result = decide({
+    laneCount: 4,
+    laneMovements: ['through', 'through', 'through;right', 'through;right'],
+    currentLaneIndex: 2,
+  })
+
+  assert.equal(result.primaryLaneIndex, 3)
+  assert.deepEqual(result.secondaryLaneIndices, [2])
+})

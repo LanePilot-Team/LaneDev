@@ -1078,7 +1078,7 @@ export class RoadGraph {
       incomingCoords[incomingCoords.length - 1],
     )
     const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
-    const classifiedKind = classifyTurn(angleDelta(incomingBearing, outgoingBearing))
+    const classifiedKind = classifyEdgeTransition(incoming, outgoing)
     const kind = classifiedKind === 'arrive' ? null : classifiedKind
     const action: LaneAction = kind === 'left' || kind === 'slight-left'
       ? 'left'
@@ -1331,6 +1331,39 @@ function slewLimit(ds: number[], raw: number[], vs: number[]): number[] {
 }
 
 /**
+ * Keep turn/diverge samples as temporal boundaries. Smoothing across a turn
+ * otherwise lets the outgoing road's lane offset pull the route back toward
+ * the centre before the vehicle has reached the junction.
+ */
+function slewLimitBetweenEvents(
+  ds: number[],
+  raw: number[],
+  vs: number[],
+  eventDistances: number[],
+): number[] {
+  const out = raw.slice()
+  const boundaries = [...new Set(eventDistances.map((eventM) => {
+    let best = 0
+    for (let i = 1; i < ds.length; i++) {
+      if (Math.abs(ds[i] - eventM) < Math.abs(ds[best] - eventM)) best = i
+    }
+    return best
+  }))].sort((a, b) => a - b)
+  let start = 0
+  for (const end of [...boundaries, raw.length - 1]) {
+    if (end < start) continue
+    const limited = slewLimit(
+      ds.slice(start, end + 1),
+      raw.slice(start, end + 1),
+      vs.slice(start, end + 1),
+    )
+    out.splice(start, limited.length, ...limited)
+    start = end + 1
+  }
+  return out
+}
+
+/**
  * 車道級路線帶：把路線幾何偏移到「實際行駛的車道」上，含四種過渡：
  *   進彎/分流：路口或分流鼻端前，依速率提前漸進切到目標車道（見 leadWindow）；
  *        偏心左轉道改對齊 bay 開口（漸變段斜切開始才變道，不壓上游槽化線與儲車段白線）
@@ -1442,7 +1475,12 @@ export function laneBand(route: RouteResult): LaneBandResult {
 
   // 收尾再限一次斜率：span 交界處連「目標車道」本身都會跳（前後路段車道數不同，
   // 最內/最外的位置不一樣），變道中途遇到交界就會在 ramp 上折一角。
-  const smooth = slewLimit(samples, offs, sidx.map((i) => spanSpeedMs(route.spans[i])))
+  const smooth = slewLimitBetweenEvents(
+    samples,
+    offs,
+    sidx.map((i) => spanSpeedMs(route.spans[i])),
+    evs.map((event) => event.distM),
+  )
   const coords: [number, number][] = []
   const routeD: number[] = []
   for (let k = 0; k < samples.length; k++) {
@@ -1556,6 +1594,26 @@ function classifyTurn(d: number): Maneuver['kind'] | null {
   return null
 }
 
+/**
+ * A small bend between consecutive pieces of the same named road is road
+ * geometry, not a lane-controlled turn. Treating it as slight-left/right can
+ * reject an otherwise legal route when the approach only advertises through
+ * or right-turn lanes.
+ */
+function classifyEdgeTransition(incoming: Edge, outgoing: Edge): Maneuver['kind'] | null {
+  const incomingBearing = bearing(
+    incoming.coords[incoming.coords.length - 2],
+    incoming.coords[incoming.coords.length - 1],
+  )
+  const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
+  const kind = classifyTurn(angleDelta(incomingBearing, outgoingBearing))
+  const incomingName = incoming.road.properties.name?.trim()
+  const outgoingName = outgoing.road.properties.name?.trim()
+  const sameRoad = incoming.road.properties.navSegmentKey === outgoing.road.properties.navSegmentKey ||
+    (!!incomingName && incomingName === outgoingName)
+  return sameRoad && (kind === 'slight-left' || kind === 'slight-right') ? null : kind
+}
+
 function buildManeuvers(
   edges: Edge[],
   profile: Profile,
@@ -1571,7 +1629,7 @@ function buildManeuvers(
       prev.coords[prev.coords.length - 2], prev.coords[prev.coords.length - 1])
     const outBrg = bearing(next.coords[0], next.coords[1])
     const d = angleDelta(inBrg, outBrg)
-    const kind = classifyTurn(d)
+    const kind = classifyEdgeTransition(prev, next)
     if (kind) {
       const nodeId = next.from >= 0 ? next.from : prev.to >= 0 ? prev.to : undefined
       const roadProps = prev.road.properties

@@ -177,3 +177,20 @@ test('相近的右轉接左轉會以前瞻車道作為轉彎後落點', () => {
   assert.equal(route.maneuvers[0].laneDecision.postTurnLaneIndex, 0)
   assert.equal(route.maneuvers[1].laneDecision.primaryLaneIndex, 0)
 })
+
+test('同名道路的小幅彎折視為直行，不套用左轉車道限制', () => {
+  const bend = [120.001, 22]
+  const turn = [120.0019, 22.0004]
+  const incoming = road(300, [1, 2], [[120, 22], bend], ['through;right'])
+  const continuation = road(310, [2, 3], [bend, turn], ['right'])
+  const outgoing = road(320, [3, 4], [turn, [120.0019, 21.9994]], ['through'])
+  incoming.properties.name = '外環西路'
+  continuation.properties.name = '外環西路'
+  outgoing.properties.name = '加昌路'
+  const graph = new RoadGraph([incoming, continuation, outgoing])
+
+  const result = graph.routeDetailed([120.0001, 22], [120.0019, 21.9995], 'car')
+
+  assert.ok(result.route, result.failure)
+  assert.deepEqual(result.route.maneuvers.map((m) => m.kind), ['right', 'arrive'])
+})

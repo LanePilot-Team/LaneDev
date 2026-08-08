@@ -110,3 +110,35 @@ test('轉彎後導航線落在前瞻保存的車道而不是先回外側', () =>
   const actual = offsetAt(route, turnM + 10)
   assert.ok(actual < -0.1, `actual offset ${actual.toFixed(2)}m`)
 })
+
+test('右轉前維持在目標車道，轉彎後才往新道路車道平滑', () => {
+  const coords = [[120, 22], [120.001, 22], [120.001, 21.999]]
+  const cum = cumulative(coords)
+  const turnM = cum[1]
+  const route = {
+    coords,
+    cum,
+    lengthM: cum.at(-1),
+    timeS: 20,
+    maneuvers: [
+      {
+        distM: turnM,
+        kind: 'right',
+        lanesForward: 3,
+        laneDecision: decision({ primaryLaneIndex: 2, postTurnLaneIndex: 0 }),
+      },
+      { distM: cum.at(-1), kind: 'arrive', lanesForward: 3 },
+    ],
+    spans: [
+      { toIdx: 1, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+      { toIdx: 2, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+    ],
+    diverges: [],
+    weaves: [],
+  }
+
+  const beforeTurn = offsetAt(route, turnM - 6)
+  const atTurn = offsetAt(route, turnM)
+  assert.ok(beforeTurn > 2.7, `before-turn offset ${beforeTurn.toFixed(2)}m`)
+  assert.ok(atTurn > 2.7, `at-turn offset ${atTurn.toFixed(2)}m`)
+})

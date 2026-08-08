@@ -75,6 +75,13 @@ function candidateOrder(
     if (preferredSide === 'outermost') return b.index - a.index
     if (preferredSide === 'innermost') return a.index - b.index
     if (a.dedicated !== b.dedicated) return a.dedicated ? -1 : 1
+    // When every available turning lane is shared with through traffic, keep
+    // the navigation line on the turning side. This avoids selecting an inner
+    // through+right lane merely because it needs one fewer lane change.
+    if (!a.dedicated && !b.dedicated) {
+      if (action === 'right') return b.index - a.index
+      if (action === 'left' || action === 'uturn') return a.index - b.index
+    }
     if (currentLaneIndex !== undefined) {
       const aMoves = Math.abs(a.index - currentLaneIndex)
       const bMoves = Math.abs(b.index - currentLaneIndex)

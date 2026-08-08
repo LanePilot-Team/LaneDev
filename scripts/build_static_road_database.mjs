@@ -105,18 +105,39 @@ async function loadEditor() {
   }, '初始 editor')
 }
 
-function collectUnmappedCounts(value, path = []) {
-  if (!value || typeof value !== 'object') return []
-  return Object.entries(value).flatMap(([key, child]) => {
-    const nextPath = [...path, key]
-    const normalizedPath = nextPath.join('_').toLowerCase()
-    const ownCount = normalizedPath.includes('unmapped')
-      && normalizedPath.includes('count')
-      && typeof child === 'number'
-      ? [child]
-      : []
-    return [...ownCount, ...collectUnmappedCounts(child, nextPath)]
-  })
+function validatePromotionAudit(audit) {
+  if (!audit || typeof audit !== 'object' || Array.isArray(audit)) {
+    throw new Error('base audit 結構無效；未執行 promotion。')
+  }
+  if (!Array.isArray(audit.blocking_errors) || audit.blocking_errors.length !== 0) {
+    throw new Error('base audit 的 blocking_errors 必須是空陣列；未執行 promotion。')
+  }
+
+  const hasUnmappedCount = Object.hasOwn(audit, 'unmapped_count')
+  const hasUnmapped = Object.hasOwn(audit, 'unmapped')
+  if (!hasUnmappedCount && !hasUnmapped) {
+    throw new Error('base audit 必須提供 unmapped_count 或 unmapped；未執行 promotion。')
+  }
+  if (hasUnmappedCount
+    && (!Number.isInteger(audit.unmapped_count) || audit.unmapped_count < 0)) {
+    throw new Error('base audit 的 unmapped_count 必須是非負整數；未執行 promotion。')
+  }
+  if (hasUnmapped && !Array.isArray(audit.unmapped)) {
+    throw new Error('base audit 的 unmapped 必須是陣列；未執行 promotion。')
+  }
+  if (hasUnmappedCount && hasUnmapped && audit.unmapped_count !== audit.unmapped.length) {
+    throw new Error('base audit 的 unmapped_count 與 unmapped 長度不一致；未執行 promotion。')
+  }
+  if ((hasUnmappedCount && audit.unmapped_count !== 0)
+    || (hasUnmapped && audit.unmapped.length !== 0)) {
+    throw new Error('base audit 必須明確記錄 unmapped 為 0；未執行 promotion。')
+  }
+}
+
+export async function promoteValidatedCandidateText({ canonicalPath, backupPath, candidateText }) {
+  await mkdir(dirname(backupPath), { recursive: true })
+  await copyFile(canonicalPath, backupPath)
+  await writeFile(canonicalPath, candidateText, 'utf8')
 }
 
 async function promoteCandidate(candidateArgument, auditArgument) {
@@ -129,23 +150,14 @@ async function promoteCandidate(candidateArgument, auditArgument) {
   if (!audit.candidate_sha256 || audit.candidate_sha256 !== candidateHash) {
     throw new Error('候選檔 SHA-256 與 base audit 不一致；未執行 promotion。')
   }
-  if (!Array.isArray(audit.blocking_errors) || audit.blocking_errors.length !== 0) {
-    throw new Error('base audit 的 blocking_errors 必須是空陣列；未執行 promotion。')
-  }
-  const unmappedCounts = collectUnmappedCounts(audit)
-  if (unmappedCounts.length === 0
-    || unmappedCounts.some((count) => !Number.isInteger(count) || count !== 0)) {
-    throw new Error('base audit 必須明確記錄所有 unmapped count 為 0；未執行 promotion。')
-  }
+  validatePromotionAudit(audit)
 
   const backupPath = resolve(
     root,
     '.lanedev-backups',
     `road_database.pre-promotion-${new Date().toISOString().replaceAll(':', '-')}.json`,
   )
-  await mkdir(dirname(backupPath), { recursive: true })
-  await copyFile(canonicalPath, backupPath)
-  await copyFile(candidatePath, canonicalPath)
+  await promoteValidatedCandidateText({ canonicalPath, backupPath, candidateText })
   console.log(JSON.stringify({
     promoted_candidate: candidatePath,
     base_audit: auditPath,
@@ -172,8 +184,9 @@ export async function main(args = process.argv.slice(2)) {
   const explicitOut = argumentValue('--out', args)
   const defaultCandidate = resolve(root, '.lanedev-backups/road_database.candidate.json')
   const outPath = explicitOut ? resolve(explicitOut) : defaultCandidate
-  if (isSamePath(outPath, canonicalPath)) {
-    throw new Error('不可用 --out 寫入 canonical road_database.json；請使用已稽核的 promotion 流程。')
+  const reportPath = resolve(argumentValue('--report', args) ?? `${outPath}.dedup-report.json`)
+  if (isSamePath(outPath, canonicalPath) || isSamePath(reportPath, canonicalPath)) {
+    throw new Error('不可將候選檔或報告寫入 canonical road_database.json；請使用已稽核的 promotion 流程。')
   }
 
   const nanzihOnly = args.includes('--nanzih-only')
@@ -192,7 +205,6 @@ export async function main(args = process.argv.slice(2)) {
     editor,
   }
 
-  const reportPath = resolve(argumentValue('--report', args) ?? `${outPath}.dedup-report.json`)
   const blockingErrors = conflicts.map((conflict) => ({
     type: 'segment_identity_conflict',
     ...conflict,

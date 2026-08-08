@@ -124,6 +124,22 @@ test('direct --out 不得覆寫 canonical', async () => {
   }
 })
 
+test('direct --report 不得覆寫 canonical', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${join(fixture.directory, 'candidate.json')}`,
+      `--report=${fixture.canonicalPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before, 'direct --report 不可改變 canonical 位元組')
+    assert.ok(error, 'direct --report canonical 必須以非零狀態結束')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
 test('canonical JSON 損壞時建置失敗而不退回空 editor', async () => {
   const fixture = await createBuildFixture()
   try {
@@ -200,7 +216,7 @@ test('promotion 拒絕仍有 blocking errors 的 audit', async () => {
   }
 })
 
-test('promotion 拒絕 future unmapped count 非零的 audit', async () => {
+test('promotion 拒絕 unmapped_count 非零的 audit', async () => {
   const fixture = await createBuildFixture()
   try {
     const candidate = { candidate: 'unmapped' }
@@ -211,7 +227,7 @@ test('promotion 拒絕 future unmapped count 非零的 audit', async () => {
     await writeFile(auditPath, JSON.stringify({
       candidate_sha256: stableJsonHash(candidate),
       blocking_errors: [],
-      future_unmapped_annotation_count: 1,
+      unmapped_count: 1,
     }), 'utf8')
 
     const error = await runScript(fixture.scriptPath, [
@@ -221,6 +237,58 @@ test('promotion 拒絕 future unmapped count 非零的 audit', async () => {
 
     assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
     assert.ok(error, '任一 unmapped count 非零時必須拒絕 promotion')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 拒絕字串 unmapped_count', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const candidate = { candidate: 'string-unmapped-count' }
+    const candidatePath = join(fixture.directory, 'candidate.json')
+    const auditPath = join(fixture.directory, 'audit.json')
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`, 'utf8')
+    await writeFile(auditPath, JSON.stringify({
+      candidate_sha256: stableJsonHash(candidate),
+      blocking_errors: [],
+      unmapped_count: '1',
+    }), 'utf8')
+
+    const error = await runScript(fixture.scriptPath, [
+      `--promote-candidate=${candidatePath}`,
+      `--base-audit=${auditPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
+    assert.ok(error, '字串 unmapped_count 必須拒絕 promotion')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 不把 unrelated unmapped.metadata_count 當成 audit gate', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const candidate = { candidate: 'unrelated-nested-field' }
+    const candidatePath = join(fixture.directory, 'candidate.json')
+    const auditPath = join(fixture.directory, 'audit.json')
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`, 'utf8')
+    await writeFile(auditPath, JSON.stringify({
+      candidate_sha256: stableJsonHash(candidate),
+      blocking_errors: [],
+      unmapped: { metadata_count: 0 },
+    }), 'utf8')
+
+    const error = await runScript(fixture.scriptPath, [
+      `--promote-candidate=${candidatePath}`,
+      `--base-audit=${auditPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
+    assert.ok(error, 'unrelated nested count 不可取代支援的 unmapped schema')
   } finally {
     await rm(fixture.directory, { recursive: true, force: true })
   }
@@ -248,6 +316,104 @@ test('promotion 拒絕未提供 unmapped count 的 audit', async () => {
     assert.ok(error, '缺少 unmapped count 時必須保守拒絕 promotion')
   } finally {
     await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 拒絕與 unmapped_count 不一致的 unmapped array', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const candidate = { candidate: 'inconsistent-unmapped' }
+    const candidatePath = join(fixture.directory, 'candidate.json')
+    const auditPath = join(fixture.directory, 'audit.json')
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`, 'utf8')
+    await writeFile(auditPath, JSON.stringify({
+      candidate_sha256: stableJsonHash(candidate),
+      blocking_errors: [],
+      unmapped_count: 0,
+      unmapped: [{ key: 'way/1' }],
+    }), 'utf8')
+
+    const error = await runScript(fixture.scriptPath, [
+      `--promote-candidate=${candidatePath}`,
+      `--base-audit=${auditPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
+    assert.ok(error, 'count 與 array 不一致時必須拒絕 promotion')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 接受 unmapped_count 零並原樣發布已雜湊候選 bytes', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const candidateText = '{\n  "candidate": "exact bytes",\n  "spacing": true\n}\n'
+    const candidate = JSON.parse(candidateText)
+    const candidatePath = join(fixture.directory, 'candidate.json')
+    const auditPath = join(fixture.directory, 'audit.json')
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    await writeFile(candidatePath, candidateText, 'utf8')
+    await writeFile(auditPath, JSON.stringify({
+      candidate_sha256: stableJsonHash(candidate),
+      blocking_errors: [],
+      unmapped_count: 0,
+      unmapped: [],
+    }), 'utf8')
+
+    const { stdout } = await execFileAsync(process.execPath, [fixture.scriptPath,
+      `--promote-candidate=${candidatePath}`,
+      `--base-audit=${auditPath}`,
+    ], { cwd: fixture.directory })
+    const result = JSON.parse(stdout)
+
+    assert.equal(await readFile(result.backup, 'utf8'), before)
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), candidateText)
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 接受空 unmapped array', async () => {
+  const fixture = await createBuildFixture()
+  try {
+    const candidate = { candidate: 'empty-unmapped-array' }
+    const candidatePath = join(fixture.directory, 'candidate.json')
+    const auditPath = join(fixture.directory, 'audit.json')
+    await writeFile(candidatePath, `${JSON.stringify(candidate)}\n`, 'utf8')
+    await writeFile(auditPath, JSON.stringify({
+      candidate_sha256: stableJsonHash(candidate),
+      blocking_errors: [],
+      unmapped: [],
+    }), 'utf8')
+
+    await execFileAsync(process.execPath, [fixture.scriptPath,
+      `--promote-candidate=${candidatePath}`,
+      `--base-audit=${auditPath}`,
+    ], { cwd: fixture.directory })
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('validated candidate publisher 只接收已讀取的 candidateText', async () => {
+  const module = await import('./build_static_road_database.mjs')
+  assert.equal(typeof module.promoteValidatedCandidateText, 'function')
+
+  const directory = await mkdtemp(join(tmpdir(), 'lanedev-publish-text-'))
+  const canonicalPath = join(directory, 'road_database.json')
+  const backupPath = join(directory, 'road_database.backup.json')
+  const oldCanonical = '{"old":true}\n'
+  const candidateText = '{\n  "validated": true\n}\n'
+  try {
+    await writeFile(canonicalPath, oldCanonical, 'utf8')
+    await module.promoteValidatedCandidateText({ canonicalPath, backupPath, candidateText })
+
+    assert.equal(await readFile(backupPath, 'utf8'), oldCanonical)
+    assert.equal(await readFile(canonicalPath, 'utf8'), candidateText)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
   }
 })
 

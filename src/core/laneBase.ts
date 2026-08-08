@@ -5,6 +5,8 @@ import {
   type LaneDirection,
   type LaneGuidanceScope,
 } from './laneGuidance.ts'
+import type { ResolvedLaneGuidance } from './laneGuidance.ts'
+import { computeDerived, type LaneFieldSource, type LaneFieldSources, type RoadFeature } from './roads.ts'
 
 export type EffectiveFieldSource =
   | 'human-block' | 'human-way'
@@ -67,6 +69,14 @@ export interface ResolveLaneBaseInput {
 
 export interface ResolvedLaneBase extends LaneBaseFieldValues {
   fieldSources: Partial<Record<keyof LaneBaseFieldValues, EffectiveFieldSource>>
+}
+
+export interface LaneBaseApplyReport {
+  appliedRoadDirections: number
+  appliedForward: number
+  appliedBackward: number
+  applied: { forward: number; backward: number }
+  unresolvedSourceKeys: string[]
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -385,6 +395,162 @@ export function resolveLaneBase(
     ...(rules.value === undefined ? {} : { movementRules: rules.value }),
     fieldSources,
   }
+}
+
+/** Applies the already-built LanePilot base to prepared render blocks. */
+export function applyLaneBaseToRoads(
+  roads: RoadFeature[],
+  index: LaneBaseIndex,
+): LaneBaseApplyReport {
+  const records = [
+    ...index.approachByKey.values(),
+    ...index.segmentByKey.values(),
+    ...index.legacyByKey.values(),
+  ]
+  const recordsBySourceKey = new Map<string, Set<string>>()
+  for (const record of records) {
+    const recordKeys = recordsBySourceKey.get(record.sourceKey) ?? new Set<string>()
+    recordKeys.add(recordKey(record))
+    recordsBySourceKey.set(record.sourceKey, recordKeys)
+  }
+  const appliedRecordKeys = new Set<string>()
+  let appliedForward = 0
+  let appliedBackward = 0
+
+  for (const road of roads) {
+    if (applyDirectionBase(road, false, index, appliedRecordKeys)) appliedForward++
+    if (road.properties.oneway !== 'yes' &&
+        applyDirectionBase(road, true, index, appliedRecordKeys)) appliedBackward++
+    computeDerived(road.properties)
+  }
+
+  return {
+    appliedRoadDirections: appliedForward + appliedBackward,
+    appliedForward,
+    appliedBackward,
+    applied: { forward: appliedForward, backward: appliedBackward },
+    unresolvedSourceKeys: [...recordsBySourceKey]
+      .filter(([, recordKeys]) => [...recordKeys].some((key) => !appliedRecordKeys.has(key)))
+      .map(([sourceKey]) => sourceKey)
+      .sort(),
+  }
+}
+
+/** Returns the effective road state; it intentionally does not resolve a second annotation index. */
+export function guidanceForRoadDirection(
+  road: RoadFeature,
+  back: boolean,
+): ResolvedLaneGuidance {
+  const p = road.properties
+  const laneCount = back ? p.lanesBackward : p.lanesForward
+  const laneMovements = back ? p.turnLanesB : p.turnLanes
+  const sources = back ? p.laneFieldSourcesB : p.laneFieldSourcesF
+  const source = guidanceSource(sources)
+  return {
+    laneCount,
+    laneMovements: laneMovements === undefined ? undefined : [...laneMovements],
+    source,
+  }
+}
+
+function applyDirectionBase(
+  road: RoadFeature,
+  back: boolean,
+  index: LaneBaseIndex,
+  appliedRecordKeys: Set<string>,
+): boolean {
+  const p = road.properties
+  const sources = back ? p.laneFieldSourcesB : p.laneFieldSourcesF
+  const laneMovements = back ? p.turnLanesB : p.turnLanes
+  const motorcycleAccessByLane = back
+    ? p.motorcycleAccessByLaneB : p.motorcycleAccessByLaneF
+  const values: LaneBaseFieldValues = {
+    laneCount: back ? p.lanesBackward : p.lanesForward,
+    ...(laneMovements === undefined ? {} : { laneMovements: [...laneMovements] }),
+    ...(motorcycleAccessByLane === undefined
+      ? {} : { motorcycleAccessByLane: [...motorcycleAccessByLane] }),
+  }
+  const input: ResolveLaneBaseInput = {
+    wayId: p.osm_id,
+    intersectionNodeId: back ? p.nodes[0] : p.nodes[p.nodes.length - 1],
+    direction: back ? 'backward' : 'forward',
+    ...valuesForSources(values, sources),
+  }
+  const resolved = resolveLaneBase(index, input)
+  const appliedFieldSources = [
+    resolved.fieldSources.laneCount,
+    resolved.fieldSources.laneMovements,
+    resolved.fieldSources.motorcycleAccessByLane,
+  ]
+  const anyLanePilot = appliedFieldSources
+    .some((source) => source === 'lanepilot-approach' || source === 'lanepilot-segment')
+  if (!anyLanePilot) return false
+
+  if (resolved.laneCount !== undefined) {
+    if (back) p.lanesBackward = resolved.laneCount
+    else p.lanesForward = resolved.laneCount
+  }
+  if (resolved.laneMovements !== undefined) {
+    if (back) p.turnLanesB = [...resolved.laneMovements]
+    else p.turnLanes = [...resolved.laneMovements]
+  }
+  if (resolved.motorcycleAccessByLane !== undefined) {
+    if (back) p.motorcycleAccessByLaneB = [...resolved.motorcycleAccessByLane]
+    else p.motorcycleAccessByLaneF = [...resolved.motorcycleAccessByLane]
+  }
+  const nextSources: LaneFieldSources = {
+    laneCount: resolved.fieldSources.laneCount ?? sources.laneCount,
+    laneMovements: resolved.fieldSources.laneMovements ?? sources.laneMovements,
+    motorcycleAccess: resolved.fieldSources.motorcycleAccessByLane ?? sources.motorcycleAccess,
+  }
+  if (back) p.laneFieldSourcesB = nextSources
+  else p.laneFieldSourcesF = nextSources
+  recordAppliedRecords(index, input, appliedFieldSources, appliedRecordKeys)
+  return true
+}
+
+function valuesForSources(
+  values: LaneBaseFieldValues,
+  sources: LaneFieldSources,
+): Pick<ResolveLaneBaseInput, 'humanBlock' | 'humanWay' | 'osm' | 'inferred'> {
+  const result: Pick<ResolveLaneBaseInput, 'humanBlock' | 'humanWay' | 'osm' | 'inferred'> = {}
+  const set = (field: keyof LaneBaseFieldValues, source: LaneFieldSource) => {
+    if (values[field] === undefined) return
+    if (source === 'human-block') result.humanBlock = { ...result.humanBlock, [field]: values[field] }
+    else if (source === 'human-way') result.humanWay = { ...result.humanWay, [field]: values[field] }
+    else if (source === 'osm') result.osm = { ...result.osm, [field]: values[field] }
+    else if (source === 'inferred') result.inferred = { ...result.inferred, [field]: values[field] }
+  }
+  set('laneCount', sources.laneCount)
+  set('laneMovements', sources.laneMovements)
+  set('motorcycleAccessByLane', sources.motorcycleAccess)
+  return result
+}
+
+function recordAppliedRecords(
+  index: LaneBaseIndex,
+  input: ResolveLaneBaseInput,
+  fieldSources: Array<EffectiveFieldSource | undefined>,
+  applied: Set<string>,
+) {
+  const approach = input.intersectionNodeId === undefined ? undefined
+    : index.approachByKey.get(approachKey(input.wayId, input.intersectionNodeId, input.direction))
+  const segment = index.segmentByKey.get(segmentKey(input.wayId, input.direction))
+    ?? index.legacyByKey.get(segmentKey(input.wayId, input.direction))
+  for (const source of fieldSources) {
+    if (source === 'lanepilot-approach' && approach) applied.add(recordKey(approach))
+    if (source === 'lanepilot-segment' && segment) applied.add(recordKey(segment))
+  }
+}
+
+function guidanceSource(sources: LaneFieldSources): ResolvedLaneGuidance['source'] {
+  const relevant = [sources.laneCount, sources.laneMovements]
+  if (relevant.includes('inferred')) return 'inferred'
+  const annotation = relevant.some((source) =>
+    source === 'human-block' || source === 'human-way' ||
+    source === 'lanepilot-approach' || source === 'lanepilot-segment')
+  const osm = relevant.includes('osm')
+  return annotation ? osm ? 'annotation+osm' : 'annotation' : 'osm'
 }
 
 function recordFields(record: LaneBaseRecord | undefined): LaneBaseFieldValues | undefined {

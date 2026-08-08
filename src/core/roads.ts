@@ -29,6 +29,17 @@ export interface RoadSourceSegment {
   coordinates?: [number, number][]
 }
 
+export type LaneFieldSource =
+  | 'human-block' | 'human-way'
+  | 'lanepilot-approach' | 'lanepilot-segment'
+  | 'osm' | 'inferred'
+
+export interface LaneFieldSources {
+  laneCount: LaneFieldSource
+  laneMovements: LaneFieldSource
+  motorcycleAccess: LaneFieldSource
+}
+
 export interface OneSideEntryAccess {
   nodeId: number
   allowedBack: boolean
@@ -59,6 +70,12 @@ export interface RoadProps {
   lanes: number // 汽車車道總數（f+b）
   lanesForward: number
   lanesBackward: number
+  /** Provenance is directional because prepared blocks may end at different approaches. */
+  laneFieldSourcesF: LaneFieldSources
+  laneFieldSourcesB: LaneFieldSources
+  /** LanePilot's per-lane motorcycle access, separate from rendered motorcycle lanes. */
+  motorcycleAccessByLaneF?: string[]
+  motorcycleAccessByLaneB?: string[]
   motoF: boolean // 順向機車道
   motoB: boolean // 逆向機車道
   /** 各方向機車道數；motoF/B 保留作既有布林判斷並永遠與 count>0 同步。 */
@@ -281,9 +298,24 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       ? 0
       : intOr(p.lanes_backward, Math.max(1, lanes - lanesForward))
     const turnRaw = (oneway === 'yes' ? p.turn_lanes : p.turn_lanes_forward) ?? p.turn_lanes
-    const turnLanes = typeof turnRaw === 'string' ? turnRaw.split('|') : undefined
+    const turnLanes = typeof turnRaw === 'string' && turnRaw.trim()
+      ? turnRaw.split('|') : undefined
     const turnBRaw = oneway === 'no' ? p.turn_lanes_backward : undefined
-    const turnLanesB = typeof turnBRaw === 'string' ? turnBRaw.split('|') : undefined
+    const turnLanesB = typeof turnBRaw === 'string' && turnBRaw.trim()
+      ? turnBRaw.split('|') : undefined
+    const validLaneTag = (value: unknown) => {
+      const count = Number(value)
+      return Number.isFinite(count) && count >= 1
+    }
+    const forwardLaneSource: LaneFieldSource =
+      validLaneTag(p.lanes_forward) || validLaneTag(p.lanes) ? 'osm' : 'inferred'
+    const backwardLaneSource: LaneFieldSource = oneway === 'yes'
+      ? 'inferred'
+      : validLaneTag(p.lanes_backward) || validLaneTag(p.lanes) ? 'osm' : 'inferred'
+    const forwardMovementSource: LaneFieldSource =
+      typeof turnRaw === 'string' && turnRaw.trim() ? 'osm' : 'inferred'
+    const backwardMovementSource: LaneFieldSource =
+      typeof turnBRaw === 'string' && turnBRaw.trim() ? 'osm' : 'inferred'
 
     const props: RoadProps = {
       osm_id: Number(p.osm_id),
@@ -292,6 +324,16 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
       lanes,
       lanesForward,
       lanesBackward,
+      laneFieldSourcesF: {
+        laneCount: forwardLaneSource,
+        laneMovements: forwardMovementSource,
+        motorcycleAccess: 'inferred',
+      },
+      laneFieldSourcesB: {
+        laneCount: backwardLaneSource,
+        laneMovements: backwardMovementSource,
+        motorcycleAccess: 'inferred',
+      },
       motoF: false, // OSM 幾乎不標機車道，靠 Enhancement 補
       motoB: false,
       motoCountF: 0,

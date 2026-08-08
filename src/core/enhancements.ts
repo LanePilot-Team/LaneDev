@@ -160,6 +160,13 @@ export function applyToRoads(
     const fields = { ...wayFields, ...blockFields }
     n++
     const p = r.properties
+    // Older persisted/editor fixtures predate provenance; preserve their inferred baseline.
+    p.laneFieldSourcesF ??= {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    }
+    p.laneFieldSourcesB ??= {
+      laneCount: 'inferred', laneMovements: 'inferred', motorcycleAccess: 'inferred',
+    }
     // 單雙向必須最先套用：底下每一個逆向屬性（lanesBackward／turnLanesB／
     // laneMarksB／motoSepB／leftWaitAreaB…）都閘在 p.oneway === 'yes' 後面，
     // 晚一步套就會把使用者剛設的逆向車道靜默歸零。OSM 把實地雙向路標成單行的
@@ -180,6 +187,17 @@ export function applyToRoads(
       p.lanesForward = p.oneway === 'yes' ? lanes : Math.ceil(lanes / 2)
       p.lanesBackward = p.oneway === 'yes' ? 0 : Math.max(1, lanes - p.lanesForward)
     }
+    const sourceFor = (name: string): 'human-block' | 'human-way' | undefined =>
+      blockFields?.[name] !== undefined ? 'human-block'
+        : wayFields?.[name] !== undefined ? 'human-way' : undefined
+    const forwardLaneSource = fields.lanes_forward !== undefined
+      ? sourceFor('lanes_forward')
+      : fields.lanes !== undefined ? sourceFor('lanes') : undefined
+    const backwardLaneSource = fields.lanes_backward !== undefined
+      ? sourceFor('lanes_backward')
+      : fields.lanes !== undefined && fields.lanes_forward === undefined ? sourceFor('lanes') : undefined
+    if (forwardLaneSource) p.laneFieldSourcesF.laneCount = forwardLaneSource
+    if (backwardLaneSource && p.oneway !== 'yes') p.laneFieldSourcesB.laneCount = backwardLaneSource
     if (fields.shared_lane !== undefined) {
       p.sharedLane = p.oneway === 'no' && Number(fields.shared_lane) > 0
     }
@@ -234,9 +252,29 @@ export function applyToRoads(
     }
     if (fields.turn_lanes !== undefined) {
       p.turnLanes = String(fields.turn_lanes).split('|')
+      p.laneFieldSourcesF.laneMovements = sourceFor('turn_lanes')!
     }
     if (fields.turn_lanes_backward !== undefined) {
       p.turnLanesB = p.oneway === 'yes' ? undefined : String(fields.turn_lanes_backward).split('|')
+      if (p.oneway !== 'yes') p.laneFieldSourcesB.laneMovements = sourceFor('turn_lanes_backward')!
+    }
+    const motorcycleAccessF = fields.motorcycle_access_by_lane_forward
+      ?? fields.motorcycle_access_by_lane
+    const motorcycleAccessB = fields.motorcycle_access_by_lane_backward
+      ?? fields.motorcycle_access_by_lane
+    if (motorcycleAccessF !== undefined) {
+      p.motorcycleAccessByLaneF = String(motorcycleAccessF).split('|')
+      const source = fields.motorcycle_access_by_lane_forward !== undefined
+        ? sourceFor('motorcycle_access_by_lane_forward')
+        : sourceFor('motorcycle_access_by_lane')
+      if (source) p.laneFieldSourcesF.motorcycleAccess = source
+    }
+    if (motorcycleAccessB !== undefined && p.oneway !== 'yes') {
+      p.motorcycleAccessByLaneB = String(motorcycleAccessB).split('|')
+      const source = fields.motorcycle_access_by_lane_backward !== undefined
+        ? sourceFor('motorcycle_access_by_lane_backward')
+        : sourceFor('motorcycle_access_by_lane')
+      if (source) p.laneFieldSourcesB.motorcycleAccess = source
     }
     if (fields.moto_turn_lanes_forward !== undefined) {
       p.motoTurnLanesF = String(fields.moto_turn_lanes_forward).split('|')

@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { copyFile, mkdir, open, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareSegments } from './segment_dedupe.mjs'
@@ -46,9 +46,8 @@ function argumentValue(name, args = process.argv.slice(2)) {
   return args.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1)
 }
 
-function normalizeComparablePath(path) {
-  const resolvedPath = resolve(path)
-  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath
+export function normalizeComparablePath(path) {
+  return resolve(path).toLowerCase()
 }
 
 async function realDestinationPath(path) {
@@ -101,6 +100,31 @@ export async function assertDistinctDestinations(destinations) {
         throw new Error(`${leftName} 與 ${rightName} 指向相同檔案；拒絕在任一目的地寫入。`)
       }
     }
+  }
+}
+
+export async function atomicWriteText(destinationPath, text) {
+  const resolvedDestination = resolve(destinationPath)
+  await mkdir(dirname(resolvedDestination), { recursive: true })
+  const resolvedDirectory = await realpath(dirname(resolvedDestination))
+  const livePath = resolve(resolvedDirectory, basename(resolvedDestination))
+  const temporaryPath = resolve(
+    resolvedDirectory,
+    `.${basename(resolvedDestination)}.${process.pid}.${randomUUID()}.tmp`,
+  )
+  let fileHandle = null
+  let published = false
+  try {
+    fileHandle = await open(temporaryPath, 'wx')
+    await fileHandle.writeFile(text, 'utf8')
+    await fileHandle.sync()
+    await fileHandle.close()
+    fileHandle = null
+    await rename(temporaryPath, livePath)
+    published = true
+  } finally {
+    if (fileHandle) await fileHandle.close().catch(() => {})
+    if (!published) await rm(temporaryPath, { force: true }).catch(() => {})
   }
 }
 
@@ -187,7 +211,7 @@ function validatePromotionAudit(audit) {
 export async function promoteValidatedCandidateText({ canonicalPath, backupPath, candidateText }) {
   await mkdir(dirname(backupPath), { recursive: true })
   await copyFile(canonicalPath, backupPath)
-  await writeFile(canonicalPath, candidateText, 'utf8')
+  await atomicWriteText(canonicalPath, candidateText)
 }
 
 async function promoteCandidate(candidateArgument, auditArgument) {
@@ -275,10 +299,11 @@ export async function main(args = process.argv.slice(2)) {
     blocking_errors: blockingErrors,
   }
 
-  await mkdir(dirname(outPath), { recursive: true })
-  await mkdir(dirname(reportPath), { recursive: true })
-  await writeFile(outPath, `${JSON.stringify(output)}\n`, 'utf8')
-  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+  const destinations = { candidate: outPath, report: reportPath, canonical: canonicalPath }
+  await assertDistinctDestinations(destinations)
+  await atomicWriteText(outPath, `${JSON.stringify(output)}\n`)
+  await assertDistinctDestinations(destinations)
+  await atomicWriteText(reportPath, `${JSON.stringify(report, null, 2)}\n`)
 
   console.log(JSON.stringify({
     output: outPath,

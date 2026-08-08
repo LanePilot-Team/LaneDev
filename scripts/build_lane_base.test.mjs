@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -208,6 +208,24 @@ test('outPath 與 reportPath 為 hard link aliases 時在任一寫入前拒絕',
     assert.equal(await readFile(outPath, 'utf8'), before)
     assert.equal(await readFile(reportPath, 'utf8'), before)
     assert.ok(error, '候選與報告 hard link aliases 必須拒絕')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('outPath 與 reportPath 只有大小寫不同時保守拒絕', async () => {
+  const fixture = await createBuildFixture()
+  const outPath = join(fixture.directory, 'Shared-Output.json')
+  const reportPath = join(fixture.directory, 'shared-output.JSON')
+  try {
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${outPath}`,
+      `--report=${reportPath}`,
+    ], fixture.directory)
+
+    assert.ok(error, 'case-only destinations 必須保守視為相同')
+    await assert.rejects(readFile(outPath, 'utf8'), { code: 'ENOENT' })
+    await assert.rejects(readFile(reportPath, 'utf8'), { code: 'ENOENT' })
   } finally {
     await rm(fixture.directory, { recursive: true, force: true })
   }
@@ -488,6 +506,61 @@ test('validated candidate publisher 只接收已讀取的 candidateText', async 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+test('atomic writer 以 rename 取代 alias entry 而不覆寫 alias target', async () => {
+  const module = await import('./build_static_road_database.mjs')
+  assert.equal(typeof module.atomicWriteText, 'function')
+
+  const directory = await mkdtemp(join(tmpdir(), 'lanedev-atomic-alias-'))
+  const targetPath = join(directory, 'target.json')
+  const aliasPath = join(directory, 'alias.json')
+  const oldTarget = '{"protected":true}\n'
+  const replacement = '{"replacement":true}\n'
+  try {
+    await writeFile(targetPath, oldTarget, 'utf8')
+    await link(targetPath, aliasPath)
+    await module.atomicWriteText(aliasPath, replacement)
+
+    assert.equal(await readFile(targetPath, 'utf8'), oldTarget)
+    assert.equal(await readFile(aliasPath, 'utf8'), replacement)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('promotion 寫入在 rename 前失敗時保留 canonical 並清理 temp', async () => {
+  const module = await import('./build_static_road_database.mjs')
+  const directory = await mkdtemp(join(tmpdir(), 'lanedev-atomic-failure-'))
+  const canonicalPath = join(directory, 'road_database.json')
+  const backupPath = join(directory, 'road_database.backup.json')
+  const oldCanonical = '{"old":true}\n'
+  try {
+    await writeFile(canonicalPath, oldCanonical, 'utf8')
+    await assert.rejects(module.promoteValidatedCandidateText({
+      canonicalPath,
+      backupPath,
+      candidateText: { invalid: 'not text' },
+    }))
+
+    assert.equal(await readFile(canonicalPath, 'utf8'), oldCanonical)
+    assert.equal(await readFile(backupPath, 'utf8'), oldCanonical)
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'road_database.backup.json',
+      'road_database.json',
+    ])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('path normalization 在所有平台都保守忽略大小寫', async () => {
+  const module = await import('./build_static_road_database.mjs')
+  assert.equal(typeof module.normalizeComparablePath, 'function')
+  assert.equal(
+    module.normalizeComparablePath('CANDIDATE/Output.JSON'),
+    module.normalizeComparablePath('candidate/output.json'),
+  )
 })
 
 test('候選檔包含 annotations.jsonl 的每一筆非空白紀錄', async () => {

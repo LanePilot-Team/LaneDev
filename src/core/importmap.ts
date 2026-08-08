@@ -29,6 +29,10 @@ export interface AnnotationRecord {
   segmentKey: string // "way/123"
   /** v2 的 context_scope；legacy 記錄為 undefined（視同整段） */
   contextScope?: string
+  /** Stable source identity retained for pure annotation-domain accounting. */
+  sourceKey?: string
+  approachNodeKey?: string
+  approachDirection?: string
   laneProfiles: LaneProfile[]
   movementRules: MovementRule[]
 }
@@ -49,6 +53,13 @@ function annotationRecord(rec: Record<string, unknown>): AnnotationRecord | null
   return {
     segmentKey,
     contextScope: identity?.context_scope ? String(identity.context_scope) : undefined,
+    sourceKey: `${segmentKey}#${Number(identity?.split_index ?? 0) || 0}`,
+    approachNodeKey: identity?.applies_to_intersection_key
+      ? String(identity.applies_to_intersection_key)
+      : undefined,
+    approachDirection: identity?.approach_direction
+      ? String(identity.approach_direction)
+      : undefined,
     laneProfiles: (detail.lane_profiles as LaneProfile[] | undefined) ?? [],
     movementRules: (taiwan.movement_rules as MovementRule[] | undefined) ?? [],
   }

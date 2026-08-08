@@ -11,6 +11,10 @@ export type LaneGuidanceSource =
   | 'osm'
   | 'inferred'
 
+/** Shared guard for annotation extraction layers that use LaneGuidance directions. */
+export const isLaneDirection = (value: unknown): value is LaneDirection =>
+  value === 'forward' || value === 'backward'
+
 export interface LaneGuidanceRecord {
   wayId: number
   direction: LaneDirection

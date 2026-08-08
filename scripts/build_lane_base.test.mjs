@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -135,6 +135,79 @@ test('direct --report 不得覆寫 canonical', async () => {
 
     assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before, 'direct --report 不可改變 canonical 位元組')
     assert.ok(error, 'direct --report canonical 必須以非零狀態結束')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('direct --out 不得透過 hard link 覆寫 canonical', async () => {
+  const fixture = await createBuildFixture()
+  const aliasPath = join(fixture.directory, 'canonical-hardlink.json')
+  try {
+    await link(fixture.canonicalPath, aliasPath)
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${aliasPath}`,
+      `--report=${join(fixture.directory, 'report.json')}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
+    assert.ok(error, 'canonical hard link 必須視為相同目的地並拒絕')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('direct --report 不得透過 hard link 覆寫 canonical', async () => {
+  const fixture = await createBuildFixture()
+  const aliasPath = join(fixture.directory, 'canonical-report-hardlink.json')
+  try {
+    await link(fixture.canonicalPath, aliasPath)
+    const before = await readFile(fixture.canonicalPath, 'utf8')
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${join(fixture.directory, 'candidate.json')}`,
+      `--report=${aliasPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(fixture.canonicalPath, 'utf8'), before)
+    assert.ok(error, 'canonical report hard link 必須視為相同目的地並拒絕')
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('outPath 與 reportPath 相同時在任一寫入前拒絕', async () => {
+  const fixture = await createBuildFixture()
+  const sharedPath = join(fixture.directory, 'shared-output.json')
+  try {
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${sharedPath}`,
+      `--report=${sharedPath}`,
+    ], fixture.directory)
+
+    assert.ok(error, '候選與報告目的地相同時必須拒絕')
+    await assert.rejects(readFile(sharedPath, 'utf8'), { code: 'ENOENT' })
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('outPath 與 reportPath 為 hard link aliases 時在任一寫入前拒絕', async () => {
+  const fixture = await createBuildFixture()
+  const outPath = join(fixture.directory, 'candidate-existing.json')
+  const reportPath = join(fixture.directory, 'report-hardlink.json')
+  const before = '{"untouched":true}\n'
+  try {
+    await writeFile(outPath, before, 'utf8')
+    await link(outPath, reportPath)
+    const error = await runScript(fixture.scriptPath, [
+      `--out=${outPath}`,
+      `--report=${reportPath}`,
+    ], fixture.directory)
+
+    assert.equal(await readFile(outPath, 'utf8'), before)
+    assert.equal(await readFile(reportPath, 'utf8'), before)
+    assert.ok(error, '候選與報告 hard link aliases 必須拒絕')
   } finally {
     await rm(fixture.directory, { recursive: true, force: true })
   }

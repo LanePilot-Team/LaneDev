@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { copyFile, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareSegments } from './segment_dedupe.mjs'
 
@@ -46,12 +46,62 @@ function argumentValue(name, args = process.argv.slice(2)) {
   return args.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1)
 }
 
-function isSamePath(left, right) {
-  const resolvedLeft = resolve(left)
-  const resolvedRight = resolve(right)
-  return process.platform === 'win32'
-    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
-    : resolvedLeft === resolvedRight
+function normalizeComparablePath(path) {
+  const resolvedPath = resolve(path)
+  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath
+}
+
+async function realDestinationPath(path) {
+  const resolvedPath = resolve(path)
+  try {
+    return await realpath(resolvedPath)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    const parent = dirname(resolvedPath)
+    if (parent === resolvedPath) return resolvedPath
+    return resolve(await realDestinationPath(parent), basename(resolvedPath))
+  }
+}
+
+export async function destinationIdentity(path) {
+  const resolvedPath = resolve(path)
+  const canonicalizedPath = normalizeComparablePath(await realDestinationPath(resolvedPath))
+  try {
+    const fileStat = await stat(resolvedPath)
+    return {
+      canonicalizedPath,
+      exists: true,
+      dev: fileStat.dev,
+      ino: fileStat.ino,
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+    return { canonicalizedPath, exists: false, dev: null, ino: null }
+  }
+}
+
+function sameDestinationIdentity(left, right) {
+  if (left.canonicalizedPath === right.canonicalizedPath) return true
+  return left.exists && right.exists
+    && left.ino !== 0 && right.ino !== 0
+    && left.dev === right.dev && left.ino === right.ino
+}
+
+export async function assertDistinctDestinations(destinations) {
+  const entries = Object.entries(destinations)
+  const identities = await Promise.all(entries.map(async ([name, path]) => [
+    name,
+    await destinationIdentity(path),
+  ]))
+  for (let leftIndex = 0; leftIndex < identities.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < identities.length; rightIndex += 1) {
+      const [leftName, leftIdentity] = identities[leftIndex]
+      const [rightName, rightIdentity] = identities[rightIndex]
+      if (sameDestinationIdentity(leftIdentity, rightIdentity)) {
+        throw new Error(`${leftName} 與 ${rightName} 指向相同檔案；拒絕在任一目的地寫入。`)
+      }
+    }
+  }
 }
 
 function validateEditor(editor, source) {
@@ -185,9 +235,7 @@ export async function main(args = process.argv.slice(2)) {
   const defaultCandidate = resolve(root, '.lanedev-backups/road_database.candidate.json')
   const outPath = explicitOut ? resolve(explicitOut) : defaultCandidate
   const reportPath = resolve(argumentValue('--report', args) ?? `${outPath}.dedup-report.json`)
-  if (isSamePath(outPath, canonicalPath) || isSamePath(reportPath, canonicalPath)) {
-    throw new Error('不可將候選檔或報告寫入 canonical road_database.json；請使用已稽核的 promotion 流程。')
-  }
+  await assertDistinctDestinations({ candidate: outPath, report: reportPath, canonical: canonicalPath })
 
   const nanzihOnly = args.includes('--nanzih-only')
   const reverseRegions = args.includes('--reverse-regions')

@@ -11,6 +11,9 @@ import {
 } from './geo.ts'
 
 export const MOTO_LANE_M = 2.2
+/** 路面多邊形比車道斷面多出的寬度（casing 外框／surface 鋪面） */
+const CASING_EXTRA_M = 2.4
+const SURFACE_EXTRA_M = 0.8
 
 export interface LaneMark {
   text: string
@@ -61,6 +64,8 @@ export interface RoadProps {
   /** 各方向機車道數；motoF/B 保留作既有布林判斷並永遠與 count>0 同步。 */
   motoCountF: number
   motoCountB: number
+  /** 單向道路的機車專用道位於行進方向左側；預設仍為右側。 */
+  motoLeftF?: boolean
   /** 快慢分隔帶寬（公尺，預設 0）：汽車車道與機車道之間的實體島空間，
    * 該向有機車道才有意義（journal moto_sep_f/b；主慢分離 couplet 合併預設 1.0）。
    * >0 時該向不畫機車道白線，改由 medians.buildMotoSepIslands 鋪島 */
@@ -89,6 +94,14 @@ export interface RoadProps {
   oneSideEntryAccess?: OneSideEntryAccess[]
   /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
   roadMergeBarrierNodes?: number[]
+  /** 僅記憶體：中央島跨路口貫通的接點（現地指定，見 centerIslandJoins.ts）。
+   * 語意與捏合接縫相同——島面在此連續、主路不得迴轉——但兩段斷面不同，
+   * 不能真的捏合成一段。 */
+  centerIslandJoinNodes?: number[]
+  /** 僅記憶體：在該接點與本路段共用同一條中央島的「續行對向路段」區塊鍵。
+   * 兩段的 way id 不同時，單向進入規則必須靠這份對照才認得出「這是主路續行、
+   * 不是側街」，否則反向會被自己的 T 字限制擋在主路上。 */
+  medianContinuityPeers?: { nodeId: number; peerKey: string }[]
   /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
   roadMergeDerived?: {
     nodeId: number
@@ -128,13 +141,15 @@ export interface RoadProps {
   bridge?: string
   /** OSM layer=*（疊序整數，可負；缺省 0 = 平面）。高度合成見 elevation.ts */
   layer: number
-  /** OSM tunnel=*（隧道/地下道）。視覺下沉本版不做（TODO），僅傳遞資料 */
+  /** OSM tunnel=*（隧道/地下道）。3D 下沉不做，只以 2D 疊放順序表達（見 isTunnel） */
   tunnel?: string
   /** 高架路段（elevation.isElevated，pipeline 切塊後標記）：地面車道級渲染
    * （路面/分隔線/印字/單行箭頭）全部略過，由 elevated3d 的 3D 橋面取代 */
   elevated?: boolean
   /** 顯示端不在人工確認的複合寬路口區塊上放道路名稱／線上箭頭。 */
   hideIntersectionInfo?: boolean
+  /** Only hide floating road-name symbols; keep pavement text, geometry, and navigation name. */
+  hideRoadLabel?: boolean
   /** 地面規則印字（依選取順序印在路面，代碼見 roadtext.ts GROUND_RULES）。
    * undefined = 無人工設定（motorcycle=no 時 fallback 印禁行機車）；[] = 明確無 */
   rulesF?: string[]
@@ -171,7 +186,22 @@ export interface RoadProps {
 
 export type RoadFeature = Feature<LineString> & { properties: RoadProps }
 
-type RoadSurfaceProps = RoadProps & { surfaceKind: 'casing' | 'surface' }
+/**
+ * 地下道／隧道：路面與標線都改畫在地面圖層「之下」，交會處自然被上面那條蓋住。
+ *
+ * 與高架（elevation.ELEVATED_WAY_IDS 人工清單）刻意不同——高架抬錯 6m 是災難
+ * （跨河橋一律抬會全錯），所以只認人工清單；疊放順序畫錯最壞只是「該在上面的
+ * 畫到下面」，成本低到可以直接吃 OSM 標籤，不必維護清單。
+ * 全圖 27 個區塊命中，其中 10 條真的與不共用節點的路平面交叉（33 組）。
+ */
+export const isTunnel = (p: RoadProps): boolean =>
+  p.tunnel === 'yes' || p.tunnel === 'building_passage' || p.layer < 0
+
+type RoadSurfaceProps = RoadProps & {
+  surfaceKind: 'casing' | 'surface'
+  /** 畫在地面圖層之下（mapStyle 的 tunnel-* 圖層組）——見 isTunnel */
+  underground: boolean
+}
 
 const DEFAULT_LANES: Record<string, number> = {
   motorway: 4, trunk: 4, primary: 4, secondary: 3, tertiary: 2,
@@ -369,7 +399,7 @@ export function buildRoadSurfaces(
       if (!polygon) continue
       features.push({
         ...polygon,
-        properties: { ...road.properties, surfaceKind },
+        properties: { ...road.properties, surfaceKind, underground: isTunnel(road.properties) },
       })
     }
   }
@@ -458,12 +488,27 @@ export function collapseShortDeadEnds(roads: RoadFeature[], maxLengthM = 60): nu
  * 移除未命名的短死端殘段。從度數 1 的死端起，沿未命名低等級道路追蹤到正式
  * 路網；只有整條支線鏈的總長不超過上限才移除，避免逐段剝掉長距離無名道路。
  */
+/**
+ * 現地確認存在、不可當成無名短支線移除的 way。
+ *
+ * 移除支線同時也移除了「那個節點是路口」這件事：節點的相異鄰接掉到 2 之後，
+ * `graph.intersections()` 不再認它，於是該處**標線不收邊（兩段看起來合成一條）、
+ * 停止線畫不出來、機車停等格連面板選項都不出現**（`motoBoxPanelLimits` 的
+ * topo 為 false 時上限直接歸零）。
+ */
+const KEEP_UNNAMED_SPUR_WAY_IDS = new Set([
+  // 楠陽路 × node/12556600783 的無名巷（service，約 30m，2026-08-07 使用者確認存在）。
+  // 被移除後楠陽路兩個區塊在此以 1° 續接，標線整段連續、兩端都放不了停止線/停等格。
+  951446697,
+])
+
 export function removeUnnamedShortSpurs(
   roads: RoadFeature[], maxLengthM = 60,
 ): { roads: RoadFeature[]; removed: number } {
   const eligibleHighways = new Set(['residential', 'living_street', 'service', 'unclassified'])
   const eligible = (r: RoadFeature) => {
     const p = r.properties
+    if (KEEP_UNNAMED_SPUR_WAY_IDS.has(p.osm_id)) return false
     return !p.name?.trim() && p.nodes.length >= 2 && r.geometry.coordinates.length >= 2 &&
       eligibleHighways.has(p.highway)
   }
@@ -546,6 +591,14 @@ function sliceByDist(
  * 半寬 + 1.2m——路口框與楔形內不殘留黃分向線/白車道線。所有道路等級都適用，
  * 小巷也不能讓標線穿過路口；同一路純續接（幾何近乎平行）則保持標線連續。
  */
+/**
+ * 現地指定：這些端點的「近乎平行分岔」實地是路口，車道線要在此收邊。
+ * key = `${osm_id}@${nodeId}`。收邊量仍由該節點實際的交叉路寬推導，不寫死。
+ */
+const PARALLEL_CROSS_ENDS = new Set([
+  '386557630@1631504648', // 左楠路 × 外環西路：兩條不同的路以極小夾角分岔
+])
+
 export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineString> {
   // 複合／分離式主路在 OSM 可能只以單側窄 way 與支路共點，通用半寬會低估路口範圍。
   // 僅增加標線退界，不裁道路面，也不改變導航拓樸。
@@ -567,6 +620,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
    * 交叉路斜交係數（橫向偏移 o 的裁切點沿路軸平移 o×sk，收邊線平行交叉路
    * ＝停止線的延長線）。trim=0 = 不收。 */
   const endInfo = (n: number, self: RoadFeature, fwdBrg: number): { trim: number; sk: number } => {
+    // 現地指定：夾角 >25° 才算交叉路，是為了讓「同一條路換 way id」的續接點保持
+    // 標線連續；但少數路口的兩條**不同**道路就是以極小夾角分岔（左楠路 ×
+    // 外環西路），那裡的車道線必須跟停止線一樣收邊，不能穿過路口。
+    const forceCross = PARALLEL_CROSS_ENDS.has(`${self.properties.osm_id}@${n}`)
     // 捏合主路只是經過側巷入口：主路所有標線保持連續，不將此節點
     // 當成交叉路口退縮。側巷仍會在自己的 endInfo 中依主路寬度收邊。
     const hasDistinctRoad = (nodeUse.get(n) ?? []).some((road) =>
@@ -589,7 +646,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
           : bearing(cs2[idx - 1], cs2[idx])
         let d = Math.abs(angleDelta(fwdBrg, brg))
         if (d > 90) d = 180 - d
-        if (d <= 25) continue // 同一路續接或近乎平行的分岔，不形成需清空的路口楔形
+        if (!forceCross && d <= 25) continue // 同一路續接或近乎平行的分岔，不形成需清空的路口楔形
         w = Math.max(w, q.width_m)
         anyCross = true
         if (d > bestPerp) { bestPerp = d; crossBrg = brg }
@@ -614,6 +671,7 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
   let info0 = ZERO
   let info1 = ZERO
   let curId = 0
+  let curTunnel = false
   let roadMarkingMode: RoadProps['roadMarkingMode'] = 'all'
   let axisShift = 0
   let roadHalfWidth = 0
@@ -666,13 +724,15 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
         : lineOffset(feat, renderOff, { units: 'meters' })
       features.push({
         type: 'Feature', geometry: line.geometry,
-        properties: { kind, osm_id: curId }, // osm_id 供除錯/離線稽核，樣式不使用
+        // osm_id 供除錯/離線稽核，樣式不使用；tunnel 決定畫在地面層之上或之下
+        properties: { kind, osm_id: curId, underground: curTunnel },
       })
     } catch { /* 退化幾何略過 */ }
   }
   for (const road of roads) {
     const p = road.properties
     curId = p.osm_id
+    curTunnel = isTunnel(p)
     roadMarkingMode = p.roadMarkingMode
     axisShift = p.oneway === 'no' ? -(p.divOffM || 0) : 0
     roadHalfWidth = p.width_m / 2
@@ -701,6 +761,15 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
         L = cum[cum.length - 1]
       }
     }
+    // 地下道兩側緣線：畫在 buildRoadSurfaces 的 surface 多邊形「側邊」位置。
+    // 不能直接把那個多邊形當輪廓描邊——turf buffer 兩端是圓頭，描出來就是
+    // 銜接處一道圓弧路緣（2026-08-07 使用者回報）。改用中心線平移，只有兩條
+    // 側線、沒有端帽；端點被相鄰路段的路面蓋掉，銜接自然平順。
+    if (curTunnel) {
+      const edgeOff = (p.width_m + SURFACE_EXTRA_M) / 2
+      push(edgeOff, 'tunnel-edge')
+      push(-edgeOff, 'tunnel-edge')
+    }
     const f = p.lanesForward // 可為 0（該向純機車道）
     // 快慢分隔帶 >0 時該向不畫機車道白線——島面（buildMotoSepIslands）取代
     const sepF = p.motoF ? p.motoSepF || 0 : 0
@@ -709,11 +778,18 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
       // 單行道：斷面置中
       const total = f * LANE_WIDTH_M + p.motoCountF * MOTO_LANE_M + sepF
       const left = -total / 2
-      for (let k = 1; k < f; k++) push(RIGHT * (left + k * LANE_WIDTH_M), 'lane')
+      const motoLeft = !!p.motoLeftF && p.motoCountF > 0
+      const carBase = left + (motoLeft ? p.motoCountF * MOTO_LANE_M + sepF : 0)
+      for (let k = 1; k < f; k++) push(RIGHT * (carBase + k * LANE_WIDTH_M), 'lane')
       // 0 車道時機車道左界 = 斷面左緣，不需分隔線
-      if (p.motoF && f > 0 && sepF === 0) push(RIGHT * (left + f * LANE_WIDTH_M), 'moto')
+      if (p.motoF && f > 0 && sepF === 0) {
+        push(RIGHT * (motoLeft ? carBase : left + f * LANE_WIDTH_M), 'moto')
+      }
       for (let k = 1; k < p.motoCountF; k++) {
-        push(RIGHT * (left + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M), 'lane')
+        const off = motoLeft
+          ? left + k * MOTO_LANE_M
+          : left + f * LANE_WIDTH_M + sepF + k * MOTO_LANE_M
+        push(RIGHT * off, 'lane')
       }
     } else {
       const b = p.lanesBackward
@@ -805,7 +881,10 @@ export function buildDividers(roads: RoadFeature[]): FeatureCollection<LineStrin
           const boundary = lineOffset(curve, side, { units: 'meters' })
           features.push({
             type: 'Feature', geometry: boundary.geometry,
-            properties: { kind: 'moto', osm_id: main.properties.osm_id },
+            properties: {
+              kind: 'moto', osm_id: main.properties.osm_id,
+              tunnel: isTunnel(main.properties),
+            },
           })
         }
       }

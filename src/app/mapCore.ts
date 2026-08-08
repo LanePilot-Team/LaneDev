@@ -34,7 +34,7 @@ import {
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
 } from '../core/turnbays'
-import { buildRoadTexts } from '../core/roadtext'
+import { buildRoadLabelLines, buildRoadTexts, roadTextObstacles } from '../core/roadtext'
 import {
   buildMedians, buildCenterIslands, buildMotoSepIslands, buildTwinIslands, mediansToGeoJSON,
 } from '../core/medians'
@@ -379,12 +379,13 @@ export function useMapCore(
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
       renderGraph, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
-      journal)
+      journal, stopLines)
+    const motoEntryIcons = buildMotoLaneEntryIcons(renderGraph, journal)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
-      ...buildMotoLaneEntryIcons(renderGraph, journal).features,
+      ...motoEntryIcons.features,
       ...buildUnusedLaneGores(renderGraph, baysRef.current).features)
     const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
     src('turnbays').setData(groundMarkingPolygons(
@@ -402,9 +403,27 @@ export function useMapCore(
       ...buildMotoSepIslands(renderGraph),
       ...buildCenterIslands(renderGraph, baysRef.current),
     ]) as never)
-    // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走
-    src('roadtext').setData(cleanIntersectionFeatures(
-      buildRoadTexts(renderGraph, baysRef.current)) as never)
+    // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走。
+    // 印字位置要避開同一段路已經畫好的箭頭、機車道入口圖示與停止線——
+    // 這些都在上面算完了，直接餵給 buildRoadTexts，不重算一份會漂移的位置。
+    const markingObstacles = roadTextObstacles({
+      arrows: laneArrows,
+      motoEntryIcons: motoEntryIcons.features,
+      stopLines,
+      motoBoxes: motoBoxes.boxes,
+    })
+    const roadTexts = cleanIntersectionFeatures(
+      buildRoadTexts(renderGraph, baysRef.current, rightLanesRef.current, markingObstacles))
+    src('roadtext').setData(roadTexts as never)
+    // 路名：只沿「避開所有地面標線與路面印字」的中心線區段排字
+    src('roadlabels').setData(buildRoadLabelLines(renderRoads, [
+      ...markingObstacles,
+      ...roadTexts.features.map((f) => ({
+        points: [(f.geometry as unknown as { coordinates: [number, number] }).coordinates],
+        alongHalfM: 5,
+        crossHalfM: 1,
+      })),
+    ]) as never)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
   }, [src])
 
@@ -424,8 +443,10 @@ export function useMapCore(
     src('dividers').setData(groundMarkingPolygons(
       dividerFeatures,
       (p) => p?.kind === 'center' ? 0.3
+        : p?.kind === 'tunnel-edge' ? 0.12 // 地下道側緣：比車道線細一點
         : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
-      (p) => p?.kind === 'lane',
+      // 車道線與地下道側緣都是虛線（後者用虛線表示「在地面之下」）
+      (p) => p?.kind === 'lane' || p?.kind === 'tunnel-edge',
     ) as never)
   }, [src])
 

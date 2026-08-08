@@ -13,8 +13,9 @@ import {
   flushStaticEditorSave, getStaticSaveSnapshot, subscribeStaticSaveState,
 } from '../core/staticDatabase'
 import {
-  compassOf, resizeLaneMarks, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
-  BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor, type EditTool,
+  clampMotoBoxRange, compassOf, motoBoxPanelLimits,
+  resizeLaneMarks, resizeTurnLanes, resizeMotoTurnLanes,
+  TURN_CYCLE, TURN_EDIT_GLYPH, BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
 } from './useEditor'
 import { formatTaiwanHistoryTime } from './timeFormat'
 
@@ -38,10 +39,12 @@ const ARROW_OPTION_LABEL: Record<string, string> = {
 }
 
 /** 箭頭樣式直接下拉選取，不再逐次循環。 */
-function ArrowStyleSelect({ value, onChange, label }: {
+function ArrowStyleSelect({ value, onChange, label, allowNone }: {
   value: string
   onChange: (value: string) => void
   label: string
+  /** 機車道用：可以選「無」＝該車道不畫路口箭頭（單一機車道的預設狀態） */
+  allowNone?: boolean
 }) {
   return (
     <select
@@ -51,6 +54,7 @@ function ArrowStyleSelect({ value, onChange, label }: {
       title={label}
       onChange={(e) => onChange(e.target.value)}
     >
+      {allowNone && <option value="">無</option>}
       {TURN_CYCLE.map((option) => (
         <option key={option} value={option}>
           {ARROW_OPTION_LABEL[option] ?? TURN_EDIT_GLYPH[option] ?? option}
@@ -152,34 +156,6 @@ function LaneMarkEditor({ label, marks, carLanes, motoLanes, onChange }: {
   )
 }
 
-const TOOL_HINTS: Record<EditTool, {
-  short: (profile: Profile) => string
-  full: (profile: Profile) => string
-}> = {
-  lane: {
-    short: () => '點道路編輯 · 再點一下換疊在下面的路 · Ctrl 點兩段捏合',
-    full: () => '點選道路編輯車道；同一點再按一下可換下一條疊在一起的路；'
-      + '按住 Ctrl 依序點兩段相接、平行道路可捏合路段',
-  },
-  zone: {
-    short: () => '點路口 → 面板選左轉方向',
-    full: () => '點選「路口」→ 右側面板選左轉方向（位置自動計算）',
-  },
-  bay: {
-    short: () => '點路口 → 開關偏心左轉／右轉道',
-    full: () => '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道',
-  },
-  road: {
-    short: () => '點地圖放頂點（自動吸附）→ 面板「完成」· 點自訂道路可刪',
-    full: () => '點地圖依序放頂點（靠近既有路口/節點會自動吸附）→ 面板按「完成」成路'
-      + ' · 點自訂道路可刪除',
-  },
-  vehicle: {
-    short: (profile) => `點道路放${profile === 'car' ? '汽車' : '機車'} · 點模型可選取／刪除`,
-    full: (profile) => `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`,
-  },
-}
-
 export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: {
   core: MapCore; editor: Editor; profile: Profile; zoneCount: number; vehicleCount: number
 }) {
@@ -215,11 +191,15 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
         }}>
         {saveLabel}
       </button>
-      {editWarn ?? (
-        <span className="hint-text" title={TOOL_HINTS[editTool].full(profile)}>
-          {TOOL_HINTS[editTool].short(profile)}
-        </span>
-      )}
+      {editWarn ?? (editTool === 'lane'
+        ? '點選道路編輯車道；按住 Ctrl 依序點兩段相接、平行道路可捏合路段'
+        : editTool === 'zone'
+          ? '點選「路口」→ 右側面板選左轉方向（位置自動計算）'
+          : editTool === 'bay'
+            ? '點選「路口」→ 開關/調整偏心左轉道與右轉附加車道'
+            : editTool === 'road'
+              ? '點地圖依序放頂點（靠近既有路口/節點會自動吸附）→ 面板按「完成」成路 · 點自訂道路可刪除'
+              : `點擊道路放置${profile === 'car' ? '汽車' : '機車'}模型 · 點模型可選取/刪除`)}
       {!editWarn && (
         <button className="mini"
           onClick={() => {
@@ -243,6 +223,12 @@ export function EditHintBar({ core, editor, profile, zoneCount, vehicleCount }: 
 export function LaneEditPanel({ editor }: { editor: Editor }) {
   const { editRoad, setEditRoad, stackPicks, stackIndex, pickStacked } = editor
   if (!editRoad) return null
+  // 停等格的上下限與格位數是「目前面板狀態」的函式（車道數、機車道、右轉專用道、
+  // 禁行機車標記、道路繪圖開關），每次 render 重算才會即時連動——不能存進 state。
+  const motoBoxF = motoBoxPanelLimits(editRoad, false)
+  const motoBoxB = motoBoxPanelLimits(editRoad, true)
+  const motoBoxRangeF = clampMotoBoxRange(editRoad.motoBoxStartF, editRoad.motoBoxEndF, motoBoxF)
+  const motoBoxRangeB = clampMotoBoxRange(editRoad.motoBoxStartB, editRoad.motoBoxEndB, motoBoxB)
   return (
     <div className="side-panel lane-editor">
       <div className="sp-head">
@@ -317,24 +303,19 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             const f = er.motoF && er.f === 0 ? 1 : er.f
             const motoF = !er.motoF
             const motoCountF = motoF ? 1 : 0
-            const oldSlots = er.motoBoxSlotsF
-            const motoBoxSlotsF = f + motoCountF + (er.rightLaneF ? 1 : 0)
-            const wantedEnd = motoF && er.motoBoxF > 0 && er.motoBoxEndF >= oldSlots
-              ? motoBoxSlotsF : Math.min(er.motoBoxEndF, motoBoxSlotsF)
-            const motoBoxEndF = Math.max(1, wantedEnd)
-            const motoBoxStartF = Math.min(er.motoBoxStartF, motoBoxEndF - 1)
+            // 新開機車道時把格子延伸到含機車道；其餘情形交給 render 時的夾取
+            const slots = f + motoCountF + (er.rightLaneF ? 1 : 0)
+            const motoBoxEndF = motoF && er.motoBoxF > 0
+              && er.motoBoxEndF >= er.f + (er.rightLaneF ? 1 : 0)
+              ? slots : er.motoBoxEndF
             return { ...er, motoF, motoCountF, f,
-              motoTurnLanesF: resizeTurnLanes(er.motoTurnLanesF, motoCountF),
+              motoTurnLanesF: resizeMotoTurnLanes(er.motoTurnLanesF, motoCountF),
               turnLanes: resizeTurnLanes(er.turnLanes, f),
               startTurnLanes: resizeTurnLanes(er.startTurnLanes, f),
               laneMarksF: er.motoF
                 ? resizeLaneMarks(er.laneMarksF.slice(0, er.f), f)
                 : [...resizeLaneMarks(er.laneMarksF, f), null],
-              motoBoxSlotsF,
-              motoBoxMaxF: Math.max(er.motoBoxMaxF, motoBoxSlotsF - er.motoBoxMinF),
-              motoBoxStartF,
-              motoBoxEndF,
-              motoBoxF: er.motoBoxF > 0 ? motoBoxEndF - motoBoxStartF : 0 }
+              motoBoxEndF }
           })}>
           {editRoad.motoF ? '已設機車道' : '＋機車道'}
         </button>
@@ -349,8 +330,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const count = er.motoCountF - 1
               return { ...er, motoCountF: count,
                 laneMarksF: resizeLaneMarks(er.laneMarksF, er.f + count),
-                motoTurnLanesF: resizeTurnLanes(er.motoTurnLanesF, count),
-                motoBoxSlotsF: er.motoBoxSlotsF - 1 }
+                motoTurnLanesF: resizeMotoTurnLanes(er.motoTurnLanesF, count) }
             })}>−</button>
           <b>{editRoad.motoCountF}</b>
           <button className="mini" disabled={editRoad.motoCountF >= 4}
@@ -359,8 +339,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const count = er.motoCountF + 1
               return { ...er, motoCountF: count,
                 laneMarksF: resizeLaneMarks(er.laneMarksF, er.f + count),
-                motoTurnLanesF: resizeTurnLanes(er.motoTurnLanesF, count),
-                motoBoxSlotsF: er.motoBoxSlotsF + 1 }
+                motoTurnLanesF: resizeMotoTurnLanes(er.motoTurnLanesF, count) }
             })}>＋</button>
         </div>
         <div className="edit-row">
@@ -400,24 +379,18 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const b = er.motoB && er.b === 0 ? 1 : er.b
               const motoB = !er.motoB
               const motoCountB = motoB ? 1 : 0
-              const oldSlots = er.motoBoxSlotsB
-              const motoBoxSlotsB = b + motoCountB + (er.rightLaneB ? 1 : 0)
-              const wantedEnd = motoB && er.motoBoxB > 0 && er.motoBoxEndB >= oldSlots
-                ? motoBoxSlotsB : Math.min(er.motoBoxEndB, motoBoxSlotsB)
-              const motoBoxEndB = Math.max(1, wantedEnd)
-              const motoBoxStartB = Math.min(er.motoBoxStartB, motoBoxEndB - 1)
+              const slots = b + motoCountB + (er.rightLaneB ? 1 : 0)
+              const motoBoxEndB = motoB && er.motoBoxB > 0
+                && er.motoBoxEndB >= er.b + (er.rightLaneB ? 1 : 0)
+                ? slots : er.motoBoxEndB
               return { ...er, motoB, motoCountB, b,
-                motoTurnLanesB: resizeTurnLanes(er.motoTurnLanesB, motoCountB),
+                motoTurnLanesB: resizeMotoTurnLanes(er.motoTurnLanesB, motoCountB),
                 turnLanesB: resizeTurnLanes(er.turnLanesB, b),
                 startTurnLanesB: resizeTurnLanes(er.startTurnLanesB, b),
                 laneMarksB: er.motoB
                   ? resizeLaneMarks(er.laneMarksB.slice(0, er.b), b)
                   : [...resizeLaneMarks(er.laneMarksB, b), null],
-                motoBoxSlotsB,
-                motoBoxMaxB: Math.max(er.motoBoxMaxB, motoBoxSlotsB - er.motoBoxMinB),
-                motoBoxStartB,
-                motoBoxEndB,
-                motoBoxB: er.motoBoxB > 0 ? motoBoxEndB - motoBoxStartB : 0 }
+                motoBoxEndB }
             })}>
             {editRoad.motoB ? '已設機車道' : '＋機車道'}
           </button>
@@ -433,8 +406,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const count = er.motoCountB - 1
               return { ...er, motoCountB: count,
                 laneMarksB: resizeLaneMarks(er.laneMarksB, er.b + count),
-                motoTurnLanesB: resizeTurnLanes(er.motoTurnLanesB, count),
-                motoBoxSlotsB: er.motoBoxSlotsB - 1 }
+                motoTurnLanesB: resizeMotoTurnLanes(er.motoTurnLanesB, count) }
             })}>−</button>
           <b>{editRoad.motoCountB}</b>
           <button className="mini" disabled={editRoad.motoCountB >= 4}
@@ -443,8 +415,7 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
               const count = er.motoCountB + 1
               return { ...er, motoCountB: count,
                 laneMarksB: resizeLaneMarks(er.laneMarksB, er.b + count),
-                motoTurnLanesB: resizeTurnLanes(er.motoTurnLanesB, count),
-                motoBoxSlotsB: er.motoBoxSlotsB + 1 }
+                motoTurnLanesB: resizeMotoTurnLanes(er.motoTurnLanesB, count) }
             })}>＋</button>
         </div>
         <div className="edit-row">
@@ -495,6 +466,12 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       <section className="edit-section">
       <h3>3. 路口前配置</h3>
       <p>以下設定套用在此區塊末端接近路口的位置，並依各方向分別處理。</p>
+      {editRoad.roadMarkingMode !== 'all' && (
+        <div className="edit-notice">
+          道路繪圖開關不是「全部資訊顯示」時，車道箭頭與左轉待轉區不會畫出來（設定仍會保存）；
+          已明確啟用的機車停等格仍會畫。
+        </div>
+      )}
       {editRoad.oneway === 'no' && editRoad.canCenter && (
         <div className="edit-row">
           <span>中央帶類型</span>
@@ -609,7 +586,8 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             })} />
         ))}
       </div>
-      {(editRoad.bayF !== 'none' || editRoad.turnLanes[0]?.includes('left')) && (
+      {editRoad.roadMarkingMode === 'all'
+        && (editRoad.bayF !== 'none' || editRoad.turnLanes[0]?.includes('left')) && (
         <div className="edit-row">
           <span>{editRoad.fwdLabel}左轉待轉區</span>
           <button
@@ -668,7 +646,8 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
                 })} />
             ))}
           </div>
-          {(editRoad.bayB !== 'none' || editRoad.turnLanesB[0]?.includes('left')) && (
+          {editRoad.roadMarkingMode === 'all'
+            && (editRoad.bayB !== 'none' || editRoad.turnLanesB[0]?.includes('left')) && (
             <div className="edit-row">
               <span>{editRoad.bwdLabel}左轉待轉區</span>
               <button
@@ -718,10 +697,6 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           onClick={() => setEditRoad((er) => er && ({
             ...er,
             rightLaneF: !er.rightLaneF,
-            motoBoxSlotsF: Math.max(1, er.motoBoxSlotsF + (er.rightLaneF ? -1 : 1)),
-            motoBoxEndF: er.rightLaneF
-              ? Math.min(er.motoBoxEndF, er.motoBoxSlotsF - 1)
-              : er.motoBoxEndF,
           }))}>
           {editRoad.rightLaneF ? '已新增' : '不新增'}
         </button>
@@ -742,10 +717,6 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
             onClick={() => setEditRoad((er) => er && ({
               ...er,
               rightLaneB: !er.rightLaneB,
-              motoBoxSlotsB: Math.max(1, er.motoBoxSlotsB + (er.rightLaneB ? -1 : 1)),
-              motoBoxEndB: er.rightLaneB
-                ? Math.min(er.motoBoxEndB, er.motoBoxSlotsB - 1)
-                : er.motoBoxEndB,
             }))}>
             {editRoad.rightLaneB ? '已新增' : '不新增'}
           </button>
@@ -760,14 +731,14 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </>}
         </div>
       )}
-      {editRoad.motoBoxMaxF > 0 && (
+      {motoBoxF.max > 0 && (
         <MotoBoxRangeEditor
           label={editRoad.fwdLabel}
           enabled={editRoad.motoBoxF > 0}
-          start={editRoad.motoBoxStartF}
-          end={editRoad.motoBoxEndF}
-          min={editRoad.motoBoxMinF}
-          slots={editRoad.motoBoxSlotsF}
+          start={motoBoxRangeF.start}
+          end={motoBoxRangeF.end}
+          min={motoBoxF.min}
+          slots={motoBoxF.slots}
           laneLabel={(i) => i < editRoad.f
             ? `汽車道 ${i + 1}`
             : i === editRoad.f && editRoad.motoF ? '機車道' : '右轉專用道'}
@@ -779,14 +750,14 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           }))}
         />
       )}
-      {editRoad.oneway === 'no' && editRoad.motoBoxMaxB > 0 && (
+      {editRoad.oneway === 'no' && motoBoxB.max > 0 && (
         <MotoBoxRangeEditor
           label={editRoad.bwdLabel}
           enabled={editRoad.motoBoxB > 0}
-          start={editRoad.motoBoxStartB}
-          end={editRoad.motoBoxEndB}
-          min={editRoad.motoBoxMinB}
-          slots={editRoad.motoBoxSlotsB}
+          start={motoBoxRangeB.start}
+          end={motoBoxRangeB.end}
+          min={motoBoxB.min}
+          slots={motoBoxB.slots}
           laneLabel={(i) => i < editRoad.b
             ? `汽車道 ${i + 1}`
             : i === editRoad.b && editRoad.motoB ? '機車道' : '右轉專用道'}
@@ -806,6 +777,13 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
       <section className="edit-section">
       <h3>4. 各車道的地面資訊</h3>
       <p>只畫在離開路口、剛進入此路段的位置。汽車道提供「禁行機車」；已定義的機車道另提供專用與優先標字。每條車道只能選一種，也可留空或自訂文字顏色。</p>
+      {editRoad.roadMarkingMode !== 'all' && (
+        <div className="edit-notice">
+          本路段的道路繪圖開關是「{editRoad.roadMarkingMode === 'center'
+            ? '保留中線格式其他不顯示' : '全部資訊不顯示'}」，
+          下列設定會照樣存起來，但路面上不會畫出來。
+        </div>
+      )}
       <LaneMarkEditor label={editRoad.fwdLabel} marks={editRoad.laneMarksF}
         carLanes={editRoad.f} motoLanes={editRoad.motoCountF}
         onChange={(laneMarksF) => setEditRoad((er) => er && ({ ...er, laneMarksF }))} />
@@ -814,12 +792,32 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           carLanes={editRoad.b} motoLanes={editRoad.motoCountB}
           onChange={(laneMarksB) => setEditRoad((er) => er && ({ ...er, laneMarksB }))} />
       )}
-      {editRoad.motoCountF >= 2 && (
+      {editRoad.bayF !== 'none' && (
+        <LaneMarkEditor label={`${editRoad.fwdLabel}左轉偏心道`} marks={[editRoad.bayMarkF]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, bayMarkF: marks[0] ?? null }))} />
+      )}
+      {editRoad.oneway === 'no' && editRoad.bayB !== 'none' && (
+        <LaneMarkEditor label={`${editRoad.bwdLabel}左轉偏心道`} marks={[editRoad.bayMarkB]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, bayMarkB: marks[0] ?? null }))} />
+      )}
+      {editRoad.rightLaneF && (
+        <LaneMarkEditor label={`${editRoad.fwdLabel}右轉專用道`} marks={[editRoad.rightLaneMarkF]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, rightLaneMarkF: marks[0] ?? null }))} />
+      )}
+      {editRoad.oneway === 'no' && editRoad.rightLaneB && (
+        <LaneMarkEditor label={`${editRoad.bwdLabel}右轉專用道`} marks={[editRoad.rightLaneMarkB]}
+          carLanes={1} motoLanes={0}
+          onChange={(marks) => setEditRoad((er) => er && ({ ...er, rightLaneMarkB: marks[0] ?? null }))} />
+      )}
+      {editRoad.motoCountF >= 1 && (
         <div className="lane-mark-group">
           <div className="edit-row"><b>{editRoad.fwdLabel}機車道路口箭頭</b></div>
           <div className="edit-row" style={{ flexWrap: 'wrap' }}>
             {editRoad.motoTurnLanesF.map((move, i) => (
-              <ArrowStyleSelect key={i} value={move}
+              <ArrowStyleSelect key={i} value={move} allowNone
                 label={`${editRoad.fwdLabel}機車道 ${i + 1} 箭頭`}
                 onChange={(value) => setEditRoad((er) => {
                   if (!er) return er
@@ -830,12 +828,12 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
           </div>
         </div>
       )}
-      {editRoad.oneway === 'no' && editRoad.motoCountB >= 2 && (
+      {editRoad.oneway === 'no' && editRoad.motoCountB >= 1 && (
         <div className="lane-mark-group">
           <div className="edit-row"><b>{editRoad.bwdLabel}機車道路口箭頭</b></div>
           <div className="edit-row" style={{ flexWrap: 'wrap' }}>
             {editRoad.motoTurnLanesB.map((move, i) => (
-              <ArrowStyleSelect key={i} value={move}
+              <ArrowStyleSelect key={i} value={move} allowNone
                 label={`${editRoad.bwdLabel}機車道 ${i + 1} 箭頭`}
                 onChange={(value) => setEditRoad((er) => {
                   if (!er) return er

@@ -23,6 +23,10 @@ const KY = 110540
 const PAIR_MAX_M = 35 // 綠帶較寬的分離幹道，間隙上限放寬
 const SAMPLE_M = 4
 const MIN_ISLAND_M = 8
+/** 兩端都延續到隔壁路段的連續島面沒有最小長度可言，只擋退化幾何。 */
+const MIN_JOINED_ISLAND_M = 0.5
+/** 貫通接點兩側島面的重疊長度（公尺）：兩個多邊形端面方位角不同，需重疊補縫。 */
+const CENTER_ISLAND_JOIN_OVERLAP_M = 0.6
 const JUNCTION_CLEAR_M = 8 // 路口節點前後淨空（島在路口斷開 = 開口）
 
 export interface MedianIsland {
@@ -290,12 +294,16 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
 function islandSetbacks(graph: RoadGraph, e: ReturnType<RoadGraph['scopeEdges']>[number], total: number) {
   // road_merge 的 oneSideEntryNodes 對導航仍是可互動節點，但對承載它的主路
   // 只是連續道路中的側街入口；中央島不可在此被當成完整路口切斷。
-  const mergeThroughStart =
-    (e.road.properties.oneSideEntryNodes?.includes(e.fromNode) ?? false)
-    && graph.hasDistinctRoadAt(e.fromNode, e.road)
-  const mergeThroughEnd =
-    (e.road.properties.oneSideEntryNodes?.includes(e.toNode) ?? false)
-    && graph.hasDistinctRoadAt(e.toNode, e.road)
+  // 現地指定的中央島貫通接點（centerIslandJoinNodes）同理：島面在此不斷開，
+  // 差別只在兩段道路沒有被捏合成一段，所以要各自畫到接點。
+  const joined = (node: number) =>
+    e.road.properties.centerIslandJoinNodes?.includes(node) ?? false
+  const mergeThroughStart = joined(e.fromNode)
+    || ((e.road.properties.oneSideEntryNodes?.includes(e.fromNode) ?? false)
+      && graph.hasDistinctRoadAt(e.fromNode, e.road))
+  const mergeThroughEnd = joined(e.toNode)
+    || ((e.road.properties.oneSideEntryNodes?.includes(e.toNode) ?? false)
+      && graph.hasDistinctRoadAt(e.toNode, e.road))
   const startBrg = bearing(e.coords[1], e.coords[0])
   const endBrg = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
   const extra = (node: number, brg: number) => {
@@ -309,6 +317,9 @@ function islandSetbacks(graph: RoadGraph, e: ReturnType<RoadGraph['scopeEdges']>
       ? 0 : Math.min(Math.max(e.startSetbackM, extra(e.fromNode, startBrg)), total),
     s1: mergeThroughEnd
       ? total : Math.max(0, total - Math.max(e.endSetbackM, extra(e.toNode, endBrg))),
+    /** 該端的島面是否延續到隔壁路段（接縫或貫通接點），而不是在路口收邊 */
+    throughStart: mergeThroughStart,
+    throughEnd: mergeThroughEnd,
   }
 }
 
@@ -328,9 +339,12 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
   })
   for (const e of edges) {
     const p = e.road.properties
-    // 現地單一例外：這一段快慢分隔是白色槽化帶，不是實體綠化島。
+    // 現地指定例外：這些精確路段是白色槽化帶，不建立實體分隔島。
     // 白色槽化標線由 turnbays.buildSpecifiedWhiteMotoHatch 繪製。
-    if (p.osm_id === 126247880 && p.blockNode === 258785735) continue
+    if ((p.osm_id === 126247880 && p.blockNode === 258785735)
+      || (p.osm_id === 23875933 && p.blockNode === 2401086121)
+      || (p.osm_id === 94402836 && p.blockNode === 258785638)
+      || (p.osm_id === 1454602407 && p.blockNode === 7244167956)) continue
     const lanes = p.oneway === 'yes' || !e.back ? p.lanesForward : p.lanesBackward
     const moto = p.oneway === 'yes' ? p.motoF : e.back ? p.motoB : p.motoF
     const sep = (p.oneway === 'yes' ? p.motoSepF : e.back ? p.motoSepB : p.motoSepF) || 0
@@ -399,6 +413,9 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
   const edges = graph.scopeEdges((r) =>
     r.properties.oneway === 'no' && (r.properties.centerM || 0) > 0 &&
     r.properties.roadMarkingMode !== 'none' &&
+    // 高架：中央帶由 elevated3d 畫在橋面上，地面鋪島會在橋下留一條島面
+    // （高楠陸橋 way/23939182、楠楊高架橋 way/103678964 實例）
+    !r.properties.elevated &&
     r.properties.centerKind === 'island')
   for (const e of edges) {
     if (e.back) continue // 以順向 frame 統一處理一次
@@ -412,29 +429,51 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
       && manualMarkingSetbackM(e.road, e.toNode) === 0
     const s0 = extendFrom ? 0 : setbacks.s0
     const s1 = extendTo ? total : setbacks.s1
-    if (s1 - s0 < MIN_ISLAND_M) continue
-    const dv = 0
     const c = p.centerM / 2
     const radius = p.width_m / 2
     const tipExtension = Math.min(6, Math.sqrt(Math.max(0, radius * radius - c * c)))
-    const extendPoint = (pt: [number, number], brg: number) => offsetMeters(
+    // 貫通接點兩側是兩個獨立多邊形，端面各自垂直於自己的最後一段。方位角只要
+    // 差幾度，接縫就會留下一條細縫，所以兩邊都往接點外多鋪一點形成重疊。
+    const joinOverlap = Math.min(CENTER_ISLAND_JOIN_OVERLAP_M, tipExtension)
+    const joinStart = p.centerIslandJoinNodes?.includes(e.fromNode) ?? false
+    const joinEnd = p.centerIslandJoinNodes?.includes(e.toNode) ?? false
+    // 兩端都延續到隔壁路段時，這段只是連續島面的一小截；套用 8m 下限會在
+    // 接點與接縫之間留一段空白（外環西路那截只有 5.3m）。
+    const continuousPiece = (a: number, b: number) =>
+      Math.abs(a - s0) < 0.01 && setbacks.throughStart
+      && Math.abs(b - s1) < 0.01 && setbacks.throughEnd
+    const minIslandM = (a: number, b: number) =>
+      continuousPiece(a, b) ? MIN_JOINED_ISLAND_M : MIN_ISLAND_M
+    if (s1 - s0 < minIslandM(s0, s1)) continue
+    const dv = 0
+    const extendPoint = (pt: [number, number], brg: number, dist: number) => offsetMeters(
       pt,
-      Math.sin(brg * Math.PI / 180) * tipExtension,
-      Math.cos(brg * Math.PI / 180) * tipExtension,
+      Math.sin(brg * Math.PI / 180) * dist,
+      Math.cos(brg * Math.PI / 180) * dist,
     )
+    // 貫通接點所在的路段，其每個接縫都要補縫：scopeEdges 會在側街處把路段切開，
+    // 島面因此由數個多邊形拼成，端面方位角不同就會留下細縫。
+    const knitSeams = joinStart || joinEnd
+    /** reachStart/reachEnd = 這塊島面確實鋪到路段端點（沒有被偏心道切掉）。 */
     const extendIslandEnds = (
       left: [number, number][], right: [number, number][],
-      atStart: boolean, atEnd: boolean,
+      reachStart: boolean, reachEnd: boolean,
     ) => {
-      if (tipExtension > 0.05 && atStart) {
+      const startDist = !reachStart ? 0
+        : extendFrom ? tipExtension
+          : knitSeams && setbacks.throughStart ? joinOverlap : 0
+      const endDist = !reachEnd ? 0
+        : extendTo ? tipExtension
+          : knitSeams && setbacks.throughEnd ? joinOverlap : 0
+      if (startDist > 0.05) {
         const outward = bearing(e.coords[1], e.coords[0])
-        left.unshift(extendPoint(left[0], outward))
-        right.unshift(extendPoint(right[0], outward))
+        left.unshift(extendPoint(left[0], outward, startDist))
+        right.unshift(extendPoint(right[0], outward, startDist))
       }
-      if (tipExtension > 0.05 && atEnd) {
+      if (endDist > 0.05) {
         const outward = bearing(e.coords[e.coords.length - 2], e.coords[e.coords.length - 1])
-        left.push(extendPoint(left[left.length - 1], outward))
-        right.push(extendPoint(right[right.length - 1], outward))
+        left.push(extendPoint(left[left.length - 1], outward, endDist))
+        right.push(extendPoint(right[right.length - 1], outward, endDist))
       }
     }
     const fwdBay = bayMap.get(`${p.osm_id}@${e.toNode}`)
@@ -486,7 +525,8 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
       }
       const left = ds.map((d) => offsetAt(e.coords, cum, d, offsetsAt(d)[0]))
       const right = ds.map((d) => offsetAt(e.coords, cum, d, offsetsAt(d)[1]))
-      extendIslandEnds(left, right, extendFrom && !bwdBay, extendTo && !fwdBay)
+      extendIslandEnds(
+        left, right, !bwdBay && s0 <= 0.01, !fwdBay && s1 >= total - 0.01)
       const ring = [...left, ...[...right].reverse(), left[0]]
       if (ring.length >= 4) {
         out.push({ key: `median/way/${p.osm_id}/A0`, polygon: ring })
@@ -498,7 +538,7 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
     if (bwdBay) ivs = ivs.flatMap((iv) => subtract(iv, [total - bwdBay.endM, total - bwdBay.d0M]))
     let k = 0
     for (const [a, b] of ivs) {
-      if (b - a < MIN_ISLAND_M) continue
+      if (b - a < minIslandM(a, b)) continue
       const ds: number[] = []
       for (let d = a; d < b; d += 4) ds.push(d)
       ds.push(b)
@@ -506,8 +546,8 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
       const right = ds.map((d) => offsetAt(e.coords, cum, d, dv + c))
       extendIslandEnds(
         left, right,
-        extendFrom && Math.abs(a) < 0.01,
-        extendTo && Math.abs(b - total) < 0.01,
+        Math.abs(a) < 0.01,
+        Math.abs(b - total) < 0.01,
       )
       out.push({
         key: `median/way/${p.osm_id}/A${k++}`,

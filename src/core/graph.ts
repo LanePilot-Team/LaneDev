@@ -4,7 +4,9 @@
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
 import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo.ts'
 import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads.ts'
-import { oneSideEntryTransitionAllowed } from './oneSideEntry.ts'
+import {
+  medianBarrierAt, medianContinuationAt, oneSideEntryTransitionAllowed,
+} from './oneSideEntry.ts'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
@@ -16,6 +18,7 @@ import {
   type LaneAction,
   type LaneDecision,
 } from './laneDecision.ts'
+import { profileTurnAllowed } from './turnRestrictions.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -82,17 +85,23 @@ function transitionAllowed(
   outgoing: Edge,
   nodeId: number,
   barrierNode: boolean,
+  profile: Profile,
 ): boolean {
   if (!incoming) return true
-  const incomingBarrier = incoming.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
-  const outgoingBarrier = outgoing.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  if (!profileTurnAllowed(
+    profile, nodeId,
+    incoming.road, incoming.back,
+    outgoing.road, outgoing.back,
+  )) return false
+  const incomingBarrier = medianBarrierAt(incoming.road, nodeId)
+  const outgoingBarrier = medianBarrierAt(outgoing.road, nodeId)
   if (barrierNode) {
     const incomingCoords = incoming.coords
     const incomingBearing = bearing(
       incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
     const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
     const delta = angleDelta(incomingBearing, outgoingBearing)
-    const sameMainRoad = incoming.road.properties.osm_id === outgoing.road.properties.osm_id
+    const sameMainRoad = medianContinuationAt(incoming.road, outgoing.road, nodeId)
     if ((incomingBarrier && outgoingBarrier)
       || ((incomingBarrier || outgoingBarrier) && sameMainRoad)) {
       if (classifyTurn(delta) === 'uturn') return false
@@ -272,9 +281,13 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
     const total = L0 * LANE_WIDTH_M
       + (motoCount > 0 ? motoCount * MOTO_LANE_M + sep : 0)
     const base = -total / 2
-    const lane = (k: number) => base + (k - 0.5) * LANE_WIDTH_M
+    const motoLeft = !!p.motoLeftF && motoCount > 0
+    const carBase = base + (motoLeft ? motoCount * MOTO_LANE_M + sep : 0)
+    const lane = (k: number) => carBase + (k - 0.5) * LANE_WIDTH_M
     const moto = motoCount > 0
-      ? base + L0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
+      ? motoLeft
+        ? base + (motoCount - 0.5) * MOTO_LANE_M
+        : base + L0 * LANE_WIDTH_M + sep + (motoCount - 0.5) * MOTO_LANE_M
       : lane(L)
     const car = (k: number) => (L0 > 0 ? lane(k) : moto) // 0 車道時所有偏移落在機車道
     if (profile === 'moto') {
@@ -417,6 +430,10 @@ export class RoadGraph {
       for (const id of r.properties.roadMergeBarrierNodes ?? []) {
         this.roadMergeBarrierNodes.add(id)
       }
+      // 現地指定的中央島貫通接點與捏合接縫共用同一套「島面連續 = 不得迴轉」語意
+      for (const id of r.properties.centerIslandJoinNodes ?? []) {
+        this.roadMergeBarrierNodes.add(id)
+      }
     }
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -449,6 +466,21 @@ export class RoadGraph {
   hasDistinctRoadAt(nodeId: number, carrier: RoadFeature): boolean {
     return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])].some((edge) =>
       edge.road.properties.osm_id !== carrier.properties.osm_id)
+  }
+
+  /** 指定節點是否接有符合條件的道路；出邊與入邊都看，避免單行道漏判。 */
+  hasRoadAt(nodeId: number, predicate: (road: RoadFeature) => boolean): boolean {
+    return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]
+      .some((edge) => predicate(edge.road))
+  }
+
+  /** 指定節點符合條件道路的最大實際寬度。 */
+  maxRoadWidthAt(nodeId: number, predicate: (road: RoadFeature) => boolean): number {
+    let width = 0
+    for (const edge of [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]) {
+      if (predicate(edge.road)) width = Math.max(width, edge.road.properties.width_m)
+    }
+    return width
   }
 
   private push(e: Edge) {
@@ -888,6 +920,7 @@ export class RoadGraph {
     const goals = primaryGoal.edge.road.properties.oneway === 'no'
       && (primaryGoal.edge.road.properties.centerM || 0) <= 0
       && !primaryGoal.edge.road.properties.roadMergeBarrierNodes?.length
+      && !primaryGoal.edge.road.properties.centerIslandJoinNodes?.length
       ? projectedGoals
       : [primaryGoal]
     for (const goal of goals) {
@@ -995,6 +1028,7 @@ export class RoadGraph {
           if (!transitionAllowed(
             current.incoming, ge.part, current.node,
             this.roadMergeBarrierNodes.has(current.node),
+            profile,
           )) continue
           const transition = enforceLaneDirection
             ? this.laneTransitionPlan(
@@ -1019,6 +1053,7 @@ export class RoadGraph {
         if (!transitionAllowed(
           current.incoming, e, current.node,
           this.roadMergeBarrierNodes.has(current.node),
+          profile,
         )) continue
         const transition = enforceLaneDirection
           ? this.laneTransitionPlan(

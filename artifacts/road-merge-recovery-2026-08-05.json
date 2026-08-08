@@ -1,0 +1,1678 @@
+{
+  "format": "lanedev-road-merge-recovery-v3",
+  "generatedAt": "2026-08-05T08:39:54.197Z",
+  "databasePath": "C:\\code\\LaneDev-main_test\\LaneDev\\public\\data\\road_database.json",
+  "sourceCommit": "",
+  "sourceDatabaseSha256": "380604e0c58ceb9ea040a72f6f60db229f5907a53dec1823cd98dfa92600ff4c",
+  "summary": {
+    "total": 50,
+    "upgraded": 2,
+    "rolledBack": 0,
+    "alreadyV2": 48
+  },
+  "totals": {
+    "replayable": 47,
+    "recoverable_via_provenance": 3,
+    "needs_manual_review": 0,
+    "legacy_destructive": 0,
+    "invalid": 0
+  },
+  "upgraded": [
+    {
+      "mergeKey": "merge/way/281341659@b/2206349219+way/281341659@b/1407167209",
+      "roadName": "後昌路",
+      "sourceSeq": 3334,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/281341659@b/2206349219",
+      "secondaryKey": "way/281341659@b/1407167209",
+      "location": {
+        "nodeId": 2206349219,
+        "longitude": 120.29406287499663,
+        "latitude": 22.713172632375873,
+        "googleMaps": "https://www.google.com/maps/@22.713172632375873,120.29406287499663,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206349219"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325307@b/1080697450+way/254325307@b/1080697512",
+      "roadName": "藍昌路",
+      "sourceSeq": 3339,
+      "status": "replayable",
+      "outcome": "upgraded",
+      "detail": "可依序重播",
+      "primaryKey": "way/254325307@b/1080697450",
+      "secondaryKey": "way/254325307@b/1080697512",
+      "location": {
+        "nodeId": 1080697450,
+        "longitude": 120.29206514043723,
+        "latitude": 22.72962731334906,
+        "googleMaps": "https://www.google.com/maps/@22.72962731334906,120.29206514043723,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080697450"
+      }
+    }
+  ],
+  "rolledBack": [],
+  "alreadyV2": [
+    {
+      "mergeKey": "merge/way/254325307@b/12658227994+way/254325307@b/256245347",
+      "roadName": "藍昌路",
+      "sourceSeq": 3343,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325307@b/12658227994",
+      "secondaryKey": "way/254325307@b/256245347",
+      "location": {
+        "nodeId": 12658227994,
+        "longitude": 120.29235600984691,
+        "latitude": 22.73179771761087,
+        "googleMaps": "https://www.google.com/maps/@22.73179771761087,120.29235600984691,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/12658227994"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697254+way/312871463@b/1080696851",
+      "roadName": "德中路",
+      "sourceSeq": 3345,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/312871463@b/1080697254",
+      "secondaryKey": "way/312871463@b/1080696851",
+      "location": {
+        "nodeId": 1080696851,
+        "longitude": 120.2747883,
+        "latitude": 22.7265288,
+        "googleMaps": "https://www.google.com/maps/@22.7265288,120.2747883,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080696851"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/2206324454+way/312871463@b/8420604124",
+      "roadName": "德中路",
+      "sourceSeq": 3347,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/312871463@b/2206324454",
+      "secondaryKey": "way/312871463@b/8420604124",
+      "location": {
+        "nodeId": 8420604124,
+        "longitude": 120.2760852,
+        "latitude": 22.7245962,
+        "googleMaps": "https://www.google.com/maps/@22.7245962,120.2760852,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/8420604124"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/2206324442+way/267715934@b/4585345353",
+      "roadName": "德中路",
+      "sourceSeq": 3349,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715934@b/2206324442",
+      "secondaryKey": "way/267715934@b/4585345353",
+      "location": {
+        "nodeId": 4585345353,
+        "longitude": 120.2776658,
+        "latitude": 22.7227034,
+        "googleMaps": "https://www.google.com/maps/@22.7227034,120.2776658,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4585345353"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/9853009726+way/267715934@b/2206324436",
+      "roadName": "德中路",
+      "sourceSeq": 3351,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715934@b/9853009726",
+      "secondaryKey": "way/267715934@b/2206324436",
+      "location": {
+        "nodeId": 9853009726,
+        "longitude": 120.2785028,
+        "latitude": 22.7221724,
+        "googleMaps": "https://www.google.com/maps/@22.7221724,120.2785028,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/9853009726"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/1398635978",
+      "roadName": "右昌街",
+      "sourceSeq": 3353,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/1398635978",
+      "location": {
+        "nodeId": 1398635978,
+        "longitude": 120.28371918808679,
+        "latitude": 22.719057258826922,
+        "googleMaps": "https://www.google.com/maps/@22.719057258826922,120.28371918808679,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635978"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/256455983+way/267715913@b/2956870896",
+      "roadName": "右昌街",
+      "sourceSeq": 3355,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715913@b/256455983",
+      "secondaryKey": "way/267715913@b/2956870896",
+      "location": {
+        "nodeId": 2956870896,
+        "longitude": 120.28465426522413,
+        "latitude": 22.718490348170008,
+        "googleMaps": "https://www.google.com/maps/@22.718490348170008,120.28465426522413,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2956870896"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/256455983",
+      "roadName": "右昌街",
+      "sourceSeq": 3357,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/256455983",
+      "location": {
+        "nodeId": 1398635709,
+        "longitude": 120.28421299006834,
+        "latitude": 22.71875788073867,
+        "googleMaps": "https://www.google.com/maps/@22.71875788073867,120.28421299006834,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635709"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/1398634826+way/339750724@b/1398636099",
+      "roadName": "右昌街",
+      "sourceSeq": 3359,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/339750724@b/1398634826",
+      "secondaryKey": "way/339750724@b/1398636099",
+      "location": {
+        "nodeId": 1398636099,
+        "longitude": 120.2853798,
+        "latitude": 22.7179879,
+        "googleMaps": "https://www.google.com/maps/@22.7179879,120.2853798,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398636099"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634826",
+      "roadName": "右昌街",
+      "sourceSeq": 3361,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634826",
+      "location": {
+        "nodeId": 1398634826,
+        "longitude": 120.28561584147815,
+        "latitude": 22.717910054160345,
+        "googleMaps": "https://www.google.com/maps/@22.717910054160345,120.28561584147815,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398634826"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635694+way/23683314@b/1398634474",
+      "roadName": "右昌街",
+      "sourceSeq": 3365,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/23683314@b/1398635694",
+      "secondaryKey": "way/23683314@b/1398634474",
+      "location": {
+        "nodeId": 1398634474,
+        "longitude": 120.2868877,
+        "latitude": 22.7170969,
+        "googleMaps": "https://www.google.com/maps/@22.7170969,120.2868877,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398634474"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635837+way/23683314@b/1398635694",
+      "roadName": "右昌街",
+      "sourceSeq": 3367,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/23683314@b/1398635837",
+      "secondaryKey": "way/23683314@b/1398635694",
+      "location": {
+        "nodeId": 1398635694,
+        "longitude": 120.2872028,
+        "latitude": 22.7169992,
+        "googleMaps": "https://www.google.com/maps/@22.7169992,120.2872028,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635694"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/265968424+way/23683314@b/1398635837",
+      "roadName": "右昌街",
+      "sourceSeq": 3369,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/23683314@b/265968424",
+      "secondaryKey": "way/23683314@b/1398635837",
+      "location": {
+        "nodeId": 1398635837,
+        "longitude": 120.2871693,
+        "latitude": 22.7169064,
+        "googleMaps": "https://www.google.com/maps/@22.7169064,120.2871693,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1398635837"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176462+way/267715892@b/2401176460",
+      "roadName": "軍校路",
+      "sourceSeq": 3371,
+      "status": "recoverable_via_provenance",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715892@b/2401176462",
+      "secondaryKey": "way/267715892@b/2401176460",
+      "location": {
+        "nodeId": 2401176460,
+        "longitude": 120.2929731,
+        "latitude": 22.7086649,
+        "googleMaps": "https://www.google.com/maps/@22.7086649,120.2929731,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176460"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176466+way/267715892@b/2401176462",
+      "roadName": "軍校路",
+      "sourceSeq": 3373,
+      "status": "recoverable_via_provenance",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715892@b/2401176466",
+      "secondaryKey": "way/267715892@b/2401176462",
+      "location": {
+        "nodeId": 2401176462,
+        "longitude": 120.292968,
+        "latitude": 22.7085939,
+        "googleMaps": "https://www.google.com/maps/@22.7085939,120.292968,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176462"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/2401176466",
+      "roadName": "軍校路",
+      "sourceSeq": 3375,
+      "status": "recoverable_via_provenance",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/2401176466",
+      "location": {
+        "nodeId": 2401176466,
+        "longitude": 120.292958,
+        "latitude": 22.7085321,
+        "googleMaps": "https://www.google.com/maps/@22.7085321,120.292958,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2401176466"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697102",
+      "roadName": "德中路",
+      "sourceSeq": 3380,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697102",
+      "location": {
+        "nodeId": 1080697102,
+        "longitude": 120.27251821941903,
+        "latitude": 22.729462568698665,
+        "googleMaps": "https://www.google.com/maps/@22.729462568698665,120.27251821941903,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080697102"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697358",
+      "roadName": "德中路",
+      "sourceSeq": 3382,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697358",
+      "location": {
+        "nodeId": 1080697358,
+        "longitude": 120.27214033735282,
+        "latitude": 22.72996920131409,
+        "googleMaps": "https://www.google.com/maps/@22.72996920131409,120.27214033735282,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1080697358"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/256455721+way/312871463@b/4668515918",
+      "roadName": "德中路",
+      "sourceSeq": 3384,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/312871463@b/256455721",
+      "secondaryKey": "way/312871463@b/4668515918",
+      "location": {
+        "nodeId": 4668515918,
+        "longitude": 120.27362207751308,
+        "latitude": 22.7279852800404,
+        "googleMaps": "https://www.google.com/maps/@22.7279852800404,120.27362207751308,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4668515918"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/262083286+way/383026294@b/258786223",
+      "roadName": "軍校路",
+      "sourceSeq": 3386,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/383026294@b/262083286",
+      "secondaryKey": "way/383026294@b/258786223",
+      "location": {
+        "nodeId": 262083286,
+        "longitude": 120.2928091952179,
+        "latitude": 22.705610801046483,
+        "googleMaps": "https://www.google.com/maps/@22.705610801046483,120.2928091952179,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/262083286"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/2938751972+way/383026294@b/2938751971",
+      "roadName": "軍校路",
+      "sourceSeq": 3388,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/383026294@b/2938751972",
+      "secondaryKey": "way/383026294@b/2938751971",
+      "location": {
+        "nodeId": 2938751971,
+        "longitude": 120.2925069,
+        "latitude": 22.7048345,
+        "googleMaps": "https://www.google.com/maps/@22.7048345,120.2925069,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2938751971"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/4315349243+way/383026294@b/2938751972",
+      "roadName": "軍校路",
+      "sourceSeq": 3390,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/383026294@b/4315349243",
+      "secondaryKey": "way/383026294@b/2938751972",
+      "location": {
+        "nodeId": 2938751972,
+        "longitude": 120.2925083,
+        "latitude": 22.70447,
+        "googleMaps": "https://www.google.com/maps/@22.70447,120.2925083,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2938751972"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/2206349235",
+      "roadName": "加昌路",
+      "sourceSeq": 3392,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/2206349235",
+      "location": {
+        "nodeId": 2206349235,
+        "longitude": 120.2955899,
+        "latitude": 22.7143433,
+        "googleMaps": "https://www.google.com/maps/@22.7143433,120.2955899,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206349235"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/1400036052",
+      "roadName": "加昌路",
+      "sourceSeq": 3394,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/1400036052",
+      "location": {
+        "nodeId": 2206349237,
+        "longitude": 120.2958517,
+        "latitude": 22.7144334,
+        "googleMaps": "https://www.google.com/maps/@22.7144334,120.2958517,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206349237"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/1400036046",
+      "roadName": "加昌路",
+      "sourceSeq": 3396,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/1400036046",
+      "location": {
+        "nodeId": 1400036405,
+        "longitude": 120.2964683,
+        "latitude": 22.7146483,
+        "googleMaps": "https://www.google.com/maps/@22.7146483,120.2964683,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036405"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206232294+way/280015655@b/1400036098",
+      "roadName": "加昌路",
+      "sourceSeq": 3398,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280015655@b/2206232294",
+      "secondaryKey": "way/280015655@b/1400036098",
+      "location": {
+        "nodeId": 1400036098,
+        "longitude": 120.29744851157412,
+        "latitude": 22.71509552149069,
+        "googleMaps": "https://www.google.com/maps/@22.71509552149069,120.29744851157412,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036098"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/2206232291",
+      "roadName": "加昌路",
+      "sourceSeq": 3400,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/2206232291",
+      "location": {
+        "nodeId": 1400036046,
+        "longitude": 120.2968139031436,
+        "latitude": 22.71485803908675,
+        "googleMaps": "https://www.google.com/maps/@22.71485803908675,120.2968139031436,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036046"
+      }
+    },
+    {
+      "mergeKey": "merge/way/293422503@b/1400036749+way/293422503@b/304709043",
+      "roadName": "加昌路",
+      "sourceSeq": 3402,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/293422503@b/1400036749",
+      "secondaryKey": "way/293422503@b/304709043",
+      "location": {
+        "nodeId": 1400036749,
+        "longitude": 120.2987823,
+        "latitude": 22.71565,
+        "googleMaps": "https://www.google.com/maps/@22.71565,120.2987823,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036749"
+      }
+    },
+    {
+      "mergeKey": "merge/way/268219230@b/1400036464+way/268219230@b/10894062953",
+      "roadName": "加昌路",
+      "sourceSeq": 3404,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/268219230@b/1400036464",
+      "secondaryKey": "way/268219230@b/10894062953",
+      "location": {
+        "nodeId": 10894062953,
+        "longitude": 120.3000992,
+        "latitude": 22.7161202,
+        "googleMaps": "https://www.google.com/maps/@22.7161202,120.3000992,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/10894062953"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/2417585497+way/23976945@b/2417585494",
+      "roadName": "加昌路",
+      "sourceSeq": 3406,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/23976945@b/2417585497",
+      "secondaryKey": "way/23976945@b/2417585494",
+      "location": {
+        "nodeId": 2417585494,
+        "longitude": 120.3151321,
+        "latitude": 22.7219622,
+        "googleMaps": "https://www.google.com/maps/@22.7219622,120.3151321,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2417585494"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/1219300551+way/280277096@b/2377566099",
+      "roadName": "加昌路",
+      "sourceSeq": 3408,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280277096@b/1219300551",
+      "secondaryKey": "way/280277096@b/2377566099",
+      "location": {
+        "nodeId": 1219300551,
+        "longitude": 120.3056390180698,
+        "latitude": 22.718138362550732,
+        "googleMaps": "https://www.google.com/maps/@22.718138362550732,120.3056390180698,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1219300551"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/256730893+way/280277096@b/265599589",
+      "roadName": "加昌路",
+      "sourceSeq": 3410,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/280277096@b/256730893",
+      "secondaryKey": "way/280277096@b/265599589",
+      "location": {
+        "nodeId": 265599589,
+        "longitude": 120.3089414,
+        "latitude": 22.7192692,
+        "googleMaps": "https://www.google.com/maps/@22.7192692,120.3089414,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/265599589"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/256245267+way/23976945@b/1401138499",
+      "roadName": "加昌路",
+      "sourceSeq": 3412,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/23976945@b/256245267",
+      "secondaryKey": "way/23976945@b/1401138499",
+      "location": {
+        "nodeId": 1401138499,
+        "longitude": 120.3114176,
+        "latitude": 22.7204191,
+        "googleMaps": "https://www.google.com/maps/@22.7204191,120.3114176,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1401138499"
+      }
+    },
+    {
+      "mergeKey": "merge/way/230216178@b/2624297542+way/268219227@b/1196964687",
+      "roadName": "加昌路",
+      "sourceSeq": 3414,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/230216178@b/2624297542",
+      "secondaryKey": "way/268219227@b/1196964687",
+      "location": {
+        "nodeId": 1196964687,
+        "longitude": 120.3188825,
+        "latitude": 22.7236125,
+        "googleMaps": "https://www.google.com/maps/@22.7236125,120.3188825,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1196964687"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/256455746+way/254325305@b/2379749920",
+      "roadName": "德民路",
+      "sourceSeq": 3416,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/256455746",
+      "secondaryKey": "way/254325305@b/2379749920",
+      "location": {
+        "nodeId": 2379749920,
+        "longitude": 120.29198869496852,
+        "latitude": 22.721702968209716,
+        "googleMaps": "https://www.google.com/maps/@22.721702968209716,120.29198869496852,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2379749920"
+      }
+    },
+    {
+      "mergeKey": "merge/way/297138323@b/13305979122+way/1450825430@b/258784609",
+      "roadName": "藍昌路",
+      "sourceSeq": 3418,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/297138323@b/13305979122",
+      "secondaryKey": "way/1450825430@b/258784609",
+      "location": {
+        "nodeId": 13305979122,
+        "longitude": 120.29162786095868,
+        "latitude": 22.726484728978562,
+        "googleMaps": "https://www.google.com/maps/@22.726484728978562,120.29162786095868,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/13305979122"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1400036368+way/254325305@b/256455769",
+      "roadName": "德民路",
+      "sourceSeq": 3420,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/1400036368",
+      "secondaryKey": "way/254325305@b/256455769",
+      "location": {
+        "nodeId": 256455769,
+        "longitude": 120.2945163,
+        "latitude": 22.7219859,
+        "googleMaps": "https://www.google.com/maps/@22.7219859,120.2945163,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/256455769"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1398635729+way/254325305@b/1400036368",
+      "roadName": "德民路",
+      "sourceSeq": 3422,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/1398635729",
+      "secondaryKey": "way/254325305@b/1400036368",
+      "location": {
+        "nodeId": 1400036368,
+        "longitude": 120.29388401674038,
+        "latitude": 22.721928049968362,
+        "googleMaps": "https://www.google.com/maps/@22.721928049968362,120.29388401674038,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036368"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/1420142022@b/13049704155",
+      "roadName": "德民路",
+      "sourceSeq": 3424,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/1420142022@b/13049704155",
+      "location": {
+        "nodeId": 13049704155,
+        "longitude": 120.2956702,
+        "latitude": 22.7223994,
+        "googleMaps": "https://www.google.com/maps/@22.7223994,120.2956702,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/13049704155"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/1400036861",
+      "roadName": "德民路",
+      "sourceSeq": 3426,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/1400036861",
+      "location": {
+        "nodeId": 1401138287,
+        "longitude": 120.2952755,
+        "latitude": 22.7225036,
+        "googleMaps": "https://www.google.com/maps/@22.7225036,120.2952755,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1401138287"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/3164180313",
+      "roadName": "德民路",
+      "sourceSeq": 3428,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/3164180313",
+      "location": {
+        "nodeId": 1400036861,
+        "longitude": 120.29524264277696,
+        "latitude": 22.722377476563278,
+        "googleMaps": "https://www.google.com/maps/@22.722377476563278,120.29524264277696,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1400036861"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/7477787914+way/126247850@b/12599118960",
+      "roadName": "德民路",
+      "sourceSeq": 3430,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/126247850@b/7477787914",
+      "secondaryKey": "way/126247850@b/12599118960",
+      "location": {
+        "nodeId": 12599118960,
+        "longitude": 120.3157708,
+        "latitude": 22.7305373,
+        "googleMaps": "https://www.google.com/maps/@22.7305373,120.3157708,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/12599118960"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/258785765+way/126247850@b/2913992342",
+      "roadName": "德民路",
+      "sourceSeq": 3432,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/126247850@b/258785765",
+      "secondaryKey": "way/126247850@b/2913992342",
+      "location": {
+        "nodeId": 2913992342,
+        "longitude": 120.31647834640353,
+        "latitude": 22.731035321007433,
+        "googleMaps": "https://www.google.com/maps/@22.731035321007433,120.31647834640353,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2913992342"
+      }
+    },
+    {
+      "mergeKey": "merge/way/281341661@b/4586442323+way/281341661@b/1372607153",
+      "roadName": "後昌路",
+      "sourceSeq": 3436,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/281341661@b/4586442323",
+      "secondaryKey": "way/281341661@b/1372607153",
+      "location": {
+        "nodeId": 4586442323,
+        "longitude": 120.28831404351948,
+        "latitude": 22.71607064849144,
+        "googleMaps": "https://www.google.com/maps/@22.71607064849144,120.28831404351948,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/4586442323"
+      }
+    },
+    {
+      "mergeKey": "merge/way/24204253@b/2398129507+way/24204253@b/1219300659",
+      "roadName": "學專路",
+      "sourceSeq": 3640,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/24204253@b/2398129507",
+      "secondaryKey": "way/24204253@b/1219300659",
+      "location": {
+        "nodeId": 2398129507,
+        "longitude": 120.3154594,
+        "latitude": 22.7147264,
+        "googleMaps": "https://www.google.com/maps/@22.7147264,120.3154594,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2398129507"
+      }
+    },
+    {
+      "mergeKey": "merge/way/24204253@b/1219300429+way/24204253@b/1219300564",
+      "roadName": "學專路",
+      "sourceSeq": 3645,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/24204253@b/1219300429",
+      "secondaryKey": "way/24204253@b/1219300564",
+      "location": {
+        "nodeId": 1219300564,
+        "longitude": 120.314444,
+        "latitude": 22.7141354,
+        "googleMaps": "https://www.google.com/maps/@22.7141354,120.314444,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/1219300564"
+      }
+    },
+    {
+      "mergeKey": "merge/way/268219234@b/2206324424+way/1454602407@b/2206324417",
+      "roadName": "外環西路",
+      "sourceSeq": 3849,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/268219234@b/2206324424",
+      "secondaryKey": "way/1454602407@b/2206324417",
+      "location": {
+        "nodeId": 2206324417,
+        "longitude": 120.30234969214254,
+        "latitude": 22.713147048463146,
+        "googleMaps": "https://www.google.com/maps/@22.713147048463146,120.30234969214254,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2206324417"
+      }
+    },
+    {
+      "mergeKey": "merge/way/297205391@b/3010545851+way/297205391@b/2919858675",
+      "roadName": "左楠路",
+      "sourceSeq": 3886,
+      "status": "replayable",
+      "outcome": "already_v2",
+      "detail": "已是 schema v2，不重複遷移",
+      "primaryKey": "way/297205391@b/3010545851",
+      "secondaryKey": "way/297205391@b/2919858675",
+      "location": {
+        "nodeId": 2919858675,
+        "longitude": 120.30230769324382,
+        "latitude": 22.710699458849,
+        "googleMaps": "https://www.google.com/maps/@22.710699458849,120.30230769324382,20z",
+        "openStreetMap": "https://www.openstreetmap.org/node/2919858675"
+      }
+    }
+  ],
+  "rows": [
+    {
+      "mergeKey": "merge/way/281341659@b/2206349219+way/281341659@b/1407167209",
+      "primaryKey": "way/281341659@b/2206349219",
+      "secondaryKey": "way/281341659@b/1407167209",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206349219,
+        "primaryBlockKey": "way/281341659@b/2206349219",
+        "secondaryBlockKey": "way/281341659@b/1407167209",
+        "resolvedBy": "exact",
+        "sourceSeq": 3334,
+        "sourceTs": "2026-08-01T08:22:54.993Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325307@b/1080697450+way/254325307@b/1080697512",
+      "primaryKey": "way/254325307@b/1080697450",
+      "secondaryKey": "way/254325307@b/1080697512",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080697450,
+        "primaryBlockKey": "way/254325307@b/1080697450",
+        "secondaryBlockKey": "way/254325307@b/1080697512",
+        "resolvedBy": "exact",
+        "sourceSeq": 3339,
+        "sourceTs": "2026-08-01T09:06:08.457Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325307@b/12658227994+way/254325307@b/256245347",
+      "primaryKey": "way/254325307@b/12658227994",
+      "secondaryKey": "way/254325307@b/256245347",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 12658227994,
+        "primaryBlockKey": "way/254325307@b/12658227994",
+        "secondaryBlockKey": "way/254325307@b/256245347",
+        "resolvedBy": "exact",
+        "sourceSeq": 3343,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697254+way/312871463@b/1080696851",
+      "primaryKey": "way/312871463@b/1080697254",
+      "secondaryKey": "way/312871463@b/1080696851",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080696851,
+        "primaryBlockKey": "way/312871463@b/1080697254",
+        "secondaryBlockKey": "way/312871463@b/1080696851",
+        "resolvedBy": "exact",
+        "sourceSeq": 3345,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/2206324454+way/312871463@b/8420604124",
+      "primaryKey": "way/312871463@b/2206324454",
+      "secondaryKey": "way/312871463@b/8420604124",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 8420604124,
+        "primaryBlockKey": "way/312871463@b/2206324454",
+        "secondaryBlockKey": "way/312871463@b/8420604124",
+        "resolvedBy": "exact",
+        "sourceSeq": 3347,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/2206324442+way/267715934@b/4585345353",
+      "primaryKey": "way/267715934@b/2206324442",
+      "secondaryKey": "way/267715934@b/4585345353",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4585345353,
+        "primaryBlockKey": "way/267715934@b/2206324442",
+        "secondaryBlockKey": "way/267715934@b/4585345353",
+        "resolvedBy": "exact",
+        "sourceSeq": 3349,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715934@b/9853009726+way/267715934@b/2206324436",
+      "primaryKey": "way/267715934@b/9853009726",
+      "secondaryKey": "way/267715934@b/2206324436",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 9853009726,
+        "primaryBlockKey": "way/267715934@b/9853009726",
+        "secondaryBlockKey": "way/267715934@b/2206324436",
+        "resolvedBy": "exact",
+        "sourceSeq": 3351,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/1398635978",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/1398635978",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635978,
+        "primaryBlockKey": "way/267715913@b/1398635709",
+        "secondaryBlockKey": "way/267715913@b/1398635978",
+        "resolvedBy": "exact",
+        "sourceSeq": 3353,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/256455983+way/267715913@b/2956870896",
+      "primaryKey": "way/267715913@b/256455983",
+      "secondaryKey": "way/267715913@b/2956870896",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2956870896,
+        "primaryBlockKey": "way/267715913@b/256455983",
+        "secondaryBlockKey": "way/267715913@b/2956870896",
+        "resolvedBy": "exact",
+        "sourceSeq": 3355,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715913@b/1398635709+way/267715913@b/256455983",
+      "primaryKey": "way/267715913@b/1398635709",
+      "secondaryKey": "way/267715913@b/256455983",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635709,
+        "primaryBlockKey": "way/267715913@b/1398635709",
+        "secondaryBlockKey": "way/267715913@b/256455983",
+        "resolvedBy": "exact",
+        "sourceSeq": 3357,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/1398634826+way/339750724@b/1398636099",
+      "primaryKey": "way/339750724@b/1398634826",
+      "secondaryKey": "way/339750724@b/1398636099",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398636099,
+        "primaryBlockKey": "way/339750724@b/1398634826",
+        "secondaryBlockKey": "way/339750724@b/1398636099",
+        "resolvedBy": "exact",
+        "sourceSeq": 3359,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/339750724@b/265968432+way/339750724@b/1398634826",
+      "primaryKey": "way/339750724@b/265968432",
+      "secondaryKey": "way/339750724@b/1398634826",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398634826,
+        "primaryBlockKey": "way/339750724@b/265968432",
+        "secondaryBlockKey": "way/339750724@b/1398634826",
+        "resolvedBy": "exact",
+        "sourceSeq": 3361,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635694+way/23683314@b/1398634474",
+      "primaryKey": "way/23683314@b/1398635694",
+      "secondaryKey": "way/23683314@b/1398634474",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398634474,
+        "primaryBlockKey": "way/23683314@b/1398635694",
+        "secondaryBlockKey": "way/23683314@b/1398634474",
+        "resolvedBy": "exact",
+        "sourceSeq": 3365,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/1398635837+way/23683314@b/1398635694",
+      "primaryKey": "way/23683314@b/1398635837",
+      "secondaryKey": "way/23683314@b/1398635694",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635694,
+        "primaryBlockKey": "way/23683314@b/1398635837",
+        "secondaryBlockKey": "way/23683314@b/1398635694",
+        "resolvedBy": "exact",
+        "sourceSeq": 3367,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23683314@b/265968424+way/23683314@b/1398635837",
+      "primaryKey": "way/23683314@b/265968424",
+      "secondaryKey": "way/23683314@b/1398635837",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1398635837,
+        "primaryBlockKey": "way/23683314@b/265968424",
+        "secondaryBlockKey": "way/23683314@b/1398635837",
+        "resolvedBy": "exact",
+        "sourceSeq": 3369,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176462+way/267715892@b/2401176460",
+      "primaryKey": "way/267715892@b/2401176462",
+      "secondaryKey": "way/267715892@b/2401176460",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176460,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 3371,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/2401176466+way/267715892@b/2401176462",
+      "primaryKey": "way/267715892@b/2401176466",
+      "secondaryKey": "way/267715892@b/2401176462",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176462,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 3373,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/267715892@b/1372607199+way/267715892@b/2401176466",
+      "primaryKey": "way/267715892@b/1372607199",
+      "secondaryKey": "way/267715892@b/2401176466",
+      "status": "recoverable_via_provenance",
+      "detail": "主次來源已吸收到同一存活道路",
+      "resolved": {
+        "junctionNodeId": 2401176466,
+        "primaryBlockKey": "way/383026294@b/1372607276",
+        "secondaryBlockKey": "way/383026294@b/1372607276",
+        "resolvedBy": "already-absorbed",
+        "sourceSeq": 3375,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697102",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697102",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080697102,
+        "primaryBlockKey": "way/312871463@b/1080697514",
+        "secondaryBlockKey": "way/312871463@b/1080697102",
+        "resolvedBy": "exact",
+        "sourceSeq": 3380,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/1080697514+way/312871463@b/1080697358",
+      "primaryKey": "way/312871463@b/1080697514",
+      "secondaryKey": "way/312871463@b/1080697358",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1080697358,
+        "primaryBlockKey": "way/312871463@b/1080697514",
+        "secondaryBlockKey": "way/312871463@b/1080697358",
+        "resolvedBy": "exact",
+        "sourceSeq": 3382,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/312871463@b/256455721+way/312871463@b/4668515918",
+      "primaryKey": "way/312871463@b/256455721",
+      "secondaryKey": "way/312871463@b/4668515918",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4668515918,
+        "primaryBlockKey": "way/312871463@b/256455721",
+        "secondaryBlockKey": "way/312871463@b/4668515918",
+        "resolvedBy": "exact",
+        "sourceSeq": 3384,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/262083286+way/383026294@b/258786223",
+      "primaryKey": "way/383026294@b/262083286",
+      "secondaryKey": "way/383026294@b/258786223",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 262083286,
+        "primaryBlockKey": "way/383026294@b/262083286",
+        "secondaryBlockKey": "way/383026294@b/258786223",
+        "resolvedBy": "exact",
+        "sourceSeq": 3386,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/2938751972+way/383026294@b/2938751971",
+      "primaryKey": "way/383026294@b/2938751972",
+      "secondaryKey": "way/383026294@b/2938751971",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2938751971,
+        "primaryBlockKey": "way/383026294@b/2938751972",
+        "secondaryBlockKey": "way/383026294@b/2938751971",
+        "resolvedBy": "exact",
+        "sourceSeq": 3388,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/383026294@b/4315349243+way/383026294@b/2938751972",
+      "primaryKey": "way/383026294@b/4315349243",
+      "secondaryKey": "way/383026294@b/2938751972",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2938751972,
+        "primaryBlockKey": "way/383026294@b/4315349243",
+        "secondaryBlockKey": "way/383026294@b/2938751972",
+        "resolvedBy": "exact",
+        "sourceSeq": 3390,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/2206349235",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/2206349235",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206349235,
+        "primaryBlockKey": "way/280015655@b/2206349237",
+        "secondaryBlockKey": "way/280015655@b/2206349235",
+        "resolvedBy": "exact",
+        "sourceSeq": 3392,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206349237+way/280015655@b/1400036052",
+      "primaryKey": "way/280015655@b/2206349237",
+      "secondaryKey": "way/280015655@b/1400036052",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206349237,
+        "primaryBlockKey": "way/280015655@b/2206349237",
+        "secondaryBlockKey": "way/280015655@b/1400036052",
+        "resolvedBy": "exact",
+        "sourceSeq": 3394,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/1400036046",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/1400036046",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036405,
+        "primaryBlockKey": "way/280015655@b/1400036405",
+        "secondaryBlockKey": "way/280015655@b/1400036046",
+        "resolvedBy": "exact",
+        "sourceSeq": 3396,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/2206232294+way/280015655@b/1400036098",
+      "primaryKey": "way/280015655@b/2206232294",
+      "secondaryKey": "way/280015655@b/1400036098",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036098,
+        "primaryBlockKey": "way/280015655@b/2206232294",
+        "secondaryBlockKey": "way/280015655@b/1400036098",
+        "resolvedBy": "exact",
+        "sourceSeq": 3398,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280015655@b/1400036405+way/280015655@b/2206232291",
+      "primaryKey": "way/280015655@b/1400036405",
+      "secondaryKey": "way/280015655@b/2206232291",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036046,
+        "primaryBlockKey": "way/280015655@b/1400036405",
+        "secondaryBlockKey": "way/280015655@b/2206232291",
+        "resolvedBy": "exact",
+        "sourceSeq": 3400,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/293422503@b/1400036749+way/293422503@b/304709043",
+      "primaryKey": "way/293422503@b/1400036749",
+      "secondaryKey": "way/293422503@b/304709043",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036749,
+        "primaryBlockKey": "way/293422503@b/1400036749",
+        "secondaryBlockKey": "way/293422503@b/304709043",
+        "resolvedBy": "exact",
+        "sourceSeq": 3402,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/268219230@b/1400036464+way/268219230@b/10894062953",
+      "primaryKey": "way/268219230@b/1400036464",
+      "secondaryKey": "way/268219230@b/10894062953",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 10894062953,
+        "primaryBlockKey": "way/268219230@b/1400036464",
+        "secondaryBlockKey": "way/268219230@b/10894062953",
+        "resolvedBy": "exact",
+        "sourceSeq": 3404,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/2417585497+way/23976945@b/2417585494",
+      "primaryKey": "way/23976945@b/2417585497",
+      "secondaryKey": "way/23976945@b/2417585494",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2417585494,
+        "primaryBlockKey": "way/23976945@b/2417585497",
+        "secondaryBlockKey": "way/23976945@b/2417585494",
+        "resolvedBy": "exact",
+        "sourceSeq": 3406,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/1219300551+way/280277096@b/2377566099",
+      "primaryKey": "way/280277096@b/1219300551",
+      "secondaryKey": "way/280277096@b/2377566099",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1219300551,
+        "primaryBlockKey": "way/280277096@b/1219300551",
+        "secondaryBlockKey": "way/280277096@b/2377566099",
+        "resolvedBy": "exact",
+        "sourceSeq": 3408,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/280277096@b/256730893+way/280277096@b/265599589",
+      "primaryKey": "way/280277096@b/256730893",
+      "secondaryKey": "way/280277096@b/265599589",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 265599589,
+        "primaryBlockKey": "way/280277096@b/256730893",
+        "secondaryBlockKey": "way/280277096@b/265599589",
+        "resolvedBy": "exact",
+        "sourceSeq": 3410,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/23976945@b/256245267+way/23976945@b/1401138499",
+      "primaryKey": "way/23976945@b/256245267",
+      "secondaryKey": "way/23976945@b/1401138499",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1401138499,
+        "primaryBlockKey": "way/23976945@b/256245267",
+        "secondaryBlockKey": "way/23976945@b/1401138499",
+        "resolvedBy": "exact",
+        "sourceSeq": 3412,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/230216178@b/2624297542+way/268219227@b/1196964687",
+      "primaryKey": "way/230216178@b/2624297542",
+      "secondaryKey": "way/268219227@b/1196964687",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1196964687,
+        "primaryBlockKey": "way/230216178@b/2624297542",
+        "secondaryBlockKey": "way/268219227@b/1196964687",
+        "resolvedBy": "exact",
+        "sourceSeq": 3414,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/256455746+way/254325305@b/2379749920",
+      "primaryKey": "way/254325305@b/256455746",
+      "secondaryKey": "way/254325305@b/2379749920",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2379749920,
+        "primaryBlockKey": "way/254325305@b/256455746",
+        "secondaryBlockKey": "way/254325305@b/2379749920",
+        "resolvedBy": "exact",
+        "sourceSeq": 3416,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/297138323@b/13305979122+way/1450825430@b/258784609",
+      "primaryKey": "way/297138323@b/13305979122",
+      "secondaryKey": "way/1450825430@b/258784609",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 13305979122,
+        "primaryBlockKey": "way/297138323@b/13305979122",
+        "secondaryBlockKey": "way/1450825430@b/258784609",
+        "resolvedBy": "exact",
+        "sourceSeq": 3418,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1400036368+way/254325305@b/256455769",
+      "primaryKey": "way/254325305@b/1400036368",
+      "secondaryKey": "way/254325305@b/256455769",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 256455769,
+        "primaryBlockKey": "way/254325305@b/1400036368",
+        "secondaryBlockKey": "way/254325305@b/256455769",
+        "resolvedBy": "exact",
+        "sourceSeq": 3420,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1398635729+way/254325305@b/1400036368",
+      "primaryKey": "way/254325305@b/1398635729",
+      "secondaryKey": "way/254325305@b/1400036368",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036368,
+        "primaryBlockKey": "way/254325305@b/1398635729",
+        "secondaryBlockKey": "way/254325305@b/1400036368",
+        "resolvedBy": "exact",
+        "sourceSeq": 3422,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/1420142022@b/13049704155",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/1420142022@b/13049704155",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 13049704155,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/1420142022@b/13049704155",
+        "resolvedBy": "exact",
+        "sourceSeq": 3424,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/1400036861",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/1400036861",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1401138287,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/254325305@b/1400036861",
+        "resolvedBy": "exact",
+        "sourceSeq": 3426,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/254325305@b/1401138287+way/254325305@b/3164180313",
+      "primaryKey": "way/254325305@b/1401138287",
+      "secondaryKey": "way/254325305@b/3164180313",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1400036861,
+        "primaryBlockKey": "way/254325305@b/1401138287",
+        "secondaryBlockKey": "way/254325305@b/3164180313",
+        "resolvedBy": "exact",
+        "sourceSeq": 3428,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/7477787914+way/126247850@b/12599118960",
+      "primaryKey": "way/126247850@b/7477787914",
+      "secondaryKey": "way/126247850@b/12599118960",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 12599118960,
+        "primaryBlockKey": "way/126247850@b/7477787914",
+        "secondaryBlockKey": "way/126247850@b/12599118960",
+        "resolvedBy": "exact",
+        "sourceSeq": 3430,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/126247850@b/258785765+way/126247850@b/2913992342",
+      "primaryKey": "way/126247850@b/258785765",
+      "secondaryKey": "way/126247850@b/2913992342",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2913992342,
+        "primaryBlockKey": "way/126247850@b/258785765",
+        "secondaryBlockKey": "way/126247850@b/2913992342",
+        "resolvedBy": "exact",
+        "sourceSeq": 3432,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/281341661@b/4586442323+way/281341661@b/1372607153",
+      "primaryKey": "way/281341661@b/4586442323",
+      "secondaryKey": "way/281341661@b/1372607153",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 4586442323,
+        "primaryBlockKey": "way/281341661@b/4586442323",
+        "secondaryBlockKey": "way/281341661@b/1372607153",
+        "resolvedBy": "exact",
+        "sourceSeq": 3436,
+        "sourceTs": "2026-08-01T14:11:58.314Z",
+        "sourceAuthor": "road-merge-recovery-v2"
+      }
+    },
+    {
+      "mergeKey": "merge/way/24204253@b/2398129507+way/24204253@b/1219300659",
+      "primaryKey": "way/24204253@b/2398129507",
+      "secondaryKey": "way/24204253@b/1219300659",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2398129507,
+        "primaryBlockKey": "way/24204253@b/2398129507",
+        "secondaryBlockKey": "way/24204253@b/1219300659",
+        "resolvedBy": "exact",
+        "sourceSeq": 3640,
+        "sourceTs": "2026-08-04T03:30:22.697Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/24204253@b/1219300429+way/24204253@b/1219300564",
+      "primaryKey": "way/24204253@b/1219300429",
+      "secondaryKey": "way/24204253@b/1219300564",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 1219300564,
+        "primaryBlockKey": "way/24204253@b/1219300429",
+        "secondaryBlockKey": "way/24204253@b/1219300564",
+        "resolvedBy": "exact",
+        "sourceSeq": 3645,
+        "sourceTs": "2026-08-04T03:33:31.046Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/268219234@b/2206324424+way/1454602407@b/2206324417",
+      "primaryKey": "way/268219234@b/2206324424",
+      "secondaryKey": "way/1454602407@b/2206324417",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2206324417,
+        "primaryBlockKey": "way/268219234@b/2206324424",
+        "secondaryBlockKey": "way/1454602407@b/2206324417",
+        "resolvedBy": "exact",
+        "sourceSeq": 3849,
+        "sourceTs": "2026-08-04T07:48:38.199Z",
+        "sourceAuthor": "anna"
+      }
+    },
+    {
+      "mergeKey": "merge/way/297205391@b/3010545851+way/297205391@b/2919858675",
+      "primaryKey": "way/297205391@b/3010545851",
+      "secondaryKey": "way/297205391@b/2919858675",
+      "status": "replayable",
+      "detail": "可依序重播",
+      "resolved": {
+        "junctionNodeId": 2919858675,
+        "primaryBlockKey": "way/297205391@b/3010545851",
+        "secondaryBlockKey": "way/297205391@b/2919858675",
+        "resolvedBy": "exact",
+        "sourceSeq": 3886,
+        "sourceTs": "2026-08-04T11:25:25.296Z",
+        "sourceAuthor": "anna"
+      }
+    }
+  ],
+  "migrationCandidateCount": 4
+}

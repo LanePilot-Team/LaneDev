@@ -2057,6 +2057,8 @@ export interface MotoBoxLaneLimits {
 }
 
 export interface MotoBoxApproachPolicy {
+  /** True when this policy was mapped from a visual carrier's original outer endpoint. */
+  mappedEndpoint: boolean
   lanes: number
   moto: boolean
   motoCount: number
@@ -2117,6 +2119,7 @@ export function motoBoxApproachPolicy(
   const endpoint = p.roadMergeApproachPolicies?.find((policy) => policy.nodeId === nodeId)
   if (endpoint) {
     return {
+      mappedEndpoint: true,
       lanes: endpoint.laneCount,
       moto: endpoint.moto,
       motoCount: endpoint.motoCount ?? (endpoint.moto ? 1 : 0),
@@ -2130,6 +2133,7 @@ export function motoBoxApproachPolicy(
   const rules = forward ? p.rulesF : p.rulesB
   const motoCount = forward ? p.motoCountF : p.motoCountB
   return {
+    mappedEndpoint: false,
     lanes: forward ? p.lanesForward : p.lanesBackward,
     moto: forward ? p.motoF : p.motoB,
     motoCount,

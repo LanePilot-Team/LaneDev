@@ -101,7 +101,10 @@ export function motoBoxPanelLimits(er: EditRoadState, back: boolean): MotoBoxPan
   // 刻意不看 roadMarkingMode：buildMotoBoxes 對「人工明確啟用」的格子會跳過
   // slot.eligible（含標線模式）繼續畫，所以就算切成不顯示也要留著編輯入口，
   // 否則使用者管不到已經存在的格子。標線模式的影響由面板的提示說明。
-  return motoBoxEditorLimits({ ...policy, lanes, moto, motoCount }, topo, rightLane)
+  const effectivePolicy = policy.mappedEndpoint
+    ? policy
+    : { ...policy, lanes, moto, motoCount }
+  return motoBoxEditorLimits(effectivePolicy, topo, rightLane)
 }
 
 /** 把已選範圍夾回目前合法區間（車道數/禁行機車改變後，舊範圍可能整段失效） */

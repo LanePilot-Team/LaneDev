@@ -52,6 +52,7 @@ export interface LanePreviewModel {
 
 const MAX_LANES = 10
 const TURN_GUIDANCE_M = 250
+export const INFERENCE_NOTE = '蝟餌絞?冽葫鞈?嚗?靘?湔?蝺?擏.'
 
 type NormalMove = 'left' | 'through' | 'right' | 'reverse'
 
@@ -136,6 +137,11 @@ function applyLaneStates(
   }))
 }
 
+function guidanceIsInferred(input: LanePreviewInput, fallback: boolean): boolean {
+  if (input.guidanceSource !== undefined) return input.guidanceSource === 'inferred'
+  return input.laneDecision?.inferred ?? fallback
+}
+
 export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const preparationM = input.laneDecision?.preparationM ?? TURN_GUIDANCE_M
   const near = Number.isFinite(input.distanceM) && input.distanceM <= preparationM
@@ -161,7 +167,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const realMovements = Array.isArray(turnLanes) && turnLanes.length > 0
 
   if (!realMovements) {
-    const inferred = input.laneDecision?.inferred ?? true
+    const inferred = guidanceIsInferred(input, true)
     return {
       status: 'ready',
       lanes: applyLaneStates(
@@ -174,7 +180,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
       inferred,
       truncated,
       showTwoStageSign: twoStageNear,
-      inferenceNote: inferred ? '車道建議（系統推測）' : undefined,
+      inferenceNote: inferred ? INFERENCE_NOTE : undefined,
       warningNote: near && input.laneDecision?.shortPreparation
         ? '前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。'
         : undefined,
@@ -187,7 +193,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   )
   const hasKnownMovement = parsed.some((moves) => moves.size > 0)
   if (!hasKnownMovement) {
-    const inferred = input.laneDecision?.inferred ?? true
+    const inferred = guidanceIsInferred(input, true)
     return {
       status: 'ready',
       lanes: applyLaneStates(
@@ -200,7 +206,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
       inferred,
       truncated,
       showTwoStageSign: twoStageNear,
-      inferenceNote: inferred ? '車道建議（系統推測）' : undefined,
+      inferenceNote: inferred ? INFERENCE_NOTE : undefined,
       warningNote: near && input.laneDecision?.shortPreparation
         ? '前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。'
         : undefined,
@@ -220,9 +226,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     return { arrow: arrowFor(moves), active, state: active ? 'secondary' : 'inactive' }
   })
 
-  const inferred = near && input.laneDecision
-    ? input.laneDecision.inferred
-    : input.guidanceSource === 'inferred'
+  const inferred = guidanceIsInferred(input, false)
 
   return {
     status: 'ready',
@@ -231,7 +235,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     inferred,
     truncated,
     showTwoStageSign: twoStageNear,
-    inferenceNote: inferred ? '車道建議（系統推測）' : undefined,
+    inferenceNote: inferred ? INFERENCE_NOTE : undefined,
     warningNote: near && input.laneDecision?.shortPreparation
       ? '前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。'
       : undefined,

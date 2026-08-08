@@ -41,9 +41,8 @@ function previewLabel(model: LanePreviewModel): string {
   const active = model.lanes
     .map((lane, index) => lane.active ? `第 ${index + 1} 車道` : null)
     .filter((value): value is string => value !== null)
-  const source = model.inferred ? '，系統推測' : ''
   const truncated = model.truncated ? '，來源超過十車道，僅顯示前十條' : ''
-  return `共 ${model.lanes.length} 車道，建議 ${active.join('、') || '無'}${source}${truncated}`
+  return `共 ${model.lanes.length} 車道，建議 ${active.join('、') || '無'}${truncated}`
 }
 
 export function TwoStageWaitSign() {

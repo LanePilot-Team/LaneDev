@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview.ts'
+import {
+  buildLanePreview,
+  INFERENCE_NOTE,
+  selectLanePreviewGuidance,
+} from './lanePreview.ts'
 
 const ready = (overrides = {}) => buildLanePreview({
   laneCount: 3,
@@ -166,7 +170,42 @@ test('系統推測與短距離換道警告可同時顯示', () => {
     laneDecision: savedDecision({ inferred: true, shortPreparation: true }),
   })
 
-  assert.equal(model.inferenceNote, '車道建議（系統推測）')
+  assert.equal(model.inferenceNote, INFERENCE_NOTE)
   assert.equal(model.warningNote,
     '前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。')
+})
+
+test('only shows the exact inference note from inferred effective guidance', () => {
+  const inferred = ready({
+    guidanceSource: 'inferred',
+    laneDecision: savedDecision({ inferred: false }),
+  })
+
+  assert.equal(INFERENCE_NOTE, '蝟餌絞?冽葫鞈?嚗?靘?湔?蝺?擏.')
+  assert.equal(inferred.inferenceNote, INFERENCE_NOTE)
+  assert.equal(inferred.inferred, true)
+})
+
+test('does not reclassify explicit effective guidance from an inferred decision', () => {
+  for (const guidanceSource of ['annotation', 'annotation+osm', 'osm']) {
+    const model = ready({
+      guidanceSource,
+      laneDecision: savedDecision({ inferred: true }),
+    })
+
+    assert.equal(model.inferred, false, guidanceSource)
+    assert.equal(model.inferenceNote, undefined, guidanceSource)
+  }
+})
+
+test('uses the route LaneDecision primary lane index for a right-turn preview', () => {
+  const model = ready({
+    laneDecision: savedDecision({
+      primaryLaneIndex: 1,
+      secondaryLaneIndices: [2],
+    }),
+  })
+
+  assert.deepEqual(model.lanes.map((lane) => lane.state),
+    ['inactive', 'primary', 'secondary'])
 })

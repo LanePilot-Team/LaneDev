@@ -7,6 +7,7 @@ import { prepareSegments } from './segment_dedupe.mjs'
 const root = resolve(import.meta.dirname, '..')
 const data = resolve(root, 'public/data')
 const lanePilot = resolve(data, 'lanepilot')
+const canonicalPath = resolve(data, 'road_database.json')
 const allRegions = [
   { area_id: 'area/4212599', name: '楠梓區', file: 'area_4212599.segments.jsonl' },
   { area_id: 'area/4212533', name: '左營區', file: 'area_4212533.segments.jsonl' },
@@ -45,6 +46,34 @@ function argumentValue(name, args = process.argv.slice(2)) {
   return args.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1)
 }
 
+function isSamePath(left, right) {
+  const resolvedLeft = resolve(left)
+  const resolvedRight = resolve(right)
+  return process.platform === 'win32'
+    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
+    : resolvedLeft === resolvedRight
+}
+
+function validateEditor(editor, source) {
+  if (!editor || typeof editor !== 'object' || Array.isArray(editor)
+    || typeof editor.updated_at !== 'string'
+    || !Array.isArray(editor.journal)
+    || !Array.isArray(editor.waiting_zones)
+    || !Array.isArray(editor.deleted_waiting_zone_ids)) {
+    throw new Error(`${source} 的 editor 結構無效；拒絕以空資料繼續建置。`)
+  }
+  return editor
+}
+
+async function readJsonIfPresent(path, source) {
+  try {
+    return { found: true, value: JSON.parse(await readFile(path, 'utf8')) }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { found: false, value: null }
+    throw new Error(`${source} 無法讀取或不是有效 JSON；拒絕繼續建置。`, { cause: error })
+  }
+}
+
 async function loadSegments(regions) {
   const loaded = (await Promise.all(regions.map(async ({ file }) => {
     const text = await readFile(resolve(lanePilot, file), 'utf8')
@@ -59,34 +88,54 @@ async function loadSegments(regions) {
 }
 
 async function loadEditor() {
-  try {
-    return JSON.parse(await readFile(resolve(data, 'road_database.json'), 'utf8')).editor
-  } catch {
-    let journal = []
-    try {
-      journal = JSON.parse(await readFile(resolve(data, 'seed_journal.json'), 'utf8'))
-    } catch {
-      // A missing seed is valid; browser edits will populate the canonical editor.
-    }
-    return {
-      updated_at: '',
-      journal,
-      waiting_zones: [],
-      deleted_waiting_zone_ids: [],
-    }
+  const canonical = await readJsonIfPresent(canonicalPath, 'canonical road_database.json')
+  if (canonical.found) {
+    return validateEditor(canonical.value?.editor, 'canonical road_database.json')
   }
+
+  const seedJournal = await readJsonIfPresent(resolve(data, 'seed_journal.json'), 'seed_journal.json')
+  if (seedJournal.found && !Array.isArray(seedJournal.value)) {
+    throw new Error('seed_journal.json 必須是 journal 陣列；拒絕繼續建置。')
+  }
+  return validateEditor({
+    updated_at: '',
+    journal: seedJournal.found ? seedJournal.value : [],
+    waiting_zones: [],
+    deleted_waiting_zone_ids: [],
+  }, '初始 editor')
+}
+
+function collectUnmappedCounts(value, path = []) {
+  if (!value || typeof value !== 'object') return []
+  return Object.entries(value).flatMap(([key, child]) => {
+    const nextPath = [...path, key]
+    const normalizedPath = nextPath.join('_').toLowerCase()
+    const ownCount = normalizedPath.includes('unmapped')
+      && normalizedPath.includes('count')
+      && typeof child === 'number'
+      ? [child]
+      : []
+    return [...ownCount, ...collectUnmappedCounts(child, nextPath)]
+  })
 }
 
 async function promoteCandidate(candidateArgument, auditArgument) {
   const candidatePath = resolve(candidateArgument)
   const auditPath = resolve(auditArgument)
-  const canonicalPath = resolve(data, 'road_database.json')
   const audit = JSON.parse(await readFile(auditPath, 'utf8'))
   const candidateText = await readFile(candidatePath, 'utf8')
   const candidateHash = stableJsonHash(JSON.parse(candidateText))
 
   if (!audit.candidate_sha256 || audit.candidate_sha256 !== candidateHash) {
     throw new Error('候選檔 SHA-256 與 base audit 不一致；未執行 promotion。')
+  }
+  if (!Array.isArray(audit.blocking_errors) || audit.blocking_errors.length !== 0) {
+    throw new Error('base audit 的 blocking_errors 必須是空陣列；未執行 promotion。')
+  }
+  const unmappedCounts = collectUnmappedCounts(audit)
+  if (unmappedCounts.length === 0
+    || unmappedCounts.some((count) => !Number.isInteger(count) || count !== 0)) {
+    throw new Error('base audit 必須明確記錄所有 unmapped count 為 0；未執行 promotion。')
   }
 
   const backupPath = resolve(
@@ -120,6 +169,13 @@ export async function main(args = process.argv.slice(2)) {
     throw new Error('不可在建置時寫入 canonical；請使用 --promote-candidate=<path> 與 --base-audit=<path>。')
   }
 
+  const explicitOut = argumentValue('--out', args)
+  const defaultCandidate = resolve(root, '.lanedev-backups/road_database.candidate.json')
+  const outPath = explicitOut ? resolve(explicitOut) : defaultCandidate
+  if (isSamePath(outPath, canonicalPath)) {
+    throw new Error('不可用 --out 寫入 canonical road_database.json；請使用已稽核的 promotion 流程。')
+  }
+
   const nanzihOnly = args.includes('--nanzih-only')
   const reverseRegions = args.includes('--reverse-regions')
   const selected = nanzihOnly ? allRegions.slice(0, 1) : allRegions
@@ -136,9 +192,6 @@ export async function main(args = process.argv.slice(2)) {
     editor,
   }
 
-  const explicitOut = argumentValue('--out', args)
-  const defaultCandidate = resolve(root, '.lanedev-backups/road_database.candidate.json')
-  const outPath = explicitOut ? resolve(explicitOut) : defaultCandidate
   const reportPath = resolve(argumentValue('--report', args) ?? `${outPath}.dedup-report.json`)
   const blockingErrors = conflicts.map((conflict) => ({
     type: 'segment_identity_conflict',

@@ -14,7 +14,7 @@
 - LanePilot `intersection_approach` overrides `segment_direction`; segment data overrides OSM and inference.
 - Preserve all non-LanePilot journal records byte-for-byte and in the same order during the base build.
 - Keep road merges, new roads, waiting zones, deletion records, turn bays, right lanes, and motorcycle boxes replayable.
-- A canonical write requires an explicit `--write-canonical` flag and zero unmapped annotations or other blocking audit findings.
+- A canonical write promotes the exact audited candidate through an explicit `--promote-candidate=<path>` flag; the audit must record the same candidate SHA-256 and contain zero unmapped annotations or other blocking findings.
 - Do not infer the driver's physical lane from GPS.
 - HUD inference copy is `系統推測資料，請依現場標線行駛` and appears only when an effective field is inferred.
 - Do not push, create a PR, or merge `main` as part of this plan.
@@ -50,7 +50,7 @@
 
 **Interfaces:**
 - Consumes: `public/data/lanepilot/*.segments.jsonl`, `public/data/lanepilot/annotations.jsonl`, and the current `road_database.json.editor`.
-- Produces: candidate `{ segments, annotations, editor }` and report fields `annotation_count`, `removed_lanepilot_journal_count`, `preserved_editor_sha256`, and `blocking_errors`.
+- Produces: candidate `{ segments, annotations, editor }` and report fields `annotation_count`, `removed_lanepilot_journal_count`, `preserved_editor_sha256`, `candidate_sha256`, and `blocking_errors`.
 
 - [ ] **Step 1: Write failing builder tests**
 
@@ -103,9 +103,9 @@ export function stableJsonHash(value) {
 
 Read `annotations.jsonl` with the existing `parseJsonl`, assign all parsed objects to `output.annotations`, and report the SHA-256 of the preserved editor object before and after candidate assembly. Do not renumber journal `seq` values.
 
-- [ ] **Step 4: Make candidate output the default and keep canonical writes explicit**
+- [ ] **Step 4: Make candidate output the default and prohibit rebuild-on-promotion**
 
-Keep `.lanedev-backups/road_database.candidate.json` as the default. When `--write-canonical` is requested, require an audit report supplied through `--base-audit=<path>` whose `blocking_errors` is empty and `unmapped_count` is zero; otherwise exit 2 before writing.
+Keep `.lanedev-backups/road_database.candidate.json` as the default. Canonical promotion must later accept `--promote-candidate=<path>` plus `--base-audit=<path>`, verify that the candidate file SHA-256 equals `candidate_sha256` in the audit, and copy that exact candidate after creating a backup. It must never rebuild the candidate during promotion.
 
 - [ ] **Step 5: Add commands and run the focused tests**
 
@@ -447,7 +447,7 @@ git commit -m "同步 HUD 車道來源與推測提示"
 
 **Interfaces:**
 - Produces report `{ source_annotations, accounted_annotations, lane_profiles, movement_rule_records, unmapped, conflicts, human_editor_hash_match, replay_errors, blocking_errors }`.
-- Canonical builder consumes this report through `--base-audit=<path>`.
+- Canonical promotion consumes this report through `--base-audit=<path>` and verifies its `candidate_sha256` against the exact file passed to `--promote-candidate=<path>`.
 
 - [ ] **Step 1: Write failing audit-status tests**
 
@@ -512,10 +512,10 @@ Run the audit with an explicit candidate path before promotion. Expected: a comp
 Run:
 
 ```powershell
-node scripts/build_static_road_database.mjs --write-canonical --base-audit=.lanedev-backups/road_database.candidate.audit.json
+node scripts/build_static_road_database.mjs --promote-candidate=.lanedev-backups/road_database.candidate.json --base-audit=.lanedev-backups/road_database.candidate.audit.json
 ```
 
-Expected: a timestamped backup path is printed before the canonical file changes. Immediately verify `annotations.length === 1485`, `journal.filter(author=lanepilot).length === 0`, and the preserved-editor SHA-256 matches the candidate report.
+Expected: the command verifies the candidate SHA-256 from the audit, prints a timestamped backup path before the canonical file changes, and copies the exact audited candidate without rebuilding it. Immediately verify `annotations.length === 1485`, `journal.filter(author=lanepilot).length === 0`, and the preserved-editor SHA-256 matches the candidate report.
 
 - [ ] **Step 4: Regenerate the final report**
 

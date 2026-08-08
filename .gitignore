@@ -27,3 +27,4 @@ npm-debug.log*
 # 工具暫存（不進版控）
 .gstack/
 .claude/
+.superpowers/

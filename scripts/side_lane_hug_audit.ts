@@ -167,18 +167,15 @@ for (const c of CASES) {
   console.log(`     ${ok ? '✓ 寬度變化在可接受範圍（≤3m）' : '✗ 橋面寬度起伏過大'}`)
 }
 
-// ── 機車專用道高架鏈 ──
-// 楠梓交流道的機車專用道匝道在 OSM 標了 layer=1，但 elevation 用手動名單，
-// 漏列就會被當平面路畫在地上、與旁邊 6m 高的主橋分裂（2026-08-04 使用者回報）。
-// 這裡確認整條鏈都拿到 elevated 旗標，且高度真的離地。
+// ── 機車專用道高架 ──
+// 只有 way/25724904 是真立體交叉（橋下 5 條道路穿過）。上游那 290m 匝道鏈曾因
+// bridge=yes layer=1 被誤加進 ELEVATED_WAY_IDS，畫面上長出一條懸空的假橋，
+// 2026-08-10 移除（理由見 elevation.ts 該處註解）。這裡確認本體有抬、且
+// 那 4 條匝道確實沒被抬。
 console.log('\n=== 機車專用道高架鏈 ===')
 const model = buildElevation(roads.filter((r) => !r.properties.deleted))
 const MOTO_FLYOVER = [
-  { id: 103679024, note: '匝道 65m（layer=1，無 bridge tag）' },
-  { id: 230216189, note: '匝道 61m' },
-  { id: 230216191, note: '匝道 115m' },
-  { id: 230213636, note: '匝道 57m，接上 way/25724904' },
-  { id: 25724904, note: '機車專用道高架本體 530m' },
+  { id: 25724904, note: '機車專用道高架本體 531m（橋下 5 條道路穿過）' },
 ]
 for (const { id, note } of MOTO_FLYOVER) {
   const bs = blocksOf(id)
@@ -198,6 +195,18 @@ for (const { id, note } of MOTO_FLYOVER) {
   console.log(`  way/${id}（${note}）：${bs.length} 區塊`
     + `｜elevated=${allElevated}｜最高 ${maxH.toFixed(1)} m ${ok ? '✓' : '✗ 沒抬起來'}`)
 }
+// 這 4 條匝道底下沒有道路穿過（跨後勁溪的橋 + 平面接續），必須留在地面。
+// 誤抬會長出一條寬 2.2m、懸在 6m 高、橫跨後勁溪的假橋（2026-08-10 使用者回報）。
+const MUST_STAY_GROUND = [103679024, 230216189, 230216191, 230213636]
+for (const id of MUST_STAY_GROUND) {
+  const bs = blocksOf(id)
+  if (!bs.length) continue
+  const anyElevated = bs.some((b) => b.properties.elevated === true)
+  if (anyElevated) fail++
+  console.log(`  way/${id}（匝道，橋下無道路穿過）：`
+    + `${anyElevated ? '✗ 被誤抬成高架' : '✓ 留在地面'}`)
+}
+
 // 地面路名標籤不可出現在高架區塊上（mapStyle road-label filter）
 const groundLabelled = roads.filter((r) => r.properties.elevated
   && r.properties.name && r.properties.roadMarkingMode !== 'none')

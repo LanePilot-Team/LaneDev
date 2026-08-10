@@ -36,6 +36,27 @@ const MEDIAN_CLEAR_M = 1.5
 /** 中央分隔護欄的半寬（兩向各畫一半，於中線接合） */
 const MEDIAN_RAIL_HALF = 0.15
 
+/**
+ * 同向側橋併入主橋橋面：「寬主橋＋貼邊窄側橋」。
+ *
+ * 對向並排合體（medianAt）是為對稱雙幅橋設計的——兩邊各鋪到「兩中線的中點」。
+ * 高楠陸橋是主橋半寬 9.9m 貼一條半寬 1.6m 的機車專用道，兩中線的中點落在 5.75m
+ * 處、還在主橋內部，接縫其實在主橋自己的邊緣，那個模型套不上。
+ *
+ * 這裡改成：主橋在該側的橋面邊緣直接**伸到側橋的外緣**，側橋不再自己鋪織帶。
+ * 兩者變成同一塊織帶 → 結構上不可能有縫，不管線形怎麼彎。原本兩條獨立織帶
+ * 靠固定中線距貼合，在彎道處必然錯開（機車道 525m 只有 12 個頂點、平均間隔
+ * 44m，主橋在頂點之間是彎的），實測天窗 +1.83m、穿模 -0.82m。
+ *
+ * 側橋仍保留 deckProfile（車輛 z 與遮蔽判定要用），只跳過 mesh 與橋墩。
+ */
+const SIDE_DECK_ABSORB: { hostWayId: number; sideWayId: number }[] = [
+  // 高楠陸橋 ← 機車專用道高架（往高雄市區、楠梓方向）
+  { hostWayId: 23939182, sideWayId: 25724904 },
+]
+/** 側橋兩端的併入漸變帶：延伸量在這個距離內收回，橋面不會突然變寬/變窄 */
+const ABSORB_FADE_M = 18
+
 const KX = 111320 * COS_LAT
 const KY = 110540
 /** 橋墩間距 / 最低出現高度（爬升近地段不畫墩） */
@@ -470,6 +491,21 @@ export class ElevatedLayer {
     const allDecks = [...model.entries()].map((e) => e.road)
     const carriages = allDecks.filter((r) =>
       r.properties.highway === 'motorway' && r.properties.oneway === 'yes')
+
+    // ── 同向側橋併入（見 SIDE_DECK_ABSORB）──
+    // 顯式 way id 配對，沒列在表裡的橋一律走原路徑——這是刻意的隔離：
+    // 既有橋面（中山高／楠陽／德民新橋…）在程式上不可能被這段影響。
+    /** 主橋區塊 → 要併進來的側橋區塊 */
+    const absorbInto = new Map<RoadFeature, RoadFeature[]>()
+    /** 被併走的側橋區塊（保留 deckProfile，不鋪 mesh、不立橋墩） */
+    const absorbedSides = new Set<RoadFeature>()
+    for (const { hostWayId, sideWayId } of SIDE_DECK_ABSORB) {
+      const hosts = allDecks.filter((r) => r.properties.osm_id === hostWayId)
+      const sides = allDecks.filter((r) => r.properties.osm_id === sideWayId)
+      if (!hosts.length || !sides.length) continue
+      for (const h of hosts) absorbInto.set(h, sides)
+      for (const s of sides) absorbedSides.add(s)
+    }
     /**
      * Lock every motorway carriageway to one opposing partner for its whole
      * segment.  Choosing the nearest road independently at every section lets
@@ -567,6 +603,45 @@ export class ElevatedLayer {
         if (d < best.half - MEDIAN_CLEAR_M) return null
       }
       return best
+    }
+
+    /**
+     * 同向側橋併入：主橋此斷面該側的橋面要伸到多遠（絕對偏移，已含漸變）。
+     *
+     * 回傳的 edge 是**最終值**，不再乘主橋的收窄係數 r——側橋的位置是絕對的，
+     * 拿主橋的 r 去縮它會在接地端把橋面縮進側橋裡。
+     *
+     * 兩端漸變：側橋是有限長的，超出範圍就不延伸；在它兩端 ABSORB_FADE_M 內
+     * 線性收回，橋面寬度不會在銜接處跳一階。
+     */
+    const sideAbsorbAt = (self: RoadFeature, s: Section, halfW: number):
+      { edge: number; side: 1 | -1 } | null => {
+      const sides = absorbInto.get(self)
+      if (!sides) return null
+      const pos: [number, number] = [s.lng, s.lat]
+      let best: { edge: number; side: 1 | -1; lat: number } | null = null
+      for (const o of sides) {
+        const oc = o.geometry.coordinates as [number, number][]
+        if (oc.length < 2) continue
+        const pr = projToPolyArc(pos, oc)
+        const sideHalf = o.properties.width_m / 2
+        // 只在側橋確實鋪到這裡時才延伸（多留 sideHalf 容忍投影誤差）
+        if (pr.lat > halfW + sideHalf * 2 + 4) continue
+        // 端點漸變：投影點離側橋兩端多近
+        const cum = cumulative(oc)
+        const total = cum[cum.length - 1]
+        const endDist = Math.min(pr.arc, total - pr.arc)
+        const fade = Math.max(0, Math.min(1, endDist / ABSORB_FADE_M))
+        if (fade <= 0) continue
+        // 側橋外緣 = 到側橋中線的距離 + 側橋半寬；漸變時收回主橋自身邊緣
+        const full = pr.lat + sideHalf
+        const edge = halfW + (full - halfW) * fade
+        if (edge <= halfW) continue
+        const vE = (pr.q[0] - pos[0]) * KX, vN = (pr.q[1] - pos[1]) * KY
+        const side: 1 | -1 = vE * s.rx - vN * s.rz >= 0 ? 1 : -1
+        if (!best || pr.lat < best.lat) best = { edge, side, lat: pr.lat }
+      }
+      return best ? { edge: best.edge, side: best.side } : null
     }
 
     for (const { road, lenM, hM } of model.entries()) {
@@ -722,19 +797,31 @@ export class ElevatedLayer {
         hs: secs.map((s) => s.h),
       })
 
+      // 併進主橋的側橋：高度剖面留著（車輛 z／遮蔽判定要用，見 deckHeightAt 註解），
+      // 但不鋪自己的橋面、標線與橋墩——它已經是主橋橋面的一部分。
+      if (absorbedSides.has(road)) continue
+
       // 對向並排：合體側的橋面邊緣推到兩線中點（edge 回傳「已含收窄 r」的絕對偏移，
       // 所以用 atAbs 而不是 at——後者會再乘一次 r）
       const meds = carriages.includes(road)
         ? secs.map((s) => medianAt(road, s, halfW))
         : secs.map(() => null)
+      // 同向側橋併入：回傳的 edge 是最終值，不再乘 r（側橋位置是絕對的）
+      const absorbs = absorbInto.has(road)
+        ? secs.map((s) => sideAbsorbAt(road, s, halfW))
+        : secs.map(() => null)
       /** 第 i 個斷面 side 側的橋面邊緣（帶正負號） */
       const edge = (i: number, side: 1 | -1) => {
         const m = meds[i]
         const base = halfW * secs[i].r
+        const a = absorbs[i]
+        if (a && a.side === side) return side * Math.max(base, a.edge)
         return side * (m && m.side === side ? Math.max(base, m.edge * secs[i].r) : base)
       }
       /** 該側是不是「與對向接合的中線」（護欄/側裙要改樣式） */
       const isSeam = (i: number, side: 1 | -1) => meds[i]?.side === side && meds[i]!.merged
+      /** 併入側橋的內部接縫（主橋原本的邊緣）：立分隔護欄、不畫外側護欄 */
+      const absorbSeam = (i: number, side: 1 | -1) => absorbs[i]?.side === side
 
       const gaps = railGaps.get(road) ?? []
       for (let i = 1; i < secs.length; i++) {
@@ -788,6 +875,18 @@ export class ElevatedLayer {
           const e0 = side < 0 ? aL : aR, e1 = side < 0 ? bL : bR
           const w0 = e0 - side * MEDIAN_RAIL_HALF, w1 = e1 - side * MEDIAN_RAIL_HALF
           railBuf.quad(atAbs(a, w0, 0), atAbs(a, w0, cA), atAbs(b, w1, 0), atAbs(b, w1, cB))
+          railBuf.quad(atAbs(a, w0, cA), atAbs(a, e0, cA), atAbs(b, w1, cB), atAbs(b, e1, cB))
+        }
+        // 併入側橋的分隔墩：立在主橋原本的邊緣（halfW×r）——那就是實地兩者
+        // 之間那道矮混凝土墩的位置。牆板＋頂蓋，樣式同中線紐澤西護欄。
+        for (const side of [-1, 1] as const) {
+          if (!absorbSeam(i - 1, side) || !absorbSeam(i, side)) continue
+          const cA = CENTER_RAIL_H * Math.min(1, a.h / RAIL_RAMP_H)
+          const cB = CENTER_RAIL_H * Math.min(1, b.h / RAIL_RAMP_H)
+          const e0 = side * halfW * a.r, e1 = side * halfW * b.r
+          const w0 = e0 - side * MEDIAN_RAIL_HALF * 2, w1 = e1 - side * MEDIAN_RAIL_HALF * 2
+          railBuf.quad(atAbs(a, w0, 0), atAbs(a, w0, cA), atAbs(b, w1, 0), atAbs(b, w1, cB))
+          railBuf.quad(atAbs(a, e0, cA), atAbs(a, e0, 0), atAbs(b, e1, cB), atAbs(b, e1, 0))
           railBuf.quad(atAbs(a, w0, cA), atAbs(a, e0, cA), atAbs(b, w1, cB), atAbs(b, e1, cB))
         }
         // 中央護欄：分向線位置（divOffM）兩側板＋頂蓋（同樣近地漸升）

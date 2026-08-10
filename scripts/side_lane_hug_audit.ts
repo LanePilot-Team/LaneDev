@@ -127,62 +127,44 @@ for (const c of CASES) {
   }
 }
 
-// ── 橋面接縫掃描 ──
-// 中線距對了不代表畫面貼合：elevated3d 的橋面半寬是 width_m/2 × r，r 是接地端
-// 收窄係數。這裡沿主橋每 10m 取樣，複製同一條算式量兩座橋面的實際邊緣間距。
-// 正值 = 看得穿的天窗、負值 = 橋面互壓，兩者都是使用者看得到的缺陷。
-console.log('\n=== 橋面接縫掃描（含接地端收窄 r）===')
-const model = buildElevation(roads.filter((r) => !r.properties.deleted))
-const TAPER_RANGE_M = 150
-const LAYER_H = 6
-const renderedHalf = (road: RoadFeature, d: number, lenM: number) => {
-  const halfW = road.properties.width_m / 2
-  const taper = model.groundTaper(road)
-  const fr = Math.min(1, model.heightAt(road, d) / LAYER_H)
-  let r = 1
-  if (taper.gw0 !== undefined && d < TAPER_RANGE_M) {
-    r = Math.min(r, (taper.gw0 / 2 + (halfW - taper.gw0 / 2) * fr) / halfW)
-  }
-  if (taper.gw1 !== undefined && lenM - d < TAPER_RANGE_M) {
-    r = Math.min(r, (taper.gw1 / 2 + (halfW - taper.gw1 / 2) * fr) / halfW)
-  }
-  return halfW * r
-}
+// ── 併入後的橋面寬度漣漪 ──
+// 機車高架已由 elevated3d 的 SIDE_DECK_ABSORB 併進主橋橋面（不再自己鋪織帶），
+// 兩條獨立織帶之間的「接縫」在物理上已不存在，不需要再量。
+//
+// 新模型的實際風險換成：主橋該側邊緣要伸到「到機車道中線的距離 + 機車道半寬」，
+// 而那個距離會沿線游移（機車道 525m 只有 12 個頂點，主橋在頂點之間是彎的）。
+// 游移不再變成破洞，而是橋面寬度的漣漪——這裡量它有多大。
+console.log('\n=== 併入後橋面寬度漣漪 ===')
 for (const c of CASES) {
   const sideBlocks = blocksOf(c.wayId)
-  let worstGap = 0; let worstOverlap = 0; let n = 0
+  const sideHalf = sideBlocks[0] ? sideBlocks[0].properties.width_m / 2 : 0
+  const edges: number[] = []
   for (const host of blocksOf(c.hostWayId)) {
     const hc = host.geometry.coordinates as [number, number][]
     const hcum = cumulative(hc)
     const hlen = hcum[hcum.length - 1]
     for (let d = 0; d <= hlen; d += 10) {
       const pos = pointAlong(hc, hcum, d).pos
-      let best: { road: RoadFeature; d: number; dist: number } | null = null
+      let lat = Infinity
       for (const m of sideBlocks) {
         const mc = m.geometry.coordinates as [number, number][]
         const mcum = cumulative(mc)
         for (let md = 0; md <= mcum[mcum.length - 1]; md += 5) {
-          const dist = haversine(pos, pointAlong(mc, mcum, md).pos)
-          if (!best || dist < best.dist) best = { road: m, d: md, dist }
+          lat = Math.min(lat, haversine(pos, pointAlong(mc, mcum, md).pos))
         }
       }
-      if (!best) continue
-      const mlen = cumulative(best.road.geometry.coordinates as [number, number][]).slice(-1)[0]
-      const seam = best.dist - renderedHalf(host, d, hlen) - renderedHalf(best.road, best.d, mlen)
-      if (seam > 0.3 || seam < -0.3) {
-        console.log(`     ⚠ d=${d}m 於主橋 block ${host.properties.blockNode}`
-          + `：縫 ${seam.toFixed(2)} m（中線距 ${best.dist.toFixed(2)}）`)
-      }
-      worstGap = Math.max(worstGap, seam)
-      worstOverlap = Math.min(worstOverlap, seam)
-      n++
+      if (lat < Infinity) edges.push(lat + sideHalf)
     }
   }
-  const ok = worstGap <= 0.35 && worstOverlap >= -0.35
+  if (!edges.length) { console.log('  ✗ 量不到'); fail++; continue }
+  const lo = Math.min(...edges), hi = Math.max(...edges)
+  const ripple = hi - lo
+  const ok = ripple <= 3.0
   if (!ok) fail++
-  console.log(`  ${c.name}：取樣 ${n} 點`)
-  console.log(`     最大天窗 ${worstGap.toFixed(2)} m｜最大重疊 ${worstOverlap.toFixed(2)} m`)
-  console.log(`     ${ok ? '✓ 全線貼合（±0.35m 內）' : '✗ 接縫超標——畫面上看得到縫或穿模'}`)
+  console.log(`  ${c.name}：取樣 ${edges.length} 點`)
+  console.log(`     主橋該側邊緣伸到 ${lo.toFixed(2)} ~ ${hi.toFixed(2)} m`
+    + `（漣漪 ${ripple.toFixed(2)} m）`)
+  console.log(`     ${ok ? '✓ 寬度變化在可接受範圍（≤3m）' : '✗ 橋面寬度起伏過大'}`)
 }
 
 // ── 機車專用道高架鏈 ──
@@ -190,6 +172,7 @@ for (const c of CASES) {
 // 漏列就會被當平面路畫在地上、與旁邊 6m 高的主橋分裂（2026-08-04 使用者回報）。
 // 這裡確認整條鏈都拿到 elevated 旗標，且高度真的離地。
 console.log('\n=== 機車專用道高架鏈 ===')
+const model = buildElevation(roads.filter((r) => !r.properties.deleted))
 const MOTO_FLYOVER = [
   { id: 103679024, note: '匝道 65m（layer=1，無 bridge tag）' },
   { id: 230216189, note: '匝道 61m' },

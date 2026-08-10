@@ -127,7 +127,6 @@ body {
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
 }
 .hint.warn { background: rgba(190, 50, 50, 0.92); }
-/* 提示只留一行摘要，完整說明掛在 title（滑鼠停留可看） */
 .hint-text { cursor: help; }
 .mini {
   border: none; border-radius: 999px; padding: 5px 12px;
@@ -221,7 +220,6 @@ body {
 .side-panel .edit-row b { font-size: 18px; min-width: 20px; text-align: center; }
 .side-panel .edit-row .row-title { display: block; min-width: 0; text-align: left; font-size: 13.5px; margin-bottom: 2px; }
 .side-panel .road-src { margin-bottom: 4px; }
-/* 疊在一起的路段清單（主線／側車道等中心線重合，地圖上只點得到最上面那條） */
 .stack-picker {
   margin: 8px 0 2px; padding: 8px 9px; border-radius: 9px;
   background: #fff7ed; border: 1px solid #fed7aa;

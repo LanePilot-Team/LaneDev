@@ -19,9 +19,12 @@ import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
 } from '../core/zones'
 import {
-  loadJournal, foldJournal, applyToRoads, remapJournalNodes, applyRoadMerges,
-  journalForMergedRoads, type EnhancementRecord,
+  loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
 } from '../core/enhancements'
+import {
+  buildRoadMergeViews, selectPreparedRoadMergeView,
+  type RoadMergeReplayRow, type RoadMergeViews,
+} from '../core/roadMerge'
 import { buildRawWays, zonesFromAnnotations, type RawWay } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
 import {
@@ -228,6 +231,8 @@ function guidanceIndexForRoads(
 export interface MapCore {
   mapRef: RefObject<MLMap | null>
   roadsRef: RefObject<RoadFeature[]>
+  renderRoadsRef: RefObject<RoadFeature[]>
+  mergeReplayRef: RefObject<RoadMergeReplayRow[]>
   graphRef: RefObject<RoadGraph | null>
   zonesRef: RefObject<Zone[]>
   selectedZoneRef: RefObject<string | null>
@@ -258,7 +263,13 @@ export interface MapCore {
   /** 路面與車道分隔線重繪（journal 覆寫/標註匯入後） */
   redrawRoads: () => void
   /** 換 Base Layer：換路網、重建圖、重算 bay（匯入地圖用） */
-  replaceBaseMap: (roads: RoadFeature[]) => void
+  replaceBaseMap: (roads: RoadFeature[]) => boolean
+  /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
+  previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
+  /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
+  refreshRoadMergeViews: (
+    journal?: EnhancementRecord[], preparedView?: RoadMergeViews,
+  ) => boolean
 }
 
 export interface MapCoreState {
@@ -276,6 +287,8 @@ export function useMapCore(
 ): MapCoreState {
   const mapRef = useRef<MLMap | null>(null)
   const roadsRef = useRef<RoadFeature[]>([])
+  const renderRoadsRef = useRef<RoadFeature[]>([])
+  const mergeReplayRef = useRef<RoadMergeReplayRow[]>([])
   const graphRef = useRef<RoadGraph | null>(null)
   const zonesRef = useRef<Zone[]>([])
   const selectedZoneRef = useRef<string | null>(null)
@@ -346,32 +359,33 @@ export function useMapCore(
   /** 重算偏心左轉道（路網/車道數/journal 變動後都要跑：bay 的橫向位置依斷面寬推導） */
   const refreshBays = useCallback(() => {
     if (!mapRef.current || !graphRef.current) return
-    // 捏合後次路段的 way id 已退出畫面，掛在它上面的偏心道／右轉道／停等格要改
-    // 讀主路段的鍵。原始歷程不動，這裡只是計算用的視圖。
-    const journal = journalForMergedRoads(journalRef.current)
-    baysRef.current = buildTurnBays(graphRef.current, journal)
-    rightLanesRef.current = buildRightLanes(graphRef.current, journal)
+    // 所有地面樣式使用捏合後的繪圖圖；導航與編輯仍使用 graphRef 的來源拓撲。
+    // 因此主路跨接縫連續，但側路端點仍存在並可生成自己的停止線。
+    const renderGraph = new RoadGraph(renderRoadsRef.current)
+    const journal = journalRef.current
+    baysRef.current = buildTurnBays(renderGraph, journal)
+    rightLanesRef.current = buildRightLanes(renderGraph, journal)
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = [
-      ...buildChannelization(graphRef.current, baysRef.current),
-      ...buildSpecifiedWhiteMotoHatch(graphRef.current),
+      ...buildChannelization(renderGraph, baysRef.current),
+      ...buildSpecifiedWhiteMotoHatch(renderGraph),
     ]
     const stopLines = buildStopLines(
-      graphRef.current, baysRef.current, rightLanesRef.current, journal)
-    const leftWaitAreas = buildLeftTurnWaitingAreas(graphRef.current, baysRef.current)
+      renderGraph, baysRef.current, rightLanesRef.current, journal)
+    const leftWaitAreas = buildLeftTurnWaitingAreas(renderGraph, baysRef.current)
     // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
     const motoBoxes = buildMotoBoxes(
-      graphRef.current, baysRef.current, rightLanesRef.current, journal)
+      renderGraph, baysRef.current, rightLanesRef.current, journal)
     motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
-      graphRef.current, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
+      renderGraph, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
       journal)
     const turnBayFeaturesRaw = baysToGeoJSON(
       baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
       laneArrows, rightLanesRef.current, motoBoxes.boxes)
     turnBayFeaturesRaw.features.push(
-      ...buildMotoLaneEntryIcons(graphRef.current, journal).features,
-      ...buildUnusedLaneGores(graphRef.current, baysRef.current).features)
+      ...buildMotoLaneEntryIcons(renderGraph, journal).features,
+      ...buildUnusedLaneGores(renderGraph, baysRef.current).features)
     const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
     src('turnbays').setData(groundMarkingPolygons(
       turnBayFeatures,
@@ -381,16 +395,16 @@ export function useMapCore(
     ) as never)
     // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
     // + Case A 編輯設定（中央帶類型 = 島）
-    const renderRoads = roadsForRendering(roadsRef.current)
+    const renderRoads = roadsForRendering(renderRoadsRef.current)
     src('medians').setData(mediansToGeoJSON([
       ...buildMedians(renderRoads),
       ...buildTwinIslands(renderRoads, journalRef.current),
-      ...buildMotoSepIslands(graphRef.current),
-      ...buildCenterIslands(graphRef.current, baysRef.current),
+      ...buildMotoSepIslands(renderGraph),
+      ...buildCenterIslands(renderGraph, baysRef.current),
     ]) as never)
     // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走
     src('roadtext').setData(cleanIntersectionFeatures(
-      buildRoadTexts(graphRef.current, baysRef.current)) as never)
+      buildRoadTexts(renderGraph, baysRef.current)) as never)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
   }, [src])
 
@@ -403,7 +417,7 @@ export function useMapCore(
   }, [])
 
   const redrawRoads = useCallback(() => {
-    const renderRoads = roadsForRendering(roadsRef.current)
+    const renderRoads = roadsForRendering(renderRoadsRef.current)
     src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(renderRoads) } as never)
     src('roadSurfaces').setData(buildRoadSurfaces(renderRoads) as never)
     const dividerFeatures = cleanIntersectionFeatures(buildDividers(renderRoads))
@@ -422,29 +436,59 @@ export function useMapCore(
     elevatedLayerRef.current?.setModel(model)
   }, [])
 
-  const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
-    roadsRef.current = roads
-    redrawRoads()
-    laneGuidanceIndexRef.current = guidanceIndexForRoads(
-      laneGuidanceRecordsRef.current, roads, nodeRemapRef.current, wayRemapRef.current,
+  const previewJournal = useCallback((journal: EnhancementRecord[]) => {
+    try {
+      return buildRoadMergeViews(roadsRef.current, journal)
+    } catch (error) {
+      console.error('道路捏合預覽失敗', error)
+      return null
+    }
+  }, [])
+
+  const refreshRoadMergeViews = useCallback((
+    journal = journalRef.current,
+    preparedView?: RoadMergeViews,
+  ) => {
+    const mergeView = selectPreparedRoadMergeView(
+      preparedView,
+      () => previewJournal(journal),
     )
-    graphRef.current = new RoadGraph(roads, laneGuidanceIndexRef.current)
+    if (!mergeView) return false
+    roadsRef.current = mergeView.routingRoads
+    renderRoadsRef.current = mergeView.renderRoads
+    mergeReplayRef.current = mergeView.rows
+    graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
     intersectionsRef.current = graphRef.current.intersections()
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
-    rebuildElevation(roads)
+    for (const row of mergeView.rows) {
+      if (!row.resolved) console.warn(`未套用道路捏合 ${row.mergeKey}：${row.detail}`)
+    }
+    redrawRoads()
+    rebuildElevation(renderRoadsRef.current)
     refreshBays()
-  }, [redrawRoads, refreshBays, rebuildElevation])
+    return true
+  }, [previewJournal, redrawRoads, refreshBays, rebuildElevation])
+
+  const replaceBaseMap = useCallback((roads: RoadFeature[]) => {
+    roadsRef.current = roads.filter((road) => !road.properties.deleted)
+    laneGuidanceIndexRef.current = guidanceIndexForRoads(
+      laneGuidanceRecordsRef.current, roadsRef.current,
+      nodeRemapRef.current, wayRemapRef.current,
+    )
+    return refreshRoadMergeViews()
+  }, [refreshRoadMergeViews])
 
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
     coreRef.current = {
-      mapRef, roadsRef, graphRef, zonesRef, selectedZoneRef, highlightedZoneRef,
+      mapRef, roadsRef, renderRoadsRef, mergeReplayRef,
+      graphRef, zonesRef, selectedZoneRef, highlightedZoneRef,
       journalRef, baysRef,
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
       src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
-      redrawRoads, replaceBaseMap,
+      redrawRoads, replaceBaseMap, previewJournal, refreshRoadMergeViews,
     }
   }
 
@@ -596,10 +640,18 @@ export function useMapCore(
       // 捏合＝journal 紀錄，每次載入才在記憶體內接合；靜態 OSM 一個位元組都不動，
       // 所以重建 segments 也炸不到它。必須排在 applyToRoads 之後：checkRoadMerge
       // 要比對兩段的車道配置，那是人工覆寫套用後才成立的。
-      const mergedCount = applyRoadMerges(roadsAll, journalRef.current)
-      if (mergedCount > 0) console.info(`journal 捏合：接合 ${mergedCount} 組路段`)
-      // 人工刪除區塊不只隱藏：導航 RoadGraph 也完全不接收。
-      roadsRef.current = roadsAll.filter((road) => !road.properties.deleted)
+      // 導航保留來源路段；只有繪圖視圖接合幾何。被 drop 的次段仍可由 provenance 解析。
+      const activeRoads = roadsAll.filter((road) => !road.properties.deleted)
+      const mergeView = buildRoadMergeViews(activeRoads, journalRef.current)
+      roadsRef.current = mergeView.routingRoads
+      renderRoadsRef.current = mergeView.renderRoads
+      mergeReplayRef.current = mergeView.rows
+      if (mergeView.resolved.length > 0) {
+        console.info(`journal 捏合：解析 ${mergeView.resolved.length} 組路段`)
+      }
+      for (const row of mergeView.rows) {
+        if (!row.resolved) console.warn(`未套用道路捏合 ${row.mergeKey}：${row.detail}`)
+      }
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
@@ -651,8 +703,7 @@ export function useMapCore(
               }))
               updateStaticEditor({ journal: journalRef.current })
               applyToRoads(roadsRef.current, foldJournal(journalRef.current))
-              graphRef.current = new RoadGraph(roadsRef.current, laneGuidanceIndexRef.current)
-              intersectionsRef.current = graphRef.current.intersections()
+              replaceBaseMap(roadsRef.current)
             }
           }
         } catch (error) {

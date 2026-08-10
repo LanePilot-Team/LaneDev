@@ -16,6 +16,7 @@ import {
   compassOf, resizeLaneMarks, resizeTurnLanes, TURN_CYCLE, TURN_EDIT_GLYPH,
   BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor, type EditTool,
 } from './useEditor'
+import { formatTaiwanHistoryTime } from './timeFormat'
 
 const resizeDirectionMarks = (
   marks: (LaneMark | null)[], oldCars: number, newCars: number, moto: boolean | number,
@@ -151,7 +152,6 @@ function LaneMarkEditor({ label, marks, carLanes, motoLanes, onChange }: {
   )
 }
 
-/** 提示列一行放得下才有用：short 顯示、full 掛 title 供滑鼠停留查看完整說明。 */
 const TOOL_HINTS: Record<EditTool, {
   short: (profile: Profile) => string
   full: (profile: Profile) => string
@@ -253,21 +253,39 @@ export function LaneEditPanel({ editor }: { editor: Editor }) {
         way/{editRoad.osmId}@b/{editRoad.blockNode} · {editRoad.oneway === 'yes' ? '單行' : '雙向'}
         {' '}· 僅影響目前兩個路口之間的區塊
       </div>
-      {/* 疊在一起的路（主線＋側車道等）：地圖上點不開下層那條，改由這裡直選。
-          地圖同時畫出候選中心線——實線青色是選取中，橘虛線是同一疊的其他條。 */}
       {stackPicks.length > 1 && (
         <div className="stack-picker">
           <div className="stack-head">
-            此處疊了 {stackPicks.length} 條路（地圖上同一點再按一下也會換下一條）
+            此處疊了 {stackPicks.length} 條路；可直接選擇，或在地圖同一點再次點擊切換
           </div>
-          {stackPicks.map((pick, i) => (
-            <button key={pick.key} className={`stack-item${i === stackIndex ? ' on' : ''}`}
-              onClick={() => pickStacked(i)}>
+          {stackPicks.map((pick, index) => (
+            <button
+              key={pick.key}
+              className={`stack-item${index === stackIndex ? ' on' : ''}`}
+              onClick={() => pickStacked(index)}
+            >
               <b>{pick.name}</b>
               <span>{pick.detail}</span>
             </button>
           ))}
         </div>
+      )}
+      {editor.activeRoadMerge && (
+        <section className="edit-section">
+          <h3>道路捏合歷程</h3>
+          <p>此區塊目前屬於一筆可追溯捏合；撤銷只會追加歷程，不會刪除原紀錄。</p>
+          <div className="road-src">
+            作者：{editor.activeRoadMerge.resolved?.sourceAuthor ?? '未知'} ·
+            {' '}時間：{formatTaiwanHistoryTime(editor.activeRoadMerge.resolved?.sourceTs)}<br />
+            主段：{editor.activeRoadMerge.primaryKey}<br />
+            次段：{editor.activeRoadMerge.secondaryKey}<br />
+            解析：{editor.activeRoadMerge.resolved?.resolvedBy ?? editor.activeRoadMerge.status}
+          </div>
+          <div className="edit-row">
+            <span>恢復原始道路與路口拓撲</span>
+            <button className="mini danger" onClick={editor.undoRoadMerge}>撤銷捏合</button>
+          </div>
+        </section>
       )}
       <div className="edit-notice">先調整下列設定；按「儲存並套用」後才會寫入 journal 並重繪道路。</div>
 

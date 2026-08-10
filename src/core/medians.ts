@@ -63,11 +63,20 @@ const wayBearing = (r: RoadFeature) => {
 }
 
 /** scope way 上被「其他道路」引用的節點 → 「靠近路口」判定（島在路口斷開） */
-function junctionGuard(roads: RoadFeature[], scopeSet: Set<RoadFeature>) {
+export function medianJunctionGuard(roads: RoadFeature[], scopeSet: Set<RoadFeature>) {
+  const mergeThroughNodes = new Set<number>()
+  for (const road of scopeSet) {
+    for (const node of road.properties.oneSideEntryNodes ?? []) {
+      mergeThroughNodes.add(node)
+    }
+  }
   const otherRef = new Map<number, number>()
   for (const r of roads) {
     if (scopeSet.has(r)) continue
     for (const n of r.properties.nodes) {
+      // 捏合接縫保留側路拓撲，但中央島在此沒有開口；側路端點仍由自己的
+      // road-surface／停止線規則收邊，不能反過來切斷主路中央島。
+      if (mergeThroughNodes.has(n)) continue
       otherRef.set(n, Math.max(otherRef.get(n) ?? 0, r.properties.width_m))
     }
   }
@@ -214,7 +223,7 @@ export function buildMedians(roads: RoadFeature[]): MedianIsland[] {
   const g1 = scope.filter((r) => Math.abs(angleDelta(ref, wayBearing(r))) >= 90)
   if (g0.length === 0 || g1.length === 0) return []
 
-  return islandsBetween(g0, g1, junctionGuard(roads, scopeSet), PAIR_MAX_M)
+  return islandsBetween(g0, g1, medianJunctionGuard(roads, scopeSet), PAIR_MAX_M)
 }
 
 /**

@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url'
 import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
-import { foldJournal, applyToRoads, applyRoadMerges } from '../src/core/enhancements'
+import { foldJournal, applyToRoads } from '../src/core/enhancements'
+import { buildRoadMergeViews } from '../src/core/roadMerge'
 import { RoadGraph } from '../src/core/graph'
 import {
   buildTurnBays, buildRightLanes, buildChannelization, buildStopLines,
@@ -28,7 +29,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const arg = (name: string, dflt: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? dflt
 const DB_PATH = arg('db', join(HERE, '../public/data/road_database.json'))
-const RADIUS = Number(arg('radius', '30'))
+const RADIUS = Number(arg('radius', '8'))
 
 const db = JSON.parse(readFileSync(DB_PATH, 'utf8'))
 const parsed = parseImported(db.segments.map((r: unknown) => JSON.stringify(r)).join('\n'))
@@ -36,23 +37,25 @@ if (parsed.kind !== 'map') throw new Error('靜態資料庫格式錯誤')
 const { roads } = prepareBaseRoads(roadsFromGeoJSON(parsed.fc))
 const journal = db.editor?.journal ?? []
 applyToRoads(roads, foldJournal(journal))
-applyRoadMerges(roads, journal)
 const active = roads.filter((r) => !r.properties.deleted)
-const graph = new RoadGraph(active)
+const mergeView = buildRoadMergeViews(active, journal)
+const routingRoads = mergeView.routingRoads
+const renderRoads = mergeView.renderRoads
+const renderGraph = new RoadGraph(renderRoads)
 
-const bays = buildTurnBays(graph, journal)
-const rightLanes = buildRightLanes(graph, journal)
-const channel = buildChannelization(graph, bays)
-const stopLines = buildStopLines(graph, bays, rightLanes, journal)
-const motoBoxes = buildMotoBoxes(graph, bays, rightLanes, journal)
-const arrows = buildLaneArrows(graph, bays, rightLanes, motoBoxes.dirs, journal)
-const medians = buildMedians(active)
+const bays = buildTurnBays(renderGraph, journal)
+const rightLanes = buildRightLanes(renderGraph, journal)
+const channel = buildChannelization(renderGraph, bays)
+const stopLines = buildStopLines(renderGraph, bays, rightLanes, journal)
+const motoBoxes = buildMotoBoxes(renderGraph, bays, rightLanes, journal)
+const arrows = buildLaneArrows(renderGraph, bays, rightLanes, motoBoxes.dirs, journal)
+const medians = buildMedians(renderRoads)
 
 // 找出所有捏合接點（主線登記了 oneSideEntryNodes 的節點）
 interface J { main: RoadFeature; node: number; pos: [number, number] }
 /** 節點座標：登記的是別名後的 id，主線自己握的是負節點，兩邊都要找 */
 const posOfNode = (id: number): [number, number] | null => {
-  for (const r of active) {
+  for (const r of routingRoads) {
     const i = r.properties.nodes.indexOf(id)
     if (i >= 0) return r.geometry.coordinates[i] as [number, number]
   }
@@ -61,7 +64,7 @@ const posOfNode = (id: number): [number, number] | null => {
 const junctions: J[] = []
 const seenJ = new Set<number>()
 const ONLY = arg('name', '')
-for (const r of active) {
+for (const r of routingRoads) {
   for (const node of r.properties.oneSideEntryNodes ?? []) {
     if (seenJ.has(node)) continue // 多條 way 可能登記同一個接點，只看一次
     if (ONLY && !(r.properties.name ?? '').includes(ONLY)) continue
@@ -80,7 +83,9 @@ const lineNear = (coords: [number, number][], at: [number, number]) =>
 let fails = 0
 for (const j of junctions.slice(0, Number(arg('limit', '5')))) {
   const name = j.main.properties.name ?? '未命名'
-  console.log(`── ${name}（way/${j.main.properties.osm_id}）node=${j.node} ──`)
+  const replayed = mergeView.resolved.filter((merge) => merge.junctionNodeId === j.node)
+  console.log(`── ${name}（way/${j.main.properties.osm_id}）node=${j.node}`
+    + `｜road_merge=${replayed.length} ──`)
 
   // 一、中央帶標線是否在接點斷開
   // 只看「主線自己的」中央帶：小巷的中央帶本來就該在路口收邊，混在一起會誤判。
@@ -108,11 +113,24 @@ for (const j of junctions.slice(0, Number(arg('limit', '5')))) {
       if (d < 6) gaps.push(d)
     }
   }
-  const brokenChannel = gaps.length > 0
+  const overlapsNeighborJunction = chanNear.some((line) => {
+    const ownerNode = line.ownerKey?.match(/@node\/(-?\d+)/)?.[1]
+    return ownerNode !== undefined && Number(ownerNode) !== j.node
+  })
+  const brokenChannel = gaps.length > 0 && !overlapsNeighborJunction
   console.log(`   中央帶標線：${chanNear.length} 條經過｜`
-    + (brokenChannel
+    + (overlapsNeighborJunction
+      ? '✅ 端點屬於相鄰的真實路口樣式，不是捏合接縫開口'
+      : brokenChannel
       ? `❌ 有 ${gaps.length} 個端點落在接點 ${Math.min(...gaps).toFixed(0)}m 內＝被切斷`
       : '✅ 連續，未在接點斷開'))
+  if (brokenChannel) {
+    for (const line of chanNear) {
+      const cs = line.coords as [number, number][]
+      console.log(`      ${line.style ?? 'plain'} owner=${line.ownerKey ?? '-'} `
+        + `端距=${haversine(cs[0], j.pos).toFixed(1)}/${haversine(cs[cs.length - 1], j.pos).toFixed(1)}m`)
+    }
+  }
   if (brokenChannel) fails++
 
   // 中央島（綠帶）是否連續
@@ -125,12 +143,21 @@ for (const j of junctions.slice(0, Number(arg('limit', '5')))) {
   const mainBrg = mainBrg0
   const arrowsNear = arrows.filter((a) => near(a.pos, j.pos))
   const isBack = (a: { brg: number }) => Math.abs(angleDelta(a.brg, mainBrg)) > 90
-  const badArrows = arrowsNear.filter((a) => isBack(a) && /left|↰/.test(a.icon))
+  const badArrows = arrowsNear.filter((a) =>
+    a.ownerKey?.startsWith(`${j.main.properties.osm_id}@${j.node}`)
+    && isBack(a) && /left|↰/.test(a.icon))
   console.log(`   地面箭頭：附近 ${arrowsNear.length} 個`
     + `（反向 ${arrowsNear.filter(isBack).length} 個）｜`
     + (badArrows.length
       ? `❌ 反向有 ${badArrows.length} 個左轉箭頭：${badArrows.map((a) => a.icon).join(' ')}`
       : '✅ 反向無左轉箭頭'))
+  if (badArrows.length) {
+    console.log(`      owner=${badArrows.map((arrow) => arrow.ownerKey ?? '-').join(', ')}`)
+    for (const road of renderRoads.filter((road) => road.properties.nodes.includes(j.node))) {
+      console.log(`      render way/${road.properties.osm_id} ${road.properties.name ?? ''}`
+        + ` oneSide=${JSON.stringify(road.properties.oneSideEntryNodes ?? [])}`)
+    }
+  }
   if (badArrows.length) fails++
 
   // 三、停止線：主線不該有、小巷該有

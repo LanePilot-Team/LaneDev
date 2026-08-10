@@ -1,7 +1,7 @@
 // LaneDev（開發版）App：模式機 + 點擊分派 + 畫面組裝。
 // 功能實作都在 app/（地圖核心、匯入）、plan/（規劃）、nav/（導航）、browse/（瀏覽）、
 // edit/（編輯，LaneDev 專屬）——除 edit/ 外皆與 LaneNav 共用（npm run sync-lanenav 鏡像）。
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMapCore, type Mode } from './app/mapCore'
 import { importFiles } from './app/importFlow'
 import { usePlanner } from './plan/usePlanner'
@@ -9,7 +9,9 @@ import { PlanPanel } from './plan/PlanPanel'
 import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
 import { useDrive } from './nav/useDrive'
 import { DriveHUD } from './nav/DriveHUD'
-import { useEditor } from './edit/useEditor'
+import { useEditor, type EditRoadState } from './edit/useEditor'
+import { consumeRoadMergeReloadState } from './core/roadMergeReload'
+import { activeMergeForRoad } from './core/roadMerge'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
   RoadDrawPanel,
@@ -37,6 +39,27 @@ export default function App() {
     })
   const planner = usePlanner(core)
   const editor = useEditor(core, planner.profileRef, modeRef)
+
+  useEffect(() => {
+    if (loading) return
+    const restored = consumeRoadMergeReloadState(window.sessionStorage)
+    if (!restored) return
+    core.mapRef.current?.jumpTo(restored.camera)
+    setMode(restored.mode)
+    editor.setEditTool(restored.editTool)
+    const editRoad = restored.editRoad as EditRoadState | null
+    editor.setEditRoad(editRoad)
+    const road = editRoad
+      ? core.roadsRef.current.find((candidate) =>
+        candidate.properties.osm_id === editRoad.osmId
+        && candidate.properties.blockNode === editRoad.blockNode)
+      : null
+    editor.setActiveRoadMerge(
+      road ? activeMergeForRoad(core.mergeReplayRef.current, road) ?? null : null,
+    )
+    // The snapshot is one-shot and is consumed only after canonical data has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   const {
     drive, multiplier, gpsMsg, decisionOptions,

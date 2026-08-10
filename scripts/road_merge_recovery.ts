@@ -1,0 +1,376 @@
+import {
+  resolveRoadMerges, type RoadMergeReplayRow,
+} from '../src/core/roadMerge.ts'
+import type { EnhancementRecord } from '../src/core/enhancements'
+import type { RoadFeature } from '../src/core/roads'
+
+type ReplayStatus = RoadMergeReplayRow['status']
+type MigrationOutcome = 'upgraded' | 'rolled_back' | 'already_v2'
+
+export interface RoadMergeReviewLocation {
+  nodeId: number
+  longitude: number
+  latitude: number
+  googleMaps: string
+  openStreetMap: string
+}
+
+export interface RoadMergeOutcomeRow {
+  mergeKey: string
+  roadName: string
+  sourceSeq: number
+  status: ReplayStatus
+  outcome: MigrationOutcome
+  detail: string
+  primaryKey: string
+  secondaryKey: string
+  location?: RoadMergeReviewLocation
+}
+
+export interface RoadMergeRecoveryReport {
+  format: 'lanedev-road-merge-recovery-v3'
+  generatedAt: string
+  databasePath: string
+  totals: Record<ReplayStatus, number>
+  rows: RoadMergeReplayRow[]
+  outcomes: {
+    upgraded: RoadMergeOutcomeRow[]
+    rolledBack: RoadMergeOutcomeRow[]
+    alreadyV2: RoadMergeOutcomeRow[]
+  }
+  migrationCandidates: EnhancementRecord[]
+}
+
+export interface RoadMergeRecoveryReportRow {
+  mergeKey: string
+  primaryKey: string
+  secondaryKey: string
+  status: ReplayStatus
+  detail: string
+  resolved?: {
+    junctionNodeId: number
+    primaryBlockKey: string
+    secondaryBlockKey: string
+    resolvedBy: string
+    sourceSeq?: number
+    sourceTs?: string
+    sourceAuthor?: string
+  }
+}
+
+export interface RoadMergeReviewReport {
+  format: RoadMergeRecoveryReport['format']
+  generatedAt: string
+  databasePath: string
+  sourceCommit: string
+  sourceDatabaseSha256: string
+  outputDatabaseSha256?: string
+  summary: {
+    total: number
+    upgraded: number
+    rolledBack: number
+    alreadyV2: number
+  }
+  totals: Record<ReplayStatus, number>
+  upgraded: RoadMergeOutcomeRow[]
+  rolledBack: RoadMergeOutcomeRow[]
+  alreadyV2: RoadMergeOutcomeRow[]
+  rows: RoadMergeRecoveryReportRow[]
+  migrationCandidateCount: number
+}
+
+const blockKey = (road: RoadFeature) =>
+  `way/${road.properties.osm_id}@b/${road.properties.blockNode}`
+
+const compactRow = (row: RoadMergeReplayRow): RoadMergeRecoveryReportRow => ({
+  mergeKey: row.mergeKey,
+  primaryKey: row.primaryKey,
+  secondaryKey: row.secondaryKey,
+  status: row.status,
+  detail: row.detail,
+  ...(row.resolved ? {
+    resolved: {
+      junctionNodeId: row.resolved.junctionNodeId,
+      primaryBlockKey: blockKey(row.resolved.primary),
+      secondaryBlockKey: blockKey(row.resolved.secondary),
+      resolvedBy: row.resolved.resolvedBy,
+      sourceSeq: row.resolved.sourceSeq,
+      sourceTs: row.resolved.sourceTs,
+      sourceAuthor: row.resolved.sourceAuthor,
+    },
+  } : {}),
+})
+
+export function buildReviewReport(
+  report: RoadMergeRecoveryReport,
+  sourceDatabaseSha256: string,
+  sourceCommit = '',
+): RoadMergeReviewReport {
+  return {
+    format: report.format,
+    generatedAt: report.generatedAt,
+    databasePath: report.databasePath,
+    sourceCommit,
+    sourceDatabaseSha256,
+    summary: {
+      total: report.rows.length,
+      upgraded: report.outcomes.upgraded.length,
+      rolledBack: report.outcomes.rolledBack.length,
+      alreadyV2: report.outcomes.alreadyV2.length,
+    },
+    totals: report.totals,
+    upgraded: report.outcomes.upgraded,
+    rolledBack: report.outcomes.rolledBack,
+    alreadyV2: report.outcomes.alreadyV2,
+    rows: report.rows.map(compactRow),
+    migrationCandidateCount: report.migrationCandidates.length,
+  }
+}
+
+export const reviewRowsSignature = (rows: RoadMergeRecoveryReportRow[]) =>
+  JSON.stringify(rows.map((row) => [
+    row.mergeKey, row.primaryKey, row.secondaryKey, row.status, row.detail,
+    row.resolved?.junctionNodeId,
+    row.resolved?.primaryBlockKey,
+    row.resolved?.secondaryBlockKey,
+    row.resolved?.resolvedBy,
+  ]))
+
+const sourceSnapshot = (road: RoadFeature) => JSON.stringify({
+  osmId: road.properties.osm_id,
+  navSegmentKey: road.properties.navSegmentKey,
+  splitIndex: road.properties.splitIndex,
+  blockNode: road.properties.blockNode,
+  nodeRefs: road.properties.nodes,
+  sourceSegments: road.properties.sourceSegments,
+})
+
+export function buildMigrationCandidate(
+  row: RoadMergeReplayRow,
+  startSeq = 0,
+  generatedAt = new Date().toISOString(),
+  sourceSeq = row.resolved?.sourceSeq ?? 0,
+): EnhancementRecord[] {
+  const author = 'road-merge-recovery-v2'
+  const tombstone: EnhancementRecord = {
+    seq: startSeq + 1,
+    ts: generatedAt,
+    author,
+    op: 'delete',
+    target: { type: 'road_merge', key: row.mergeKey },
+    fields: { supersedes_seq: sourceSeq },
+  }
+  const resolved = row.resolved
+  if (!resolved) return [tombstone]
+  return [
+    tombstone,
+    {
+      seq: startSeq + 2,
+      ts: generatedAt,
+      author,
+      op: 'set',
+      target: { type: 'road_merge', key: row.mergeKey },
+      fields: {
+        schema_version: 2,
+        primary: row.primaryKey,
+        secondary: row.secondaryKey,
+        junction_node: resolved.junctionNodeId,
+        primary_source: sourceSnapshot(resolved.primary),
+        secondary_source: sourceSnapshot(resolved.secondary),
+        secondary_nodes: JSON.stringify(resolved.secondary.properties.nodes),
+        supersedes_merge_key: row.mergeKey,
+        supersedes_seq: sourceSeq,
+      },
+    },
+  ]
+}
+
+const activeRoadMergeRecords = (journal: EnhancementRecord[]) => {
+  const active = new Map<string, EnhancementRecord>()
+  for (const record of journal) {
+    if (record.target?.type !== 'road_merge') continue
+    if (record.op === 'delete') active.delete(record.target.key)
+    else if (record.op === 'set') active.set(record.target.key, record)
+  }
+  return active
+}
+
+const roadNameFor = (row: RoadMergeReplayRow, roads: RoadFeature[]) => {
+  const exact = roads.find((road) =>
+    blockKey(road) === row.primaryKey || blockKey(road) === row.secondaryKey)
+  const sourceWayIds = [row.primaryKey, row.secondaryKey]
+    .map((key) => Number(key.match(/^way\/(\d+)/)?.[1]))
+    .filter(Number.isFinite)
+  const provenance = roads.find((road) => road.properties.sourceSegments?.some(
+    (source) => sourceWayIds.includes(source.osmId),
+  ))
+  return row.resolved?.primary.properties.name
+    ?? exact?.properties.name
+    ?? provenance?.properties.name
+    ?? row.primaryKey
+}
+
+const blockNodeFromKey = (key: string) => {
+  const match = key.match(/@b\/(-?\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+const coordinateForNode = (roads: RoadFeature[], nodeId: number): [number, number] | null => {
+  for (const road of roads) {
+    const roadIndex = road.properties.nodes.indexOf(nodeId)
+    if (roadIndex >= 0) {
+      const coordinate = road.geometry.coordinates[roadIndex]
+      if (coordinate) return [Number(coordinate[0]), Number(coordinate[1])]
+    }
+    for (const source of road.properties.sourceSegments ?? []) {
+      const sourceIndex = source.nodeRefs.indexOf(nodeId)
+      const coordinate = sourceIndex >= 0 ? source.coordinates?.[sourceIndex] : undefined
+      if (coordinate) return [Number(coordinate[0]), Number(coordinate[1])]
+    }
+  }
+  return null
+}
+
+const reviewLocationFor = (
+  row: RoadMergeReplayRow, roads: RoadFeature[],
+): RoadMergeReviewLocation | undefined => {
+  const nodeId = row.resolved?.junctionNodeId ?? blockNodeFromKey(row.secondaryKey)
+  if (nodeId === null) return undefined
+  const coordinate = coordinateForNode(roads, nodeId)
+  if (!coordinate) return undefined
+  const [longitude, latitude] = coordinate
+  return {
+    nodeId,
+    longitude,
+    latitude,
+    googleMaps: `https://www.google.com/maps/@${latitude},${longitude},20z`,
+    openStreetMap: `https://www.openstreetmap.org/node/${nodeId}`,
+  }
+}
+
+const escapeTableCell = (value: unknown) => String(value ?? '').replaceAll('|', '\\|')
+
+const outcomeTable = (rows: RoadMergeOutcomeRow[]) => [
+  '| 道路 | 主段 | 次段 | 來源 seq | 判定 | 說明 | 人工回查位置 |',
+  '| --- | --- | --- | ---: | --- | --- | --- |',
+  ...rows.map((row) => {
+    const location = row.location
+      ? `[Google Maps](${row.location.googleMaps}) / [OSM node ${row.location.nodeId}](${row.location.openStreetMap})`
+      : '未能自動定位'
+    return `| ${escapeTableCell(row.roadName)} | \`${row.primaryKey}\` | \`${row.secondaryKey}\` | ${row.sourceSeq} | ${row.status} | ${escapeTableCell(row.detail)} | ${location} |`
+  }),
+].join('\n')
+
+export function buildReviewMarkdown(report: RoadMergeReviewReport): string {
+  return [
+    '# 舊道路捏合升級與回退回查報告',
+    '',
+    `- 來源：\`${report.sourceCommit || '未指定'}\``,
+    `- 產生時間：\`${report.generatedAt}\``,
+    `- 總數：${report.summary.total}`,
+    `- 已升級：${report.summary.upgraded}`,
+    `- 已回退：${report.summary.rolledBack}`,
+    `- 原本已是 V2：${report.summary.alreadyV2}`,
+    '',
+    '「已升級」代表舊捏合已轉成可追溯的 schema v2；「已回退」代表無法安全還原關係，因此只停用舊捏合，讓道路回到未捏合狀態。',
+    '',
+    '## 處置結果與判定說明',
+    '',
+    '### 處置結果',
+    '',
+    '- **已升級**：判定為 `replayable` 或 `recoverable_via_provenance`。保留舊紀錄，追加停用紀錄，再建立含完整來源快照的 schema v2 捏合。',
+    '- **已回退**：判定為 `needs_manual_review`、`invalid` 或 `legacy_destructive`。只停用不安全的舊捏合，讓道路恢復成未捏合狀態，交由人工確認。',
+    '- **原本已是 V2**：紀錄本來就有完整來源快照，不需要再次升級。',
+    '',
+    '### 判定',
+    '',
+    '- **`replayable`（可依序重播）**：能精確找到原本主段、次段與共同接點，並按舊 journal 順序重建相同捏合。',
+    '- **`recoverable_via_provenance`（可由來源追溯）**：畫面上的原路段可能已被 couplet 合併或吸收，但仍可由 `sourceSegments` 中的 OSM way、節點與幾何唯一找回。',
+    '- **`needs_manual_review`（需要人工確認）**：找得到相關道路，但候選路段、側路方向或允許進出方向無法唯一判定；系統不猜測，因此回退。',
+    '- **`invalid`（幾何或關係不成立）**：兩段目前不符合捏合條件，例如端點相距過遠、沒有共同接點或排列不連續。',
+    '- **`legacy_destructive`（舊版破壞性資料）**：舊版曾直接移除次段，而且現有來源資料不足以安全找回；本報告此類為 0 筆。',
+    '',
+    '### 回查欄位',
+    '',
+    '- **主段／次段**：當初作為承載段與吸收段的 block key；主段與次段不代表地圖上的左右順序或實際行駛方向。',
+    '- **來源 seq**：舊 journal 的紀錄序號，可用來追查原始操作。',
+    '- **人工回查位置**：預期接合節點的 Google Maps 與 OSM node 連結。',
+    '- **說明**：該筆判定的具體原因，例如「來源候選不唯一」或「端點相距 21.7 公尺」。',
+    '',
+    `## 已升級（${report.upgraded.length}）`,
+    '',
+    outcomeTable(report.upgraded),
+    '',
+    `## 已回退（${report.rolledBack.length}）`,
+    '',
+    outcomeTable(report.rolledBack),
+    '',
+    `## 原本已是 V2（${report.alreadyV2.length}）`,
+    '',
+    outcomeTable(report.alreadyV2),
+    '',
+  ].join('\n')
+}
+
+export function buildRecoveryReport(
+  roads: RoadFeature[],
+  journal: EnhancementRecord[],
+  databasePath: string,
+  generatedAt = new Date().toISOString(),
+): RoadMergeRecoveryReport {
+  const { rows } = resolveRoadMerges(roads, journal)
+  const totals: Record<ReplayStatus, number> = {
+    replayable: 0,
+    recoverable_via_provenance: 0,
+    needs_manual_review: 0,
+    legacy_destructive: 0,
+    invalid: 0,
+  }
+  rows.forEach((row) => { totals[row.status]++ })
+
+  const active = activeRoadMergeRecords(journal)
+  const outcomes: RoadMergeRecoveryReport['outcomes'] = {
+    upgraded: [], rolledBack: [], alreadyV2: [],
+  }
+  let nextSeq = journal.reduce((max, record) => Math.max(max, record.seq), 0)
+  const migrationCandidates: EnhancementRecord[] = []
+
+  for (const row of rows) {
+    const sourceRecord = active.get(row.mergeKey)
+    const sourceSeq = sourceRecord?.seq ?? row.resolved?.sourceSeq ?? 0
+    const isV2 = Number(sourceRecord?.fields?.schema_version) === 2
+    const safe = !!row.resolved
+      && (row.status === 'replayable' || row.status === 'recoverable_via_provenance')
+    const outcome: MigrationOutcome = isV2 ? 'already_v2' : safe ? 'upgraded' : 'rolled_back'
+    const outcomeRow: RoadMergeOutcomeRow = {
+      mergeKey: row.mergeKey,
+      roadName: roadNameFor(row, roads),
+      sourceSeq,
+      status: row.status,
+      outcome,
+      detail: isV2 ? '已是 schema v2，不重複遷移' : row.detail,
+      primaryKey: row.primaryKey,
+      secondaryKey: row.secondaryKey,
+      location: reviewLocationFor(row, roads),
+    }
+    if (outcome === 'already_v2') {
+      outcomes.alreadyV2.push(outcomeRow)
+      continue
+    }
+    if (outcome === 'upgraded') outcomes.upgraded.push(outcomeRow)
+    else outcomes.rolledBack.push(outcomeRow)
+    const records = buildMigrationCandidate(row, nextSeq, generatedAt, sourceSeq)
+    migrationCandidates.push(...records)
+    nextSeq += records.length
+  }
+
+  return {
+    format: 'lanedev-road-merge-recovery-v3',
+    generatedAt,
+    databasePath,
+    totals,
+    rows,
+    outcomes,
+    migrationCandidates,
+  }
+}

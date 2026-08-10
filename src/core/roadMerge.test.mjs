@@ -1,0 +1,871 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  activeMergeForRoad, buildRoadMergeViews, planRoadMergeSeamUndo,
+  previewRoadMerge, resolveRoadMerges, roadMergeComponentBlockKeys,
+  roadMergeEditDrafts, roadMergeEditableRoads,
+} from './roadMerge.ts'
+import * as roadMergeModule from './roadMerge.ts'
+
+const coordinate = (node) => [120 + node / 1_000_000, 22]
+const chainCoordinate = (node) => [120 + node / 1_000, 22]
+
+const road = ({
+  osmId, blockNode, nodes, sourceSegments, name = '測試路', coordinates,
+}) => ({
+  type: 'Feature',
+  geometry: { type: 'LineString', coordinates: coordinates ?? nodes.map(coordinate) },
+  properties: {
+    osm_id: osmId,
+    blockNode,
+    navSegmentKey: `way/${osmId}`,
+    splitIndex: 0,
+    name,
+    nodes: [...nodes],
+    sourceSegments: sourceSegments ?? [{
+      osmId,
+      navSegmentKey: `way/${osmId}`,
+      splitIndex: 0,
+      nodeRefs: [...nodes],
+    }],
+  },
+})
+
+const chainRoad = (blockNode, nodes) => road({
+  osmId: 100,
+  blockNode,
+  nodes,
+  coordinates: nodes.map(chainCoordinate),
+})
+
+const mergeRecord = ({
+  primary = 'way/100@b/1', secondary = 'way/100@b/2',
+  secondaryNodes, seq = 1, op = 'set',
+} = {}) => ({
+  seq,
+  ts: `2026-07-31T00:00:0${seq}.000Z`,
+  author: 'anna',
+  op,
+  target: { type: 'road_merge', key: `merge/${primary}+${secondary}` },
+  fields: op === 'delete' ? undefined : {
+    primary,
+    secondary,
+    ...(secondaryNodes ? { secondary_nodes: JSON.stringify(secondaryNodes) } : {}),
+  },
+})
+
+const v2Chain = (blocks) => {
+  let journal = []
+  let view = buildRoadMergeViews(blocks, journal)
+  for (let index = 1; index < blocks.length; index++) {
+    const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+    const secondary = view.renderRoads.find(
+      (item) => item.properties.blockNode === blocks[index].properties.blockNode)
+    assert.ok(carrier)
+    assert.ok(secondary)
+    const preview = previewRoadMerge(view.renderRoads, journal, carrier, secondary)
+    assert.equal(preview.ok, true)
+    journal = [...journal, {
+      ...preview.record,
+      seq: index,
+      ts: `2026-08-01T00:00:0${index}.000Z`,
+      author: 'anna',
+    }]
+    view = buildRoadMergeViews(blocks, journal)
+  }
+  return journal
+}
+
+const stampPlanned = (journal, records) => records.reduce((next, record, index) => [
+  ...next,
+  {
+    ...record,
+    seq: journal.length + index + 1,
+    ts: `2026-08-01T00:01:${String(index).padStart(2, '0')}.000Z`,
+    author: 'anna',
+  },
+], journal)
+
+test('同一 OSM way 上互不相連的捏合不會被視為同一個編輯群組', () => {
+  const sharedSource = [{
+    osmId: 100,
+    navSegmentKey: 'way/100',
+    splitIndex: 0,
+    nodeRefs: [1, 2, 3, 4, 5],
+  }]
+  const carrierAB = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: sharedSource,
+  })
+  const carrierCD = road({
+    osmId: 901,
+    blockNode: 92,
+    nodes: [92, 93],
+    sourceSegments: sharedSource,
+  })
+  const rows = [
+    {
+      mergeKey: 'merge/way/100@b/1+way/100@b/2',
+      primaryKey: 'way/100@b/1',
+      secondaryKey: 'way/100@b/2',
+      status: 'recoverable_via_provenance',
+      detail: '第一組捏合',
+      resolved: { primary: carrierAB, secondary: carrierAB },
+    },
+    {
+      mergeKey: 'merge/way/100@b/3+way/100@b/4',
+      primaryKey: 'way/100@b/3',
+      secondaryKey: 'way/100@b/4',
+      status: 'recoverable_via_provenance',
+      detail: '第二組捏合',
+      resolved: { primary: carrierCD, secondary: carrierCD },
+    },
+  ]
+
+  assert.deepEqual(roadMergeComponentBlockKeys(rows, carrierAB), [
+    'way/100@b/1',
+    'way/100@b/2',
+  ])
+})
+
+test('未參與捏合的同 OSM way 路段不顯示其他區塊的捏合歷程', () => {
+  const sharedSource = [{
+    osmId: 100,
+    navSegmentKey: 'way/100',
+    splitIndex: 0,
+    nodeRefs: [1, 2, 3, 4],
+  }]
+  const mergedCarrier = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: sharedSource,
+  })
+  const untouchedBlock = road({
+    osmId: 100,
+    blockNode: 3,
+    nodes: [3, 4],
+    sourceSegments: sharedSource,
+  })
+  const row = {
+    mergeKey: 'merge/way/100@b/1+way/100@b/2',
+    primaryKey: 'way/100@b/1',
+    secondaryKey: 'way/100@b/2',
+    status: 'recoverable_via_provenance',
+    detail: '只有區塊 1 與 2 被捏合',
+    resolved: { primary: mergedCarrier, secondary: mergedCarrier },
+  }
+
+  assert.equal(activeMergeForRoad([row], untouchedBlock), undefined)
+})
+
+test('連鎖捏合道路編輯涵蓋承載段與所有被接合區塊', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+
+  assert.ok(carrier)
+  assert.deepEqual(roadMergeComponentBlockKeys(view.rows, carrier), [
+    'way/100@b/1',
+    'way/100@b/2',
+    'way/100@b/3',
+  ])
+})
+
+test('由來源追溯找回的舊捏合仍可辨識全部編輯區塊', () => {
+  const carrier = road({
+    osmId: 900,
+    blockNode: 90,
+    nodes: [90, 91],
+    sourceSegments: [{
+      osmId: 100,
+      navSegmentKey: 'way/100',
+      splitIndex: 0,
+      nodeRefs: [1, 2, 3],
+    }],
+  })
+  const row = {
+    mergeKey: 'merge/way/100@b/1+way/100@b/2',
+    primaryKey: 'way/100@b/1',
+    secondaryKey: 'way/100@b/2',
+    status: 'recoverable_via_provenance',
+    detail: '主次來源已吸收到同一存活道路',
+    resolved: { primary: carrier, secondary: carrier },
+  }
+
+  assert.deepEqual(roadMergeComponentBlockKeys([row], carrier), [
+    'way/100@b/1',
+    'way/100@b/2',
+  ])
+
+  const fields = { center_m: 2.4 }
+  assert.deepEqual(
+    roadMergeEditDrafts([row], carrier, fields, [carrier]).map((record) => record.target.key),
+    ['way/900@b/90'],
+  )
+  const renderCarrier = structuredClone(carrier)
+  assert.deepEqual(
+    roadMergeEditableRoads([row], carrier, [carrier], [renderCarrier]),
+    [carrier, renderCarrier],
+  )
+})
+
+test('捏合道路斷面編輯會為每個原始區塊產生同一組 journal 欄位', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+  assert.ok(carrier)
+
+  const fields = { lanes_forward: 3, center_m: 3.2, extra_width_m: 0.8 }
+  const drafts = roadMergeEditDrafts(view.rows, carrier, fields, view.routingRoads)
+
+  assert.deepEqual(drafts.map((record) => record.target.key), [
+    'way/100@b/1',
+    'way/100@b/2',
+    'way/100@b/3',
+  ])
+  assert.ok(drafts.every((record) => record.op === 'set' && record.fields === fields))
+})
+
+test('捏合道路即時編輯同時更新三段導航來源與一條繪圖承載道路', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+  const view = buildRoadMergeViews(blocks, journal)
+  const carrier = view.renderRoads.find((item) => item.properties.blockNode === 1)
+  assert.ok(carrier)
+
+  const editable = roadMergeEditableRoads(
+    view.rows, carrier, view.routingRoads, view.renderRoads)
+
+  assert.equal(editable.length, 4)
+  assert.equal(editable.filter((item) => view.routingRoads.includes(item)).length, 3)
+  assert.equal(editable.filter((item) => view.renderRoads.includes(item)).length, 1)
+})
+
+test('精確 block key 可依日誌追溯', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const result = resolveRoadMerges([primary, secondary], [mergeRecord()])
+
+  assert.equal(result.resolved.length, 1)
+  assert.equal(result.rows[0].status, 'replayable')
+  assert.equal(result.resolved[0].resolvedBy, 'exact')
+  assert.equal(result.resolved[0].sourceAuthor, 'anna')
+})
+
+test('次段被 couplet drop 後可由 sourceSegments 找回', () => {
+  const keep = road({
+    osmId: 900,
+    blockNode: 1,
+    nodes: [1, 2, 3],
+    sourceSegments: [
+      { osmId: 100, navSegmentKey: 'way/100', splitIndex: 0, nodeRefs: [1, 2] },
+      { osmId: 267715892, navSegmentKey: 'way/267715892', splitIndex: 0,
+        nodeRefs: [2, 3] },
+    ],
+  })
+  const record = mergeRecord({
+    primary: 'way/100@b/1',
+    secondary: 'way/267715892@b/2',
+    secondaryNodes: [2, 3],
+  })
+
+  const result = resolveRoadMerges([keep], [record])
+
+  assert.equal(result.resolved.length, 1)
+  assert.equal(result.rows[0].status, 'recoverable_via_provenance')
+  assert.equal(result.resolved[0].resolvedBy, 'already-absorbed')
+  assert.equal(result.resolved[0].junctionNodeId, 2)
+})
+
+test('連鎖捏合依原始時序重播，不用最終快照誤判較早次段', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = [
+    mergeRecord({ primary: 'way/100@b/1', secondary: 'way/100@b/2', seq: 1 }),
+    mergeRecord({ primary: 'way/100@b/1', secondary: 'way/100@b/3', seq: 2 }),
+  ]
+
+  const result = resolveRoadMerges(blocks, journal)
+
+  assert.deepEqual(result.rows.map((row) => row.status), ['replayable', 'replayable'])
+  assert.equal(result.resolved.length, 2)
+})
+
+test('delete tombstone 會停用舊捏合但保留日誌原文', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const set = mergeRecord({ seq: 1 })
+  const del = mergeRecord({ seq: 2, op: 'delete' })
+
+  const result = resolveRoadMerges([primary, secondary], [set, del])
+
+  assert.equal(result.rows.length, 0)
+  assert.equal(result.resolved.length, 0)
+  assert.equal(set.op, 'set')
+})
+
+test('sourceSegments 找到多個候選時不猜測並列入人工確認', () => {
+  const source = {
+    osmId: 267715892,
+    navSegmentKey: 'way/267715892',
+    splitIndex: 0,
+    nodeRefs: [2, 3],
+  }
+  const candidates = [
+    road({ osmId: 900, blockNode: 1, nodes: [1, 2], sourceSegments: [source] }),
+    road({ osmId: 901, blockNode: 4, nodes: [4, 2], sourceSegments: [source] }),
+  ]
+  const record = mergeRecord({
+    primary: 'way/267715892@b/2',
+    secondary: 'way/267715892@b/3',
+    secondaryNodes: [2, 3],
+  })
+
+  const result = resolveRoadMerges(candidates, [record])
+
+  assert.equal(result.resolved.length, 0)
+  assert.equal(result.rows[0].status, 'needs_manual_review')
+  assert.match(result.rows[0].detail, /候選不唯一/)
+})
+
+test('完整來源節點被多段共用時，以來源節點座標定位正確區塊', () => {
+  const source = {
+    osmId: 267715892,
+    navSegmentKey: 'way/267715892',
+    splitIndex: 0,
+    nodeRefs: [2, 3, 4],
+    coordinates: [[120, 22], [120, 22.001], [120, 22.002]],
+  }
+  const near = road({
+    osmId: 900, blockNode: 90, nodes: [90, 91], sourceSegments: [source],
+    coordinates: [[120.00001, 22.00099], [120.00001, 22.0015]],
+  })
+  const far = road({
+    osmId: 901, blockNode: 92, nodes: [92, 93], sourceSegments: [source],
+    coordinates: [[120.01, 22.01], [120.011, 22.011]],
+  })
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22.0005], [120, 22.00099]],
+  })
+  const record = mergeRecord({
+    primary: 'way/100@b/1',
+    secondary: 'way/267715892@b/3',
+    secondaryNodes: [2, 3],
+  })
+
+  const result = resolveRoadMerges([primary, near, far], [record])
+
+  assert.equal(result.rows[0].status, 'recoverable_via_provenance')
+  assert.equal(result.resolved[0].secondary.properties.osm_id, near.properties.osm_id)
+})
+
+test('來源幾何是不可變追溯資料，建立視圖時不得重複深拷貝', () => {
+  const coordinates = [[120, 22], [120, 22.001]]
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    sourceSegments: [{
+      osmId: 100, navSegmentKey: 'way/100', splitIndex: 0,
+      nodeRefs: [1, 2], coordinates,
+    }],
+  })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const view = buildRoadMergeViews([primary, secondary], [mergeRecord()])
+
+  assert.equal(view.routingRoads[0].properties.sourceSegments[0].coordinates, coordinates)
+})
+
+test('已有預先解析的捏合視圖時不得再次呼叫完整建圖器', () => {
+  const select = roadMergeModule.selectPreparedRoadMergeView
+  assert.equal(typeof select, 'function', '需要可沿用預覽結果的視圖選擇器')
+  let builds = 0
+  const prepared = { routingRoads: [], renderRoads: [], resolved: [], rows: [] }
+
+  const selected = select?.(prepared, () => {
+    builds++
+    return { routingRoads: [], renderRoads: [], resolved: [], rows: [] }
+  })
+
+  assert.equal(selected, prepared)
+  assert.equal(builds, 0)
+})
+
+test('結構性捏合更新落盤後原地套用視圖而不重載頁面', async () => {
+  const applyAfterSave = roadMergeModule.applyRoadMergeAfterSave
+  assert.equal(typeof applyAfterSave, 'function', '需要儲存後原地套用捏合視圖的流程')
+  const events = []
+  queueMicrotask(() => events.push('journal-queued'))
+
+  await applyAfterSave?.(
+    async () => { events.push('database-flushed') },
+    () => { events.push('view-applied') },
+  )
+
+  assert.deepEqual(events, ['journal-queued', 'database-flushed', 'view-applied'])
+})
+
+test('導航保留主段次段與側路，只有繪圖視圖接合主路', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const join = coordinate(2)
+  const side = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路',
+    coordinates: [join, [join[0], join[1] - 0.001]],
+  })
+  const source = [primary, secondary, side]
+
+  const view = buildRoadMergeViews(source, [mergeRecord()])
+
+  assert.equal(view.routingRoads.length, 3)
+  assert.equal(view.routingRoads.some((item) => item.properties.blockNode === 2), true,
+    '導航必須保留次段')
+  assert.equal(view.routingRoads.some((item) => item.properties.osm_id === 200), true,
+    '側路不得因捏合退出導航圖')
+  assert.deepEqual(secondary.properties.nodes, [2, 3], '來源道路不可被繪圖接合改寫')
+  assert.equal(primary.properties.oneSideEntryNodes, undefined, '來源道路不得被衍生限制污染')
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+  assert.deepEqual(routingPrimary.properties.oneSideEntryNodes, [2], '主路必須保存接縫轉向限制')
+  assert.deepEqual(routingSecondary.properties.oneSideEntryNodes, [2],
+    '次段也必須標記接縫，避免由次段方向生成主路停止線或箭頭')
+  const renderedMain = view.renderRoads.filter((item) => item.properties.osm_id === 100)
+  assert.equal(renderedMain.length, 1)
+  assert.deepEqual(renderedMain[0].properties.nodes, [1, 2, 3])
+  assert.equal(view.renderRoads.some((item) => item.properties.osm_id === 200), true)
+})
+
+test('沒有側路方向資訊的捏合仍須在導航主次段標記中央島屏障', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const view = buildRoadMergeViews([primary, secondary], [mergeRecord()])
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+
+  assert.deepEqual(routingPrimary.properties.roadMergeBarrierNodes, [2])
+  assert.deepEqual(routingSecondary.properties.roadMergeBarrierNodes, [2])
+  assert.equal(primary.properties.roadMergeBarrierNodes, undefined,
+    '來源道路不得被衍生屏障污染')
+})
+
+test('與捏合主路重疊的短碎段只從繪圖隱藏，仍保留在導航來源', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const stub = road({ osmId: 100, blockNode: 50, nodes: [50, 51] })
+
+  const view = buildRoadMergeViews([primary, secondary, stub], [mergeRecord()])
+
+  const routingStub = view.routingRoads.find((item) => item.properties.blockNode === 50)
+  assert.ok(routingStub)
+  assert.equal(routingStub.properties.deleted, undefined)
+  assert.equal(view.renderRoads.some((item) => item.properties.blockNode === 50), false)
+})
+
+test('依側路所在方向判定相鄰主路方向，不固定假設 forward', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const westSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '西側路',
+    coordinates: [[120, 22.001], [119.999, 22.001]],
+  })
+
+  const view = buildRoadMergeViews([primary, secondary, westSide], [mergeRecord()])
+
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+  assert.deepEqual(routingPrimary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
+  assert.deepEqual(routingSecondary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
+  assert.equal(view.resolved[0].adjacentBack, true)
+})
+
+test('十字型接點會分別判定中央帶兩側的側路方向', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const eastSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 8], name: '東側路',
+    coordinates: [[120, 22.001], [120.001, 22.001]],
+  })
+  const westSide = road({
+    osmId: 201, blockNode: 2, nodes: [2, 9], name: '西側路',
+    coordinates: [[120, 22.001], [119.999, 22.001]],
+  })
+
+  const view = buildRoadMergeViews(
+    [primary, secondary, eastSide, westSide], [mergeRecord()])
+
+  assert.equal(view.resolved.length, 1)
+  assert.equal(view.resolved[0].adjacentBack, null)
+  assert.deepEqual(view.resolved[0].sideAccess, [
+    { sideRoadKey: 'way/200@b/2', allowedBack: false },
+    { sideRoadKey: 'way/201@b/2', allowedBack: true },
+  ])
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 2)
+  assert.deepEqual(routingPrimary.properties.oneSideEntryAccess, [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/200@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/201@b/2' },
+  ])
+  assert.deepEqual(routingSecondary.properties.oneSideEntryAccess, [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/200@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/201@b/2' },
+  ])
+})
+
+test('側路穿越接縫時拒絕整筆捏合並指出道路與原因', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 2, nodes: [2, 3],
+    coordinates: [[120, 22.001], [120, 22.002]],
+  })
+  const crossingSide = road({
+    osmId: 202, blockNode: 2, nodes: [8, 2, 9], name: '穿越側路',
+    coordinates: [[119.999, 22.001], [120, 22.001], [120.001, 22.001]],
+  })
+
+  const view = buildRoadMergeViews([primary, secondary, crossingSide], [mergeRecord()])
+
+  assert.equal(view.resolved.length, 0)
+  assert.equal(view.rows[0].status, 'needs_manual_review')
+  assert.match(view.rows[0].detail, /穿越側路/)
+  assert.match(view.rows[0].detail, /way\/202@b\/2/)
+  assert.match(view.rows[0].detail, /接縫不是側路端點/)
+})
+
+test('端點方向相反時，次段限制會換算成自己的 back 方向', () => {
+  const primary = road({
+    osmId: 100, blockNode: 1, nodes: [1, 2],
+    coordinates: [[120, 22], [120, 22.001]],
+  })
+  const secondary = road({
+    osmId: 100, blockNode: 3, nodes: [3, 2],
+    coordinates: [[120, 22.002], [120, 22.001]],
+  })
+  const eastSide = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '東側路',
+    coordinates: [[120, 22.001], [120.001, 22.001]],
+  })
+  const record = mergeRecord({ secondary: 'way/100@b/3' })
+
+  const view = buildRoadMergeViews([primary, secondary, eastSide], [record])
+
+  const routingPrimary = view.routingRoads.find((item) => item.properties.blockNode === 1)
+  const routingSecondary = view.routingRoads.find((item) => item.properties.blockNode === 3)
+  assert.deepEqual(routingPrimary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: false }])
+  assert.deepEqual(routingSecondary.properties.oneSideEntryAccess,
+    [{ nodeId: 2, allowedBack: true }])
+})
+
+test('新捏合預覽產生 V2 來源快照，且可追蹤目前道路', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+
+  assert.equal(preview.ok, true)
+  assert.equal(preview.record.fields.schema_version, 2)
+  assert.equal(preview.record.fields.junction_node, 2)
+  assert.match(preview.record.fields.primary_source, /navSegmentKey/)
+  assert.match(preview.record.fields.secondary_source, /nodeRefs/)
+  const fullRecord = { ...preview.record, seq: 1, ts: '2026-07-31T00:00:00Z', author: 'anna' }
+  const view = buildRoadMergeViews([primary, secondary], [fullRecord])
+  assert.equal(activeMergeForRoad(view.rows, view.routingRoads[0])?.mergeKey,
+    preview.record.target.key)
+})
+
+test('新捏合的關鍵內容欄位不同時拒絕且不產生紀錄', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  primary.properties.centerM = 2.4
+  primary.properties.centerKind = 'island'
+  secondary.properties.centerM = 0.6
+  secondary.properties.centerKind = 'hatch'
+
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+
+  assert.equal(preview.ok, false)
+  assert.equal(preview.record, undefined)
+  assert.match(preview.reason, /centerM|centerKind/)
+})
+
+test('撤銷後重建會清除先前衍生的接縫限制', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const side = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路',
+    coordinates: [coordinate(2), [coordinate(2)[0], coordinate(2)[1] - 0.001]],
+  })
+  const set = mergeRecord()
+  const merged = buildRoadMergeViews([primary, secondary, side], [set])
+  const del = mergeRecord({ seq: 2, op: 'delete' })
+
+  const restored = buildRoadMergeViews(merged.routingRoads, [set, del])
+
+  assert.equal(restored.rows.length, 0)
+  assert.equal(restored.routingRoads.some((item) => item.properties.oneSideEntryNodes?.includes(2)),
+    false)
+  assert.equal(restored.routingRoads.some((item) => item.properties.roadMergeBarrierNodes?.includes(2)),
+    false, '撤銷後不可殘留中央島屏障')
+})
+
+test('撤銷後會完整還原接縫原有的多筆側路規則', () => {
+  const originalAccess = [
+    { nodeId: 2, allowedBack: false, sideRoadKey: 'way/900@b/2' },
+    { nodeId: 2, allowedBack: true, sideRoadKey: 'way/901@b/2' },
+  ]
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  primary.properties.oneSideEntryAccess = originalAccess
+  primary.properties.oneSideEntryNodes = [2]
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const side = road({
+    osmId: 200, blockNode: 2, nodes: [2, 9], name: '側路',
+    coordinates: [coordinate(2), [coordinate(2)[0], coordinate(2)[1] - 0.001]],
+  })
+  const set = mergeRecord()
+  const merged = buildRoadMergeViews([primary, secondary, side], [set])
+  const del = mergeRecord({ seq: 2, op: 'delete' })
+
+  const restored = buildRoadMergeViews(merged.routingRoads, [set, del])
+  const restoredPrimary = restored.routingRoads.find((item) => item.properties.blockNode === 1)
+
+  assert.deepEqual(restoredPrimary.properties.oneSideEntryAccess, originalAccess)
+})
+
+test('新版捏合撤銷後繪圖恢復原始兩段道路', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+  assert.equal(preview.ok, true)
+  const set = {
+    ...preview.record, seq: 1, ts: '2026-08-01T00:00:00Z', author: 'anna',
+  }
+  const del = {
+    seq: 2, ts: '2026-08-01T00:00:01Z', author: 'anna', op: 'delete',
+    target: { type: 'road_merge', key: set.target.key },
+    fields: { supersedes_seq: 1 },
+  }
+
+  const merged = buildRoadMergeViews([primary, secondary], [set])
+  const restored = buildRoadMergeViews([primary, secondary], [set, del])
+
+  assert.equal(merged.renderRoads.filter((item) => item.properties.osm_id === 100).length, 1)
+  assert.deepEqual(
+    restored.renderRoads
+      .filter((item) => item.properties.osm_id === 100)
+      .map((item) => item.properties.nodes),
+    [[1, 2], [2, 3]],
+  )
+})
+
+test('舊版捏合升級後仍可撤銷並恢復原始兩段繪圖', () => {
+  const primary = road({ osmId: 100, blockNode: 1, nodes: [1, 2] })
+  const secondary = road({ osmId: 100, blockNode: 2, nodes: [2, 3] })
+  const legacy = mergeRecord({ seq: 1 })
+  const legacyDelete = mergeRecord({ seq: 2, op: 'delete' })
+  const preview = previewRoadMerge([primary, secondary], [], primary, secondary)
+  assert.equal(preview.ok, true)
+  const upgraded = {
+    ...preview.record, seq: 3, ts: '2026-08-01T00:00:02Z', author: 'migration',
+  }
+  const undo = {
+    seq: 4, ts: '2026-08-01T00:00:03Z', author: 'anna', op: 'delete',
+    target: { type: 'road_merge', key: upgraded.target.key },
+    fields: { supersedes_seq: 3 },
+  }
+
+  const upgradedView = buildRoadMergeViews(
+    [primary, secondary], [legacy, legacyDelete, upgraded],
+  )
+  const restored = buildRoadMergeViews(
+    [primary, secondary], [legacy, legacyDelete, upgraded, undo],
+  )
+
+  assert.equal(upgradedView.renderRoads.filter((item) => item.properties.osm_id === 100).length, 1)
+  assert.deepEqual(
+    restored.renderRoads
+      .filter((item) => item.properties.osm_id === 100)
+      .map((item) => item.properties.nodes),
+    [[1, 2], [2, 3]],
+  )
+})
+
+test('撤銷 A-B 接縫後將後續捏合重定位為 B-C', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+
+  const plan = planRoadMergeSeamUndo(blocks, journal, journal[0].target.key)
+
+  assert.equal(plan.ok, true)
+  assert.deepEqual(plan.retiredMergeKeys, journal.map((record) => record.target.key))
+  assert.deepEqual(plan.rebasedMergeKeys, ['merge/way/100@b/2+way/100@b/3'])
+  const view = buildRoadMergeViews(blocks, stampPlanned(journal, plan.records))
+  assert.deepEqual(
+    view.renderRoads.map((item) => item.properties.nodes).sort((a, b) => a[0] - b[0]),
+    [[1, 2], [2, 3, 4]],
+  )
+})
+
+test('撤銷 B-C 接縫後保留 A-B', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+
+  const plan = planRoadMergeSeamUndo(blocks, journal, journal[1].target.key)
+
+  assert.equal(plan.ok, true)
+  assert.deepEqual(plan.rebasedMergeKeys, ['merge/way/100@b/1+way/100@b/2'])
+  const view = buildRoadMergeViews(blocks, stampPlanned(journal, plan.records))
+  assert.deepEqual(
+    view.renderRoads.map((item) => item.properties.nodes).sort((a, b) => a[0] - b[0]),
+    [[1, 2, 3], [3, 4]],
+  )
+})
+
+test('四區塊鏈撤銷中間接縫後保留左右兩個群組', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+    chainRoad(4, [4, 5]),
+  ]
+  const journal = v2Chain(blocks)
+
+  const plan = planRoadMergeSeamUndo(blocks, journal, journal[1].target.key)
+  const view = buildRoadMergeViews(blocks, stampPlanned(journal, plan.records))
+
+  assert.equal(plan.ok, true)
+  assert.deepEqual(
+    view.renderRoads.map((item) => item.properties.nodes).sort((a, b) => a[0] - b[0]),
+    [[1, 2, 3], [3, 4, 5]],
+  )
+})
+
+test('被替代的相依紀錄都有 tombstone 而不會在日後復活', () => {
+  const blocks = [
+    chainRoad(1, [1, 2]),
+    chainRoad(2, [2, 3]),
+    chainRoad(3, [3, 4]),
+  ]
+  const journal = v2Chain(blocks)
+
+  const plan = planRoadMergeSeamUndo(blocks, journal, journal[0].target.key)
+
+  assert.equal(plan.ok, true)
+  const deleted = new Set(plan.records
+    .filter((record) => record.op === 'delete')
+    .map((record) => record.target.key))
+  assert.deepEqual(deleted, new Set(journal.map((record) => record.target.key)))
+})
+
+test('舊捏合缺少完整來源快照時不自動解除接縫', () => {
+  const blocks = [chainRoad(1, [1, 2]), chainRoad(2, [2, 3])]
+  const journal = v2Chain(blocks)
+  const incomplete = [{
+    ...journal[0],
+    fields: { ...journal[0].fields, primary_source: undefined },
+  }]
+
+  const plan = planRoadMergeSeamUndo(blocks, incomplete, incomplete[0].target.key)
+
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, '舊捏合缺少完整來源快照，無法安全解除接縫')
+  assert.deepEqual(plan.records, [])
+})
+
+test('來源鏈形成分岔時不猜測接縫重定位', () => {
+  const a = chainRoad(1, [1, 2])
+  const b = chainRoad(2, [2, 3])
+  const c = road({
+    osmId: 100,
+    blockNode: 4,
+    nodes: [2, 4],
+    coordinates: [chainCoordinate(2), [chainCoordinate(2)[0], 22.001]],
+  })
+  const first = v2Chain([a, b])[0]
+  const branchPreview = previewRoadMerge([a, c], [], a, c)
+  assert.equal(branchPreview.ok, false, '轉角分支不得被一般捏合預覽接受')
+  const branch = {
+    ...first,
+    seq: 2,
+    ts: '2026-08-01T00:00:02.000Z',
+    target: { type: 'road_merge', key: 'merge/way/100@b/1+way/100@b/4' },
+    fields: {
+      ...first.fields,
+      secondary: 'way/100@b/4',
+      junction_node: 2,
+      secondary_source: JSON.stringify({
+        osmId: 100,
+        navSegmentKey: 'way/100',
+        splitIndex: 0,
+        blockNode: 4,
+        nodeRefs: [2, 4],
+        sourceSegments: c.properties.sourceSegments,
+      }),
+      secondary_nodes: '[2,4]',
+    },
+  }
+
+  const plan = planRoadMergeSeamUndo([a, b, c], [first, branch], first.target.key)
+
+  assert.equal(plan.ok, false)
+  assert.match(plan.reason, /分岔/)
+  assert.deepEqual(plan.records, [])
+})
+
+test('已失效的捏合 key 不會產生撤銷交易', () => {
+  const blocks = [chainRoad(1, [1, 2]), chainRoad(2, [2, 3])]
+  const journal = v2Chain(blocks)
+  const deleted = [...journal, mergeRecord({ seq: 2, op: 'delete' })]
+
+  const plan = planRoadMergeSeamUndo(blocks, deleted, journal[0].target.key)
+
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, '選取的接縫已不是有效捏合')
+  assert.deepEqual(plan.records, [])
+})

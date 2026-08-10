@@ -2,15 +2,15 @@
 //
 // 起終點吸附：不再 snap 到路口節點，而是吸到「任意路段的最近頂點」，
 // 以部分邊（partial edge）接進圖中——路線會從你點的位置開始/結束。
-import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo'
-import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads'
-import { oneSideEntryTransitionAllowed } from './oneSideEntry'
+import { haversine, bearing, angleDelta, cumulative, offsetMeters, pointAlong, LANE_WIDTH_M, COS_LAT } from './geo.ts'
+import { manualMarkingSetbackM, MOTO_LANE_M, type RoadFeature } from './roads.ts'
+import { oneSideEntryTransitionAllowed } from './oneSideEntry.ts'
 import {
   buildLaneGuidanceIndex,
   resolveLaneGuidance,
   type LaneGuidanceIndex,
   type ResolvedLaneGuidance,
-} from './laneGuidance'
+} from './laneGuidance.ts'
 
 const SPEED_KMH: Record<string, number> = {
   motorway: 90, trunk: 70, primary: 60, secondary: 50, tertiary: 40,
@@ -56,8 +56,31 @@ function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
 
 export { oneSideEntryTransitionAllowed }
 
-function transitionAllowed(incoming: Edge | undefined, outgoing: Edge, nodeId: number): boolean {
+function transitionAllowed(
+  incoming: Edge | undefined,
+  outgoing: Edge,
+  nodeId: number,
+  barrierNode: boolean,
+): boolean {
   if (!incoming) return true
+  const incomingBarrier = incoming.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  const outgoingBarrier = outgoing.road.properties.roadMergeBarrierNodes?.includes(nodeId) ?? false
+  if (barrierNode) {
+    const incomingCoords = incoming.coords
+    const incomingBearing = bearing(
+      incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
+    const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
+    const delta = angleDelta(incomingBearing, outgoingBearing)
+    const sameMainRoad = incoming.road.properties.osm_id === outgoing.road.properties.osm_id
+    if ((incomingBarrier && outgoingBarrier)
+      || ((incomingBarrier || outgoingBarrier) && sameMainRoad)) {
+      if (classifyTurn(delta) === 'uturn') return false
+    } else if (incomingBarrier !== outgoingBarrier) {
+      if (delta < 20 || delta > 160) return false
+    } else {
+      return false
+    }
+  }
   return oneSideEntryTransitionAllowed(
     incoming.road, incoming.back, outgoing.road, outgoing.back, nodeId)
 }
@@ -72,6 +95,15 @@ interface Edge {
   road: RoadFeature
   back: boolean // 是否為反向使用（雙向道）
   twin?: Edge
+}
+
+interface DirectedLaneProjection {
+  edge: Edge
+  seg: number
+  t: number
+  pos: [number, number]
+  lanePos: [number, number]
+  bearing: number
 }
 
 export interface RouteResult {
@@ -306,6 +338,7 @@ function twinSeg(e: Edge, seg: number): number {
 
 export class RoadGraph {
   private nodePos = new Map<number, [number, number]>()
+  private roadMergeBarrierNodes = new Set<number>()
   private adj = new Map<number, Edge[]>()
   private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
@@ -333,6 +366,9 @@ export class RoadGraph {
       const nodes = r.properties.nodes
       if (nodes.length !== r.geometry.coordinates.length) continue
       for (const id of nodes) usage.set(id, (usage.get(id) ?? 0) + 1)
+      for (const id of r.properties.roadMergeBarrierNodes ?? []) {
+        this.roadMergeBarrierNodes.add(id)
+      }
     }
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -363,7 +399,7 @@ export class RoadGraph {
   /** 指定 oneSideEntry 節點是否真的接有另一條 OSM 道路。
    * 單純把同一條路的兩個區塊捏合，不應被當成側巷路口。 */
   hasDistinctRoadAt(nodeId: number, carrier: RoadFeature): boolean {
-    return (this.adj.get(nodeId) ?? []).some((edge) =>
+    return [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])].some((edge) =>
       edge.road.properties.osm_id !== carrier.properties.osm_id)
   }
 
@@ -487,6 +523,53 @@ export class RoadGraph {
       }
     }
     return best
+  }
+
+  /**
+   * 先投影到道路中心線，再比較該位置兩個方向的實際車道中心。
+   * route 必須保留這個有向結果；若之後只拿中心線位置重新接雙向 edge，
+   * 使用者點在對向車道時就會被悄悄改成另一方向。
+   */
+  private projectToDirectedLanes(
+    p: [number, number], profile: Profile,
+  ): DirectedLaneProjection[] {
+    const hit = this.project(p, profile)
+    if (!hit) return []
+    const candidates: { edge: Edge; seg: number; t: number }[] = [{
+      edge: hit.edge, seg: hit.seg, t: hit.t,
+    }]
+    if (hit.edge.twin) candidates.push({
+      edge: hit.edge.twin,
+      seg: twinSeg(hit.edge, hit.seg),
+      t: 1 - hit.t,
+    })
+    const projections: { projection: DirectedLaneProjection; distance: number }[] = []
+    for (const candidate of candidates) {
+      const { edge, seg, t } = candidate
+      if (!edgeAllowed(edge.road, edge.back, profile)) continue
+      const direction = bearing(edge.coords[seg], edge.coords[seg + 1])
+      const offset = laneOffsets(edge, profile).cruise
+      const radians = ((direction + 90) * Math.PI) / 180
+      const lanePos: [number, number] = [
+        hit.pos[0] + (offset * Math.sin(radians)) / (111320 * COS_LAT),
+        hit.pos[1] + (offset * Math.cos(radians)) / 110540,
+      ]
+      const distance = haversine(p, lanePos)
+      projections.push({
+        distance,
+        projection: {
+          edge, seg, t, pos: hit.pos, lanePos, bearing: direction,
+        },
+      })
+    }
+    projections.sort((a, b) => a.distance - b.distance)
+    return projections.map(({ projection }) => projection)
+  }
+
+  private projectToDirectedLane(
+    p: [number, number], profile: Profile,
+  ): DirectedLaneProjection | null {
+    return this.projectToDirectedLanes(p, profile)[0] ?? null
   }
 
   /** 某路口所有可能的「左轉配對」（進入行向 × 左轉出口），供待轉區設定選單用 */
@@ -728,31 +811,34 @@ export class RoadGraph {
   /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者） */
   snapToLane(p: [number, number], type: Profile):
     { pos: [number, number]; bearing: number; road?: string } | null {
-    const hit = this.project(p, type)
+    const hit = this.projectToDirectedLane(p, type)
     if (!hit) return null
-    const cands: { e: Edge; seg: number }[] = [{ e: hit.edge, seg: hit.seg }]
-    if (hit.edge.twin) cands.push({ e: hit.edge.twin, seg: twinSeg(hit.edge, hit.seg) })
-    let best: { pos: [number, number]; bearing: number; road?: string } | null = null
-    let bestD = Infinity
-    for (const { e, seg } of cands) {
-      if (!edgeAllowed(e.road, e.back, type)) continue
-      const brg = bearing(e.coords[seg], e.coords[seg + 1])
-      const off = laneOffsets(e, type).cruise
-      const rad = ((brg + 90) * Math.PI) / 180
-      const pos: [number, number] = [
-        hit.pos[0] + (off * Math.sin(rad)) / (111320 * COS_LAT),
-        hit.pos[1] + (off * Math.cos(rad)) / 110540,
-      ]
-      const d = haversine(p, pos)
-      if (d < bestD) { bestD = d; best = { pos, bearing: brg, road: e.name } }
-    }
-    return best
+    return { pos: hit.lanePos, bearing: hit.bearing, road: hit.edge.name }
   }
 
   route(fromP: [number, number], toP: [number, number], profile: Profile = 'car'): RouteResult | null {
-    const sA = this.project(fromP, profile)
-    const sB = this.project(toP, profile)
-    if (!sA || !sB) return null
+    const sA = this.projectToDirectedLane(fromP, profile)
+    const projectedGoals = this.projectToDirectedLanes(toP, profile)
+    if (!sA || projectedGoals.length === 0) return null
+    const primaryGoal = projectedGoals[0]
+    const goals = primaryGoal.edge.road.properties.oneway === 'no'
+      && (primaryGoal.edge.road.properties.centerM || 0) <= 0
+      && !primaryGoal.edge.road.properties.roadMergeBarrierNodes?.length
+      ? projectedGoals
+      : [primaryGoal]
+    for (const goal of goals) {
+      const result = this.routeToProjection(sA, goal, toP, profile)
+      if (result) return result
+    }
+    return null
+  }
+
+  private routeToProjection(
+    sA: DirectedLaneProjection,
+    sB: DirectedLaneProjection,
+    toP: [number, number],
+    profile: Profile,
+  ): RouteResult | null {
 
     // 同一條（順向）邊且順序正確 → 直接一段
     if (sA.edge === sB.edge) {
@@ -769,7 +855,7 @@ export class RoadGraph {
       }
     }
 
-    // 起點入口：從投影點沿邊走到邊尾（兩個方向都試）
+    // 起點入口：只沿使用者實際點選的車道方向走到邊尾。
     const startEntries: { node: number; part: Edge }[] = []
     const addStart = (e: Edge, seg: number) => {
       if (!edgeAllowed(e.road, e.back, profile)) return
@@ -778,9 +864,8 @@ export class RoadGraph {
       else startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, [sA.pos, e.coords[e.coords.length - 1]], e.back) })
     }
     addStart(sA.edge, sA.seg)
-    if (sA.edge.twin) addStart(sA.edge.twin, twinSeg(sA.edge, sA.seg))
 
-    // 終點出口：從邊頭走到投影點
+    // 終點出口：只接受使用者實際點選的車道方向。
     const goalEntries: { node: number; part: Edge }[] = []
     const addGoal = (e: Edge, seg: number) => {
       if (!edgeAllowed(e.road, e.back, profile)) return
@@ -788,61 +873,80 @@ export class RoadGraph {
       if (cs.length >= 2) goalEntries.push({ node: e.from, part: makeEdge(e.road, e.from, -1, cs, e.back) })
     }
     addGoal(sB.edge, sB.seg)
-    if (sB.edge.twin) addGoal(sB.edge.twin, twinSeg(sB.edge, sB.seg))
     if (startEntries.length === 0 || goalEntries.length === 0) return null
 
     const goalPos = toP
-    const g = new Map<number, number>()
-    const cameFrom = new Map<number, Edge>()
-    const startPart = new Map<number, Edge>()
-    const open = new Map<number, number>()
+    const edgeIdentity = (edge: Edge) =>
+      `${edge.road.properties.navSegmentKey}:${edge.road.properties.blockNode}`
+      + `:${edge.from}>${edge.to}:${edge.back ? 1 : 0}`
+    const stateKey = (node: number, incoming: Edge) => `${node}|${edgeIdentity(incoming)}`
+    const states = new Map<string, { node: number; incoming: Edge }>()
+    const g = new Map<string, number>()
+    const cameFrom = new Map<string, { previous: string; edge: Edge }>()
+    const startPart = new Map<string, Edge>()
+    const open = new Map<string, number>()
     for (const s of startEntries) {
-      if (s.part.timeS < (g.get(s.node) ?? Infinity)) {
-        g.set(s.node, s.part.timeS)
-        startPart.set(s.node, s.part)
-        open.set(s.node, s.part.timeS +
+      const key = stateKey(s.node, s.part)
+      if (s.part.timeS < (g.get(key) ?? Infinity)) {
+        states.set(key, { node: s.node, incoming: s.part })
+        g.set(key, s.part.timeS)
+        startPart.set(key, s.part)
+        open.set(key, s.part.timeS +
           haversine(this.nodePos.get(s.node) ?? s.part.coords[s.part.coords.length - 1], goalPos) / MAX_SPEED_MS)
       }
     }
-    const closed = new Set<number>()
-    let bestGoal: { cost: number; node: number; part: Edge } | null = null
+    const closed = new Set<string>()
+    let bestGoal: { cost: number; stateKey: string; part: Edge } | null = null
 
     while (open.size > 0) {
-      let cur = -1, curF = Infinity
-      for (const [id, f] of open) if (f < curF) { curF = f; cur = id }
-      open.delete(cur)
+      let currentKey = '', curF = Infinity
+      for (const [key, f] of open) if (f < curF) { curF = f; currentKey = key }
+      open.delete(currentKey)
       if (bestGoal && curF >= bestGoal.cost) break
-      closed.add(cur)
+      const current = states.get(currentKey)
+      if (!current) continue
+      closed.add(currentKey)
       for (const ge of goalEntries) {
-        if (ge.node === cur) {
-          const total = g.get(cur)! + ge.part.timeS
-          if (!bestGoal || total < bestGoal.cost) bestGoal = { cost: total, node: cur, part: ge.part }
+        if (ge.node === current.node) {
+          if (!transitionAllowed(
+            current.incoming, ge.part, current.node,
+            this.roadMergeBarrierNodes.has(current.node),
+          )) continue
+          const total = g.get(currentKey)! + ge.part.timeS
+          if (!bestGoal || total < bestGoal.cost) {
+            bestGoal = { cost: total, stateKey: currentKey, part: ge.part }
+          }
         }
       }
-      for (const e of this.adj.get(cur) ?? []) {
-        if (closed.has(e.to)) continue
+      for (const e of this.adj.get(current.node) ?? []) {
         if (!edgeAllowed(e.road, e.back, profile)) continue
-        if (!transitionAllowed(cameFrom.get(cur) ?? startPart.get(cur), e, cur)) continue
-        const tentative = g.get(cur)! + e.timeS
-        if (tentative < (g.get(e.to) ?? Infinity)) {
-          g.set(e.to, tentative)
-          cameFrom.set(e.to, e)
-          startPart.delete(e.to) // 走圖比直接入口便宜，起點部分邊不再適用
-          open.set(e.to, tentative + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
+        if (!transitionAllowed(
+          current.incoming, e, current.node,
+          this.roadMergeBarrierNodes.has(current.node),
+        )) continue
+        const nextKey = stateKey(e.to, e)
+        if (closed.has(nextKey)) continue
+        const tentative = g.get(currentKey)! + e.timeS
+        if (tentative < (g.get(nextKey) ?? Infinity)) {
+          states.set(nextKey, { node: e.to, incoming: e })
+          g.set(nextKey, tentative)
+          cameFrom.set(nextKey, { previous: currentKey, edge: e })
+          open.set(nextKey, tentative
+            + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
         }
       }
     }
     if (!bestGoal) return null
 
     const chain: Edge[] = [bestGoal.part]
-    let cur = bestGoal.node
-    while (!startPart.has(cur)) {
-      const e = cameFrom.get(cur)
-      if (!e) return null // 理論上不會發生
-      chain.unshift(e)
-      cur = e.from
+    let currentKey = bestGoal.stateKey
+    while (!startPart.has(currentKey)) {
+      const previous = cameFrom.get(currentKey)
+      if (!previous) return null // 理論上不會發生
+      chain.unshift(previous.edge)
+      currentKey = previous.previous
     }
-    chain.unshift(startPart.get(cur)!)
+    chain.unshift(startPart.get(currentKey)!)
     return this.assemble(chain.filter((e) => e.coords.length >= 2), profile)
   }
 

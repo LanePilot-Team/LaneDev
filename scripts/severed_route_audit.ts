@@ -1,126 +1,110 @@
-// 被切斷的捏合接點是不是真的變成孤島？
-// （node scripts/run_offline.mjs scripts/severed_route_audit.ts）
-//
-// 判準不是「拓撲上連不連」，而是「導航實際走得到嗎、繞多遠」：
-//   1. 從主路正向的上游 → 側街：應該是一個右轉就到（T 字路口）
-//   2. 從主路反向的上游 → 側街：應該是就近路口迴轉再回來，不是繞一大圈
-// 繞行倍率 = 實際路徑長 ÷ 直線距離。孤島的特徵就是這個倍率爆掉（或根本無路徑）。
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
-import { foldJournal, applyToRoads, applyRoadMerges } from '../src/core/enhancements'
-import { RoadGraph } from '../src/core/graph'
-import { haversine } from '../src/core/geo'
+import { foldJournal, applyToRoads } from '../src/core/enhancements'
+import { buildRoadMergeViews } from '../src/core/roadMerge'
+import { carAllowed, oneSideEntryTransitionAllowed } from '../src/core/graph'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const arg = (name: string, dflt: string) =>
-  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? dflt
-const DB_PATH = arg('db', join(HERE, '../public/data/road_database.json'))
-/** 繞行倍率超過這個值就算「實質上到不了」 */
-const DETOUR_LIMIT = Number(arg('limit', '6'))
+const argument = (name: string, fallback: string) =>
+  process.argv.find((value) => value.startsWith(`--${name}=`))
+    ?.slice(name.length + 3) ?? fallback
+const databasePath = argument('db', join(HERE, '../public/data/road_database.json'))
 
-const db = JSON.parse(readFileSync(DB_PATH, 'utf8'))
-const parsed = parseImported(db.segments.map((r: unknown) => JSON.stringify(r)).join('\n'))
+const db = JSON.parse(readFileSync(databasePath, 'utf8'))
+const parsed = parseImported(db.segments.map((record: unknown) => JSON.stringify(record)).join('\n'))
 if (parsed.kind !== 'map') throw new Error('靜態資料庫格式錯誤')
 const { roads } = prepareBaseRoads(roadsFromGeoJSON(parsed.fc))
 const journal = db.editor?.journal ?? []
 applyToRoads(roads, foldJournal(journal))
-applyRoadMerges(roads, journal)
-const active = roads.filter((r) => !r.properties.deleted)
-const graph = new RoadGraph(active)
+const view = buildRoadMergeViews(roads.filter((road) => !road.properties.deleted), journal)
+const active = view.routingRoads
+const routableMerges = view.resolved.filter((merge) => active.some((road) =>
+  road.properties.nodes.includes(merge.junctionNodeId)))
+const absorbedMerges = view.resolved.filter((merge) => !routableMerges.includes(merge))
+const missingBarriers = routableMerges.filter((merge) => !active.some((road) =>
+  road.properties.nodes.includes(merge.junctionNodeId)
+  && road.properties.roadMergeBarrierNodes?.includes(merge.junctionNodeId)))
 
-const nodePos = new Map<number, [number, number]>()
-for (const r of active) {
-  r.properties.nodes.forEach((n, i) => {
-    if (!nodePos.has(n)) nodePos.set(n, r.geometry.coordinates[i] as [number, number])
-  })
+console.log(`可路由的捏合屏障：${routableMerges.length - missingBarriers.length}/${routableMerges.length}`)
+console.log(`已由舊版吸收、無導航節點：${absorbedMerges.length}`)
+for (const merge of missingBarriers) {
+  console.log(`❌ node=${merge.junctionNodeId} 未建立中央島屏障`)
 }
-const endpointsOf = (r: RoadFeature) => [
-  r.properties.nodes[0], r.properties.nodes[r.properties.nodes.length - 1],
-]
+console.log('')
 
-// 找出被切斷的接點：主路上的捏合負節點，附近有別條路的端點但不共用節點
-interface Severed { road: RoadFeature; node: number; pos: [number, number]; side: RoadFeature }
-const severed: Severed[] = []
+interface Direction { road: RoadFeature; back: boolean }
+
+const directionsAt = (road: RoadFeature, node: number) => {
+  const index = road.properties.nodes.indexOf(node)
+  const last = road.properties.nodes.length - 1
+  const incoming: Direction[] = []
+  const outgoing: Direction[] = []
+  if (index > 0 && carAllowed(road, false)) incoming.push({ road, back: false })
+  if (index < last && carAllowed(road, false)) outgoing.push({ road, back: false })
+  if (road.properties.oneway === 'no' && carAllowed(road, true)) {
+    if (index < last) incoming.push({ road, back: true })
+    if (index > 0) outgoing.push({ road, back: true })
+  }
+  return { incoming, outgoing }
+}
+
+const hasMergeAccess = (road: RoadFeature, node: number) =>
+  road.properties.oneSideEntryAccess?.some((entry) => entry.nodeId === node)
+  || road.properties.oneSideEntryNodes?.includes(node)
+
+interface JunctionAudit { node: number; main: RoadFeature[]; side: RoadFeature }
+const audits: JunctionAudit[] = []
 const seen = new Set<string>()
-for (const r of active) {
-  for (let i = 1; i < r.properties.nodes.length - 1; i++) {
-    const node = r.properties.nodes[i]
-    if (node > -1_000_000) continue
-    const pos = r.geometry.coordinates[i] as [number, number]
-    for (const other of active) {
-      if (other === r || other.properties.osm_id === r.properties.osm_id) continue
-      if (other.properties.nodes.includes(node)) continue
-      for (const end of endpointsOf(other)) {
-        const p = nodePos.get(end)
-        if (!p || haversine(pos, p) >= 15) continue
-        const k = `${node}|${other.properties.osm_id}`
-        if (seen.has(k)) continue
-        seen.add(k)
-        severed.push({ road: r, node, pos, side: other })
-      }
-    }
+for (const merge of view.resolved) {
+  const node = merge.junctionNodeId
+  const atNode = active.filter((road) => road.properties.nodes.includes(node))
+  const mainName = merge.primary.properties.name?.replace(/\s+/g, '')
+  const isMain = (road: RoadFeature) => hasMergeAccess(road, node)
+    || (!!mainName && road.properties.name?.replace(/\s+/g, '') === mainName)
+  const main = atNode.filter(isMain)
+  for (const side of atNode.filter((road) => !isMain(road))) {
+    const key = `${node}|${side.properties.osm_id}|${side.properties.blockNode}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    audits.push({ node, main, side })
   }
 }
 
-console.log(`被切斷的接點：${severed.length}\n`)
-
-/** 側街遠端（離接點最遠的那一端）當終點——確保真的要進入側街 */
-const farEndOf = (side: RoadFeature, at: [number, number]) => {
-  const cs = side.geometry.coordinates as [number, number][]
-  return haversine(cs[0], at) > haversine(cs[cs.length - 1], at) ? cs[0] : cs[cs.length - 1]
-}
-/** 沿主路取上游／下游一點的位置，模擬「從正向來」「從反向來」 */
-const alongMain = (road: RoadFeature, node: number, back: boolean) => {
-  const idx = road.properties.nodes.indexOf(node)
-  const cs = road.geometry.coordinates as [number, number][]
-  const step = back ? 1 : -1
-  let j = idx
-  let walked = 0
-  while (j + step >= 0 && j + step < cs.length && walked < 120) {
-    walked += haversine(cs[j], cs[j + step])
-    j += step
+let orphans = 0
+console.log(`捏合側路接點：${audits.length}\n`)
+for (const audit of audits) {
+  const mainDirections = audit.main.map((road) => directionsAt(road, audit.node))
+  const sideDirections = directionsAt(audit.side, audit.node)
+  const canEnter = mainDirections.some((main) => main.incoming.some((incoming) =>
+    sideDirections.outgoing.some((outgoing) => oneSideEntryTransitionAllowed(
+      incoming.road, incoming.back, outgoing.road, outgoing.back, audit.node))))
+  const canExit = sideDirections.incoming.some((incoming) => mainDirections.some((main) =>
+    main.outgoing.some((outgoing) => oneSideEntryTransitionAllowed(
+      incoming.road, incoming.back, outgoing.road, outgoing.back, audit.node))))
+  const sideHasEnterDirection = sideDirections.outgoing.length > 0
+  const sideHasExitDirection = sideDirections.incoming.length > 0
+  const orphan = (sideHasEnterDirection && !canEnter) || (sideHasExitDirection && !canExit)
+  if (orphan) orphans++
+  console.log(`${orphan ? '❌' : '✅'} node=${audit.node} `
+    + `${audit.side.properties.name ?? '未命名'}（way/${audit.side.properties.osm_id}）`
+    + `｜進入=${sideHasEnterDirection ? (canEnter ? '可' : '不可') : 'OSM 不允許'}`
+    + `｜駛出=${sideHasExitDirection ? (canExit ? '可' : '不可') : 'OSM 不允許'}`)
+  if (orphan) {
+    console.log(`   主路=${audit.main.map((road) =>
+      `way/${road.properties.osm_id}@b/${road.properties.blockNode}`
+      + ` nodes=${road.properties.nodes.join('>')}`
+      + ` access=${JSON.stringify(road.properties.oneSideEntryAccess ?? [])}`).join('；')}`)
+    console.log(`   側路 nodes=${audit.side.properties.nodes.join('>')}`
+      + ` oneway=${audit.side.properties.oneway}`)
   }
-  return { pos: cs[j], distM: walked }
 }
 
-let islands = 0
-const rows: string[] = []
-for (const s of severed) {
-  const target = farEndOf(s.side, s.pos)
-  const line: string[] = [
-    `${s.road.properties.name ?? '未命名'}（way/${s.road.properties.osm_id}）`
-    + ` node=${s.node} → ${s.side.properties.name ?? '未命名'}`
-    + `（way/${s.side.properties.osm_id}）`,
-  ]
-  let worst = 0
-  for (const back of [false, true]) {
-    const from = alongMain(s.road, s.node, back)
-    if (!from.pos) continue
-    const straight = haversine(from.pos, target)
-    const r = graph.route(from.pos, target, 'car')
-    const label = back ? '反向來' : '正向來'
-    if (!r) {
-      line.push(`   ${label}：❌ 無路徑（直線 ${straight.toFixed(0)}m）`)
-      worst = Infinity
-      continue
-    }
-    const ratio = r.lengthM / Math.max(straight, 1)
-    worst = Math.max(worst, ratio)
-    line.push(`   ${label}：${r.lengthM.toFixed(0)}m ／直線 ${straight.toFixed(0)}m`
-      + ` = 繞行 ${ratio.toFixed(1)}×`)
-  }
-  const bad = worst > DETOUR_LIMIT
-  if (bad) islands++
-  rows.push(`${bad ? '❌' : '✅'} ${line.join('\n')}`)
-}
-for (const r of rows) console.log(`${r}\n`)
-
-console.log(`繞行 >${DETOUR_LIMIT}× 或無路徑的接點：${islands}/${severed.length}`)
-console.log(islands === 0
-  ? '✅ 每個接點都走得到，沒有實質孤島'
-  : `❌ ${islands} 個接點實質上是孤島，導航到不了或要繞一大圈`)
-process.exit(islands === 0 ? 0 : 1)
+console.log(`\n失去合法轉向的側路：${orphans}/${audits.length}`)
+console.log(orphans === 0
+  ? '✅ 側路仍連到相鄰方向；跨中央島轉向由 oneSideEntry 限制'
+  : `❌ ${orphans} 條側路雖保留節點，但合法進出轉向仍被切斷`)
+process.exitCode = orphans === 0 && missingBarriers.length === 0 ? 0 : 1

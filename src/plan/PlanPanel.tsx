@@ -43,8 +43,12 @@ export function PlanPanel({ planner, onClose, startDrive, startGpsNav }: {
           <span className="sp-grip" title="拖曳調整順序">⋮⋮</span>
           <span className="sp-dot" style={{ background: stopColor(i) }} />
           <span className="sp-label">{stopLabel(i)}</span>
-          <span className="sp-pos">
-            {s.pos ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
+          <span className={`sp-pos${s.label ? ' named' : ''}`}>
+            {s.label ? (
+              <><b>{s.label}</b><small>{s.pos
+                ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
+                : '附近找不到可導航道路'}</small></>
+            ) : s.pos ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
               : activeStop === s.id ? '👉 點擊地圖設定' : '未設定'}
           </span>
           {s.pos && <button className="mini" onClick={() => planner.resetStop(s.id)}>重設</button>}

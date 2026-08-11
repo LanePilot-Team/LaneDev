@@ -29,6 +29,29 @@ npx tsx scripts/ground_audit.ts   # 停止線/分隔線收邊/右轉道/路寬�
 npx tsx scripts/import_audit.ts   # LanePilot 標註吃入命中率
 ```
 
+## 手動更新地標資料（OSM＋TDX）
+
+1. 複製 `.env.example` 為 `.env.local`，填入 TDX Client Id 與 Client Secret。
+   `.env.local` 已由 `.gitignore` 排除，不會打包或部署。
+2. 執行：
+
+```powershell
+npm run places:update                 # OSM＋TDX
+npm run places:update -- --osm-only  # 只更新 OSM
+npm run places:update -- --tdx-only  # 只更新 TDX
+npm run places:update -- --rebuild   # 不連網，只重套合併規則與人工 override
+```
+
+更新結果會寫入 `public/data/places/places.json`。OSM 抓取楠梓區與左營區的具名
+POI；TDX 抓取高雄市觀光、車站、公車站與公有停車場資料，再裁切至目前路網範圍。
+腳本先完整驗證新資料才替換舊檔，任一主要來源失敗時會保留上一版。
+
+原始來源快取保存在 `public/data/places/raw-places.json`；更新時會依名稱、類別與
+距離產生 canonical 地標，並輸出 `places.geojson` 給全地圖 POI 圖層。人工例外寫在
+`public/data/places/place_overrides.json`：`mergeGroups` 強制合併、`keepSeparate`
+阻止誤合併、`patches` 可改名／座標／優先度或設為隱藏。修改後執行 `--rebuild`
+即可驗證，不會重新消耗 OSM／TDX API 額度。
+
 **關閉 dev server**：終端機 Ctrl+C；找不到終端機時：
 
 ```powershell
@@ -77,7 +100,7 @@ public/data/lanepilot/annotations.jsonl             組員標註（啟動自動�
 
 | 功能 | 說明 |
 | --- | --- |
-| 路線規劃 | 前端建圖＋A*（時間成本）；起/迄/停靠點（拖曳排序）、汽/機車雙 profile 切換即重算、轉彎步驟清單；Demo 路線 = 高雄大學→楠梓車站 6.4 km（車站端需橋頭 shard） |
+| 路線規劃 | 前端建圖＋A*（時間成本）；可由地標搜尋選定目的地，再以「選擇起點」於地圖點選出發處（兩端皆吸附可通行車道；「從我的位置出發」按鈕目前預留）；另支援起/迄/停靠點拖曳排序、汽/機車雙 profile 切換即重算、轉彎步驟清單；Demo 路線 = 高雄大學→楠梓車站 6.4 km（車站端需橋頭 shard） |
 | 機車路權 | 機車禁行國道/快速道路與 `motorcycle=no`；兩段式左轉（待轉區路口黃底看板＋車道列亮最右）；汽車禁行機車專用道（`motorcar=no`＋0 汽車車道） |
 | 車道級指引 | 路線帶偏移到實際行駛車道（藍帶+箭頭）；路口前 45m 變道（右轉→最右、左轉→最左/偏心道、兩段式→靠右）；變道 ramp 對齊偏心道開口不壓槽化線；**高架段路線帶改 3D 絲帶貼橋面** |
 | 導航 HUD | 藍色看板三級距離文案（250/60/25m）、連動指示「隨後…」、即時路名/車道列（turn:lanes 真值）、速度圓標、倍速 1x/3x/8x、航向朝上、自由縮放（手勢讓路 250ms） |

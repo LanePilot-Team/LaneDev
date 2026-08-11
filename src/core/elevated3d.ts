@@ -54,8 +54,9 @@ const SIDE_DECK_ABSORB: { hostWayId: number; sideWayId: number }[] = [
   // 高楠陸橋 ← 機車專用道高架（往高雄市區、楠梓方向）
   { hostWayId: 23939182, sideWayId: 25724904 },
 ]
-/** 側橋兩端的併入漸變帶：延伸量在這個距離內收回，橋面不會突然變寬/變窄 */
-const ABSORB_FADE_M = 18
+/** 併入漸變帶（側向）：側橋離主橋超過可及範圍時，延伸量在這段距離內收回，
+ * 橋面不會在側橋末端突然變窄。用側向距離而非端點弧長——見 sideAbsorbAt 註解。 */
+const ABSORB_FADE_M = 4
 
 const KX = 111320 * COS_LAT
 const KY = 110540
@@ -625,13 +626,16 @@ export class ElevatedLayer {
         if (oc.length < 2) continue
         const pr = projToPolyArc(pos, oc)
         const sideHalf = o.properties.width_m / 2
+        const reach = halfW + sideHalf * 2 + 4
         // 只在側橋確實鋪到這裡時才延伸（多留 sideHalf 容忍投影誤差）
-        if (pr.lat > halfW + sideHalf * 2 + 4) continue
-        // 端點漸變：投影點離側橋兩端多近
-        const cum = cumulative(oc)
-        const total = cum[cum.length - 1]
-        const endDist = Math.min(pr.arc, total - pr.arc)
-        const fade = Math.max(0, Math.min(1, endDist / ABSORB_FADE_M))
+        if (pr.lat > reach) continue
+        // 漸變用「離側橋多遠」而不是「離側橋端點多遠」。
+        // 用端點弧長算過（endDist / ABSORB_FADE_M）：橋頭兩者同時開始，第一個
+        // 斷面的 endDist=0 → fade=0 → 不併入 → 邊緣從 11.3m 縮回 9.9m，畫面上
+        // 就是橋頭一個缺口（2026-08-10 使用者回報「最外道有缺口」）。
+        // 改用側向距離後，斷面越過側橋末端時 pr.lat 才會增長，漸變自然發生在
+        // 該收的地方，兩端都不必特判。
+        const fade = Math.max(0, Math.min(1, (reach - pr.lat) / ABSORB_FADE_M))
         if (fade <= 0) continue
         // 側橋外緣 = 到側橋中線的距離 + 側橋半寬；漸變時收回主橋自身邊緣
         const full = pr.lat + sideHalf

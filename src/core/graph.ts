@@ -808,12 +808,17 @@ export class RoadGraph {
     return out
   }
 
-  /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者） */
+  /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者）。
+   * feature = 吸到的路段本身：車輛高度要用「路段身分」查橋面，不能用純位置查
+   * （平面路從高架正下方穿過時會誤抬——見 elevation.ts heightAtPos 註解）。 */
   snapToLane(p: [number, number], type: Profile):
-    { pos: [number, number]; bearing: number; road?: string } | null {
+    { pos: [number, number]; bearing: number; road?: string; feature?: RoadFeature } | null {
     const hit = this.projectToDirectedLane(p, type)
     if (!hit) return null
-    return { pos: hit.lanePos, bearing: hit.bearing, road: hit.edge.name }
+    return {
+      pos: hit.lanePos, bearing: hit.bearing,
+      road: hit.edge.name, feature: hit.edge.road,
+    }
   }
 
   route(fromP: [number, number], toP: [number, number], profile: Profile = 'car'): RouteResult | null {

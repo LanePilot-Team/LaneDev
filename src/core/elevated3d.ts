@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplibre-gl'
 import { NANZI_CENTER, pointAlong, cumulative, bearing, COS_LAT, LANE_WIDTH_M } from './geo'
 import { MOTO_LANE_M, type RoadFeature } from './roads'
-import { activeElevation, type ElevationModel } from './elevation'
+import { activeElevation, blockKeyOf, type ElevationModel } from './elevation'
 import { spanAtDist, type RouteResult, type LaneBandResult } from './graph'
 
 /** 取樣間距（公尺）：橋面/護欄沿中心線的斷面密度（爬升段的平滑度來源） */
@@ -53,10 +53,24 @@ const MEDIAN_RAIL_HALF = 0.15
 const SIDE_DECK_ABSORB: { hostWayId: number; sideWayId: number }[] = [
   // 高楠陸橋 ← 機車專用道高架（往高雄市區、楠梓方向）
   { hostWayId: 23939182, sideWayId: 25724904 },
+  // 高楠陸橋南端 ← 北行上橋匝道（縱貫公路 way/103679008）。
+  // 這條在橋頭與主橋共點、往南漸離到 10.8m；主橋南段是 couplet 合併的落單尾段
+  // （北行的配對 way/271982159 只到橋頭），斷面被整條套上 3+3 → 19.8m，於是
+  // 兩塊橋面整段 98m 重疊 3.9~14.7m，畫面上是一道階梯（使用者回報「長歪」）。
+  //
+  // 走 absorb 而不是把主橋南段改窄：改窄會讓貼在 11.5m 的機車專用高架
+  // （hugSideLanes 的固定偏移＝19.8/2＋3.2/2）離開橋面邊緣 5.1m，接縫裂開
+  // ——2026-08-12 實際改過一次，使用者回報「旁邊機車也壞了」，已退回。
+  { hostWayId: 23939182, sideWayId: 103679008 },
 ]
 /** 併入漸變帶（側向）：側橋離主橋超過可及範圍時，延伸量在這段距離內收回，
  * 橋面不會在側橋末端突然變窄。用側向距離而非端點弧長——見 sideAbsorbAt 註解。 */
 const ABSORB_FADE_M = 4
+
+/** 併入側橋後、該斷面兩側的橋面邊緣（絕對偏移，null = 該側沒有側橋要併） */
+interface AbsorbEdges { neg: number | null; pos: number | null }
+const absorbEdge = (a: AbsorbEdges | null, side: 1 | -1): number | null =>
+  (side === 1 ? a?.pos : a?.neg) ?? null
 
 const KX = 111320 * COS_LAT
 const KY = 110540
@@ -154,6 +168,9 @@ export class ElevatedLayer {
   private routeGroup = new THREE.Group()
   /** 每個高架區塊的橋面中心線取樣（經緯度）與其高度——deckHeightAt 查表用 */
   private deckProfile = new Map<RoadFeature, { pts: [number, number][]; hs: number[] }>()
+  /** 同上，改用區塊鍵索引：路線帶/車輛拿到的是「路網圖那份」的物件，與這裡建表
+   * 用的「繪圖那份」不是同一批（見 elevation.ts blockKeyOf） */
+  private deckProfileByKey = new Map<string, { pts: [number, number][]; hs: number[] }>()
   private originMatrix: THREE.Matrix4
   private originMerc: { x: number; y: number }
   private mercScale: number
@@ -208,6 +225,7 @@ export class ElevatedLayer {
     for (const m of this.group.children) (m as THREE.Mesh).geometry?.dispose()
     this.group.clear()
     this.deckProfile.clear()
+    this.deckProfileByKey.clear()
     this.occlusionFaded = false
   }
 
@@ -218,7 +236,7 @@ export class ElevatedLayer {
    * 路線帶就沉到橋面下、被深度測試擋掉（畫面上藍線整段消失）。
    */
   deckHeightAt(road: RoadFeature, pos: [number, number]): number | null {
-    const pr = this.deckProfile.get(road)
+    const pr = this.deckProfile.get(road) ?? this.deckProfileByKey.get(blockKeyOf(road))
     if (!pr || pr.pts.length === 0) return null
     if (pr.pts.length === 1) return pr.hs[0]
     let bestD2 = Infinity
@@ -241,7 +259,13 @@ export class ElevatedLayer {
 
   private occlusionFaded = false
 
-  /** 導航位於橋面下方時，只淡化橋體；車輛與 routeGroup 導航絲帶維持清楚。 */
+  /** 導航位於橋面下方時，只淡化橋體；車輛與 routeGroup 導航絲帶維持清楚。
+   *
+   * 已知誤判（2026-08-12 量測，使用者裁示保留此效果、不改判準）：判準只看
+   * 「側向 <= 寬/2+3 且橋面高於車 2m」，分不出「穿過橋下」與「正要開上這座橋」。
+   * Demo 路線 1238 個路線帶取樣點有 52 點被淡掉，其中 49 點是車還在德民路
+   * 地面引道上、被德民新橋兩側的機車專用高架（way/126247846、way/126247898，
+   * 4.9m 高）觸發，連同正要開上去的德民新橋一起淡化。 */
   setOcclusionAt(pos: [number, number], vehicleElevM = 0) {
     let blocked = false
     for (const [road, profile] of this.deckProfile) {
@@ -504,7 +528,10 @@ export class ElevatedLayer {
       const hosts = allDecks.filter((r) => r.properties.osm_id === hostWayId)
       const sides = allDecks.filter((r) => r.properties.osm_id === sideWayId)
       if (!hosts.length || !sides.length) continue
-      for (const h of hosts) absorbInto.set(h, sides)
+      // 累加而非覆寫：同一座主橋可以併入多條側橋（高楠陸橋 = 機車專用高架
+      // ＋南端上橋匝道）。用 set() 會讓後面那筆把前面那筆擠掉，機車道的接縫
+      // 就裂回去了。
+      for (const h of hosts) absorbInto.set(h, [...(absorbInto.get(h) ?? []), ...sides])
       for (const s of sides) absorbedSides.add(s)
     }
     /**
@@ -616,11 +643,15 @@ export class ElevatedLayer {
      * 線性收回，橋面寬度不會在銜接處跳一階。
      */
     const sideAbsorbAt = (self: RoadFeature, s: Section, halfW: number):
-      { edge: number; side: 1 | -1 } | null => {
+      AbsorbEdges | null => {
       const sides = absorbInto.get(self)
       if (!sides) return null
       const pos: [number, number] = [s.lng, s.lat]
-      let best: { edge: number; side: 1 | -1; lat: number } | null = null
+      // 逐側各記一個「最近的側橋」。以前只留全域最近的那一條，兩條側橋分在
+      // 主橋兩側時（高楠陸橋南段：機車高架在西、上橋匝道在東）另一側就併不到，
+      // 接縫會裂開。
+      let neg: { edge: number; lat: number } | null = null
+      let posBest: { edge: number; lat: number } | null = null
       for (const o of sides) {
         const oc = o.geometry.coordinates as [number, number][]
         if (oc.length < 2) continue
@@ -643,9 +674,14 @@ export class ElevatedLayer {
         if (edge <= halfW) continue
         const vE = (pr.q[0] - pos[0]) * KX, vN = (pr.q[1] - pos[1]) * KY
         const side: 1 | -1 = vE * s.rx - vN * s.rz >= 0 ? 1 : -1
-        if (!best || pr.lat < best.lat) best = { edge, side, lat: pr.lat }
+        const slot = side === 1 ? posBest : neg
+        if (!slot || pr.lat < slot.lat) {
+          if (side === 1) posBest = { edge, lat: pr.lat }
+          else neg = { edge, lat: pr.lat }
+        }
       }
-      return best ? { edge: best.edge, side: best.side } : null
+      if (!neg && !posBest) return null
+      return { neg: neg?.edge ?? null, pos: posBest?.edge ?? null }
     }
 
     for (const { road, lenM, hM } of model.entries()) {
@@ -796,10 +832,12 @@ export class ElevatedLayer {
       const secs = ds.map(section)
       // 橋面高度剖面：路線帶/車輛要貼在橋面上，就得問「這裡的橋面多高」，
       // 而不是 model.heightAt（匝道的高度域經過重映射，兩者在貼邊段差好幾公尺）
-      this.deckProfile.set(road, {
+      const profile = {
         pts: secs.map((s) => [s.lng, s.lat] as [number, number]),
         hs: secs.map((s) => s.h),
-      })
+      }
+      this.deckProfile.set(road, profile)
+      this.deckProfileByKey.set(blockKeyOf(road), profile)
 
       // 併進主橋的側橋：高度剖面留著（車輛 z／遮蔽判定要用，見 deckHeightAt 註解），
       // 但不鋪自己的橋面、標線與橋墩——它已經是主橋橋面的一部分。
@@ -818,14 +856,14 @@ export class ElevatedLayer {
       const edge = (i: number, side: 1 | -1) => {
         const m = meds[i]
         const base = halfW * secs[i].r
-        const a = absorbs[i]
-        if (a && a.side === side) return side * Math.max(base, a.edge)
+        const a = absorbEdge(absorbs[i], side)
+        if (a !== null) return side * Math.max(base, a)
         return side * (m && m.side === side ? Math.max(base, m.edge * secs[i].r) : base)
       }
       /** 該側是不是「與對向接合的中線」（護欄/側裙要改樣式） */
       const isSeam = (i: number, side: 1 | -1) => meds[i]?.side === side && meds[i]!.merged
       /** 併入側橋的內部接縫（主橋原本的邊緣）：立分隔護欄、不畫外側護欄 */
-      const absorbSeam = (i: number, side: 1 | -1) => absorbs[i]?.side === side
+      const absorbSeam = (i: number, side: 1 | -1) => absorbEdge(absorbs[i], side) !== null
 
       const gaps = railGaps.get(road) ?? []
       for (let i = 1; i < secs.length; i++) {

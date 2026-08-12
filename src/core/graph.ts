@@ -327,7 +327,7 @@ function laneOffsets(e: Edge, profile: Profile): { cruise: number; left: number;
 }
 
 /** 進彎變道目標（右轉→最右、左轉→bay/最左、兩段式→最右準備進待轉格） */
-function laneIndexOffset(
+export function laneIndexOffset(
   span: RouteResult['spans'][number],
   laneIndex: number,
 ): number {
@@ -411,6 +411,8 @@ export class RoadGraph {
   /** 路網建立後不再改變；快取路口索引，避免每條標線重掃完整 edge 集合。 */
   private intersectionCache: { id: number; pos: [number, number] }[] | null = null
   private intersectionIdCache: Set<number> | null = null
+  /** 「進入方向被自己的箭頭封死」的判定快取；路網建立後不再改變。 */
+  private sealedApproachCache = new Map<string, boolean>()
   private approachExtensionCache = new Map<string, {
     coords: [number, number][]
     toNode: number
@@ -1095,6 +1097,61 @@ export class RoadGraph {
     return this.assemble(chain, profile, transitions)
   }
 
+  /**
+   * 這個進入方向在該路口是不是被自己的車道箭頭封死了（沒有任何合法出口）。
+   * 車道箭頭是「區塊 × 方向」一份，套錯路口或漏畫時就會出現這種自相矛盾的狀態；
+   * 若照著走，A* 會把那個方向當成不能走，導航就繞遠路或整段不通。
+   * 只看箭頭本身（不套 transitionAllowed 等其他限制），避免與呼叫端互相遞迴。
+   *
+   * 只在**三岔以上的真路口**成立。兩個方向的節點（單純續行或轉折）本來就可能
+   * 「唯一的去向被箭頭擋掉」，那是合法的禁行標示，要照實回報 lane-direction，
+   * 不能默默放行。
+   */
+  private approachSealed(incoming: Edge, nodeId: number, profile: Profile): boolean {
+    const key = `${incoming.road.properties.osm_id}@${incoming.road.properties.blockNode}`
+      + `:${incoming.back ? 1 : 0}:${nodeId}:${profile}`
+    const cached = this.sealedApproachCache.get(key)
+    if (cached !== undefined) return cached
+    const guidance = guidanceForRoadDirection(incoming.road, incoming.back)
+    const arms = new Set([...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]
+      .map((e) => e.road.properties.osm_id))
+    if (arms.size < 3 || guidance.source === 'inferred' || !guidance.laneMovements?.length) {
+      this.sealedApproachCache.set(key, false)
+      return false
+    }
+    const p = incoming.road.properties
+    const speedKmh = Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30
+    let exits = 0
+    let allowed = 0
+    for (const out of this.adj.get(nodeId) ?? []) {
+      if (!edgeAllowed(out.road, out.back, profile)) continue
+      // 原路折返不算出口：沒有別條路可走時，「只能迴轉」本來就是封死
+      if (out.road.properties.osm_id === p.osm_id
+        && out.road.properties.blockNode === p.blockNode
+        && out.back !== incoming.back) continue
+      exits++
+      const kind = classifyEdgeTransition(incoming, out)
+      const action: LaneAction = kind === 'left' || kind === 'slight-left'
+        ? 'left'
+        : kind === 'right' || kind === 'slight-right'
+          ? 'right'
+          : kind === 'uturn' ? 'uturn' : 'through'
+      if (resolveLaneDecision({
+        action,
+        profile,
+        laneCount: guidance.laneCount,
+        laneMovements: guidance.laneMovements,
+        guidanceSource: guidance.source,
+        availableM: incoming.lengthM,
+        speedKmh,
+        twoStage: false,
+      }).allowed) allowed++
+    }
+    const sealed = exits > 0 && allowed === 0
+    this.sealedApproachCache.set(key, sealed)
+    return sealed
+  }
+
   private laneTransitionPlan(
     incoming: Edge,
     outgoing: Edge,
@@ -1134,12 +1191,16 @@ export class RoadGraph {
       }) ?? false
       : false
 
+    const ignoreMovements = this.approachSealed(incoming, nodeId, profile)
     const decision = resolveLaneDecision({
       action,
       profile,
       laneCount: guidance.laneCount,
-      laneMovements: guidance.laneMovements,
-      guidanceSource: guidance.source,
+      // 箭頭把這個進入方向的所有出口都封死時，那份箭頭必定不屬於這個路口
+      // （多半是區塊被再切開後沿用了別處的標線，或漏畫）。照著走等於把路口變成
+      // 死路——開到那裡的人沒有任何合法出口。這種自相矛盾的資料退回推論處理。
+      laneMovements: ignoreMovements ? undefined : guidance.laneMovements,
+      guidanceSource: ignoreMovements ? 'inferred' : guidance.source,
       currentLaneIndex,
       availableM: incoming.lengthM,
       speedKmh: Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30,
@@ -1289,6 +1350,15 @@ export interface LaneBandResult {
   routeD: number[]
 }
 
+export interface LaneChoiceArea {
+  ring: [number, number][]
+  left: [number, number][]
+  right: [number, number][]
+  routeD: number[]
+  laneIndices: number[]
+  primaryLaneIndex: number
+}
+
 /** 橫向事件：轉向與分流統一成「到某里程前要切到某車道」，laneBand 一視同仁處理 */
 interface LatEvent {
   distM: number
@@ -1375,6 +1445,95 @@ function slewLimitBetweenEvents(
     )
     out.splice(start, limited.length, ...limited)
     start = end + 1
+  }
+  return out
+}
+
+const sameApproachSpan = (
+  a: RouteResult['spans'][number],
+  b: RouteResult['spans'][number],
+): boolean => !!a.road && !!b.road
+  && a.road.properties.osm_id === b.road.properties.osm_id
+  && !!a.back === !!b.back
+
+/**
+ * One translucent area spans every currently drivable lane and narrows toward
+ * the primary lane. A lane N lanes away is fully gone N×60m before the
+ * maneuver, with a smooth 60m taper from the preceding width.
+ */
+export function laneChoiceAreas(route: RouteResult): LaneChoiceArea[] {
+  const out: LaneChoiceArea[] = []
+  for (const maneuver of route.maneuvers) {
+    const decision = maneuver.laneDecision
+    const primaryLaneIndex = decision?.primaryLaneIndex
+    if (!decision?.allowed || primaryLaneIndex === undefined) continue
+    const approachSpan = spanAtDist(route, Math.max(0, maneuver.distM - 0.1))
+    const approachSpanIndex = approachSpan ? route.spans.indexOf(approachSpan) : -1
+    if (!approachSpan || approachSpanIndex < 0) continue
+    let firstSpanIndex = approachSpanIndex
+    while (firstSpanIndex > 0
+      && sameApproachSpan(route.spans[firstSpanIndex - 1], approachSpan)) firstSpanIndex--
+    const startIndex = firstSpanIndex === 0 ? 0 : route.spans[firstSpanIndex - 1].toIdx
+    const startD = route.cum[startIndex] ?? 0
+    // All same-direction lanes are initially drivable. Movement compatibility
+    // determines how early each lane must leave the translucent area, not
+    // whether it may be shown far before the maneuver.
+    const laneCount = Math.max(1,
+      approachSpan.laneGuidance?.laneCount ?? maneuver.lanesForward ?? 1)
+    const laneIndices = Array.from({ length: laneCount }, (_, lane) => lane)
+    if (laneIndices.length < 2 || maneuver.distM <= startD + 1) continue
+    const routeD = [startD]
+    const endD = maneuver.distM - 0.5
+    for (let d = startD + BAND_STEP_M; d < endD; d += BAND_STEP_M) routeD.push(d)
+    if (endD - routeD[routeD.length - 1] > 0.5) routeD.push(endD)
+    const samples = routeD.map((d) => pointAlong(route.coords, route.cum, d))
+    const maxLeftGap = primaryLaneIndex - laneIndices[0]
+    const maxRightGap = laneIndices.at(-1)! - primaryLaneIndex
+    const fractionalGap = (remainingM: number, maxGap: number) => {
+      let extent = 0
+      for (let gap = 1; gap <= maxGap; gap++) {
+        const weight = Math.max(0, Math.min(1, (remainingM - gap * 60) / 60))
+        if (weight <= 0) break
+        extent = gap - 1 + weight
+      }
+      return extent
+    }
+    const edge = (side: 'left' | 'right') =>
+      samples.map(({ pos }, index): [number, number] => {
+        const span = spanAtDist(route, routeD[index]) ?? approachSpan
+        const count = Math.max(1, span.laneGuidance?.laneCount ?? 1)
+        const laneWidth = count > 1
+          ? Math.abs(span.rightM - span.leftM) / (count - 1)
+          : LANE_WIDTH_M
+        const remainingM = Math.max(0, maneuver.distM - routeD[index])
+        const extent = side === 'left'
+          ? fractionalGap(remainingM, maxLeftGap)
+          : fractionalGap(remainingM, maxRightGap)
+        const fractionalLane = primaryLaneIndex + (side === 'left' ? -extent : extent)
+        const desired = laneIndexOffset(span, fractionalLane)
+          + (side === 'left' ? -laneWidth / 2 : laneWidth / 2)
+        const prev = index > 0 ? samples[index - 1].pos : pos
+        const next = index + 1 < samples.length ? samples[index + 1].pos : pos
+        const bIn = index > 0 ? bearing(prev, pos) : bearing(pos, next)
+        const bOut = index + 1 < samples.length ? bearing(pos, next) : bIn
+        const half = angleDelta(bIn, bOut) / 2
+        const brg = bIn + half
+        const miter = Math.min(2, 1 / Math.max(0.5, Math.cos((half * Math.PI) / 180)))
+        const off = desired * miter
+        const rad = ((brg + 90) * Math.PI) / 180
+        return offsetMeters(pos, off * Math.sin(rad), off * Math.cos(rad))
+      })
+    const left = edge('left')
+    const right = edge('right')
+    if (left.length < 2 || right.length < 2) continue
+    out.push({
+      ring: [...left, ...right.slice().reverse(), left[0]],
+      left,
+      right,
+      routeD,
+      laneIndices,
+      primaryLaneIndex,
+    })
   }
   return out
 }

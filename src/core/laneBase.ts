@@ -15,6 +15,14 @@ export type EffectiveFieldSource =
 
 export interface LaneBaseRecord {
   sourceKey: string
+  /** Every raw annotation folded into this canonical record after way remapping. */
+  sourceKeys?: string[]
+  /** Original way id when this record was remapped onto a surviving way. */
+  sourceWayId?: number
+  /** OSM road class retained so remap collisions prefer the mainline carrier. */
+  sourceHighway?: string
+  /** Whether the original direction actually approaches its annotated intersection. */
+  sourceApproachAligned?: boolean
   wayId: number
   direction: LaneDirection
   scope: LaneGuidanceScope
@@ -29,6 +37,7 @@ export interface LaneBaseExtraction {
   records: LaneBaseRecord[]
   sourceRecords: number
   accountedSourceKeys: Set<string>
+  ignoredSourceKeys: string[]
   errors: string[]
 }
 
@@ -36,11 +45,14 @@ export interface RemapLaneBaseOptions {
   existingWayIds: Set<number>
   nodeRemap: Map<number, number>
   wayRemap: Map<number, DropRemap>
+  /** Surviving directional endpoints used to map an approach to its exact carrier. */
+  wayApproachNodes?: Map<number, { forward: Set<number>; backward: Set<number> }>
 }
 
 export interface RemappedLaneBase {
   records: LaneBaseRecord[]
   unmappedSourceKeys: string[]
+  retiredSourceKeys: string[]
   errors: string[]
 }
 
@@ -142,6 +154,42 @@ const laneProfiles = (source: UnknownRecord): UnknownRecord[] => {
     : []
 }
 
+const sourceHighway = (source: UnknownRecord): string | undefined => {
+  const reference = isObject(source.osm_reference) ? source.osm_reference : {}
+  const tags = isObject(reference.osm_selected_tags) ? reference.osm_selected_tags : {}
+  const highway = String(tags.highway ?? '').trim()
+  return highway || undefined
+}
+
+const sourceApproachAligned = (
+  source: UnknownRecord,
+  intersectionNodeId: number | undefined,
+  direction: LaneDirection,
+): boolean | undefined => {
+  if (intersectionNodeId === undefined) return undefined
+  const geometry = isObject(source.geometry) ? source.geometry : {}
+  const coordinates = Array.isArray(geometry.coordinates) ? geometry.coordinates : []
+  if (coordinates.length < 2) return undefined
+  const reference = isObject(source.osm_reference) ? source.osm_reference : {}
+  const intersections = Array.isArray(reference.nearby_intersections)
+    ? reference.nearby_intersections.filter(isObject)
+    : []
+  const intersection = intersections.find((item) =>
+    numericId(item.nav_intersection_key ?? item.osm_id, 'node') === intersectionNodeId)
+  const coordinate = intersection && isObject(intersection.coordinate)
+    ? [Number(intersection.coordinate.lng), Number(intersection.coordinate.lat)]
+    : undefined
+  if (!coordinate || !coordinate.every(Number.isFinite)) return undefined
+  const matches = (value: unknown): boolean => Array.isArray(value)
+    && value.length >= 2
+    && Math.abs(Number(value[0]) - coordinate[0]) <= 1e-6
+    && Math.abs(Number(value[1]) - coordinate[1]) <= 1e-6
+  const atFirst = matches(coordinates[0])
+  const atLast = matches(coordinates[coordinates.length - 1])
+  if (direction === 'forward') return atLast ? true : atFirst ? false : undefined
+  return atFirst ? true : atLast ? false : undefined
+}
+
 const segmentKey = (wayId: number, direction: LaneDirection) =>
   `${wayId}/${direction}`
 
@@ -184,6 +232,7 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
   const records: LaneBaseRecord[] = []
   const accountedSourceKeys = new Set<string>()
   const errors: string[] = []
+  const ignoredSourceKeys: string[] = []
   const canonicalKeys = new Set<string>()
   const sourceCounts = new Map<string, number>()
 
@@ -225,6 +274,7 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       errors.push(`${sourceKey}: intersection node missing for way/${wayId}`)
       continue
     }
+    const highway = sourceHighway(source)
 
     const rules = movementRules(source)
     const profiles = laneProfiles(source)
@@ -241,8 +291,11 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       const laneMovements = stringArray(profile.lane_movements)
       const motorcycleAccessByLane = stringArray(profile.motorcycle_access_by_lane)
       if (laneCount === undefined && !laneMovements && !motorcycleAccessByLane) continue
+      const approachAligned = sourceApproachAligned(source, intersectionNodeId, direction)
       const record: LaneBaseRecord = {
         sourceKey,
+        ...(highway === undefined ? {} : { sourceHighway: highway }),
+        ...(approachAligned === undefined ? {} : { sourceApproachAligned: approachAligned }),
         wayId,
         direction,
         scope,
@@ -278,8 +331,11 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
         errors.push(`${sourceKey}: invalid direction`)
         continue
       }
+      const approachAligned = sourceApproachAligned(source, intersectionNodeId, direction)
       const record: LaneBaseRecord = {
         sourceKey,
+        ...(highway === undefined ? {} : { sourceHighway: highway }),
+        ...(approachAligned === undefined ? {} : { sourceApproachAligned: approachAligned }),
         wayId,
         direction,
         scope,
@@ -296,15 +352,14 @@ export function extractLaneBase(raw: unknown[]): LaneBaseExtraction {
       extracted = true
     }
 
-    if (!extracted && !invalidProfileDirection) {
-      errors.push(`${sourceKey}: no consumable lane profile or movement rules`)
-    }
+    if (!extracted && !invalidProfileDirection) ignoredSourceKeys.push(sourceKey)
   }
 
   return {
     records: records.sort(compareRecords),
     sourceRecords: raw.length,
     accountedSourceKeys,
+    ignoredSourceKeys: ignoredSourceKeys.sort(),
     errors,
   }
 }
@@ -315,14 +370,20 @@ export function remapLaneBase(
 ): RemappedLaneBase {
   const output: LaneBaseRecord[] = []
   const unmappedSourceKeys = new Set<string>()
+  const retiredSourceKeys = new Set<string>()
   const errors: string[] = []
 
   for (const record of records) {
     const intersectionNodeId = record.intersectionNodeId === undefined
       ? undefined
       : options.nodeRemap.get(record.intersectionNodeId) ?? record.intersectionNodeId
-    const withNode = (next: Omit<LaneBaseRecord, 'intersectionNodeId'>): LaneBaseRecord => ({
+    const withNode = (
+      next: Omit<LaneBaseRecord, 'intersectionNodeId'>,
+      sourceWayId?: number,
+    ): LaneBaseRecord => ({
       ...next,
+      sourceKeys: next.sourceKeys ?? [record.sourceKey],
+      ...(sourceWayId === undefined ? {} : { sourceWayId }),
       movementRules: next.movementRules.map((rule) => remapMovementRule(
         rule, record, next.wayId, next.direction, options.nodeRemap,
       )),
@@ -335,8 +396,7 @@ export function remapLaneBase(
     const remap = options.wayRemap.get(record.wayId)
     const keepIds = remap?.keepIds.filter((wayId) => options.existingWayIds.has(wayId)) ?? []
     if (!remap || !keepIds.length) {
-      unmappedSourceKeys.add(record.sourceKey)
-      errors.push(`${record.sourceKey}: no surviving way for way/${record.wayId}`)
+      retiredSourceKeys.add(record.sourceKey)
       continue
     }
     const aligned = remap.dropReversed
@@ -345,14 +405,103 @@ export function remapLaneBase(
     const direction = aligned
       ? record.direction
       : record.direction === 'forward' ? 'backward' : 'forward'
-    for (const wayId of keepIds) output.push(withNode({ ...record, wayId, direction }))
+    let selectedKeepIds = keepIds
+    if (intersectionNodeId !== undefined && options.wayApproachNodes) {
+      selectedKeepIds = keepIds.filter((wayId) =>
+        options.wayApproachNodes?.get(wayId)?.[direction].has(intersectionNodeId))
+      if (!selectedKeepIds.length) {
+        retiredSourceKeys.add(record.sourceKey)
+        continue
+      }
+    } else if (intersectionNodeId === undefined && keepIds.length > 1) {
+      // A segment-wide record has no safe one-to-many carrier after a long couplet is split.
+      // Keep OSM/human fallback on the survivors and record this source as explicitly retired.
+      retiredSourceKeys.add(record.sourceKey)
+      continue
+    }
+    for (const wayId of selectedKeepIds) {
+      output.push(withNode({ ...record, wayId, direction }, record.wayId))
+    }
   }
 
+  const merged = mergeRemappedRecords(output, errors)
+
   return {
-    records: output.sort(compareRecords),
+    records: merged.sort(compareRecords),
     unmappedSourceKeys: [...unmappedSourceKeys].sort(),
+    retiredSourceKeys: [...retiredSourceKeys].sort(),
     errors,
   }
+}
+
+function mergeRemappedRecords(records: LaneBaseRecord[], errors: string[]): LaneBaseRecord[] {
+  const highwayPriority: Record<string, number> = {
+    motorway: 8,
+    trunk: 7,
+    primary: 6,
+    secondary: 5,
+    tertiary: 4,
+    unclassified: 3,
+    residential: 2,
+    service: 1,
+  }
+  const priority = (record: LaneBaseRecord): [number, number, number] => [
+    Number(record.sourceWayId === undefined),
+    Number(record.sourceApproachAligned !== false),
+    highwayPriority[record.sourceHighway ?? ''] ?? 0,
+  ]
+  const comparePriority = (a: LaneBaseRecord, b: LaneBaseRecord): number => {
+    const ap = priority(a)
+    const bp = priority(b)
+    return bp[0] - ap[0] || bp[1] - ap[1] || bp[2] - ap[2]
+      || a.sourceKey.localeCompare(b.sourceKey)
+  }
+  const samePriority = (a: LaneBaseRecord, b: LaneBaseRecord): boolean => {
+    const ap = priority(a)
+    const bp = priority(b)
+    return ap.every((value, index) => value === bp[index])
+  }
+  const groups = new Map<string, LaneBaseRecord[]>()
+  for (const record of records) {
+    const key = recordKey(record)
+    groups.set(key, [...(groups.get(key) ?? []), record])
+  }
+  const result: LaneBaseRecord[] = []
+  for (const [key, group] of groups) {
+    group.sort(comparePriority)
+    const merged: LaneBaseRecord = {
+      ...group[0],
+      sourceKeys: [...new Set(group.flatMap((record) => record.sourceKeys ?? [record.sourceKey]))],
+      movementRules: [],
+    }
+    const ruleKeys = new Set<string>()
+    for (const record of group) {
+      for (const rule of record.movementRules) {
+        const ruleKey = JSON.stringify(rule)
+        if (ruleKeys.has(ruleKey)) continue
+        ruleKeys.add(ruleKey)
+        merged.movementRules.push({ ...rule })
+      }
+    }
+    for (const field of ['laneCount', 'laneMovements', 'motorcycleAccessByLane'] as const) {
+      const candidates = group.filter((record) => record[field] !== undefined)
+        .sort(comparePriority)
+      const selected = candidates[0]
+      if (!selected) continue
+      const selectedValue = selected[field]
+      merged[field] = (Array.isArray(selectedValue) ? [...selectedValue] : selectedValue) as never
+      for (const candidate of candidates.slice(1)) {
+        if (samePriority(selected, candidate)
+          && JSON.stringify(candidate[field]) !== JSON.stringify(selectedValue)) {
+          errors.push(
+            `${key}: conflicting equal-priority ${field} from ${selected.sourceKey} and ${candidate.sourceKey}`,
+          )
+        }
+      }
+    }
+    result.push(merged)
+  }
+  return result
 }
 
 export function buildLaneBaseIndex(records: LaneBaseRecord[]): LaneBaseIndex {

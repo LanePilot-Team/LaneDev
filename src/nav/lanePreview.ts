@@ -4,6 +4,7 @@ export type LaneArrowKind =
   | 'right'
   | 'through-left'
   | 'through-right'
+  | 'uturn'
 
 export type LanePreviewAction = 'left' | 'through' | 'right' | 'uturn'
 
@@ -37,6 +38,8 @@ export interface LanePreviewLane {
   arrow: LaneArrowKind
   active: boolean
   state: LanePreviewState
+  /** Selected branch inside a compound arrow; its shared stem is highlighted too. */
+  highlightedAction?: LanePreviewAction
 }
 
 export interface LanePreviewModel {
@@ -98,17 +101,21 @@ function inferredLanes(
   return Array.from({ length: count }, (_, index) => {
     if (twoStageNear) {
       const active = index === count - 1
-      return { arrow: 'through', active, state: active ? 'primary' : 'inactive' }
+      return { arrow: 'through', active, state: active ? 'primary' : 'inactive',
+        ...(active ? { highlightedAction: 'through' as const } : {}) }
     }
-    if (action === 'through') return { arrow: 'through', active: true, state: 'secondary' }
+    if (action === 'through') return { arrow: 'through', active: true, state: 'secondary',
+      highlightedAction: 'through' }
     if (action === 'left' || action === 'uturn') {
       const active = index === 0
-      return { arrow: active ? 'through-left' : 'through', active,
-        state: active ? 'primary' : 'inactive' }
+      return { arrow: active ? action === 'uturn' ? 'uturn' : 'through-left' : 'through', active,
+        state: active ? 'primary' : 'inactive',
+        ...(active ? { highlightedAction: action } : {}) }
     }
     const active = index === count - 1
     return { arrow: active ? 'through-right' : 'through', active,
-      state: active ? 'primary' : 'inactive' }
+      state: active ? 'primary' : 'inactive',
+      ...(active ? { highlightedAction: action } : {}) }
   })
 }
 
@@ -124,7 +131,8 @@ function applyLaneStates(
       const state: LanePreviewState = index === laneDecision.primaryLaneIndex
         ? 'primary'
         : secondary.has(index) ? 'secondary' : 'inactive'
-      return { ...lane, state, active: state !== 'inactive' }
+      return { ...lane, state, active: state !== 'inactive',
+        highlightedAction: state === 'inactive' ? undefined : action }
     })
   }
   const activeIndices = lanes.flatMap((lane, index) => lane.active ? [index] : [])
@@ -134,6 +142,7 @@ function applyLaneStates(
   return lanes.map((lane, index) => ({
     ...lane,
     state: !lane.active ? 'inactive' : index === primary ? 'primary' : 'secondary',
+    highlightedAction: lane.active ? action : undefined,
   }))
 }
 
@@ -217,12 +226,18 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
     if (twoStageNear) {
       const active = index === count - 1
       return { arrow: active ? 'through' : arrowFor(moves), active,
-        state: active ? 'primary' : 'inactive' }
+        state: active ? 'primary' : 'inactive',
+        ...(active ? { highlightedAction: 'through' as const } : {}) }
     }
     const active = immediateAction === 'uturn'
       ? hasReverse ? moves.has('reverse') : moves.has('left')
       : moves.has(immediateAction)
-    return { arrow: arrowFor(moves), active, state: active ? 'secondary' : 'inactive' }
+    return {
+      arrow: active && immediateAction === 'uturn' ? 'uturn' : arrowFor(moves),
+      active,
+      state: active ? 'secondary' : 'inactive',
+      ...(active ? { highlightedAction: immediateAction } : {}),
+    }
   })
 
   const inferred = guidanceIsInferred(input)

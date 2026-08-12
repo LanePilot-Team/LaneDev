@@ -9,7 +9,7 @@ import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplib
 import { NANZI_CENTER, pointAlong, cumulative, bearing, COS_LAT, LANE_WIDTH_M } from './geo'
 import { MOTO_LANE_M, type RoadFeature } from './roads'
 import { activeElevation, type ElevationModel } from './elevation'
-import { spanAtDist, type RouteResult, type LaneBandResult } from './graph'
+import { spanAtDist, type RouteResult, type LaneBandResult, type LaneChoiceArea } from './graph'
 
 /** 取樣間距（公尺）：橋面/護欄沿中心線的斷面密度（爬升段的平滑度來源） */
 const STEP_M = 8
@@ -66,12 +66,31 @@ class TriBuf {
   }
   build(material: THREE.Material): THREE.Mesh | null {
     if (this.pos.length === 0) return null
+    // 一個 NaN 頂點會讓 bounding sphere 變成 NaN，three 於是把**整個 mesh**
+    // 視錐剔除掉——畫面上是整片消失，不是缺一角，而且沒有任何錯誤訊息。
+    // 高度來源（deckHeightAt 內插／ElevationModel）在剖面缺漏時會吐出 NaN，
+    // 所以這裡最後把關：丟掉含非有限值的三角形，其餘照畫。
+    const clean: number[] = []
+    for (let i = 0; i < this.pos.length; i += 9) {
+      let ok = true
+      for (let k = 0; k < 9; k++) if (!Number.isFinite(this.pos[i + k])) { ok = false; break }
+      if (ok) for (let k = 0; k < 9; k++) clean.push(this.pos[i + k])
+    }
+    if (clean.length === 0) return null
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
+    g.setAttribute('position', new THREE.Float32BufferAttribute(clean, 3))
     g.computeVertexNormals()
     return new THREE.Mesh(g, material)
   }
 }
+
+/**
+ * 橋面高度防呆：`deckHeightAt` 的剖面內插與 `ElevationModel.heightAtPos` 在剖面
+ * 缺漏／退化線段時會回 NaN 或 undefined。`??` 擋不掉 NaN，於是 NaN 一路傳進頂點，
+ * 整個 mesh 被視錐剔除而整片消失。非有限值一律當成「不在橋上」交給 MapLibre 畫。
+ */
+const finiteHeight = (h: number | null | undefined): number =>
+  typeof h === 'number' && Number.isFinite(h) ? h : 0
 
 /** 斷面：中心點場景座標 + 行進右向單位向量 + 高度 + 橫向縮放（接地收窄） */
 interface Section {
@@ -862,7 +881,7 @@ export class ElevatedLayer {
       const span = spanAtDist(route, band.routeD[i])
       const road = span?.road
       if (!road?.properties.elevated) return 0
-      return this.deckHeightAt(road, c) ?? model.heightAtPos(road, c)
+      return finiteHeight(this.deckHeightAt(road, c) ?? model.heightAtPos(road, c))
     })
 
     // 切段：地面（h≤eps）給 MapLibre、高架給 3D 絲帶；邊界各多含一點，接縫不斷
@@ -951,6 +970,81 @@ export class ElevatedLayer {
     push(line, 0x3b82f6, 0.55, 2) // 同 C.route
     push(chev, 0xffffff, 0.9, 3)
     this.map?.triggerRepaint()
+    return ground
+  }
+
+  /**
+   * Draw the translucent multi-lane choice area on elevated decks and return
+   * only its ground portions for MapLibre. The opaque primary band remains the
+   * actual navigation route and is the only route carrying chevrons.
+   */
+  addRouteChoiceAreas(route: RouteResult, choices: LaneChoiceArea[]): LaneChoiceArea[] {
+    const model = activeElevation()
+    const ground: LaneChoiceArea[] = []
+    const deck = new TriBuf()
+    for (const choice of choices) {
+      const heights = choice.routeD.map((distanceM, index) => {
+        if (!model) return 0
+        const road = spanAtDist(route, distanceM)?.road
+        if (!road?.properties.elevated) return 0
+        const coord: [number, number] = [
+          (choice.left[index][0] + choice.right[index][0]) / 2,
+          (choice.left[index][1] + choice.right[index][1]) / 2,
+        ]
+        return finiteHeight(this.deckHeightAt(road, coord) ?? model.heightAtPos(road, coord))
+      })
+      let runLeft: [number, number][] = []
+      let runRight: [number, number][] = []
+      let runD: number[] = []
+      const flushGround = () => {
+        if (runLeft.length >= 2) ground.push({
+          ...choice,
+          left: runLeft,
+          right: runRight,
+          routeD: runD,
+          ring: [...runLeft, ...runRight.slice().reverse(), runLeft[0]],
+        })
+        runLeft = []
+        runRight = []
+        runD = []
+      }
+      const scenePoint = (coord: [number, number], height: number): V3 => {
+        const [east, north] = this.toScene(coord[0], coord[1])
+        return [east, height + 0.11, -north]
+      }
+      for (let index = 0; index < choice.routeD.length; index++) {
+        if (heights[index] <= ROUTE_ELEV_EPS) {
+          runLeft.push(choice.left[index])
+          runRight.push(choice.right[index])
+          runD.push(choice.routeD[index])
+        } else {
+          flushGround()
+        }
+        if (index === 0 || heights[index - 1] <= ROUTE_ELEV_EPS || heights[index] <= ROUTE_ELEV_EPS) continue
+        deck.quad(
+          scenePoint(choice.left[index - 1], heights[index - 1]),
+          scenePoint(choice.right[index - 1], heights[index - 1]),
+          scenePoint(choice.left[index], heights[index]),
+          scenePoint(choice.right[index], heights[index]),
+        )
+      }
+      flushGround()
+    }
+    // 顏色與不透明度對齊平面的 route-choice-area 圖層（C.route #3b82f6 / 0.22），
+    // 否則同一段路上橋前後會變色。renderOrder 0 讓它畫在藍帶（1↑）之下，
+    // 與平面的圖層順序（choice-area → casing → line → chevron）一致。
+    const mesh = deck.build(new THREE.MeshBasicMaterial({
+      color: 0x3b82f6,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    }))
+    if (mesh) {
+      mesh.renderOrder = 0
+      this.routeGroup.add(mesh)
+      this.map?.triggerRepaint()
+    }
     return ground
   }
 }

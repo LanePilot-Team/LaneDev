@@ -15,10 +15,13 @@ tsconfig.tsbuildinfo
 .DS_Store
 Thumbs.db
 
-# 環境變數（目前專案沒有，預留）
+# 環境變數（TDX 憑證放 .env.local，見 .env.example）
 .env
 .env.*
 !.env.example
+
+# TDX 探路腳本的原始回應快取（可重新抓取，不進版控）
+scripts/.tdx-cache/
 
 # 記錄檔
 *.log

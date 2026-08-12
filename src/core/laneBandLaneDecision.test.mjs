@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { laneBand } from './graph.ts'
-import { cumulative, pointAlong } from './geo.ts'
+import { laneBand, laneChoiceAreas } from './graph.ts'
+import { cumulative, haversine, pointAlong } from './geo.ts'
 
 const decision = (overrides = {}) => ({
   allowed: true,
@@ -45,6 +45,8 @@ const straightRoute = (laneDecision) => {
       offM: 0,
       leftM: -4.8,
       rightM: 4.8,
+      road: { properties: { osm_id: 999001 } },
+      back: false,
       laneGuidance: { laneCount: 4, source: 'annotation' },
     }],
     diverges: [],
@@ -72,6 +74,28 @@ test('導航線使用保存的主要車道索引而不是固定最外側', () =>
   const route = straightRoute(decision({ primaryLaneIndex: 2 }))
 
   assert.ok(Math.abs(offsetAt(route, 390) - 1.6) < 0.35)
+})
+
+test('可選車道形成整片透明區域並每 60 公尺向主線收斂一道', () => {
+  const route = straightRoute(decision({
+    primaryLaneIndex: 3,
+    secondaryLaneIndices: [0, 1, 2],
+  }))
+
+  const [area] = laneChoiceAreas(route)
+  assert.deepEqual(area.laneIndices, [0, 1, 2, 3])
+  const widthAtRemaining = (remainingM) => {
+    const target = 400 - remainingM
+    let index = 0
+    for (let i = 1; i < area.routeD.length; i++) {
+      if (Math.abs(area.routeD[i] - target) < Math.abs(area.routeD[index] - target)) index = i
+    }
+    return haversine(area.left[index], area.right[index])
+  }
+  assert.ok(Math.abs(widthAtRemaining(180) - 9.6) < 0.5)
+  assert.ok(Math.abs(widthAtRemaining(120) - 6.4) < 0.5)
+  assert.ok(Math.abs(widthAtRemaining(60) - 3.2) < 0.5)
+  assert.deepEqual(area.ring[0], area.ring.at(-1))
 })
 
 test('導航線在保存的 preparationM 邊界開始切換車道', () => {

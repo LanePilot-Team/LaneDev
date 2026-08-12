@@ -27,6 +27,7 @@ export default function App() {
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null) // 匯入地圖的檔案選擇器
   const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [transitOn, setTransitOn] = useState(false) // 大眾運輸疊加圖層（預設關）
 
   // ── 點擊分派 ──
   const { core, loading, zoneCount, zoneTick, vehicleCount, selectedVehicle } =
@@ -62,13 +63,13 @@ export default function App() {
   }, [loading])
 
   const {
-    drive, multiplier, gpsMsg, decisionOptions,
+    drive, multiplier, gpsMsg, cameraAlert, decisionOptions,
     startDrive, startGpsNav, replayDrive, canReplay,
     stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
-    zonesRef: core.zonesRef,
+    zonesRef: core.zonesRef, speedCamerasRef: core.speedCamerasRef,
     profileRef: planner.profileRef, stopsRef: planner.stopsRef,
     routePolicy: planner.routePolicy,
     vehicleLayerRef: core.vehicleLayerRef, lastGestureRef: core.lastGestureRef,
@@ -76,6 +77,13 @@ export default function App() {
     setZoneHighlight: core.setZoneHighlight,
   })
   planner.stopAllDriversRef.current = stopAllDrivers
+
+  // 導航中關掉大眾運輸疊加圖層：3000 個站牌加標籤在每幀旋轉的地圖上會不停重排，
+  // 跟 oneway-arrow／road-label 同理。使用者的開關狀態留著，結束導航自動復原。
+  useEffect(() => {
+    if (loading) return
+    core.setTransitVisible(mode !== 'drive' && transitOn)
+  }, [mode, transitOn, loading, core])
 
   function endDrive() {
     planner.clearAllRoute() // 內部已呼叫 stopAllDrivers()
@@ -128,7 +136,7 @@ export default function App() {
         <DriveHUD
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg} multiplier={multiplier}
-          decisionOptions={decisionOptions}
+          cameraAlert={cameraAlert} decisionOptions={decisionOptions}
           onEnd={endDrive} onReplay={canReplay ? replayDrive : undefined}
           onCycleMultiplier={cycleMultiplier}
           onTakeAlternative={takeAlternative} onSwitchLane={switchLane}
@@ -141,6 +149,11 @@ export default function App() {
           <button className={mode === 'browse' ? 'on' : ''} onClick={() => switchMode('browse')}>瀏覽</button>
           <button className={mode === 'edit' ? 'on' : ''} onClick={() => switchMode('edit')}>編輯地圖</button>
           <button className={mode === 'pick' ? 'on' : ''} onClick={() => startPick(false)}>規劃路線</button>
+          <button className={transitOn ? 'on' : ''} onClick={() => {
+            const next = !transitOn
+            setTransitOn(next)
+            core.setTransitVisible(next)
+          }}>🚌 大眾運輸</button>
           <button onClick={() => focusDistrict('nanzih')}>楠梓區</button>
           <button onClick={() => focusDistrict('zuoying')}>左營區</button>
           <button onClick={() => startPick(true)}>Demo 路線</button>

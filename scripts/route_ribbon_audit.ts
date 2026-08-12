@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON, type RoadFeature } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
-import { RoadGraph, laneBand, spanAtDist } from '../src/core/graph'
+import { RoadGraph, laneBand, laneChoiceAreas, spanAtDist } from '../src/core/graph'
 import { buildRoadMergeViews } from '../src/core/roadMerge'
 import { buildElevation, setActiveElevation } from '../src/core/elevation'
 import { ElevatedLayer, setActiveElevatedLayer, surfaceHeightAt } from '../src/core/elevated3d'
@@ -140,6 +140,89 @@ check('橋面上的指引線取樣點沒有被丟回平面圖層（沉到橋下�
   sunk.length ? `${sunk.length} 點\n   ${sunk.join('\n   ')}` : '0 點')
 check('指引線高度等於橋面高度', mismatched.length === 0,
   mismatched.length ? `${mismatched.length} 點\n   ${mismatched.join('\n   ')}` : '全部相符')
+
+// ── 3. 候選車道區（半透明車道平面）在橋面上也要有 ─────────────────────────
+// 指引線與候選車道區是兩條各自獨立的路徑：setRoute 建藍帶、addRouteChoiceAreas 建
+// 半透明平面。前者綠燈不代表後者也在——2 的斷言完全碰不到候選車道區。
+// 這裡同樣跑真正的 addRouteChoiceAreas，並且檢查它真的產出**可繪製**的 mesh：
+// 只要有一個頂點是 NaN，three 的 bounding sphere 就是 NaN，整個 mesh 會被視錐
+// 剔除——畫面上是整片不見，而且不會有任何錯誤訊息。
+interface LayerInternals {
+  routeGroup: { children: { geometry?: { boundingSphere?: { radius: number } | null;
+    computeBoundingSphere?: () => void; getAttribute: (n: string) => { count: number } } }[] }
+}
+const internals = layer as unknown as LayerInternals
+let choiceRoutes = 0
+let choiceOnDeck = 0
+let choiceMeshes = 0
+let choiceVerts = 0
+const choiceSunk: string[] = []
+const nanMeshes: string[] = []
+for (const [, blocks] of structures) {
+  const first = blocks[0]
+  const last = blocks[blocks.length - 1]
+  const from = (first.geometry.coordinates as [number, number][])[0]
+  const toCs = last.geometry.coordinates as [number, number][]
+  const to = toCs[toCs.length - 1]
+  const route = graph.route(from, to, 'car')
+  if (!route) continue
+  const band = laneBand(route)
+  if (band.coords.length < 2) continue
+  const choices = laneChoiceAreas(route)
+  if (choices.length === 0) continue
+  layer.setRoute(route, band)
+  const before = internals.routeGroup.children.length
+  const groundChoices = layer.addRouteChoiceAreas(route, choices)
+  const added = internals.routeGroup.children.slice(before)
+  // 這條路線的候選車道區有沒有取樣點落在橋面上
+  let onDeck = 0
+  for (const choice of choices) {
+    for (let i = 0; i < choice.routeD.length; i++) {
+      const road = spanAtDist(route, choice.routeD[i])?.road
+      if (!road?.properties.elevated) continue
+      const twin = view.renderRoads.find((x) => x.properties.elevated
+        && x.properties.osm_id === road.properties.osm_id
+        && x.properties.nodes[0] === road.properties.nodes[0])
+      if (!twin) continue
+      const mid: [number, number] = [
+        (choice.left[i][0] + choice.right[i][0]) / 2,
+        (choice.left[i][1] + choice.right[i][1]) / 2,
+      ]
+      if (surfaceHeightAt(twin, mid) <= 0.05) continue
+      onDeck++
+      // 落在回傳的平面區裡 = 被丟回 MapLibre，會畫在橋下的地面上
+      if (groundChoices.some((g) => g.routeD.includes(choice.routeD[i]))
+        && choiceSunk.length < 8) {
+        choiceSunk.push(`${label(road)} 候選車道區取樣點 ${i} 在橋面上卻被丟給平面圖層`)
+      }
+    }
+  }
+  if (onDeck > 0) {
+    choiceRoutes++
+    choiceOnDeck += onDeck
+    choiceMeshes += added.length
+    for (const mesh of added) {
+      const geometry = mesh.geometry
+      if (!geometry) continue
+      choiceVerts += geometry.getAttribute('position')?.count ?? 0
+      geometry.computeBoundingSphere?.()
+      const radius = geometry.boundingSphere?.radius
+      if (!(typeof radius === 'number' && Number.isFinite(radius)) && nanMeshes.length < 8) {
+        nanMeshes.push(`${label(first)} 候選車道區 mesh 的 bounding sphere = ${radius}（會被整片剔除）`)
+      }
+    }
+  }
+  layer.setRoute(null)
+}
+check('跑得出「候選車道區落在橋面上」的路線（否則本節沒量到東西）',
+  choiceRoutes > 0 && choiceOnDeck > 0,
+  `${choiceRoutes} 條路線、橋面上取樣 ${choiceOnDeck} 點`)
+check('橋面上的候選車道區沒有被丟回平面圖層', choiceSunk.length === 0,
+  choiceSunk.length ? `${choiceSunk.length} 點\n   ${choiceSunk.join('\n   ')}` : '0 點')
+check('候選車道區真的建出可繪製的 3D mesh（頂點無 NaN）',
+  choiceMeshes > 0 && nanMeshes.length === 0,
+  nanMeshes.length ? `${nanMeshes.length} 片壞掉\n   ${nanMeshes.join('\n   ')}`
+    : `${choiceMeshes} 片、${choiceVerts} 個頂點`)
 
 console.log(failures ? `\n❌ ${failures} 項未通過` : '\n✅ 全數通過')
 process.exit(failures ? 1 : 0)

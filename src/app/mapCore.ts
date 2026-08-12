@@ -31,6 +31,13 @@ import {
 } from '../core/zoneimport'
 import { newRoadsFromFolded } from '../core/newroads'
 import {
+  speedCamerasToGeoJson, type SpeedCamera, type SpeedCameraDataset,
+} from '../core/speedCameras'
+import {
+  railLinesToGeoJson, transitToGeoJson, type TransitDataset,
+} from '../core/transit'
+import { TRANSIT_LAYER_IDS } from '../core/mapStyle'
+import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
   buildSpecifiedWhiteMotoHatch,
   buildLeftTurnWaitingAreas,
@@ -193,6 +200,24 @@ function buildStationSideStructures(
   })
 }
 
+/** 大眾運輸站點與軌道線型（scripts/build_transit.mjs 產生的版本化資料檔） */
+async function loadTransitDataset(): Promise<TransitDataset> {
+  const res = await fetch(asset('/data/transit.json'))
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json() as TransitDataset
+  if (!Array.isArray(data.busStops)) throw new Error('busStops 欄位缺失')
+  return data
+}
+
+/** 測速執法設置點（scripts/build_speed_cameras.mjs 產生的版本化資料檔） */
+async function loadSpeedCameraDataset(): Promise<SpeedCameraDataset> {
+  const res = await fetch(asset('/data/speed_cameras.json'))
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json() as SpeedCameraDataset
+  if (!Array.isArray(data.cameras)) throw new Error('cameras 欄位缺失')
+  return data
+}
+
 async function loadDefaultRoads() {
   await loadStaticRoadDatabase()
   const canonicalSegments = staticSegments()
@@ -214,6 +239,15 @@ function applyLaneBaseRecords(
     existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
     nodeRemap,
     wayRemap,
+    wayApproachNodes: roads.reduce((index, road) => {
+      const nodes = index.get(road.properties.osm_id) ?? {
+        forward: new Set<number>(), backward: new Set<number>(),
+      }
+      nodes.forward.add(road.properties.nodes.at(-1)!)
+      if (road.properties.oneway !== 'yes') nodes.backward.add(road.properties.nodes[0])
+      index.set(road.properties.osm_id, nodes)
+      return index
+    }, new Map<number, { forward: Set<number>; backward: Set<number> }>()),
   })
   if (remapped.errors.length || remapped.unmappedSourceKeys.length) {
     const detail = [...new Set([
@@ -266,6 +300,14 @@ export interface MapCore {
   /** 前處理「之前」的原始 way 幾何快照（標註匯入的進入方位角後援：
    * couplet/退化清理清掉的 way 在底圖與 wayRemap 都查不到） */
   rawWaysRef: RefObject<Map<number, RawWay>>
+  /** 測速執法設置點（警政署開放資料，楠梓＋左營）——導航提示與地圖圖層共用 */
+  speedCamerasRef: RefObject<SpeedCamera[]>
+  /** 測速資料的來源／最後同步時間（授權要求顯名，畫面要能標示） */
+  speedCameraSourceRef: RefObject<SpeedCameraDataset['source'] | null>
+  /** 大眾運輸資料（TDX，楠梓＋左營）；未載入完成前為 null */
+  transitRef: RefObject<TransitDataset | null>
+  /** 大眾運輸圖層群組開關（工具列用） */
+  setTransitVisible: (visible: boolean) => void
   src: (id: string) => GeoJSONSource
   refreshZones: (persist?: boolean) => void
   setZoneHighlight: (id: string | null) => void
@@ -322,6 +364,9 @@ export function useMapCore(
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
+  const speedCamerasRef = useRef<SpeedCamera[]>([])
+  const speedCameraSourceRef = useRef<SpeedCameraDataset['source'] | null>(null)
+  const transitRef = useRef<TransitDataset | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [zoneCount, setZoneCount] = useState(0)
@@ -334,6 +379,15 @@ export function useMapCore(
   clickRef.current = onMapClick
 
   const src = useCallback((id: string) => mapRef.current!.getSource(id) as GeoJSONSource, [])
+
+  /** 大眾運輸圖層群組一次開關。資料還沒載入時什麼都不做——開了也是空的。 */
+  const setTransitVisible = useCallback((visible: boolean) => {
+    const map = mapRef.current
+    if (!map) return
+    for (const id of TRANSIT_LAYER_IDS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none')
+    }
+  }, [])
 
   const refreshZones = useCallback((persist = true) => {
     if (!mapRef.current) return
@@ -555,6 +609,8 @@ export function useMapCore(
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
+      speedCamerasRef, speedCameraSourceRef,
+      transitRef, setTransitVisible,
       src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
       redrawRoads, replaceBaseMap, replaceSessionLaneBase,
       previewJournal, refreshRoadMergeViews,
@@ -606,6 +662,30 @@ export function useMapCore(
       ])
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
+
+      // 測速執法設置點：與路網載入解耦——這是行車提示不是底圖，資料抓不到
+      // 只該少一個提示，不能讓整個導航起不來（資料指引第 4 節的「資料源短暫異常」）
+      loadSpeedCameraDataset().then((dataset) => {
+        speedCamerasRef.current = dataset.cameras
+        speedCameraSourceRef.current = dataset.source
+        src('speedCameras').setData(speedCamerasToGeoJson(dataset.cameras) as never)
+        console.info(`測速執法設置點 ${dataset.cameras.length} 筆（${dataset.districts.join('、')}）`
+          + `，來源同步時間 ${dataset.source.fetchedAt}`)
+      }).catch((cause) => {
+        console.warn('測速執法設置點載入失敗，本次導航沒有測速提示：', cause)
+      })
+
+      // 大眾運輸：同樣與路網解耦——這是疊加圖層，抓不到只該少一個圖層
+      loadTransitDataset().then((dataset) => {
+        transitRef.current = dataset
+        src('transit').setData(transitToGeoJson(dataset) as never)
+        src('transitLines').setData(railLinesToGeoJson(dataset) as never)
+        console.info(`大眾運輸（TDX）：公車站牌 ${dataset.busStops.length}`
+          + `／YouBike ${dataset.bikeStations.length}／軌道車站 ${dataset.railStations.length}`
+          + `，來源同步時間 ${dataset.source.fetchedAt}`)
+      }).catch((cause) => {
+        console.warn('大眾運輸資料載入失敗，圖層維持空白：', cause)
+      })
 
       const [roadsRaw, buildingsRaw] = await Promise.all([
         loadDefaultRoads(),

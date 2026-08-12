@@ -1,3 +1,5 @@
+// Offline compatibility export only. The canonical runtime authority is
+// public/data/road_database.json#annotations via src/core/laneBase.ts.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'

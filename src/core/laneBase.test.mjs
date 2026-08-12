@@ -151,7 +151,7 @@ test('reports every unusable source instead of silently dropping it', () => {
   assert.equal(result.sourceRecords, 4)
   assert.equal(result.records.length, 0)
   assert.equal(result.accountedSourceKeys.size, 4)
-  assert.match(result.errors.join('\n'), /no consumable lane profile or movement rules/)
+  assert.deepEqual(result.ignoredSourceKeys, ['way/10#0'])
   assert.match(result.errors.join('\n'), /invalid way identity/)
   assert.match(result.errors.join('\n'), /intersection node missing/)
   assert.match(result.errors.join('\n'), /invalid direction/)
@@ -221,6 +221,85 @@ test('remaps dropped records with lane-guidance alignment and reports unmapped s
     ['way/10#0', 20, 99, 'backward'],
     ['way/10#0', 30, 99, 'backward'],
   ])
-  assert.deepEqual(result.unmappedSourceKeys, ['way/11#0'])
-  assert.match(result.errors.join('\n'), /way\/11#0/)
+  assert.deepEqual(result.unmappedSourceKeys, [])
+  assert.deepEqual(result.retiredSourceKeys, ['way/11#0'])
+  assert.deepEqual(result.errors, [])
+})
+
+test('maps a dropped approach only to the surviving way that reaches its remapped node', () => {
+  const result = remapLaneBase([
+    record({ sourceKey: 'way/10#0', wayId: 10, scope: 'intersection_approach',
+      intersectionNodeId: 90, laneMovements: ['left'] }),
+  ], {
+    existingWayIds: new Set([20, 30]),
+    nodeRemap: new Map([[90, 99]]),
+    wayRemap: new Map([[10, {
+      keepIds: [20, 30], dropReversed: false, sameDir: false,
+    }]]),
+    wayApproachNodes: new Map([
+      [20, { forward: new Set([98]), backward: new Set([99]) }],
+      [30, { forward: new Set([101]), backward: new Set([100]) }],
+    ]),
+  })
+
+  assert.deepEqual(result.errors, [])
+  assert.deepEqual(result.records.map((item) => [item.wayId, item.intersectionNodeId]), [
+    [20, 99],
+  ])
+})
+
+test('merges complementary native and remapped records with native lane fields first', () => {
+  const result = remapLaneBase([
+    record({ sourceKey: 'native', wayId: 20, laneCount: 2, laneMovements: ['through', 'right'] }),
+    record({ sourceKey: 'drop', wayId: 10, laneCount: 3, movementRules: [{ movement: 'left' }] }),
+  ], {
+    existingWayIds: new Set([20]),
+    nodeRemap: new Map(),
+    wayRemap: new Map([[10, { keepIds: [20], dropReversed: false, sameDir: true }]]),
+  })
+
+  assert.deepEqual(result.errors, [])
+  assert.equal(result.records.length, 1)
+  assert.equal(result.records[0].laneCount, 2)
+  assert.deepEqual(result.records[0].laneMovements, ['through', 'right'])
+  assert.deepEqual(result.records[0].sourceKeys, ['native', 'drop'])
+  assert.equal(result.records[0].movementRules.length, 1)
+})
+
+test('prefers a higher-class road when remapped lane fields collide', () => {
+  const result = remapLaneBase([
+    record({ sourceKey: 'mainline', wayId: 10, sourceHighway: 'tertiary', laneCount: 3 }),
+    record({ sourceKey: 'slow-lane', wayId: 11, sourceHighway: 'residential', laneCount: 2 }),
+  ], {
+    existingWayIds: new Set([20]),
+    nodeRemap: new Map(),
+    wayRemap: new Map([
+      [10, { keepIds: [20], dropReversed: false, sameDir: true }],
+      [11, { keepIds: [20], dropReversed: false, sameDir: true }],
+    ]),
+  })
+
+  assert.deepEqual(result.errors, [])
+  assert.equal(result.records[0].laneCount, 3)
+  assert.deepEqual(result.records[0].sourceKeys, ['mainline', 'slow-lane'])
+})
+
+test('prefers an actual intersection approach over a direction pointing away', () => {
+  const result = remapLaneBase([
+    record({ sourceKey: 'approach', wayId: 10, sourceHighway: 'tertiary',
+      sourceApproachAligned: true, laneMovements: ['through', 'right'] }),
+    record({ sourceKey: 'departure', wayId: 11, sourceHighway: 'tertiary',
+      sourceApproachAligned: false, laneMovements: ['left', 'through'] }),
+  ], {
+    existingWayIds: new Set([20]),
+    nodeRemap: new Map(),
+    wayRemap: new Map([
+      [10, { keepIds: [20], dropReversed: false, sameDir: true }],
+      [11, { keepIds: [20], dropReversed: false, sameDir: true }],
+    ]),
+  })
+
+  assert.deepEqual(result.errors, [])
+  assert.deepEqual(result.records[0].laneMovements, ['through', 'right'])
+  assert.deepEqual(result.records[0].sourceKeys, ['approach', 'departure'])
 })

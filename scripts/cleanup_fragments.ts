@@ -8,6 +8,15 @@
 // 刪除是以「連通元件數不得增加」為準——刪完之後重建導航圖，若有任何道路因此
 // 脫離主要路網，就把造成脫離的碎塊放回去，反覆收斂到連通性完全不變為止。
 //
+// 光靠連通元件數是不夠的（2026-07-30 的批次就是這樣誤刪了 64 段）：主幹道中間
+// 少掉一段，兩側往往還能繞小巷相通，元件數不變，A* 卻只剩「鑽側巷或迴轉」這條路。
+// 所以另外加了兩道守門：
+//   1. 重疊要看**垂距**。原本比的是頂點對頂點 12m，而碎塊長度上限是 25m——
+//      一段 10m、只有兩個頂點、單純接在長區塊後面的正常路段，兩個頂點離長區塊
+//      端點都 <12m，重疊率算出來就是 100%。
+//   2. 中間環節不得刪。區塊的節點相鄰關係若沒有別條現存道路接手，而且兩端節點
+//      刪除後仍被其他道路使用，那它就是路網的中間環節，刪掉等於把路從中間切斷。
+//
 //   --maxlen=<公尺>  碎塊長度上限（預設 25）
 //   --apply=<檔案>   寫出結果；不給就只預演
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -84,16 +93,36 @@ for (const r of base) {
   list.push(r)
   byWay.set(r.properties.osm_id, list)
 }
+/** 點到折線的最短距離（公尺）。近似平面投影，這個尺度下誤差可忽略。 */
+const pointToPolyline = (p: [number, number], line: [number, number][]) => {
+  let best = Infinity
+  for (let i = 1; i < line.length; i++) {
+    const [ax, ay] = line[i - 1]
+    const [bx, by] = line[i]
+    const mx = Math.cos((p[1] * Math.PI) / 180)
+    const dx = (bx - ax) * mx
+    const dy = by - ay
+    const len2 = dx * dx + dy * dy
+    const t = len2 === 0 ? 0
+      : Math.max(0, Math.min(1, (((p[0] - ax) * mx * dx) + ((p[1] - ay) * dy)) / len2))
+    best = Math.min(best, haversine(p, [ax + (dx * t) / (mx || 1), ay + dy * t]))
+  }
+  return best
+}
+/**
+ * 「這段是不是疊在那段上面」。用**垂距**而不是頂點距離：頂點距離會把「首尾相接
+ * 的正常續行段」也算成 100% 重疊（碎塊只有兩個頂點，兩端各離長區塊端點幾公尺）。
+ * 共用節點本來就重合，計算時要排除，否則接縫處永遠算命中。
+ */
+const OVERLAP_M = 4
 const overlapRatio = (small: RoadFeature, big: RoadFeature) => {
   const sc = small.geometry.coordinates as [number, number][]
   const bc = big.geometry.coordinates as [number, number][]
-  let inside = 0
-  for (const p of sc) {
-    let best = Infinity
-    for (const q of bc) best = Math.min(best, haversine(p, q))
-    if (best < 12) inside++
-  }
-  return inside / sc.length
+  const shared = new Set(big.properties.nodes)
+  const probes = sc.filter((_, i) => !shared.has(small.properties.nodes[i]))
+  if (!probes.length) return 0 // 節點全共用＝同一條鏈上的續行段，不是疊圖
+  const inside = probes.filter((p) => pointToPolyline(p, bc) < OVERLAP_M).length
+  return inside / probes.length
 }
 // 被捏合紀錄引用的區塊絕對不能刪。2026-07-29 的清理少了這道檢查，刪掉了 5 組
 // 軍校路捏合的組成區塊，使用者的捏合當場失效——看起來就像「紀錄又消失了」。
@@ -135,14 +164,43 @@ console.log(`活躍區塊 ${base.length}｜疊壞碎塊候選 ${unique.length}`
 const before = components(base)
 console.log(`刪除前連通元件 ${before.count}｜最大元件含 ${before.biggest} 條道路`)
 
+/**
+ * 刪掉這個區塊會不會把路從中間切斷？
+ * 判準：區塊帶的每組節點相鄰關係，若沒有任何**現存**道路接手，而且該組兩端節點
+ * 刪除後仍被其他道路使用，那這段就是路網的中間環節。連通元件數看不出這件事——
+ * 缺口兩側繞小巷照樣相通，元件數不變，但主幹道上就是多了一個 A* 過不去的洞。
+ */
+const pairKey = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`)
+function seversChain(block: RoadFeature, active: RoadFeature[]): boolean {
+  const adjacency = new Set<string>()
+  const liveNodes = new Set<number>()
+  for (const r of active) {
+    if (key(r) === key(block)) continue
+    const ns = r.properties.nodes
+    for (let i = 0; i < ns.length; i++) {
+      liveNodes.add(ns[i])
+      if (i > 0) adjacency.add(pairKey(ns[i - 1], ns[i]))
+    }
+  }
+  const ns = block.properties.nodes
+  for (let i = 1; i < ns.length; i++) {
+    if (adjacency.has(pairKey(ns[i - 1], ns[i]))) continue
+    if (liveNodes.has(ns[i - 1]) && liveNodes.has(ns[i])) return true
+  }
+  return false
+}
+
 const accepted = new Set<string>()
 const protectedKeys: string[] = []
+let severingSkipped = 0
 let checked = 0
 for (const k of unique) {
   checked++
   const trial = new Set(accepted)
   trial.add(k)
   const active = base.filter((r) => !trial.has(key(r)))
+  const block = base.find((r) => key(r) === k)!
+  if (seversChain(block, active)) { severingSkipped++; protectedKeys.push(k); continue }
   const comp = components(active)
   // 元件數不得增加；孤立碎塊本身被刪掉會讓元件變少，那是好事
   if (comp.count <= before.count) accepted.add(k)
@@ -161,7 +219,8 @@ const removedObjects = base.length - finalActive.length
 const componentsOk = finalComp.count <= before.count
 const noDetached = finalComp.biggest >= before.biggest - removedObjects
 console.log(`\n最終：刪除 ${doomed.size} 個碎塊鍵（${removedObjects} 個物件）`
-  + `｜保護 ${protectedKeys.length} 個（唯一通路）`)
+  + `｜保護 ${protectedKeys.length} 個（其中中間環節 ${severingSkipped} 個、唯一通路`
+  + ` ${protectedKeys.length - severingSkipped} 個）`)
 console.log(`活躍區塊 ${base.length} → ${finalActive.length}`)
 console.log(`連通元件 ${before.count} → ${finalComp.count}`
   + `｜最大元件 ${before.biggest} → ${finalComp.biggest}`

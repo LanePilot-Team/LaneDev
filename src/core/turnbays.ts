@@ -12,6 +12,7 @@ import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, s
 import { laneSpanM, MOTO_LANE_M, type LaneMark, type RoadFeature } from './roads'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
 import type { EnhancementRecord } from './enhancements'
+import { guidanceForRoadDirection } from './laneBase'
 import { indexObstacles, projectNearbyObstacles } from './groundAvoid'
 import {
   buildCappedTriangleRange,
@@ -1136,6 +1137,11 @@ const ARROW_HALF_WIDTH_M = 1.1
 /** 箭頭與停止線之間的最小淨距。 */
 const ARROW_STOP_CLEAR_M = 0.6
 
+/** Shared effective snapshot consumed by ground lane paint; exported for data audits. */
+export function lanePaintGuidanceForRoadDirection(road: RoadFeature, back: boolean) {
+  return guidanceForRoadDirection(road, back)
+}
+
 export function buildLaneArrows(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[] = [],
   motoBoxDirs: Set<string> = new Set(),
@@ -1175,7 +1181,11 @@ export function buildLaneArrows(
     if (!atMergeSideEntry && !scopeFn(e.road) && !hasTl(e.road)
       && !isMajorStopRoad(e.road)) continue
     if (p.roadMarkingMode !== 'all') continue
-    const lanes = p.oneway === 'yes' ? p.lanesForward : e.back ? p.lanesBackward : p.lanesForward
+    // Ground paint and the HUD must resolve the same effective lane snapshot.
+    // Keeping this call at the rendering boundary prevents a canonical/journal
+    // precedence change from updating one presentation but not the other.
+    const paintGuidance = lanePaintGuidanceForRoadDirection(e.road, e.back)
+    const lanes = paintGuidance.laneCount
     const laneMarks = (p.oneway === 'yes' || !e.back) ? p.laneMarksF : p.laneMarksB
     const motoCount = p.oneway === 'yes'
       ? p.motoCountF : e.back ? p.motoCountB : p.motoCountF
@@ -1184,7 +1194,7 @@ export function buildLaneArrows(
     // lanes = 0 時機車道自然從路面左緣起算。
     if (lanes < 1 && motoCount < 1) continue
     // 該行向的轉向真值（行向駕駛視角左→右）
-    const tlRaw = (p.oneway === 'yes' || !e.back) ? p.turnLanes : p.turnLanesB
+    const tlRaw = paintGuidance.laneMovements
     const explicit = lanes >= 1 ? tlRaw?.map(canonTurn) : undefined
     const hasExplicit = !!explicit?.some(Boolean)
     const motoTlRaw = (p.oneway === 'yes' || !e.back) ? p.motoTurnLanesF : p.motoTurnLanesB
@@ -1400,8 +1410,9 @@ export function groundMoves(
   rightLanes: RightLane[] = [],
 ): string[] {
   const p = road.properties
-  const lanes = Math.max(1, p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward)
-  const explicit = (p.oneway === 'yes' || !back) ? p.turnLanes : p.turnLanesB
+  const paintGuidance = lanePaintGuidanceForRoadDirection(road, back)
+  const lanes = Math.max(1, paintGuidance.laneCount)
+  const explicit = paintGuidance.laneMovements
   if (explicit?.some(Boolean)) {
     return Array.from({ length: lanes }, (_, k) => explicit[k] || 'through')
   }

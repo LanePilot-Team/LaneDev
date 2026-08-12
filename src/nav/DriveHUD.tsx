@@ -5,6 +5,7 @@ import type { DriveState } from './drive'
 import type { DecisionKind } from './useDrive'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
 import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
+import { ENFORCEMENT_LABEL, type SpeedCameraAlert } from '../core/speedCameras'
 
 // ── 距離分階段提醒（照 mvp）：250m 預備切車道(藍) → 60m 動作(橘紅) → 25m 內顯示「現在」──
 const FAR_THRESHOLD = 250
@@ -132,11 +133,53 @@ export function ManeuverArrow({ kind }: { kind: Maneuver['kind'] | 'two-stage' }
   )
 }
 
+/** 速限標誌（白底紅環）——地圖圖層與 HUD 用同一種視覺語言，駕駛不用重新學 */
+export function SpeedLimitSign({ limit, muted }: { limit?: number; muted?: boolean }) {
+  return (
+    <svg className={`limit-sign${muted ? ' limit-sign-muted' : ''}`} viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="21" fill="#fff" stroke={muted ? '#94a3b8' : '#dc2626'} strokeWidth="6" />
+      {limit !== undefined && (
+        <text x="24" y="25" textAnchor="middle" dominantBaseline="central"
+          fontSize="21" fontWeight="800" fill="#111827">{limit}</text>
+      )}
+    </svg>
+  )
+}
+
+/**
+ * 測速照相提示卡。三個階段對應三種語氣（照市面測速 App 的慣例）：
+ *   approach 藍＝知道就好、near 紅＝現在就要看速度、passed 綠＝可以放心了。
+ * 超速時不管哪個階段都轉紅並補上超速多少，這是駕駛唯一真正需要的數字。
+ */
+function SpeedCameraCard({ alert }: { alert: SpeedCameraAlert }) {
+  const passed = alert.phase === 'passed'
+  const tone = passed ? 'passed' : alert.overLimit ? 'over' : alert.phase
+  const dist = alert.distanceM >= 1000
+    ? `${(alert.distanceM / 1000).toFixed(1)} 公里`
+    : `${Math.max(10, Math.round(alert.distanceM / 10) * 10)} 公尺`
+  return (
+    <div className={`camera-card camera-${tone}`}>
+      <SpeedLimitSign limit={alert.speedLimitKph} muted={passed} />
+      <div className="camera-text">
+        <b>{passed ? `${ENFORCEMENT_LABEL[alert.camera.enforcementType]}已結束` : `前方 ${dist}`}</b>
+        <span>
+          {passed
+            ? '可恢復正常行駛'
+            : `${ENFORCEMENT_LABEL[alert.camera.enforcementType]}${alert.camera.alsoRedLight ? '・兼拍闖紅燈' : ''}`}
+        </span>
+        {alert.overLimit && !passed && (
+          <span className="camera-speeding">超速 {alert.overByKph} km/h・請減速</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const DECISION_LABEL: Record<DecisionKind, string> = { left: '左轉', straight: '直行', right: '右轉' }
 
 /** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
-  drive, twoStage, profile, gpsMsg, multiplier, decisionOptions,
+  drive, twoStage, profile, gpsMsg, multiplier, cameraAlert, decisionOptions,
   onEnd, onReplay, onCycleMultiplier, onTakeAlternative, onSwitchLane,
 }: {
   drive: DriveState | null
@@ -144,6 +187,8 @@ export function DriveHUD({
   profile: Profile
   gpsMsg: string | null
   multiplier: number
+  /** 測速照相提示（沒有就不顯示卡片） */
+  cameraAlert: SpeedCameraAlert | null
   decisionOptions: { kind: DecisionKind }[]
   onEnd: () => void
   /** 模擬到達後的「再跑一次」；GPS 導航不傳（不顯示按鈕） */
@@ -170,8 +215,11 @@ export function DriveHUD({
       {/* ── 頂部導航看板 ── */}
       <TopBanner drive={drive} twoStage={twoStage} profile={profile} />
 
-      {/* ── 速度圓標 ── */}
-      <div className="speed-badge">
+      {/* ── 測速照相提示 ── */}
+      {cameraAlert && <SpeedCameraCard alert={cameraAlert} />}
+
+      {/* ── 速度圓標（測速範圍內超速就轉紅，速度本身才是要看的東西）── */}
+      <div className={`speed-badge${cameraAlert?.overLimit ? ' speed-over' : ''}`}>
         <div className="speed-num">{Math.round(drive.speedKmh)}</div>
         <div className="speed-unit">km/h</div>
       </div>

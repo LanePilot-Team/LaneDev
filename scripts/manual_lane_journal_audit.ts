@@ -1,15 +1,16 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { parseImported } from '../src/core/importmap'
 import { roadsFromGeoJSON } from '../src/core/roads'
 import { prepareBaseRoads } from '../src/core/pipeline'
 import { foldJournal, type EnhancementRecord } from '../src/core/enhancements'
 import {
-  buildLaneGuidanceIndex,
-  remapLaneGuidanceRecords,
-  type LaneDirection,
-  type LaneGuidanceRecord,
-} from '../src/core/laneGuidance'
+  buildLaneBaseIndex,
+  extractLaneBase,
+  remapLaneBase,
+  resolveLaneBase,
+} from '../src/core/laneBase'
+import type { LaneDirection } from '../src/core/laneGuidance'
 
 const root = process.cwd()
 const outputDir = join(root, 'docs', 'audits')
@@ -18,22 +19,42 @@ const laneFields = new Set([
   'lanes_forward', 'lanes_backward', 'turn_lanes', 'turn_lanes_backward',
 ])
 
-const db = JSON.parse(readFileSync(join(root, 'public/data/road_database.json'), 'utf8'))
+const databaseArgument = process.argv.slice(2)
+  .find((argument) => argument.startsWith('--database='))?.slice('--database='.length)
+const databaseLabel = databaseArgument ?? 'public/data/road_database.json'
+const databasePath = resolve(root, databaseLabel)
+const db = JSON.parse(readFileSync(databasePath, 'utf8'))
 const journal = db.editor.journal as EnhancementRecord[]
 const manual = journal.filter((record) => manualAuthors.has(record.author))
 const parsed = parseImported(db.segments.map((record: unknown) => JSON.stringify(record)).join('\n'))
 if (parsed.kind !== 'map') throw new Error('road_database.segments 無法解析成地圖')
 const prepared = prepareBaseRoads(roadsFromGeoJSON(parsed.fc))
 const roads = prepared.roads.filter((road) => !road.properties.deleted)
-const guidanceRaw = JSON.parse(readFileSync(
-  join(root, 'public/data/lanepilot/lane-guidance.json'), 'utf8',
-)) as LaneGuidanceRecord[]
-const guidance = remapLaneGuidanceRecords(guidanceRaw, {
+const extraction = extractLaneBase(Array.isArray(db.annotations) ? db.annotations : [])
+const remapped = remapLaneBase(extraction.records, {
   existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
   nodeRemap: prepared.nodeRemap,
   wayRemap: prepared.wayRemap,
+  wayApproachNodes: roads.reduce((index, road) => {
+    const nodes = index.get(road.properties.osm_id) ?? {
+      forward: new Set<number>(), backward: new Set<number>(),
+    }
+    nodes.forward.add(road.properties.nodes.at(-1)!)
+    if (road.properties.oneway !== 'yes') nodes.backward.add(road.properties.nodes[0])
+    index.set(road.properties.osm_id, nodes)
+    return index
+  }, new Map<number, { forward: Set<number>; backward: Set<number> }>()),
 })
-const guidanceIndex = buildLaneGuidanceIndex(guidance)
+const laneBaseIndex = buildLaneBaseIndex(remapped.records)
+const unmappedSourceKeys = new Set(remapped.unmappedSourceKeys)
+const unmappedWayDirections = new Set(extraction.records
+  .filter((record) => unmappedSourceKeys.has(record.sourceKey))
+  .map((record) => `${record.wayId}/${record.direction}`))
+const baseErrors = [
+  ...extraction.errors,
+  ...remapped.errors,
+  ...laneBaseIndex.movementRuleErrors,
+]
 const folded = foldJournal(manual)
 
 type Provenance = Pick<EnhancementRecord, 'author' | 'seq' | 'ts'> & { target: string }
@@ -97,6 +118,7 @@ const labels: Record<string, string> = {
   lane_count_differs: '車道數不同',
   lane_and_turn_differ: '車道數與轉向皆不同',
   no_base: 'LanePilot base 無對應資料',
+  annotation_present_but_unmapped: '有標記但無法映射到目前道路',
 }
 
 const rows: AuditRow[] = []
@@ -123,11 +145,18 @@ for (const road of roads) {
     const approachNode = direction === 'forward'
       ? road.properties.nodes.at(-1) : road.properties.nodes[0]
     const approach = approachNode === undefined ? undefined
-      : guidanceIndex.approachByKey.get(
+      : laneBaseIndex.approachByKey.get(
         `${road.properties.osm_id}@${approachNode}/${direction}`,
       )
-    const segment = guidanceIndex.segmentByKey.get(`${road.properties.osm_id}/${direction}`)
-    const base = approach ?? segment
+    const segment = laneBaseIndex.segmentByKey.get(`${road.properties.osm_id}/${direction}`)
+      ?? laneBaseIndex.legacyByKey.get(`${road.properties.osm_id}/${direction}`)
+    const baseRecord = approach ?? segment
+    const base = resolveLaneBase(laneBaseIndex, {
+      wayId: road.properties.osm_id,
+      intersectionNodeId: approachNode,
+      direction,
+    })
+    const baseHasLaneData = base.laneCount !== undefined || base.laneMovements !== undefined
     const manualLaneCount = hasLane ? Number(effective[laneField]) : undefined
     const manualTurnLanes = hasTurn ? String(effective[turnField]) : undefined
     const baseTurnLanes = base ? normalizeRaw(base.laneMovements) : undefined
@@ -136,8 +165,9 @@ for (const road of roads) {
     const turnSemanticSame = !hasTurn ||
       movementSemantics(manualTurnLanes) === movementSemantics(baseTurnLanes)
 
-    let category = 'no_base'
-    if (base) {
+    let category = unmappedWayDirections.has(`${road.properties.osm_id}/${direction}`)
+      ? 'annotation_present_but_unmapped' : 'no_base'
+    if (baseHasLaneData) {
       if (laneSame && turnRawSame) category = hasLane && hasTurn ? 'exact_same' : 'partial_same'
       else if (laneSame && turnSemanticSame) category = 'arrow_style_only'
       else if (!laneSame && !turnSemanticSame) category = 'lane_and_turn_differ'
@@ -159,6 +189,8 @@ for (const road of roads) {
         ? '只有部分比較欄位由人工明確設定；另一欄仍需確認來源。'
         : category === 'arrow_style_only'
           ? '`+` 與 `;` 的允許方向相同，但目前繪圖語意不同，需看現地箭頭樣式。'
+          : category === 'annotation_present_but_unmapped'
+            ? '此方向有 LanePilot 標記，但無法安全映射到目前道路；稽核會以錯誤結束。'
           : category === 'no_base'
             ? 'LanePilot 沒有可套用到此路段方向的 approach 或 segment 紀錄。'
             : '人工值會覆蓋 LanePilot；請依現地與標註資料判定應保留哪一方。'
@@ -175,7 +207,7 @@ for (const road of roads) {
       latitude,
       googleMaps: `https://www.google.com/maps/@${latitude},${longitude},20z`,
       openStreetMap: `https://www.openstreetmap.org/way/${road.properties.osm_id}`,
-      baseScope: base?.scope,
+      baseScope: baseRecord?.scope,
       baseLaneCount: base?.laneCount,
       baseTurnLanes,
       manualLaneCount,
@@ -192,6 +224,7 @@ rows.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category) ||
   a.roadName.localeCompare(b.roadName, 'zh-Hant') || a.wayId - b.wayId ||
   a.blockNode - b.blockNode || a.direction.localeCompare(b.direction))
 const counts = Object.fromEntries(order.map((key) => [key, rows.filter((row) => row.category === key).length]))
+counts.annotation_present_but_unmapped = unmappedSourceKeys.size
 
 const liveTargets = new Map<string, EnhancementRecord>()
 for (const record of manual) {
@@ -226,6 +259,7 @@ const markdown: string[] = [
   '# 人工車道 Journal 與 LanePilot Base 回查清單',
   '',
   `資料庫版本時間：${db.updated_at ?? '未提供'}`,
+  `資料來源：${databaseLabel}`,
   '',
   '## 比較口徑',
   '',
@@ -286,5 +320,13 @@ console.log(JSON.stringify({
   },
   effectiveRoadDirections: rows.length,
   categories: counts,
+  laneBase: {
+    annotations: Array.isArray(db.annotations) ? db.annotations.length : 0,
+    remappedRecords: remapped.records.length,
+    unmapped: [...unmappedSourceKeys].sort(),
+    errors: baseErrors,
+  },
   outputs: { markdownPath, csvPath },
 }, null, 2))
+
+if (counts.annotation_present_but_unmapped > 0 || baseErrors.length > 0) process.exitCode = 2

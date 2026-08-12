@@ -3,7 +3,7 @@
 import { useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 import {
-  mergeRoutes, laneBand,
+  mergeRoutes, laneBand, laneChoiceAreas,
   type RouteResult, type Maneuver, type Profile, type LaneRoutePolicy,
 } from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
@@ -143,13 +143,24 @@ export function usePlanner(core: MapCore): Planner {
     // 路線帶偏移到實際行駛車道（車道級導航的視覺核心）。
     // 高架段交給 elevated3d 畫 3D 絲帶（貼橋面），MapLibre 只畫平面段
     const band = laneBand(route)
-    const ground = activeElevatedLayer()?.setRoute(route, band) ?? [band.coords]
+    const choices = laneChoiceAreas(route)
+    const elevated = activeElevatedLayer()
+    const ground = elevated?.setRoute(route, band) ?? [band.coords]
+    const groundChoices = elevated?.addRouteChoiceAreas(route, choices) ?? choices
     core.src('route').setData({
       type: 'FeatureCollection',
-      features: ground.filter((cs) => cs.length >= 2).map((cs) => ({
-        type: 'Feature', properties: {},
-        geometry: { type: 'LineString', coordinates: cs },
-      })),
+      features: [
+        ...ground.filter((cs) => cs.length >= 2).map((cs) => ({
+          type: 'Feature', properties: { role: 'primary' },
+          geometry: { type: 'LineString', coordinates: cs },
+        })),
+        ...groundChoices.filter((choice) => choice.ring.length >= 4).map((choice) => ({
+          type: 'Feature',
+          properties: { role: 'choice-area', laneIndices: choice.laneIndices.join(','),
+            primaryLaneIndex: choice.primaryLaneIndex },
+          geometry: { type: 'Polygon', coordinates: [choice.ring] },
+        })),
+      ],
     } as never)
     const b = route.coords.reduce(
       (acc, c) => acc.extend(c as [number, number]),

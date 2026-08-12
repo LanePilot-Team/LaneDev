@@ -6,6 +6,7 @@ import type { Map as MLMap, GeoJSONSource } from 'maplibre-gl'
 import {
   RoadGraph,
   laneBand,
+  laneChoiceAreas,
   type LaneRoutePolicy,
   type RouteResult,
   type Profile,
@@ -20,6 +21,11 @@ import type { Stop } from '../plan/usePlanner'
 import { activeNavigationOcclusion } from '../core/occlusion'
 import { isZoneEnabled, type Zone } from '../core/zones'
 import { routeFailureText } from '../plan/routeFailure'
+import {
+  matchCamerasToRoute, speedCameraAlertAt, speedCameraAnnouncement,
+  type RouteCamera, type SpeedCamera, type SpeedCameraAlert,
+} from '../core/speedCameras'
+import { SpeedCameraVoice } from './speedCameraVoice'
 
 /** 路口決策：接近下個轉彎多近（公尺）才顯示「不照指引走」按鈕 */
 const DECISION_BUTTON_RANGE_M = 30
@@ -28,6 +34,32 @@ const DETOUR_LOOKAHEAD_M = 150
 /** 路口決策：沿替代道路走了多遠（公尺）後才觸發 reroute */
 const DETOUR_REROUTE_M = 40
 const ZONE_HIGHLIGHT_RANGE_M = 160
+/**
+ * 進入導航時的預設鏡頭。原本 17.6 拉得太遠，車道線、地面箭頭、停止線在畫面上都
+ * 只剩幾個像素，等於看不到這個專案唯一想呈現的東西。
+ *
+ * zoom 21：車身（1.8m）約佔畫面寬度 4.1%、畫面橫向可見約 42m——比照使用者指定的
+ * 視距校正而來（截圖裡車身佔 4.5%）。
+ * pitch 50 而非 60：pitch 55 以上滅點會落在畫面內，遠處的地面標線／路面印字會被
+ * 壓成一片而糊掉。50 時畫面上緣約在前方 75m，路面物件到邊緣都還是完整的。
+ *
+ * 只在「開始導航／重播」時設一次；跟隨鏡頭的 jumpTo 刻意不帶 zoom/pitch，
+ * 所以使用者導航中仍可自由縮放旋轉，縮完就維持在他選的視角。
+ */
+const NAV_CAMERA = { zoom: 21, pitch: 50 }
+
+/**
+ * 上高架時鏡頭要跟著抬同樣的高度，不能沿用平面的鏡頭高度——否則車在橋面上、
+ * 鏡頭還瞄著地面，車模會離鏡頭更近而被放大並往畫面上緣飄。
+ *
+ * MapLibre 的 `CameraOptions.elevation` 就是「中心點的海拔」，但預設
+ * `centerClampedToGround = true` 會把它壓回地面，所以導航期間要先關掉。
+ * 實測 elevation 0 → 15 時相機海拔剛好 +15m，地面的投影位置不變，
+ * 也就是橋面上的車會維持在原本的畫面位置與大小。
+ */
+function setNavCameraClamp(map: MLMap, clamped: boolean) {
+  if (map.getCenterClampedToGround() !== clamped) map.setCenterClampedToGround(clamped)
+}
 
 export type DecisionKind = 'left' | 'straight' | 'right'
 
@@ -38,6 +70,8 @@ export interface UseDriveParams {
   routeRef: RefObject<RouteResult | null>
   graphRef: RefObject<RoadGraph | null>
   zonesRef: RefObject<Zone[]>
+  /** 測速執法設置點（mapCore 載入的警政署開放資料）；空陣列＝沒有測速提示 */
+  speedCamerasRef: RefObject<SpeedCamera[]>
   profileRef: RefObject<Profile>
   routePolicy: LaneRoutePolicy
   stopsRef: RefObject<Stop[]>
@@ -52,6 +86,8 @@ export interface UseDriveResult {
   drive: DriveState | null
   multiplier: number
   gpsMsg: string | null
+  /** 目前該顯示的測速照相提示（沒有就是 null） */
+  cameraAlert: SpeedCameraAlert | null
   /** 接近路口時可選的「不照指引走」出口（已排除指引本身那個方向） */
   decisionOptions: { kind: DecisionKind }[]
   startDrive: () => void
@@ -73,9 +109,13 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const initialRouteRef = useRef<RouteResult | null>(null) // 模擬出發時的路線快照（重播用）
   const lastDriveRef = useRef<DriveState | null>(null)
   const activeZoneIdRef = useRef<string | null>(null)
+  const routeCamerasRef = useRef<RouteCamera[]>([])
+  const voiceRef = useRef<SpeedCameraVoice>(null as never)
+  if (!voiceRef.current) voiceRef.current = new SpeedCameraVoice()
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [multiplier, setMultiplier] = useState(3)
   const [gpsMsg, setGpsMsg] = useState<string | null>(null)
+  const [cameraAlert, setCameraAlert] = useState<SpeedCameraAlert | null>(null)
 
   // 觸控/鍵盤共用同一個 multiplier state；Driver 實例則由這裡統一同步，兩種輸入來源都不用各自 assign
   useEffect(() => { if (driverRef.current) driverRef.current.multiplier = multiplier }, [multiplier])
@@ -85,13 +125,24 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   /** 重畫路線帶：高架段交給 elevated3d 3D 絲帶，MapLibre 只畫平面段（與 usePlanner 同規則） */
   function drawRouteLine(route: RouteResult) {
     const band = laneBand(route)
-    const ground = activeElevatedLayer()?.setRoute(route, band) ?? [band.coords]
+    const choices = laneChoiceAreas(route)
+    const elevated = activeElevatedLayer()
+    const ground = elevated?.setRoute(route, band) ?? [band.coords]
+    const groundChoices = elevated?.addRouteChoiceAreas(route, choices) ?? choices
     src('route').setData({
       type: 'FeatureCollection',
-      features: ground.filter((cs) => cs.length >= 2).map((cs) => ({
-        type: 'Feature', properties: {},
-        geometry: { type: 'LineString', coordinates: cs },
-      })),
+      features: [
+        ...ground.filter((cs) => cs.length >= 2).map((cs) => ({
+          type: 'Feature', properties: { role: 'primary' },
+          geometry: { type: 'LineString', coordinates: cs },
+        })),
+        ...groundChoices.filter((choice) => choice.ring.length >= 4).map((choice) => ({
+          type: 'Feature',
+          properties: { role: 'choice-area', laneIndices: choice.laneIndices.join(','),
+            primaryLaneIndex: choice.primaryLaneIndex },
+          geometry: { type: 'Polygon', coordinates: [choice.ring] },
+        })),
+      ],
     } as never)
   }
 
@@ -116,6 +167,40 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     p.setZoneHighlight(nextId)
   }
 
+  /**
+   * 換路線時重算「這趟會遇到的測速照相」。方向過濾在這裡就做掉（比對路線在該點的
+   * 行向與相機拍攝方向），所以導航中每幀只要比里程，不用再算幾何。
+   * reroute／路口決策的暫時路線也走這裡——不重算的話會拿舊路線的里程去對新路線。
+   */
+  function armSpeedCameras(route: RouteResult) {
+    const cameras = p.speedCamerasRef.current
+    routeCamerasRef.current = cameras.length
+      ? matchCamerasToRoute(cameras, route.coords, route.cum)
+      : []
+    voiceRef.current.reset()
+    setCameraAlert(null)
+    if (import.meta.env.DEV && routeCamerasRef.current.length) {
+      console.info('本趟測速照相：', routeCamerasRef.current.map((rc) =>
+        `${Math.round(rc.alongM)}m ${rc.camera.address}（速限 ${rc.camera.speedLimitKph}）`))
+    }
+  }
+
+  /** 依目前里程/車速更新測速提示＋語音。距離每變 10m 才換 state，免得整個 HUD 一直重畫。 */
+  function updateSpeedCameraAlert(s: DriveState) {
+    if (routeCamerasRef.current.length === 0) return
+    const next = s.arrived ? null : speedCameraAlertAt(routeCamerasRef.current, s.traveledM, s.speedKmh)
+    voiceRef.current.say(speedCameraAnnouncement(next))
+    setCameraAlert((prev) => {
+      if (prev === next) return prev
+      if (prev && next
+        && prev.camera.id === next.camera.id
+        && prev.phase === next.phase
+        && prev.overLimit === next.overLimit
+        && Math.round(prev.distanceM / 10) === Math.round(next.distanceM / 10)) return prev
+      return next
+    })
+  }
+
   function stopAllDrivers() {
     driverRef.current?.stop()
     driverRef.current = null
@@ -124,13 +209,25 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     gpsDriverRef.current = null
     setGpsMsg(null)
     setDrive(null)
+    routeCamerasRef.current = []
+    voiceRef.current.reset()
+    setCameraAlert(null)
     p.vehicleLayerRef.current?.setNav(null)
     activeNavigationOcclusion()?.clear()
     updateZoneHighlight(null)
+    // 回到瀏覽模式：鏡頭高度交還給地面，免得停在高架上時整張圖都還吊在半空。
+    // clearAllRoute 在瀏覽模式下也會走到這裡，所以只在導航真的抬過鏡頭時才復原，
+    // 不要平白送出一次相機事件。
+    const map = p.mapRef.current
+    if (map && !map.getCenterClampedToGround()) {
+      map.jumpTo({ elevation: 0 })
+      setNavCameraClamp(map, true)
+    }
   }
 
   function runDriver(route: RouteResult, opts?: { autoRerouteAfterM?: number }) {
     const map = p.mapRef.current!
+    armSpeedCameras(route)
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     let lastHud = 0
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__route = route
@@ -151,13 +248,17 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         // 不帶 zoom/pitch → 導航中可自由縮放（mvp 行為）；
         // 手勢後 250ms 內暫停跟隨，讓 scrollZoom 的平滑動畫跑完（車模照常更新）
         if (performance.now() - p.lastGestureRef.current > 250) {
-          map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding })
+          map.jumpTo({
+            center: s.pos, bearing: s.bearing, padding: camPadding,
+            elevation: s.elevM ?? 0, // 高架上鏡頭跟著抬同樣高度
+          })
         }
       }
       const now = performance.now()
       if (s.arrived || now - lastHud > 160) {
         lastHud = now
         setDrive(s)
+        updateSpeedCameraAlert(s)
       }
     })
     driver.multiplier = multiplier
@@ -175,7 +276,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     // 導航中地圖每幀旋轉，符號圖層會不停重排——關掉最吵的單行箭頭與路名省 CPU
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
     map.setLayoutProperty('road-label', 'visibility', 'none')
-    map.jumpTo({ zoom: 17.6, pitch: 60 })
+    setNavCameraClamp(map, false)
+    map.jumpTo(NAV_CAMERA)
     runDriver(route)
   }
 
@@ -186,7 +288,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (!route || !map) return
     p.routeRef.current = route
     drawRouteLine(route)
-    map.jumpTo({ zoom: 17.6, pitch: 60 }) // 到達後使用者可能縮放過，重播時重設鏡頭
+    setNavCameraClamp(map, false)
+    map.jumpTo(NAV_CAMERA) // 到達後使用者可能縮放過，重播時重設鏡頭
     runDriver(route)
   }
 
@@ -199,7 +302,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     initialRouteRef.current = null // 真 GPS 導航沒有「再跑一次」（人不會瞬移回起點）
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
     map.setLayoutProperty('road-label', 'visibility', 'none')
+    setNavCameraClamp(map, false)
+    map.jumpTo(NAV_CAMERA) // 真 GPS 導航原本沿用瀏覽時的鏡頭，跟模擬駕駛對齊
     setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
+    armSpeedCameras(route)
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
     const gps = new GpsDriver(
@@ -211,10 +317,14 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
         activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
         if (performance.now() - p.lastGestureRef.current > 250) {
-          map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding })
+          map.jumpTo({
+            center: s.pos, bearing: s.bearing, padding: camPadding,
+            elevation: s.elevM ?? 0, // 高架上鏡頭跟著抬同樣高度
+          })
         }
         setGpsMsg(null)
         setDrive(s)
+        updateSpeedCameraAlert(s)
       },
       (pos) => rerouteFrom(pos),
       (msg) => setGpsMsg(msg),
@@ -313,7 +423,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }, [p.mode])
 
   return {
-    drive, multiplier, gpsMsg, decisionOptions,
+    drive, multiplier, gpsMsg, cameraAlert, decisionOptions,
     startDrive, startGpsNav, replayDrive, canReplay: !!initialRouteRef.current,
     stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
   }

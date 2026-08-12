@@ -32,6 +32,12 @@ function iconMeters(meters: number | ExpressionSpecification, imgPx: number): Ex
 
 const LANE_ZOOM = 15 // 之下畫簡化路網、之上畫車道級
 
+/** 大眾運輸圖層群組（工具列一次開關；預設 visibility: none） */
+export const TRANSIT_LAYER_IDS = [
+  'transit-line', 'transit-bus', 'transit-bike', 'transit-rail',
+  'transit-rail-label', 'transit-stop-label',
+] as const
+
 const emptyFC = { type: 'FeatureCollection', features: [] } as const
 
 export function buildStyle(): StyleSpecification {
@@ -72,6 +78,20 @@ export function buildStyle(): StyleSpecification {
       route: { type: 'geojson', data: emptyFC as never },
       endpoints: { type: 'geojson', data: emptyFC as never },
       zones: { type: 'geojson', data: emptyFC as never },
+      // 測速執法設置點：政府資料開放授權條款第 1 版要求顯名，attribution 掛在 source 上
+      // 由 MapLibre 的 attribution control 統一顯示（見 core/speedCameras.ts）
+      speedCameras: {
+        type: 'geojson',
+        data: emptyFC as never,
+        attribution: '測速執法設置點 © 內政部警政署（政府資料開放授權條款第 1 版）',
+      },
+      // 大眾運輸（TDX）：站點與軌道線型。授權要求顯名「交通部 TDX 平臺」
+      transit: {
+        type: 'geojson',
+        data: emptyFC as never,
+        attribution: '大眾運輸資料介接 © 交通部 TDX 運輸資料流通服務平臺',
+      },
+      transitLines: { type: 'geojson', data: emptyFC as never },
       draftroad: { type: 'geojson', data: emptyFC as never }, // 新增道路拉線預覽（LaneDev 編輯模式）
     },
     layers: [
@@ -466,17 +486,25 @@ export function buildStyle(): StyleSpecification {
       // ── 導航路線帶 ──
       // 路線帶透明度 70%（不透明度 0.3）：能看到藍線指引，也透得出地面標線/車道虛線
       {
+        id: 'route-choice-area', type: 'fill', source: 'route',
+        filter: ['==', ['get', 'role'], 'choice-area'],
+        paint: { 'fill-color': C.route, 'fill-opacity': 0.22 },
+      },
+      {
         id: 'route-casing', type: 'line', source: 'route',
+        filter: ['==', ['get', 'role'], 'primary'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': C.routeCasing, 'line-width': 11, 'line-opacity': 0.3 },
       },
       {
         id: 'route-line', type: 'line', source: 'route',
+        filter: ['==', ['get', 'role'], 'primary'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': C.route, 'line-width': 8, 'line-opacity': 0.3 },
       },
       {
         id: 'route-chevron', type: 'symbol', source: 'route',
+        filter: ['==', ['get', 'role'], 'primary'],
         layout: {
           'symbol-placement': 'line',
           'symbol-spacing': 70,
@@ -534,6 +562,113 @@ export function buildStyle(): StyleSpecification {
           'icon-pitch-alignment': 'map',
           'icon-allow-overlap': true,
         },
+      },
+
+      // ── 大眾運輸（TDX，預設隱藏，工具列切換）──
+      // 站點很密（公車站牌 3000 個），所以：軌道站永遠先畫、公車站牌壓到 zoom 14 以上才出現，
+      // 名稱更要到 zoom 16 才顯示，否則整張圖會被標籤淹掉。
+      {
+        id: 'transit-line', type: 'line', source: 'transitLines',
+        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['match', ['get', 'system'],
+            'KRTC', '#e4002b', 'KLRT', '#00a95c', 'TRA', '#0b4ea2', 'THSR', '#f28c00', '#64748b'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 16, 5],
+          'line-opacity': 0.75,
+        },
+      },
+      {
+        id: 'transit-bus', type: 'circle', source: 'transit', minzoom: 14,
+        layout: { visibility: 'none' },
+        filter: ['==', ['get', 'kind'], 'bus'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2.5, 18, 6],
+          'circle-color': '#f97316',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2],
+          'circle-pitch-alignment': 'map',
+        },
+      },
+      {
+        id: 'transit-bike', type: 'circle', source: 'transit', minzoom: 13,
+        layout: { visibility: 'none' },
+        filter: ['==', ['get', 'kind'], 'bike'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 3, 18, 7.5],
+          'circle-color': '#16a34a',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 13, 1, 18, 2],
+          'circle-pitch-alignment': 'map',
+        },
+      },
+      {
+        id: 'transit-rail', type: 'circle', source: 'transit', minzoom: 11,
+        layout: { visibility: 'none' },
+        filter: ['==', ['get', 'kind'], 'rail'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 4.5, 18, 10],
+          'circle-color': ['match', ['get', 'system'],
+            'KRTC', '#e4002b', 'KLRT', '#00a95c', 'TRA', '#0b4ea2', 'THSR', '#f28c00', '#64748b'],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 1.5, 18, 3],
+          'circle-pitch-alignment': 'map',
+        },
+      },
+      {
+        id: 'transit-rail-label', type: 'symbol', source: 'transit', minzoom: 13,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 12,
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+        },
+        filter: ['==', ['get', 'kind'], 'rail'],
+        paint: { 'text-color': '#1f2937', 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+      },
+      {
+        id: 'transit-stop-label', type: 'symbol', source: 'transit', minzoom: 16,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-offset': [0, 0.9],
+          'text-anchor': 'top',
+        },
+        filter: ['in', ['get', 'kind'], ['literal', ['bus', 'bike']]],
+        paint: { 'text-color': '#475569', 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 },
+      },
+
+      // ── 測速執法設置點 ──
+      // 畫成台灣速限標誌的樣子（白底紅環＋速限數字），上方掛一台小相機。
+      // 螢幕像素尺寸（不是實際公尺）：這是提示標記不是路面標線，縮到區級也要看得見。
+      {
+        id: 'speed-camera-disc', type: 'circle', source: 'speedCameras', minzoom: 11,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 15, 10, 18, 15],
+          'circle-color': '#ffffff',
+          'circle-stroke-color': '#dc2626',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 15, 3.5, 18, 5],
+          'circle-pitch-alignment': 'map', // 導航俯視角下貼著地面，才不會浮在空中
+        },
+      },
+      {
+        id: 'speed-camera-symbol', type: 'symbol', source: 'speedCameras', minzoom: 13,
+        layout: {
+          'icon-image': 'speed-camera',
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.35, 18, 0.7],
+          'icon-offset': [0, -46], // 相機掛在速限圓標正上方
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'text-field': ['get', 'limitText'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 15, 13, 18, 18],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: { 'text-color': '#111827' },
       },
 
       // ── 起終點 ──
@@ -676,6 +811,22 @@ export function makeIcons(): Record<string, ImageData> {
       g.lineJoin = 'round'
       g.beginPath(); g.moveTo(6, 16); g.lineTo(24, 16); g.stroke()
       g.beginPath(); g.moveTo(17, 8); g.lineTo(25, 16); g.lineTo(17, 24); g.stroke()
+    }),
+    // 測速照相：掛在速限圓標上方的小相機側影（機身＋鏡頭＋閃光燈）
+    'speed-camera': canvasImage(56, 44, (g) => {
+      g.fillStyle = '#dc2626'
+      g.strokeStyle = '#ffffff'
+      g.lineWidth = 3
+      g.beginPath() // 機身
+      g.roundRect(6, 12, 34, 26, 5)
+      g.fill(); g.stroke()
+      g.beginPath() // 鏡頭
+      g.moveTo(40, 18); g.lineTo(52, 12); g.lineTo(52, 38); g.lineTo(40, 32)
+      g.closePath()
+      g.fill(); g.stroke()
+      g.beginPath() // 閃光燈
+      g.roundRect(14, 4, 16, 8, 3)
+      g.fill(); g.stroke()
     }),
     'chevron-right': canvasImage(28, 28, (g) => {
       g.strokeStyle = '#ffffff'

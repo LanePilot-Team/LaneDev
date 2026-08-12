@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import * as laneBase from './laneBase.ts'
 import { applyToRoads, foldJournal } from './enhancements.ts'
 import { roadsFromGeoJSON } from './roads.ts'
+import { lanePaintGuidanceForRoadDirection } from './turnbays.ts'
 
 const road = (osmId, nodes, overrides = {}) => ({
   type: 'Feature',
@@ -58,6 +59,10 @@ test('applies segment base then records a block-only human movement override', (
   assert.equal(r.properties.laneFieldSourcesF.laneCount, 'lanepilot-segment')
   assert.equal(r.properties.laneFieldSourcesF.laneMovements, 'human-block')
   assert.equal(r.properties.laneFieldSourcesF.motorcycleAccess, 'lanepilot-segment')
+  assert.deepEqual(
+    lanePaintGuidanceForRoadDirection(r, false),
+    laneBase.guidanceForRoadDirection(r, false),
+  )
 })
 
 test('uses each forward block final node for distinct approach movements and segment fallback count', () => {

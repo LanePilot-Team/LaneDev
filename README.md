@@ -83,6 +83,7 @@ public/data/lanepilot/annotations.jsonl             組員標註（啟動自動�
 | 導航 HUD | 藍色看板三級距離文案（250/60/25m）、連動指示「隨後…」、即時路名/車道列（turn:lanes 真值）、速度圓標、倍速 1x/3x/8x、航向朝上、自由縮放（手勢讓路 250ms） |
 | 模擬行駛 | 車貼路線帶等速行駛、◀/▶ 換車道（夾在實際車道內）、路口決策「不照指引走」→ 沿真實幾何走一段後自動 reroute |
 | 真 GPS 導航 | `watchPosition`＋沿線投影；偏離 60m×3 次自動重規劃（10s 冷卻）；需 HTTPS（線上版 Pages 本身即 HTTPS；本機測試可用 `tailscale serve --bg --https=443 http://localhost:5190`）；Wake Lock 防熄屏 |
+| 測速照相提示 | 警政署開放資料（楠梓＋左營 10 點）；**智慧型警示距離**＝車速×18 秒（夾 180–800m）；**方向過濾**用路線在該點的行向比對相機拍攝方向，對向不吵；提示卡（速限圓標＋距離倒數）＋語音（進入範圍報距離速限／超速催減速／通過報結束）；超速判定帶 +5 km/h 寬限值；地圖上以速限圓標常駐顯示 |
 
 ### 編輯與資料（Enhancement Layer，本專案核心設計）
 
@@ -132,9 +133,28 @@ src/App.tsx              模式機＋點擊分派＋畫面組裝（薄 wiring）
 - LanePilot 車道標註（author=lanepilot）預設過濾不套用（實驗期決策）；待轉區則自動吃入。
 - journal 署名預設空白，於「匯出」時填寫（存 localStorage 沿用）；尚無帳號體系，署名不可驗證。
 - headless 截圖偶發白屏（GPU 合成問題），實機正常；效能基準以 production build 為準。
+- 測速照相：`npm run audit:speed-cameras` 目前 10/10 通過、4 項待人工核對。
+  - 高架與平面道路中心線重疊處（大中高架、民族一路）只憑座標分不出相機在哪一層，
+    沿下層行駛也會被提示；要修需要讓相機帶高程並在比對時看路段的 elevation。
+  - 方向文字只有八方位，斜向道路（大中快速道路走向 322°、資料寫「東向西」）差到 52°，
+    已逼近 60° 容忍上限；再斜就會被誤判成對向而漏提示。
+  - 區間測速：楠梓＋左營沒有這類點位，因此只保留 `enforcementType` 欄位與標籤，
+    未實作區間均速計算；要做需先接地方警局資料集拿到起訖點配對。
 
 ## 資料授權
 
 地圖資料 © OpenStreetMap contributors（[ODbL](https://opendatacommons.org/licenses/odbl/)）。
+
+大眾運輸資料介接「交通部 TDX 運輸資料流通服務平臺」（政府資料開放授權條款第 1 版），
+範圍為楠梓＋左營：公車站牌、路線站序與線型、公共自行車站、捷運／輕軌／臺鐵／高鐵車站。
+更新方式：`npm run transit:data`（需 `.env.local` 內的 TDX 憑證，見 `.env.example`），
+再跑 `npm run audit:transit`。計畫與實測數據見 `docs/tdx-transit-plan.md`。
+
+測速執法位置資料：內政部警政署（2026），「測速執法設置點」，
+[政府資料開放授權條款第 1 版](https://data.gov.tw/license)。
+資料僅供行車安全提醒，請以現場標誌與交通法規為準。
+更新方式：`npm run speed-cameras:data`（重抓官方 CSV 並重建 `public/data/speed_cameras.json`），
+再跑 `npm run audit:speed-cameras` 確認新資料仍對得上底圖。
+
 預設底圖來自 LanePilot 專案對 OSM PBF 快照的行政區切片（`public/data/lanepilot/`）；
 備援底圖為 Overpass API 即時查詢快照，時間見 `public/data/meta.json`。

@@ -19,6 +19,8 @@ test('highlights every lane compatible with a near right turn', () => {
   const model = ready()
   assert.deepEqual(model.lanes.map((lane) => lane.active), [false, true, true])
   assert.deepEqual(model.lanes.map((lane) => lane.arrow), ['through', 'through-right', 'right'])
+  assert.deepEqual(model.lanes.map((lane) => lane.highlightedAction),
+    [undefined, 'right', 'right'])
 })
 
 test('uses through as the immediate action beyond 250 metres', () => {
@@ -98,13 +100,14 @@ test('shows two-stage guidance only within 250 metres', () => {
   assert.equal(far.immediateAction, 'through')
 })
 
-test('uses left artwork for a u-turn and prefers a reverse lane', () => {
+test('uses dedicated u-turn artwork and prefers a reverse lane', () => {
   const model = ready({
     turnLanes: ['reverse', 'left;through', 'through'],
     maneuverKind: 'uturn',
   })
-  assert.deepEqual(model.lanes.map((lane) => lane.arrow), ['left', 'through-left', 'through'])
+  assert.deepEqual(model.lanes.map((lane) => lane.arrow), ['uturn', 'through-left', 'through'])
   assert.deepEqual(model.lanes.map((lane) => lane.active), [true, false, false])
+  assert.equal(model.lanes[0].highlightedAction, 'uturn')
 })
 
 test('falls back from u-turn to a left-compatible lane', () => {
@@ -113,6 +116,21 @@ test('falls back from u-turn to a left-compatible lane', () => {
     maneuverKind: 'uturn',
   })
   assert.deepEqual(model.lanes.map((lane) => lane.active), [true, false, false])
+  assert.equal(model.lanes[0].arrow, 'uturn')
+  assert.equal(model.lanes[0].highlightedAction, 'uturn')
+})
+
+test('changes only the selected branch of a compound arrow while keeping its shared stem active', () => {
+  const turn = ready({ turnLanes: ['through;left', 'through;right', 'right'] })
+  assert.equal(turn.lanes[1].arrow, 'through-right')
+  assert.equal(turn.lanes[1].highlightedAction, 'right')
+
+  const cruise = ready({
+    turnLanes: ['through;left', 'through;right', 'right'],
+    distanceM: 600,
+  })
+  assert.equal(cruise.lanes[1].arrow, 'through-right')
+  assert.equal(cruise.lanes[1].highlightedAction, 'through')
 })
 
 test('renders one, six, and ten lanes without truncating', () => {

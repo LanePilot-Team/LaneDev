@@ -69,10 +69,10 @@ Create <code>src/nav/speechGuidance.test.mjs</code>. It must import <code>./spee
     test('keeps exact HUD phase boundaries', () => {
       assert.equal(getGuidancePhase(251), 'ahead')
       assert.equal(getGuidancePhase(250), 'far')
-      assert.equal(getGuidancePhase(60), 'near')
+      assert.equal(getGuidancePhase(60), 'far')
       assert.equal(getGuidancePhase(25), 'near')
       assert.equal(formatDistanceText(25), '前方 30 公尺')
-      assert.equal(formatDistanceText(1000), '前方 1.0 公里')
+      assert.equal(formatDistanceText(1000), '前方 1000 公尺')
     })
 
     test('emits threshold stages only at or below 250m', () => {

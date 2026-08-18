@@ -5,66 +5,13 @@ import type { DriveState } from './drive'
 import type { DecisionKind } from './useDrive'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
 import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
-
-// ── 距離分階段提醒（照 mvp）：250m 預備切車道(藍) → 60m 動作(橘紅) → 25m 內顯示「現在」──
-const FAR_THRESHOLD = 250
-const NEAR_THRESHOLD = 60
-const PASS_THRESHOLD = 25
-
-export type Phase = 'ahead' | 'far' | 'near'
-
-function roundDistance(m: number): string {
-  if (m < 100) return `${Math.round(m / 10) * 10}`
-  return `${Math.round(m / 50) * 50}`
-}
-
-/**
- * 車道級指引文字（照 mvp laneGuidance）：
- * 一般左轉/迴轉 → 前往「左側」車道；機車兩段式才相反（靠右待轉）；
- * 機車「免待轉」左轉仍要先切左車道，只是不必靠右。
- */
-export function guidanceText(m: Maneuver, phase: Phase, profile: Profile, twoStage: boolean, bay: boolean): string {
-  const into = m.roadName ? `・進入${m.roadName}` : ''
-  if (m.kind === 'arrive') return '即將抵達目的地'
-  if (profile === 'moto' && m.motoLeftTurnLane &&
-    (m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn')) {
-    return '靠右前往機車專用左轉道'
-  }
-  if (twoStage) {
-    return phase === 'near'
-      ? '靠右進入待轉區（兩段式左轉）'
-      : '準備兩段式左轉・稍後靠右待轉'
-  }
-  if (m.kind === 'uturn') {
-    if (bay) return phase === 'near' ? `於左轉專用道迴轉${into}` : '進入左轉專用道・準備迴轉'
-    return phase === 'near' ? `迴轉${into}` : '前往左側車道・準備迴轉'
-  }
-  if (m.kind === 'left') {
-    const nb = profile === 'moto' ? '(免待轉)' : ''
-    if (bay) {
-      return phase === 'near'
-        ? `於左轉專用道左轉${nb}${into}`
-        : `進入左轉專用道・準備左轉${nb}`
-    }
-    if (profile === 'moto') {
-      return phase === 'near'
-        ? `於左側車道左轉(免待轉)${into}`
-        : '前往左側車道・準備左轉(免待轉)'
-    }
-    return phase === 'near' ? `左轉${into}` : '前往左側車道・準備左轉'
-  }
-  if (m.kind === 'right') {
-    return phase === 'near' ? `右轉${into}` : '前往右側車道・準備右轉'
-  }
-  if (m.kind === 'slight-left') return `靠左行駛${into}`
-  return `靠右行駛${into}`
-}
-
-/** 連動指示（「隨後…」）的動作短語 */
-const THEN_VERB: Record<Exclude<Maneuver['kind'], 'arrive'>, string> = {
-  left: '左轉', right: '右轉', uturn: '迴轉',
-  'slight-left': '靠左', 'slight-right': '靠右',
-}
+import {
+  PASS_THRESHOLD,
+  THEN_VERB,
+  formatDistanceText,
+  getGuidancePhase,
+  guidanceText,
+} from './speechGuidance'
 
 export function TopBanner({ drive, twoStage, profile }: {
   drive: DriveState; twoStage: boolean; profile: Profile
@@ -72,10 +19,8 @@ export function TopBanner({ drive, twoStage, profile }: {
   const m = drive.next
   if (!m) return null
   const dist = drive.nextDistM
-  const phase: Phase = dist < NEAR_THRESHOLD ? 'near' : dist < FAR_THRESHOLD ? 'far' : 'ahead'
-  const distText = dist < PASS_THRESHOLD ? '現在'
-    : dist > 1000 ? `前方 ${(dist / 1000).toFixed(1)} 公里`
-      : `前方 ${roundDistance(dist)} 公尺`
+  const phase = getGuidancePhase(dist)
+  const distText = dist < PASS_THRESHOLD ? '現在' : formatDistanceText(dist)
   const tone = twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
   const guidance = selectLanePreviewGuidance({
     distanceM: dist,

@@ -12,6 +12,7 @@ import {
   getGuidancePhase,
   guidanceText,
 } from './speechGuidance'
+import { useSpeechGuidance } from './useSpeechGuidance'
 
 export function TopBanner({ drive, twoStage, profile }: {
   drive: DriveState; twoStage: boolean; profile: Profile
@@ -95,6 +96,8 @@ export function DriveHUD({
   onTakeAlternative: (kind: DecisionKind) => void
   onSwitchLane: (dir: -1 | 1) => void
 }) {
+  useSpeechGuidance({ drive, profile, twoStage })
+
   // 換車道按鈕只在桌面顯示（跟鍵盤變速一樣不給手機用，觸控版另外設計）
   const isDesktop = typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches
 

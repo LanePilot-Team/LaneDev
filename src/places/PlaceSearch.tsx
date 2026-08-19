@@ -12,6 +12,12 @@ import {
   type PlaceDatabase,
   type PlaceRecord,
 } from './places'
+import {
+  destinationLabel,
+  googleDestination,
+  localDestination,
+  type DestinationSelection,
+} from './destination'
 
 function sourceInfo(place: PlaceRecord) {
   const references = place.sourceRefs?.length ? place.sourceRefs : [{ source: place.source }]
@@ -32,16 +38,13 @@ export function PlaceSearch({
   onSelect,
   onClear,
   onChooseStart,
-  onGoogleSelect,
 }: {
   core: MapCore
   mapLoading: boolean
-  selected: PlaceRecord | null
-  onSelect: (place: PlaceRecord) => void
+  selected: DestinationSelection | null
+  onSelect: (destination: DestinationSelection) => void
   onClear: () => void
-  onChooseStart: (place: PlaceRecord) => void
-  /** 第四個提交接上 MapLibre／導航後提供；未提供時 Google 結果只供瀏覽。 */
-  onGoogleSelect?: (place: google.maps.places.Place, submittedQuery: string) => void
+  onChooseStart: (destination: DestinationSelection) => void
 }) {
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState('')
@@ -49,11 +52,14 @@ export function PlaceSearch({
   const [provider, setProvider] = useState<SearchProvider>('local')
   const [googleState, setGoogleState] = useState<GooglePlaceSearchState>('idle')
   const [googleSubmittedQuery, setGoogleSubmittedQuery] = useState('')
+  const [googleSelectionError, setGoogleSelectionError] = useState<string | null>(null)
   const googleSearchRef = useRef<GooglePlaceSearchHandle>(null)
   const results = useMemo(() => searchPlaces(places, query), [places, query])
-  const selectedPlace = useMemo(() => {
+  const resolvedSelected = useMemo(() => {
     if (!selected) return null
-    return places.find((place) => place.id === selected.id) ?? selected
+    if (selected.provider === 'google-ui-kit') return selected
+    const place = places.find((candidate) => candidate.id === selected.id) ?? selected.place
+    return localDestination(place)
   }, [places, selected])
 
   useEffect(() => {
@@ -76,6 +82,7 @@ export function PlaceSearch({
   }, [])
 
   function clearMarker() {
+    setGoogleSelectionError(null)
     onClear()
   }
 
@@ -83,6 +90,7 @@ export function PlaceSearch({
     setQuery('')
     setProvider('local')
     setGoogleSubmittedQuery('')
+    setGoogleSelectionError(null)
     googleSearchRef.current?.reset()
     clearMarker()
   }
@@ -90,6 +98,7 @@ export function PlaceSearch({
   function returnToLocalResults() {
     setProvider('local')
     setGoogleSubmittedQuery('')
+    setGoogleSelectionError(null)
     googleSearchRef.current?.reset()
   }
 
@@ -100,23 +109,41 @@ export function PlaceSearch({
     const center = core.mapRef.current?.getCenter()
     setProvider('google')
     setGoogleSubmittedQuery(submittedQuery)
+    setGoogleSelectionError(null)
     await googleSearchRef.current?.search(
       submittedQuery,
       center ? [center.lng, center.lat] : undefined,
     )
   }
 
-  function showPlace(place: PlaceRecord) {
+  function showDestination(destination: DestinationSelection) {
     const map = core.mapRef.current
     if (!map || mapLoading || !map.getSource('placeSelection')) return
-    onSelect(place)
+    onSelect(destination)
     map.flyTo({
-      center: place.position,
+      center: destination.position,
       zoom: Math.max(map.getZoom(), 17),
       pitch: 0,
       bearing: 0,
       essential: true,
     })
+  }
+
+  function showPlace(place: PlaceRecord) {
+    showDestination(localDestination(place))
+  }
+
+  function showGooglePlace(
+    place: google.maps.places.Place,
+    submittedQuery: string,
+  ) {
+    const destination = googleDestination(place, submittedQuery)
+    if (!destination) {
+      setGoogleSelectionError('這個 Google 地點缺少可導航位置，請選擇其他結果')
+      return
+    }
+    setGoogleSelectionError(null)
+    showDestination(destination)
   }
 
   function submit(event: FormEvent) {
@@ -142,6 +169,7 @@ export function PlaceSearch({
             if (!nextQuery.trim()) {
               setProvider('local')
               setGoogleSubmittedQuery('')
+              setGoogleSelectionError(null)
               googleSearchRef.current?.reset()
             }
             if (selected) onClear()
@@ -162,7 +190,7 @@ export function PlaceSearch({
         </button>
       </form>
 
-      {hasQuery && provider === 'local' && !selectedPlace && (
+      {hasQuery && provider === 'local' && !resolvedSelected && (
         <div className="place-results" role="listbox" aria-label="搜尋結果">
           {dataState === 'loading' && <div className="place-message">載入地標資料中…</div>}
           {dataState === 'error' && (
@@ -205,7 +233,7 @@ export function PlaceSearch({
       )}
 
       <div className="place-results google-provider-results"
-        hidden={!hasQuery || provider !== 'google' || Boolean(selectedPlace)}
+        hidden={!hasQuery || provider !== 'google' || Boolean(resolvedSelected)}
         aria-label="Google Places 搜尋結果">
         <div className="google-place-header">
           <span>
@@ -216,21 +244,27 @@ export function PlaceSearch({
         </div>
         <GooglePlaceSearch
           ref={googleSearchRef}
-          visible={hasQuery && provider === 'google' && !selectedPlace}
-          selectable={Boolean(onGoogleSelect)}
-          onSelect={(place, submittedQuery) => onGoogleSelect?.(place, submittedQuery)}
+          visible={hasQuery && provider === 'google' && !resolvedSelected}
+          selectable={!mapLoading}
+          onSelect={showGooglePlace}
           onStateChange={setGoogleState}
         />
+        {googleSelectionError && (
+          <div className="google-selection-error" role="alert">{googleSelectionError}</div>
+        )}
       </div>
 
-      {selectedPlace && (
-        <div className="place-route-choice" aria-label={`導航至${selectedPlace.name}`}>
+      {resolvedSelected && (
+        <div className="place-route-choice"
+          aria-label={`導航至${destinationLabel(resolvedSelected)}`}>
           <div className="place-route-target">
             <span className="place-route-pin" aria-hidden="true">●</span>
             <span>
-              <small>目的地</small>
-              <b>{selectedPlace.name}</b>
-              <em>{selectedPlace.address || CATEGORY_LABELS[selectedPlace.category]}</em>
+              <small>{resolvedSelected.provider === 'local' ? '目的地' : 'Google Places 目的地'}</small>
+              <b>{destinationLabel(resolvedSelected)}</b>
+              <em>{resolvedSelected.provider === 'local'
+                ? resolvedSelected.place.address || CATEGORY_LABELS[resolvedSelected.place.category]
+                : '使用 Google 搜尋結果的位置'}</em>
             </span>
             <button type="button" onClick={clearMarker}>變更</button>
           </div>
@@ -242,7 +276,7 @@ export function PlaceSearch({
               <small>即將推出</small>
             </button>
             <button type="button" className="active" disabled={mapLoading}
-              onClick={() => onChooseStart(selectedPlace)}>
+              onClick={() => onChooseStart(resolvedSelected)}>
               <span aria-hidden="true">◎</span>
               <b>選擇起點</b>
               <small>在地圖上點選</small>

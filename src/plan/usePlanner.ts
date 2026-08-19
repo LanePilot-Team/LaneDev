@@ -11,6 +11,7 @@ import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta, haversine } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 import { isZoneEnabled } from '../core/zones'
+import type { DestinationProvider } from '../places/destination'
 
 export interface Stop {
   id: number
@@ -18,12 +19,14 @@ export interface Stop {
   label?: string
   placeId?: string
   placePosition?: [number, number]
+  placeProvider?: DestinationProvider
 }
 
 export interface RouteDestination {
   id: string
-  name: string
+  label: string
   position: [number, number]
+  provider: DestinationProvider
 }
 
 export const DEMO_FROM: [number, number] = [120.2758, 22.7327] // 高雄大學
@@ -189,9 +192,10 @@ export function usePlanner(core: MapCore): Planner {
       {
         id: 2,
         pos: snappedDestination,
-        label: destination.name,
+        label: destination.label,
         placeId: destination.id,
         placePosition: destination.position,
+        placeProvider: destination.provider,
       },
     ]
     setStops(next)

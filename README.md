@@ -100,12 +100,23 @@ public/data/lanepilot/annotations.jsonl             組員標註（啟動自動�
 
 | 功能 | 說明 |
 | --- | --- |
-| 路線規劃 | 前端建圖＋A*（時間成本）；可由地標搜尋選定目的地，再以「選擇起點」於地圖點選出發處（兩端皆吸附可通行車道；「從我的位置出發」按鈕目前預留）；另支援起/迄/停靠點拖曳排序、汽/機車雙 profile 切換即重算、轉彎步驟清單；Demo 路線 = 高雄大學→楠梓車站 6.4 km（車站端需橋頭 shard） |
+| 路線規劃 | 前端建圖＋A*（時間成本）；可由地標搜尋選定目的地，再以裝置目前位置或地圖點選作為起點，兩端都會吸附至該車種可通行的車道；另支援起/迄/停靠點拖曳排序、汽/機車雙 profile 切換即重算、轉彎步驟清單；Demo 路線 = 高雄大學→楠梓車站 6.4 km（車站端需橋頭 shard） |
 | 機車路權 | 機車禁行國道/快速道路與 `motorcycle=no`；兩段式左轉（待轉區路口黃底看板＋車道列亮最右）；汽車禁行機車專用道（`motorcar=no`＋0 汽車車道） |
 | 車道級指引 | 路線帶偏移到實際行駛車道（藍帶+箭頭）；路口前 45m 變道（右轉→最右、左轉→最左/偏心道、兩段式→靠右）；變道 ramp 對齊偏心道開口不壓槽化線；**高架段路線帶改 3D 絲帶貼橋面** |
 | 導航 HUD | 藍色看板三級距離文案（250/60/25m）、連動指示「隨後…」、即時路名/車道列（turn:lanes 真值）、速度圓標、倍速 1x/3x/8x、航向朝上、自由縮放（手勢讓路 250ms） |
 | 模擬行駛 | 車貼路線帶等速行駛、◀/▶ 換車道（夾在實際車道內）、路口決策「不照指引走」→ 沿真實幾何走一段後自動 reroute |
 | 真 GPS 導航 | `watchPosition`＋沿線投影；偏離 60m×3 次自動重規劃（10s 冷卻）；需 HTTPS（線上版 Pages 本身即 HTTPS；本機測試可用 `tailscale serve --bg --https=443 http://localhost:5190`）；Wake Lock 防熄屏 |
+
+#### 從我的位置出發
+
+1. 搜尋並選定目的地後，按「從我的位置出發」。
+2. 允許瀏覽器取得位置；系統會取一筆高精度定位，並在 180 公尺內吸附至目前車種可通行的車道。
+3. 路線建立後先在規劃面板確認，再自行選擇「開始模擬」或「開始導航（GPS）」；取得起點不會自動開始導航。
+
+瀏覽器定位需要 HTTPS，只有 `localhost` 與 `127.0.0.1` 可在本機開發時使用 HTTP。透過區網 IP
+開啟時請改用 HTTPS；線上 GitHub Pages 版本已符合條件。若使用者拒絕權限、定位逾時、目前位置
+超出已載入的楠梓／左營路網，或 180 公尺內沒有可通行道路，畫面會保留目的地，並允許重試或
+改用「選擇起點」在地圖上設定。
 
 ### 編輯與資料（Enhancement Layer，本專案核心設計）
 
@@ -135,7 +146,7 @@ src/core/zones|turnbays|medians|roadtext|couplet|enhancements.ts  Enhancement �
 src/app/mapCore.ts       地圖初始化＋共用 refs＋重繪函式
 src/core/asset.ts        public 資源路徑解析（Pages base 前綴，見上）
 src/plan/                usePlanner（停靠點/路線/車種/兩段式）＋PlanPanel＋ManeuverList
-src/nav/                 drive（模擬）/gpsNav（GPS）/useDrive（編排）/DriveHUD（看板文案）
+src/nav/                 geolocation（共用定位）/drive（模擬）/gpsNav（GPS）/useDrive（編排）/DriveHUD（看板文案）
 src/browse/              RoadInfoCard（路段資訊卡）
 src/edit/                編輯模式：useEditor＋EditPanels（車道/待轉區/偏心道/車輛）
 src/App.tsx              模式機＋點擊分派＋畫面組裝（薄 wiring）

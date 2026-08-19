@@ -110,6 +110,7 @@ export function mergeCouplets(
   remapOut?: Map<number, number>,
   wayRemapOut?: Map<number, DropRemap>,
   include?: (r: RoadFeature) => boolean,
+  preferKeep?: (r: RoadFeature) => boolean,
 ): RoadFeature[] {
   const scope = roads.filter((r) => {
     const p = r.properties
@@ -143,7 +144,15 @@ export function mergeCouplets(
   }
   const lengthOf = (rs: RoadFeature[]) =>
     rs.reduce((s, r) => s + (r.geometry.coordinates as [number, number][]).length, 0)
-  const keep = lengthOf(g0) >= lengthOf(g1) ? g0 : g1
+  // preferKeep：呼叫端釘死保留側的 way id。預設用頂點數多的一組當 keep，但一個
+  // 方向被 OSM 拆成多條 way 時（高楠陸橋北行 = 271982159＋103679008 共 15 點 vs
+  // 南行 23939182 的 10 點）會把主 way 判成 drop 整條吸收掉——elevation 的高架
+  // 清單、elevated3d 的橋面併入、fixups 的機車道貼齊全部認 way id 定位，主 way
+  // 的 id 一消失就同時失效（橋不再是高架、接縫裂開）。
+  const preferred = preferKeep
+    ? (g0.some(preferKeep) ? g0 : g1.some(preferKeep) ? g1 : null)
+    : null
+  const keep = preferred ?? (lengthOf(g0) >= lengthOf(g1) ? g0 : g1)
   let drop = keep === g0 ? g1 : g0
 
   // 1.5) 落單保護：drop 側 way 的頂點過半沒貼到 keep 側（同名的獨立支段，

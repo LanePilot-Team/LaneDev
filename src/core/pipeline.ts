@@ -22,6 +22,17 @@ const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路', 
  * 同向並排雙 way——都不是 couplet 對切模型，維持原樣 */
 const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
 
+/** 高楠陸橋北側接近段的成對單行（南下／北上）。南端不必併：北上是
+ * way/103679008，橋面已由 elevated3d SIDE_DECK_ABSORB 併成同一塊織帶，
+ * 只有導航的幽靈對向車道要擋（見 markPhantomBackwardTails）。 */
+const GAONAN_NORTH_IDS = new Set([
+  271982167, 271982165, 280277104, // 南下
+  25724906, 280277105, 280277108, 765913729, 280277107, // 北上
+])
+
+/** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
+ * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
+ * 斷面（機車道＋快慢分隔島），獨立慢車道 way 移除、側街節點移植接上主線 */
 const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
@@ -150,6 +161,17 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   roads = mergeCouplets(roads, new Set(['高楠公路']), {
     lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'island',
   }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
+  // 高楠公路北側走廊（橋頭→楠梓車站方向）：OSM 同樣是成對單行。只併橋體會讓
+  // 橋頭出現「地面兩條單行道被拉到橋中線端點」的折角（V）——中線是合併算出來
+  // 的，改 OSM 幾何救不了，只能把接近段一起併成同一條雙向帶。
+  // 只列 primary 主線 way：同名的 service 匝道（313225088/089）與更南邊的
+  // 主慢分離四線並排會觸發同向並排防呆，把整條路的合併中止掉。
+  roads = mergeCouplets(roads, new Set(['高楠公路']), {
+    lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'island',
+    // 實測兩中線間距 20~24m（三車道 9.6m ×2）→ 中央島 10~14m，是真的寬植栽島，
+    // 上限給 16 才不會把兩向車道從實際鋪面往內拉
+    centerFromGap: { roadW: 9.6, min: 0.6, max: 16 },
+  }, nodeRemap, wayRemap, (r) => GAONAN_NORTH_IDS.has(r.properties.osm_id))
   // 合併完才貼齊平行的機車專用高架：主橋中線要先落在兩向中間，貼齊才有意義。
   hugSideLanes(roads)
   // 外環西路/德民路：主慢分離（見 MAINLINE_ONLY_ROADS）——

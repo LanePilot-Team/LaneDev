@@ -6,6 +6,7 @@
   "scripts": {
     "predev": "npm run lane-guidance:data",
     "dev": "vite",
+    "test:speech-guidance": "node --test src/nav/speechGuidance.test.mjs",
     "test:lane-preview": "node --test src/nav/lanePreview.test.mjs",
     "test:lane-guidance": "node --test scripts/build_lane_guidance.test.mjs src/core/laneGuidance.test.mjs",
     "test:merge-migration": "node --test scripts/merge_migration.test.mjs",
@@ -33,13 +34,15 @@
     "audit:deck-baseline": "node scripts/run_offline.mjs scripts/elevated_deck_baseline.ts",
     "audit:route-deck": "node scripts/run_offline.mjs scripts/route_deck_audit.ts",
     "audit:style": "node scripts/run_offline.mjs scripts/style_audit.ts",
+    "test:places": "node --test scripts/place_merge.test.mjs",
     "prebuild": "npm run lane-guidance:data",
     "build": "tsc -b && vite build",
     "collect-environment": "node scripts/collect-nanzih-environment-data.mjs",
+    "places:update": "node scripts/update_places.mjs",
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py",
-    "test:all": "npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-save-feedback && npm run test:median-uturn && npm run test:road-merge",
+    "test:all": "npm run test:speech-guidance && npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-save-feedback && npm run test:median-uturn && npm run test:road-merge",
     "build:candidate": "node scripts/build_static_road_database.mjs"
   },
   "dependencies": {

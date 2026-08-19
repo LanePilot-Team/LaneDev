@@ -7,6 +7,7 @@
     "predev": "npm run lane-guidance:data",
     "dev": "vite",
     "test:speech-guidance": "node --test src/nav/speechGuidance.test.mjs",
+    "test:geolocation": "node --test src/nav/geolocation.test.mjs",
     "test:lane-preview": "node --test src/nav/lanePreview.test.mjs",
     "test:lane-guidance": "node --test scripts/build_lane_guidance.test.mjs src/core/laneGuidance.test.mjs",
     "test:merge-migration": "node --test scripts/merge_migration.test.mjs",
@@ -44,7 +45,7 @@
     "preview": "vite preview",
     "lane-guidance:data": "node scripts/build_lane_guidance.mjs",
     "fetch-data": "python scripts/fetch_nanzi.py",
-    "test:all": "npm run test:speech-guidance && npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-save-feedback && npm run test:median-uturn && npm run test:places && npm run test:road-merge",
+    "test:all": "npm run test:speech-guidance && npm run test:geolocation && npm run test:lane-preview && npm run test:lane-guidance && npm run test:merge-migration && npm run test:editor-merge && npm run test:one-side-entry && npm run test:merged-junctions && npm run test:segment-dedupe && npm run test:stack-pick && npm run test:edit-time && npm run test:road-save-feedback && npm run test:median-uturn && npm run test:places && npm run test:road-merge",
     "build:candidate": "node scripts/build_static_road_database.mjs"
   },
   "dependencies": {

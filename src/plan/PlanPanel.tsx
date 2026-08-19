@@ -1,6 +1,6 @@
 // 路線規劃側面板（mvp 起點/停靠點/終點還原）＋ 車種切換 ＋ 轉彎步驟清單。
 // LaneDev / LaneNav 共用：狀態與操作都在 usePlanner，這裡只是畫面。
-import { isSecureContext } from '../nav/gpsNav'
+import { isSecureContext } from '../nav/geolocation'
 import { ManeuverList } from './ManeuverList'
 import type { Planner } from './usePlanner'
 

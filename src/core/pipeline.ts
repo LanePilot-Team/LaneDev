@@ -22,9 +22,6 @@ const CUSTOM_SECTION_ROADS = new Set(['藍田路', '大學南路', '援中路', 
  * 同向並排雙 way——都不是 couplet 對切模型，維持原樣 */
 const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
 
-/** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
- * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
- * 斷面（機車道＋快慢分隔島），獨立慢車道 way 移除、側街節點移植接上主線 */
 const MAINLINE_ONLY_ROADS = new Set(['外環西路', '德民路'])
 
 /** 泛用合併的預設斷面：2+2、中央槽化帶寬由 OSM 兩線實際間距反推（0.6~3.2m）。
@@ -87,6 +84,36 @@ function dedupeIdenticalWays(roads: RoadFeature[]): number {
 }
 
 /** 載入後的完整前處理。輸入會被就地修改，回傳切塊後的新陣列。 */
+/**
+ * 落單尾段的幽靈對向車道：couplet 合併是逐 way 判定的（頂點過半貼到對向就整條
+ * 併），尾端沒有對向 way 的那截會被一起雙向化——實地那裡的對向車道其實是另一
+ * 條 way（高楠陸橋南端 98m：北行走 way/103679008 縱貫公路）。多出來的那組反向
+ * 車道不存在，導航會拿它當最近的迴轉終點，規劃出「上橋→迴轉→下橋」。
+ *
+ * 這裡**只擋導航逆向，不動斷面**：落單尾段的 19.8m 寬是橋面與 hugSideLanes
+ * 的依據，改窄會讓貼邊的機車專用高架離開橋面邊緣（見 elevated3d.ts
+ * SIDE_DECK_ABSORB 註解，2026-08-12 已回退過一次）。
+ */
+function markPhantomBackwardTails(blocks: RoadFeature[]): number {
+  let marked = 0
+  for (const block of blocks) {
+    const p = block.properties
+    if (!p.coupletMerged || !p.coupletTailNodes) continue
+    // 整塊都在配對範圍之外才算（切點本身兩邊共用，允許留一個端點在範圍內）。
+    // 中段零星未配對是頂點取樣疏密造成的（長直區塊只有兩個頂點），拿它當判準
+    // 會把正常合併段從中間切斷、側街因此失去合法轉向
+    const tail = new Set(p.coupletTailNodes)
+    const inside = p.nodes.filter((id) => !tail.has(id))
+    if (inside.length > 1) continue
+    if (inside.length === 1
+      && inside[0] !== p.nodes[0]
+      && inside[0] !== p.nodes[p.nodes.length - 1]) continue
+    p.phantomBackward = true
+    marked++
+  }
+  return marked
+}
+
 export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 去重暫時停用：2026-07-29 實測會把軍校路整條移除、journal 孤兒 8→46、
   // 並讓 7 筆 deleted:1 失效（被刪的路段復活）。判定條件顯然不只命中那 57 條
@@ -155,6 +182,7 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
   // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
   let blocks = splitAtIntersections(roads)
+  markPhantomBackwardTails(blocks)
   blocks = removeUnnamedShortSpurs(blocks).roads
   collapseShortDeadEnds(blocks)
   // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，

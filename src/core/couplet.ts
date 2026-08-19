@@ -239,16 +239,22 @@ export function mergeCouplets(
     const cs = w.geometry.coordinates as [number, number][]
     const nodes = w.properties.nodes
     const dists: number[] = []
+    const pairedAt: boolean[] = []
     const next: [number, number][] = cs.map((p) => {
       let best: { d: number; pos: [number, number] } | null = null
       for (const o of drop) {
         const hit = projectToLine(p, o.geometry.coordinates as [number, number][])
         if (hit.d < PAIR_MAX_M && (!best || hit.d < best.d)) best = hit
       }
+      pairedAt.push(!!best)
       if (!best) return p
       dists.push(best.d)
       return [(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2]
     })
+    // 首尾連續未配對段 = 落單尾段（中段零星未配對只是取樣疏密，不算）
+    const first = pairedAt.indexOf(true)
+    const last = pairedAt.lastIndexOf(true)
+    const tailNodes = first < 0 ? [] : nodes.filter((_, i) => i < first || i > last)
     // 落單保護（keep 側）：對向投影頂點 < 60%（獨立支段只有路口端碰到對向；
     // 真正的成對單行幾乎全長貼合）→ 不是成對單行的一半，維持單行原樣
     if (dists.length / cs.length < 0.6) continue
@@ -274,6 +280,7 @@ export function mergeCouplets(
       p.centerM = section.centerM
     }
     p.coupletMerged = true // 中央帶編輯只對合併段開放（一般雙向巷道沒有中央帶概念）
+    if (tailNodes.length > 0) p.coupletTailNodes = tailNodes // 切塊後還原落單尾段用
     computeDerived(p)
   }
 

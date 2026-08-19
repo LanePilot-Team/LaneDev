@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { asset } from '../core/asset'
 import type { MapCore } from '../app/mapCore'
 import {
+  geolocationUnavailableMessage,
+  requestCurrentPosition,
+} from '../nav/geolocation'
+import {
   GooglePlaceSearch,
   type GooglePlaceSearchHandle,
   type GooglePlaceSearchState,
@@ -30,6 +34,7 @@ function sourceInfo(place: PlaceRecord) {
 }
 
 type SearchProvider = 'local' | 'google'
+type CurrentLocationState = 'idle' | 'loading' | 'error'
 
 export function PlaceSearch({
   core,
@@ -38,6 +43,7 @@ export function PlaceSearch({
   onSelect,
   onClear,
   onChooseStart,
+  onUseCurrentLocation,
 }: {
   core: MapCore
   mapLoading: boolean
@@ -45,6 +51,10 @@ export function PlaceSearch({
   onSelect: (destination: DestinationSelection) => void
   onClear: () => void
   onChooseStart: (destination: DestinationSelection) => void
+  onUseCurrentLocation: (
+    destination: DestinationSelection,
+    position: [number, number],
+  ) => void
 }) {
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState('')
@@ -53,7 +63,10 @@ export function PlaceSearch({
   const [googleState, setGoogleState] = useState<GooglePlaceSearchState>('idle')
   const [googleSubmittedQuery, setGoogleSubmittedQuery] = useState('')
   const [googleSelectionError, setGoogleSelectionError] = useState<string | null>(null)
+  const [currentLocationState, setCurrentLocationState] = useState<CurrentLocationState>('idle')
+  const [currentLocationError, setCurrentLocationError] = useState<string | null>(null)
   const googleSearchRef = useRef<GooglePlaceSearchHandle>(null)
+  const currentLocationRequestRef = useRef(0)
   const results = useMemo(() => searchPlaces(places, query), [places, query])
   const resolvedSelected = useMemo(() => {
     if (!selected) return null
@@ -61,6 +74,10 @@ export function PlaceSearch({
     const place = places.find((candidate) => candidate.id === selected.id) ?? selected.place
     return localDestination(place)
   }, [places, selected])
+  const selectedKey = selected ? `${selected.provider}:${selected.id}` : ''
+  const selectedKeyRef = useRef(selectedKey)
+  selectedKeyRef.current = selectedKey
+  const currentLocationUnavailable = geolocationUnavailableMessage()
 
   useEffect(() => {
     let active = true
@@ -81,7 +98,24 @@ export function PlaceSearch({
     return () => { active = false }
   }, [])
 
+  useEffect(() => {
+    currentLocationRequestRef.current += 1
+    setCurrentLocationState('idle')
+    setCurrentLocationError(null)
+  }, [selectedKey])
+
+  useEffect(() => () => {
+    currentLocationRequestRef.current += 1
+  }, [])
+
+  function cancelCurrentLocationRequest() {
+    currentLocationRequestRef.current += 1
+    setCurrentLocationState('idle')
+    setCurrentLocationError(null)
+  }
+
   function clearMarker() {
+    cancelCurrentLocationRequest()
     setGoogleSelectionError(null)
     onClear()
   }
@@ -119,6 +153,7 @@ export function PlaceSearch({
   function showDestination(destination: DestinationSelection) {
     const map = core.mapRef.current
     if (!map || mapLoading || !map.getSource('placeSelection')) return
+    cancelCurrentLocationRequest()
     onSelect(destination)
     map.flyTo({
       center: destination.position,
@@ -155,6 +190,36 @@ export function PlaceSearch({
     if (results[0]) showPlace(results[0])
   }
 
+  async function useCurrentLocation() {
+    const destination = resolvedSelected
+    if (!destination || mapLoading || currentLocationState === 'loading') return
+
+    const requestId = ++currentLocationRequestRef.current
+    const requestedSelectedKey = selectedKey
+    setCurrentLocationState('loading')
+    setCurrentLocationError(null)
+    try {
+      // 必須由 click handler 直接呼叫，瀏覽器才會把權限要求視為使用者操作。
+      const location = await requestCurrentPosition()
+      if (currentLocationRequestRef.current !== requestId ||
+        selectedKeyRef.current !== requestedSelectedKey) return
+      onUseCurrentLocation(destination, location.position)
+    } catch (error) {
+      if (currentLocationRequestRef.current !== requestId ||
+        selectedKeyRef.current !== requestedSelectedKey) return
+      const message = error instanceof Error && error.message
+        ? error.message
+        : '無法取得目前位置'
+      setCurrentLocationState('error')
+      setCurrentLocationError(`${message}，可再試一次或改用地圖選擇起點。`)
+    }
+  }
+
+  function chooseStartOnMap(destination: DestinationSelection) {
+    cancelCurrentLocationRequest()
+    onChooseStart(destination)
+  }
+
   const hasQuery = query.trim().length > 0
 
   return (
@@ -172,7 +237,7 @@ export function PlaceSearch({
               setGoogleSelectionError(null)
               googleSearchRef.current?.reset()
             }
-            if (selected) onClear()
+            if (selected) clearMarker()
           }}
           aria-label="搜尋地標"
           placeholder="搜尋地點、車站或地址"
@@ -270,18 +335,42 @@ export function PlaceSearch({
           </div>
           <p>選擇出發方式</p>
           <div className="place-route-methods">
-            <button type="button" disabled title="目前位置導航將於下一階段開放">
+            <button type="button"
+              className={`${currentLocationUnavailable ? '' : 'active'}${
+                currentLocationState === 'loading' ? ' locating' : ''}`}
+              disabled={mapLoading || currentLocationState === 'loading' ||
+                Boolean(currentLocationUnavailable)}
+              aria-busy={currentLocationState === 'loading'}
+              aria-describedby={(currentLocationError || currentLocationUnavailable)
+                ? 'place-current-location-message'
+                : undefined}
+              title={currentLocationUnavailable ?? ''}
+              onClick={() => void useCurrentLocation()}>
               <span aria-hidden="true">⌖</span>
               <b>從我的位置出發</b>
-              <small>即將推出</small>
+              <small>{currentLocationState === 'loading'
+                ? '正在取得位置…'
+                : currentLocationState === 'error'
+                  ? '重新取得位置'
+                  : currentLocationUnavailable
+                    ? '定位目前不可用'
+                    : '使用裝置定位'}</small>
             </button>
             <button type="button" className="active" disabled={mapLoading}
-              onClick={() => onChooseStart(resolvedSelected)}>
+              onClick={() => chooseStartOnMap(resolvedSelected)}>
               <span aria-hidden="true">◎</span>
               <b>選擇起點</b>
               <small>在地圖上點選</small>
             </button>
           </div>
+          {(currentLocationError || currentLocationUnavailable) && (
+            <div id="place-current-location-message"
+              className="place-current-location-message"
+              role={currentLocationError ? 'alert' : 'status'}
+              aria-live="polite">
+              {currentLocationError ?? currentLocationUnavailable}
+            </div>
+          )}
         </div>
       )}
     </section>

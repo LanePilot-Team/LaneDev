@@ -172,6 +172,30 @@ export default function App() {
     })
   }
 
+  function startPlaceFromCurrentLocation(
+    destination: DestinationSelection,
+    position: [number, number],
+  ) {
+    setRoadInfo(null)
+    editor.closeAll()
+    core.refreshZones()
+    core.refreshVehicles()
+    setMode('pick')
+    planner.startPlaceFromCurrentLocation({
+      id: destination.id,
+      label: destinationLabel(destination),
+      position: destination.position,
+      provider: destination.provider,
+    }, position)
+  }
+
+  function activeRoutePickLabel() {
+    const index = planner.stops.findIndex((stop) => stop.id === planner.activeStop)
+    if (index === planner.stops.length - 1) return '目的地'
+    if (index > 0) return `停靠點 ${index}`
+    return '起點'
+  }
+
   function flyToDemoArea() {
     core.mapRef.current?.flyTo({ center: [120.2790, 22.7300], zoom: 17.5, pitch: 58, bearing: 20 })
   }
@@ -202,6 +226,7 @@ export default function App() {
           onSelect={showDestinationSelection}
           onClear={clearDestinationSelection}
           onChooseStart={startPlacePick}
+          onUseCurrentLocation={startPlaceFromCurrentLocation}
         />
       )}
 
@@ -261,7 +286,7 @@ export default function App() {
       {mode === 'pick' && planner.activeStop !== null &&
         planner.stops.some((stop) => stop.placeId) && (
         <div className="hint route-pick-hint">
-          <span aria-hidden="true">◎</span> 點選地圖上的起點
+          <span aria-hidden="true">◎</span> 點選地圖上的{activeRoutePickLabel()}
           <button className="mini" onClick={() => switchMode('browse')}>取消</button>
         </div>
       )}

@@ -17,6 +17,7 @@ export interface GooglePlaceSearchHandle {
 
 export interface GooglePlaceSearchProps {
   visible?: boolean
+  selectable?: boolean
   onSelect: (place: google.maps.places.Place, submittedQuery: string) => void
   onStateChange?: (state: GooglePlaceSearchState, message?: string) => void
 }
@@ -36,6 +37,7 @@ export const GooglePlaceSearch = forwardRef<
   GooglePlaceSearchProps
 >(function GooglePlaceSearch({
   visible = true,
+  selectable = true,
   onSelect,
   onStateChange,
 }, forwardedRef) {
@@ -48,10 +50,12 @@ export const GooglePlaceSearch = forwardRef<
   const cleanupListenersRef = useRef<(() => void) | null>(null)
   const onSelectRef = useRef(onSelect)
   const onStateChangeRef = useRef(onStateChange)
+  const selectableRef = useRef(selectable)
   const [componentState, setComponentState] = useState<ComponentState>({ status: 'idle' })
 
   onSelectRef.current = onSelect
   onStateChangeRef.current = onStateChange
+  selectableRef.current = selectable
 
   function updateState(status: GooglePlaceSearchState, message?: string) {
     if (!mountedRef.current) return
@@ -71,7 +75,7 @@ export const GooglePlaceSearch = forwardRef<
       const searchElement = new library.PlaceSearchElement({
         attributionPosition: 'BOTTOM',
         orientation: 'VERTICAL',
-        selectable: true,
+        selectable: selectableRef.current,
         truncationPreferred: true,
       })
       const contentConfig = new library.PlaceContentConfigElement()
@@ -168,6 +172,10 @@ export const GooglePlaceSearch = forwardRef<
       hostRef.current?.replaceChildren()
     }
   }, [])
+
+  useEffect(() => {
+    if (searchElementRef.current) searchElementRef.current.selectable = selectable
+  }, [selectable])
 
   return (
     <div className="google-place-search" hidden={!visible}>

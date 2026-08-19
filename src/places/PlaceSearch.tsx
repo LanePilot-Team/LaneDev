@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { asset } from '../core/asset'
 import type { MapCore } from '../app/mapCore'
+import {
+  GooglePlaceSearch,
+  type GooglePlaceSearchHandle,
+  type GooglePlaceSearchState,
+} from './GooglePlaceSearch'
 import {
   CATEGORY_LABELS,
   searchPlaces,
@@ -18,6 +23,8 @@ function sourceInfo(place: PlaceRecord) {
   }
 }
 
+type SearchProvider = 'local' | 'google'
+
 export function PlaceSearch({
   core,
   mapLoading,
@@ -25,6 +32,7 @@ export function PlaceSearch({
   onSelect,
   onClear,
   onChooseStart,
+  onGoogleSelect,
 }: {
   core: MapCore
   mapLoading: boolean
@@ -32,10 +40,16 @@ export function PlaceSearch({
   onSelect: (place: PlaceRecord) => void
   onClear: () => void
   onChooseStart: (place: PlaceRecord) => void
+  /** 第四個提交接上 MapLibre／導航後提供；未提供時 Google 結果只供瀏覽。 */
+  onGoogleSelect?: (place: google.maps.places.Place, submittedQuery: string) => void
 }) {
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState('')
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [provider, setProvider] = useState<SearchProvider>('local')
+  const [googleState, setGoogleState] = useState<GooglePlaceSearchState>('idle')
+  const [googleSubmittedQuery, setGoogleSubmittedQuery] = useState('')
+  const googleSearchRef = useRef<GooglePlaceSearchHandle>(null)
   const results = useMemo(() => searchPlaces(places, query), [places, query])
   const selectedPlace = useMemo(() => {
     if (!selected) return null
@@ -67,7 +81,29 @@ export function PlaceSearch({
 
   function clearSearch() {
     setQuery('')
+    setProvider('local')
+    setGoogleSubmittedQuery('')
+    googleSearchRef.current?.reset()
     clearMarker()
+  }
+
+  function returnToLocalResults() {
+    setProvider('local')
+    setGoogleSubmittedQuery('')
+    googleSearchRef.current?.reset()
+  }
+
+  async function searchWithGoogle() {
+    const submittedQuery = query.trim()
+    if (!submittedQuery || googleState === 'loading') return
+
+    const center = core.mapRef.current?.getCenter()
+    setProvider('google')
+    setGoogleSubmittedQuery(submittedQuery)
+    await googleSearchRef.current?.search(
+      submittedQuery,
+      center ? [center.lng, center.lat] : undefined,
+    )
   }
 
   function showPlace(place: PlaceRecord) {
@@ -85,6 +121,10 @@ export function PlaceSearch({
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (provider === 'google') {
+      void searchWithGoogle()
+      return
+    }
     if (results[0]) showPlace(results[0])
   }
 
@@ -97,7 +137,13 @@ export function PlaceSearch({
         <input
           value={query}
           onChange={(event) => {
-            setQuery(event.target.value)
+            const nextQuery = event.target.value
+            setQuery(nextQuery)
+            if (!nextQuery.trim()) {
+              setProvider('local')
+              setGoogleSubmittedQuery('')
+              googleSearchRef.current?.reset()
+            }
             if (selected) onClear()
           }}
           aria-label="搜尋地標"
@@ -109,12 +155,14 @@ export function PlaceSearch({
             ✕
           </button>
         )}
-        <button type="submit" className="place-submit" disabled={!results.length || mapLoading}>
-          搜尋
+        <button type="submit" className="place-submit"
+          disabled={!hasQuery || googleState === 'loading' ||
+            (provider === 'local' && (!results.length || mapLoading))}>
+          {provider === 'google' ? 'Google 搜尋' : '搜尋'}
         </button>
       </form>
 
-      {hasQuery && !selectedPlace && (
+      {hasQuery && provider === 'local' && !selectedPlace && (
         <div className="place-results" role="listbox" aria-label="搜尋結果">
           {dataState === 'loading' && <div className="place-message">載入地標資料中…</div>}
           {dataState === 'error' && (
@@ -144,8 +192,36 @@ export function PlaceSearch({
           {results.length > 0 && (
             <div className="place-attribution">共顯示 {results.length} 筆 · © OpenStreetMap contributors · 交通部 TDX</div>
           )}
+          {dataState !== 'loading' && (
+            <div className={`place-provider-switch${results.length === 0 ? ' prominent' : ''}`}>
+              <span>{results.length > 0 ? '沒有你要的地點？' : 'OSM＋TDX 沒有這個地點？'}</span>
+              <button type="button" onClick={() => void searchWithGoogle()}
+                disabled={!hasQuery || googleState === 'loading'}>
+                使用 Google Places 搜尋
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      <div className="place-results google-provider-results"
+        hidden={!hasQuery || provider !== 'google' || Boolean(selectedPlace)}
+        aria-label="Google Places 搜尋結果">
+        <div className="google-place-header">
+          <span>
+            <b>Google Places</b>
+            <small>搜尋「{googleSubmittedQuery || query.trim()}」</small>
+          </span>
+          <button type="button" onClick={returnToLocalResults}>返回本地結果</button>
+        </div>
+        <GooglePlaceSearch
+          ref={googleSearchRef}
+          visible={hasQuery && provider === 'google' && !selectedPlace}
+          selectable={Boolean(onGoogleSelect)}
+          onSelect={(place, submittedQuery) => onGoogleSelect?.(place, submittedQuery)}
+          onStateChange={setGoogleState}
+        />
+      </div>
 
       {selectedPlace && (
         <div className="place-route-choice" aria-label={`導航至${selectedPlace.name}`}>

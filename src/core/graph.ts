@@ -702,7 +702,11 @@ export class RoadGraph {
       for (const o of this.adj.get(nodeId) ?? []) {
         if (o === self || o === self.twin) continue
         const q = o.road.properties
-        if (q.osm_id === sp.osm_id || (sp.name && q.name === sp.name)) continue
+        // 同名「且同等級」才算同路續接區塊。主線與側車道在 OSM 常共用路名
+        // （高楠公路 primary 35m ×「高楠公路」service 側車道），那是真正的交叉：
+        // 只比路名會把主線跳掉，收邊只剩 4.4m，停等格與停止線會伸進主線車道。
+        if (q.osm_id === sp.osm_id
+          || (sp.name && q.name === sp.name && q.highway === sp.highway)) continue
         if (q.width_m < minCrossWidthM && !crossQualifies?.(o.road)) continue
         w = Math.max(w, q.width_m)
       }

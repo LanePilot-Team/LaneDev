@@ -36,9 +36,32 @@ const ELEVATED_WAY_IDS = new Set([
   // 無名連絡道與「高楠路橋-台南/高雄市區」匝道。不列的話它們被當平面路，
   // 會把陸橋中段的共用節點判成接地、整座橋被壓回地面
   103678962, 103678985, 103679016, 103679009, 765913728, 28526279,
+  // 高楠陸橋南端「北行」上橋匝道（縱貫公路，primary bridge=yes layer=1）：
+  // 地面 node 1196964560（接高楠公路 way/268219246）→ 橋頭 node 1196964578。
+  // 南行 way/23939182 與北行 way/271982159 couplet 合併成雙向橋，這條匝道沒有
+  // 配對對象所以沒進合併、也一直漏在清單外——結果從高楠公路直行上橋時線留在
+  // 地面，橋頭有 6m 斷崖（使用者回報「直接上高架了但沒上去」）。
+  // 橋下有 way/884582693（primary_link）穿過，是真立體交叉而非跨河橋。
+  103679008,
   // 德民新橋主橋與兩側機車道（bridge=yes, layer=1）
   126247872, 126247885, 126247846, 126247898,
 ])
+
+// ⚠ 2026-08-10 移除：機車專用道匝道 103679024／230216189／230216191／230213636。
+// 曾因「OSM 標了 bridge=yes layer=1」把這 290m 鏈整條加進來，結果畫面上長出一條
+// 寬 2.2m、懸在 6m 高、橫跨後勁溪與空地的帶子（使用者回報）。
+// 逐條查橋下有什麼穿過（scripts 探針，判準見本檔開頭「bridge=yes ≠ 高架」）：
+//   103679024(69m)  底下沒有任何道路
+//   230216189(61m)  底下沒有任何道路
+//   230216191(115m) 只有一條 21m 無名 service 支線——這是跨後勁溪的橋
+//   230213636(57m)  底下沒有任何道路
+//   25724904(531m)  底下 5 條，含 2 條 primary_link ← 只有這條是真立體交叉
+// 跨河橋與路面同高（同仁武橋/惠豐橋），不抬。
+//
+// 代價：node 1196965025（平面匝道接上 6m 機車高架的中段）會有 6m 落差。那與
+// 高楠陸橋×縱貫公路、楠梓交流道 node 4425325537 是同一類——地面路接在高架
+// 「續行中」的節點上，依上面第 2 條規則刻意不落地，否則高架中途壓到 0 再爬
+// 回來變雲霄飛車。寧可留這個落差，也不要一條懸空的假橋。
 
 /** 是否為高架路段：國道體系（motorway/motorway_link）整段視為高架
  * （楠梓段本線多為高架橋；路堤段一併以高架呈現，避免主線在橋段之間反覆下地——
@@ -68,8 +91,22 @@ interface BlockElev {
 
 const smoothstep = (t: number) => t * t * (3 - 2 * t)
 
+/**
+ * 區塊身分鍵（同 journal 的區塊鍵格式）。高度查表不能只靠 RoadFeature 物件參考：
+ * 道路捏合把底圖拆成「路網圖用的 routingRoads」與「繪圖用的 renderRoads」兩份，
+ * 後者是前者的完整複製（roadMerge.ts replayRoadMerges 的 roads.map(cloneRoad)），
+ * 兩份沒有任何共用物件。高度模型與橋面剖面建在 renderRoads 上（mapCore
+ * rebuildElevation(renderRoadsRef)），而路線帶／車輛拿到的是路網圖那份的物件，
+ * 以物件當 key 查一定 miss → heightAtPos 回 0 → 藍線畫在地面、車輛留在地面。
+ * 2026-08-12 使用者回報「藍線在地面不在橋上」「車跑底下了」即此。
+ */
+export const blockKeyOf = (r: RoadFeature) =>
+  `way/${r.properties.osm_id}@b/${r.properties.blockNode}`
+
 export class ElevationModel {
   private blocks = new Map<RoadFeature, BlockElev>()
+  /** 同上，改用區塊鍵索引——跨「路網圖／繪圖」兩份底圖查表用（見 blockKeyOf） */
+  private byKey = new Map<string, BlockElev>()
   /** 高架端節點 → 沿高架網到最近「接地節點」的距離（不接地 = 不在表內 = ∞） */
   private dGround = new Map<number, number>()
   /** 高架端節點 → 鄰接高架區塊最大全高（layer 1↔2 銜接的節點高度） */
@@ -90,6 +127,7 @@ export class ElevationModel {
         n0: p.nodes[0], n1: p.nodes[p.nodes.length - 1],
       }
       this.blocks.set(r, b)
+      this.byKey.set(blockKeyOf(r), b)
       for (const n of [b.n0, b.n1]) {
         if (!adj.has(n)) adj.set(n, [])
         adj.get(n)!.push(b)
@@ -180,14 +218,19 @@ export class ElevationModel {
   }
 
   /** 接地端的地面延續路寬（該端沒接地/查無延續 = undefined，不收窄） */
+  /** 先比物件參考，查不到再用區塊鍵（兩份底圖互查） */
+  private lookup(road: RoadFeature): BlockElev | undefined {
+    return this.blocks.get(road) ?? this.byKey.get(blockKeyOf(road))
+  }
+
   groundTaper(road: RoadFeature): { gw0?: number; gw1?: number } {
-    const b = this.blocks.get(road)
+    const b = this.lookup(road)
     return b ? { gw0: b.gw0, gw1: b.gw1 } : {}
   }
 
   /** 該路段沿線 d 公尺處的高度；非高架路段回傳 0 */
   heightAt(road: RoadFeature, d: number): number {
-    const b = this.blocks.get(road)
+    const b = this.lookup(road)
     if (!b) return 0
     const x = Math.max(0, Math.min(d, b.lenM))
     // 層級銜接：端節點高度（鄰接最大）在 NODE_BLEND_M 內線性趨回本塊全高
@@ -207,7 +250,7 @@ export class ElevationModel {
   /** 位置投影到該路段最近點後查高度（車輛用：路段身分由路線 span 提供，
    * 不做「找最近高架」——平面路從高架正下方穿過時純位置查詢會誤抬） */
   heightAtPos(road: RoadFeature, pos: [number, number]): number {
-    const b = this.blocks.get(road)
+    const b = this.lookup(road)
     if (!b) return 0
     let bestD2 = Infinity
     let bestAt = 0

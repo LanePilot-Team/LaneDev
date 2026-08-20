@@ -110,6 +110,7 @@ export function mergeCouplets(
   remapOut?: Map<number, number>,
   wayRemapOut?: Map<number, DropRemap>,
   include?: (r: RoadFeature) => boolean,
+  preferKeep?: (r: RoadFeature) => boolean,
 ): RoadFeature[] {
   const scope = roads.filter((r) => {
     const p = r.properties
@@ -143,7 +144,15 @@ export function mergeCouplets(
   }
   const lengthOf = (rs: RoadFeature[]) =>
     rs.reduce((s, r) => s + (r.geometry.coordinates as [number, number][]).length, 0)
-  const keep = lengthOf(g0) >= lengthOf(g1) ? g0 : g1
+  // preferKeep：呼叫端釘死保留側的 way id。預設用頂點數多的一組當 keep，但一個
+  // 方向被 OSM 拆成多條 way 時（高楠陸橋北行 = 271982159＋103679008 共 15 點 vs
+  // 南行 23939182 的 10 點）會把主 way 判成 drop 整條吸收掉——elevation 的高架
+  // 清單、elevated3d 的橋面併入、fixups 的機車道貼齊全部認 way id 定位，主 way
+  // 的 id 一消失就同時失效（橋不再是高架、接縫裂開）。
+  const preferred = preferKeep
+    ? (g0.some(preferKeep) ? g0 : g1.some(preferKeep) ? g1 : null)
+    : null
+  const keep = preferred ?? (lengthOf(g0) >= lengthOf(g1) ? g0 : g1)
   let drop = keep === g0 ? g1 : g0
 
   // 1.5) 落單保護：drop 側 way 的頂點過半沒貼到 keep 側（同名的獨立支段，
@@ -239,16 +248,22 @@ export function mergeCouplets(
     const cs = w.geometry.coordinates as [number, number][]
     const nodes = w.properties.nodes
     const dists: number[] = []
+    const pairedAt: boolean[] = []
     const next: [number, number][] = cs.map((p) => {
       let best: { d: number; pos: [number, number] } | null = null
       for (const o of drop) {
         const hit = projectToLine(p, o.geometry.coordinates as [number, number][])
         if (hit.d < PAIR_MAX_M && (!best || hit.d < best.d)) best = hit
       }
+      pairedAt.push(!!best)
       if (!best) return p
       dists.push(best.d)
       return [(p[0] + best.pos[0]) / 2, (p[1] + best.pos[1]) / 2]
     })
+    // 首尾連續未配對段 = 落單尾段（中段零星未配對只是取樣疏密，不算）
+    const first = pairedAt.indexOf(true)
+    const last = pairedAt.lastIndexOf(true)
+    const tailNodes = first < 0 ? [] : nodes.filter((_, i) => i < first || i > last)
     // 落單保護（keep 側）：對向投影頂點 < 60%（獨立支段只有路口端碰到對向；
     // 真正的成對單行幾乎全長貼合）→ 不是成對單行的一半，維持單行原樣
     if (dists.length / cs.length < 0.6) continue
@@ -274,6 +289,7 @@ export function mergeCouplets(
       p.centerM = section.centerM
     }
     p.coupletMerged = true // 中央帶編輯只對合併段開放（一般雙向巷道沒有中央帶概念）
+    if (tailNodes.length > 0) p.coupletTailNodes = tailNodes // 切塊後還原落單尾段用
     computeDerived(p)
   }
 

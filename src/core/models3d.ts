@@ -180,11 +180,17 @@ export class VehicleModelLayer {
     g.rotation.y = (-bearing * Math.PI) / 180
   }
 
-  setVehicles(vs: PlacedVehicle[], selectedId: string | null) {
+  /** 場景上放置的車輛。elevOf = 該車所在路面的高度（公尺）；不給則一律地面。
+   * 沒有這個參數時擺在高架橋上的車會全部畫在地面高度，看起來像「車跑到橋下」
+   * （2026-08-12 使用者回報）——導航自車走 setNav 有帶高度，這裡漏了。 */
+  setVehicles(
+    vs: PlacedVehicle[], selectedId: string | null,
+    elevOf?: (v: PlacedVehicle) => number,
+  ) {
     this.placed.clear()
     for (const v of vs) {
       const g = v.type === 'car' ? buildCar(colorFor(v.id)) : buildScooter(0x22c55e)
-      this.place(g, v.pos, v.bearing)
+      this.place(g, v.pos, v.bearing, elevOf?.(v) ?? 0)
       if (v.id === selectedId) g.add(selectionRing())
       this.placed.add(g)
     }

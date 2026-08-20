@@ -89,6 +89,9 @@ export interface RoadProps {
   oneSideEntryAccess?: OneSideEntryAccess[]
   /** 僅記憶體：啟用中的捏合接點視為連續中央島，主路不得在此迴轉。 */
   roadMergeBarrierNodes?: number[]
+  /** 僅記憶體：中央分隔島的迴轉開口節點（journal turn_bay present=1 且 turns 含
+   * uturn）。實體島路段預設整段禁止迴轉，只有這些節點放行。 */
+  medianOpeningNodes?: number[]
   /** 僅記憶體：本次 road_merge 視圖加上的限制及其原值，供撤銷重建時精確還原。 */
   roadMergeDerived?: {
     nodeId: number
@@ -108,6 +111,16 @@ export interface RoadProps {
   centerExtendEnd: boolean
   /** couplet 合併產生的路段——中央帶編輯只對這類路段開放 */
   coupletMerged?: boolean
+  /** 僅記憶體：couplet 合併後仍落在「配對範圍之外」的首尾節點。整條 way 只要
+   * 過 60% 就併，兩端沒有對向 way 的那截（例：高楠陸橋南端 100m，北上車道在
+   * 另一條 way/103679008）會拿到不存在的對向車道。
+   * 只收首尾連續的未配對段——中段零星未配對是取樣疏密造成的，不是落單。 */
+  coupletTailNodes?: number[]
+  /** 僅記憶體：反向車道是 couplet 合併虛構出來的，導航不得逆向通行。
+   * **只能擋通行，不要改斷面**——落單尾段的路寬是橋面與 hugSideLanes 的依據，
+   * 改窄會讓貼邊的機車專用高架離開橋面邊緣、接縫裂開（2026-08-12 改過一次已
+   * 回退，見 elevated3d.ts SIDE_DECK_ABSORB 註解）。 */
+  phantomBackward?: boolean
   /** 路寬微調（公尺，journal extra_width_m）：實際鋪面寬 ≠ lanes×3.2 時的補正，
    * 對稱加減在斷面兩側（路肩語意），車道線/車道位置不動，只影響路面渲染寬 */
   extraM: number

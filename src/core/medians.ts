@@ -210,6 +210,7 @@ export function buildMedians(roads: RoadFeature[]): MedianIsland[] {
   const scope = roads.filter((r) =>
     MEDIAN_SCOPE_ROADS.has(r.properties.name ?? '') &&
     r.properties.roadMarkingMode !== 'none' &&
+    !r.properties.elevated && // 高架的島由 elevated3d 畫在橋面
     r.properties.oneway === 'yes' && r.geometry.coordinates.length >= 2)
   if (scope.length < 2) return []
   const scopeSet = new Set(scope)
@@ -264,6 +265,7 @@ export function buildTwinIslands(roads: RoadFeature[], journal: EnhancementRecor
   for (const r of roads) {
     if (!ids.has(r.properties.osm_id)) continue
     if (r.properties.roadMarkingMode === 'none') continue
+    if (r.properties.elevated) continue // 高架的島由 elevated3d 畫在橋面
     if (!byId.has(r.properties.osm_id)) byId.set(r.properties.osm_id, [])
     byId.get(r.properties.osm_id)!.push(r)
     scopeSet.add(r)
@@ -323,6 +325,7 @@ export function buildMotoSepIslands(graph: RoadGraph): MedianIsland[] {
   const edges = graph.scopeEdges((r) => {
     const p = r.properties
     if (p.roadMarkingMode === 'none') return false
+    if (p.elevated) return false // 同 buildCenterIslands：高架的島由橋面畫
     return (p.motoF && (p.motoSepF || 0) > 0)
       || (p.oneway === 'no' && p.motoB && (p.motoSepB || 0) > 0)
   })
@@ -399,6 +402,7 @@ export function buildCenterIslands(graph: RoadGraph, bays: TurnBay[]): MedianIsl
   const edges = graph.scopeEdges((r) =>
     r.properties.oneway === 'no' && (r.properties.centerM || 0) > 0 &&
     r.properties.roadMarkingMode !== 'none' &&
+    !r.properties.elevated && // 高架的中央護欄由 elevated3d 畫在橋面（hasCenterRail）
     r.properties.centerKind === 'island')
   for (const e of edges) {
     if (e.back) continue // 以順向 frame 統一處理一次

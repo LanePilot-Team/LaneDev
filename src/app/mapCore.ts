@@ -540,8 +540,8 @@ export function useMapCore(
         img.src = url
       })
       const [motorcycleIcon, bicycleIcon] = await Promise.all([
-        loadSvg('/assets/road-markings/motorcycle.svg'),
-        loadSvg('/assets/road-markings/bicycle.svg'),
+        loadSvg(asset('/assets/road-markings/motorcycle.svg')),
+        loadSvg(asset('/assets/road-markings/bicycle.svg')),
       ])
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)

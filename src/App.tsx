@@ -16,8 +16,12 @@ import { PlaceSearch } from './places/PlaceSearch'
 import {
   POI_LAYER_IDS,
   placeFromPoiFeature,
-  type PlaceRecord,
 } from './places/places'
+import {
+  destinationLabel,
+  localDestination,
+  type DestinationSelection,
+} from './places/destination'
 import {
   EditHintBar, LaneEditPanel, ZonePanel, BayPanel, VehiclePanel, TwinIslandPanel,
   RoadDrawPanel,
@@ -31,7 +35,7 @@ export default function App() {
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m) }
 
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
-  const [selectedPlace, setSelectedPlace] = useState<PlaceRecord | null>(null)
+  const [selectedDestination, setSelectedDestination] = useState<DestinationSelection | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null) // 匯入地圖的檔案選擇器
   const [importMsg, setImportMsg] = useState<string | null>(null)
 
@@ -44,10 +48,10 @@ export default function App() {
         const placeFeature = map.queryRenderedFeatures(e.point, { layers: [...POI_LAYER_IDS] })[0]
         const place = placeFeature ? placeFromPoiFeature(placeFeature) : null
         if (place) {
-          showPlaceSelection(place)
+          showDestinationSelection(localDestination(place))
           return
         }
-        clearPlaceSelection()
+        clearDestinationSelection()
         setRoadInfo(queryRoadInfoAt(map, e.point))
       }
       else if (m === 'edit') editor.handleEditClick(map, e, p)
@@ -92,7 +96,7 @@ export default function App() {
   })
   planner.stopAllDriversRef.current = stopAllDrivers
 
-  function showPlaceSelection(place: PlaceRecord) {
+  function showDestinationSelection(destination: DestinationSelection) {
     const map = core.mapRef.current
     if (!map?.getSource('placeSelection')) return
     core.src('placeSelection').setData({
@@ -100,28 +104,29 @@ export default function App() {
       features: [{
         type: 'Feature',
         properties: {
-          id: place.id,
-          name: place.name,
-          source: place.source,
-          category: place.category,
+          id: destination.id,
+          name: destinationLabel(destination),
+          provider: destination.provider,
+          source: destination.provider === 'local' ? destination.place.source : 'google-ui-kit',
+          category: destination.provider === 'local' ? destination.place.category : 'other',
         },
-        geometry: { type: 'Point', coordinates: place.position },
+        geometry: { type: 'Point', coordinates: destination.position },
       }],
     } as never)
-    setSelectedPlace(place)
+    setSelectedDestination(destination)
     setRoadInfo(null)
   }
 
-  function clearPlaceSelection() {
+  function clearDestinationSelection() {
     if (core.mapRef.current?.getSource('placeSelection')) {
       core.src('placeSelection').setData({ type: 'FeatureCollection', features: [] } as never)
     }
-    setSelectedPlace(null)
+    setSelectedDestination(null)
   }
 
   function endDrive() {
     planner.clearAllRoute() // 內部已呼叫 stopAllDrivers()
-    clearPlaceSelection()
+    clearDestinationSelection()
     setMode('browse')
     core.mapRef.current?.setLayoutProperty('oneway-arrow', 'visibility', 'visible')
     core.mapRef.current?.setLayoutProperty('road-label', 'visibility', 'visible')
@@ -131,7 +136,7 @@ export default function App() {
   function switchMode(m: Mode) {
     if (modeRef.current === 'drive') endDrive()
     if (m !== 'pick') planner.clearAllRoute()
-    if (m !== 'browse' || modeRef.current === 'pick') clearPlaceSelection()
+    if (m !== 'browse' || modeRef.current === 'pick') clearDestinationSelection()
     setRoadInfo(null)
     editor.closeAll()
     core.refreshZones()
@@ -141,25 +146,54 @@ export default function App() {
 
   function startPick(demo: boolean) {
     planner.clearAllRoute()
-    clearPlaceSelection()
+    clearDestinationSelection()
     setMode('pick')
     planner.startPick(demo)
   }
 
-  function startPlacePick(place: PlaceRecord) {
+  function startPlacePick(destination: DestinationSelection) {
     setRoadInfo(null)
     editor.closeAll()
     core.refreshZones()
     core.refreshVehicles()
     setMode('pick')
-    planner.startPlacePick({ id: place.id, name: place.name, position: place.position })
+    planner.startPlacePick({
+      id: destination.id,
+      label: destinationLabel(destination),
+      position: destination.position,
+      provider: destination.provider,
+    })
     core.mapRef.current?.flyTo({
-      center: place.position,
+      center: destination.position,
       zoom: 13.6,
       pitch: 0,
       bearing: 0,
       essential: true,
     })
+  }
+
+  function startPlaceFromCurrentLocation(
+    destination: DestinationSelection,
+    position: [number, number],
+  ) {
+    setRoadInfo(null)
+    editor.closeAll()
+    core.refreshZones()
+    core.refreshVehicles()
+    setMode('pick')
+    planner.startPlaceFromCurrentLocation({
+      id: destination.id,
+      label: destinationLabel(destination),
+      position: destination.position,
+      provider: destination.provider,
+    }, position)
+  }
+
+  function activeRoutePickLabel() {
+    const index = planner.stops.findIndex((stop) => stop.id === planner.activeStop)
+    if (index === planner.stops.length - 1) return '目的地'
+    if (index > 0) return `停靠點 ${index}`
+    return '起點'
   }
 
   function flyToDemoArea() {
@@ -188,10 +222,11 @@ export default function App() {
         <PlaceSearch
           core={core}
           mapLoading={loading}
-          selected={selectedPlace}
-          onSelect={showPlaceSelection}
-          onClear={clearPlaceSelection}
+          selected={selectedDestination}
+          onSelect={showDestinationSelection}
+          onClear={clearDestinationSelection}
           onChooseStart={startPlacePick}
+          onUseCurrentLocation={startPlaceFromCurrentLocation}
         />
       )}
 
@@ -251,7 +286,7 @@ export default function App() {
       {mode === 'pick' && planner.activeStop !== null &&
         planner.stops.some((stop) => stop.placeId) && (
         <div className="hint route-pick-hint">
-          <span aria-hidden="true">◎</span> 點選地圖上的起點
+          <span aria-hidden="true">◎</span> 點選地圖上的{activeRoutePickLabel()}
           <button className="mini" onClick={() => switchMode('browse')}>取消</button>
         </div>
       )}

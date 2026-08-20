@@ -11,20 +11,14 @@ import { annotateBays, annotateRightLanes } from '../core/turnbays'
 import { angleDelta, haversine } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 import { isZoneEnabled } from '../core/zones'
+import {
+  createPlaceRouteStops,
+  firstUnsetStopId,
+  type RouteDestination,
+  type Stop,
+} from './placeRoute'
 
-export interface Stop {
-  id: number
-  pos: [number, number] | null
-  label?: string
-  placeId?: string
-  placePosition?: [number, number]
-}
-
-export interface RouteDestination {
-  id: string
-  name: string
-  position: [number, number]
-}
+export type { RouteDestination, RouteStart, Stop } from './placeRoute'
 
 export const DEMO_FROM: [number, number] = [120.2758, 22.7327] // 高雄大學
 export const DEMO_TO: [number, number] = [120.3268, 22.7357] // 楠梓車站一帶
@@ -45,6 +39,10 @@ export interface Planner {
   stopAllDriversRef: RefObject<() => void>
   startPick: (demo: boolean) => void
   startPlacePick: (destination: RouteDestination) => void
+  startPlaceFromCurrentLocation: (
+    destination: RouteDestination,
+    position: [number, number],
+  ) => void
   clearAllRoute: () => void
   addVia: () => void
   resetStop: (id: number) => void
@@ -179,24 +177,43 @@ export function usePlanner(core: MapCore): Planner {
     }
   }
 
-  /** 從搜尋地標進入規劃：目的地先吸附可通行車道，起點交給使用者點地圖。 */
-  function startPlacePick(destination: RouteDestination) {
+  /** 從搜尋地標進入規劃，可選擇由地圖點選或由已取得的目前位置作為起點。 */
+  function initializePlaceRoute(
+    destination: RouteDestination,
+    currentPosition?: [number, number],
+  ) {
     clearAllRoute()
     stopSeq.current = 2
     const snappedDestination = snapRoutePoint(destination.position, 500, '目的地')
-    const next: Stop[] = [
-      { id: 1, pos: null },
-      {
-        id: 2,
-        pos: snappedDestination,
-        label: destination.name,
-        placeId: destination.id,
-        placePosition: destination.position,
-      },
-    ]
+    const snappedStart = currentPosition
+      ? snapRoutePoint(currentPosition, 180, '目前位置')
+      : null
+    const next = createPlaceRouteStops(
+      destination,
+      snappedDestination,
+      snappedStart ? { label: '我的位置', position: snappedStart } : null,
+    )
     setStops(next)
-    setActiveStop(1)
-    if (!snappedDestination) setRouteError('目的地附近找不到可導航道路，請改選其他地點')
+    setActiveStop(firstUnsetStopId(next))
+    // setStops() 會呼叫 routeFromStops() 並清除先前錯誤，所以 fallback 文案要最後設定。
+    if (!snappedDestination) {
+      setRouteError('目的地附近找不到可導航道路，請改選其他地點')
+    } else if (currentPosition && !snappedStart) {
+      setRouteError('目前位置附近找不到可導航道路，請改用地圖選擇起點')
+    }
+  }
+
+  /** 從搜尋地標進入規劃：目的地先吸附可通行車道，起點交給使用者點地圖。 */
+  function startPlacePick(destination: RouteDestination) {
+    initializePlaceRoute(destination)
+  }
+
+  /** 從裝置目前位置進入規劃；無法吸附時仍保留目的地供手動選擇起點。 */
+  function startPlaceFromCurrentLocation(
+    destination: RouteDestination,
+    position: [number, number],
+  ) {
+    initializePlaceRoute(destination, position)
   }
 
   function clearAllRoute() {
@@ -298,7 +315,8 @@ export function usePlanner(core: MapCore): Planner {
   return {
     stops, stopsRef, activeStop, routeRef, routeSummary, routeError,
     profile, profileRef, dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
-    startPick, startPlacePick, clearAllRoute, addVia, resetStop, removeStop, moveStop,
+    startPick, startPlacePick, startPlaceFromCurrentLocation,
+    clearAllRoute, addVia, resetStop, removeStop, moveStop,
     handlePickClick,
     computeTwoStage, isTwoStage, annotateTwoStage, toggleProfile,
   }

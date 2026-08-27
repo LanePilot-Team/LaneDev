@@ -293,6 +293,11 @@ export interface MapCore {
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
   selectedVehicleRef: RefObject<string | null>
   lastGestureRef: RefObject<number>
+  /**
+   * 使用者自己動了鏡頭（拖曳／旋轉／傾斜）時呼叫。導航跟隨用它來交還鏡頭控制權——
+   * 事件註冊在這裡（地圖實例的擁有者），實際「要不要停止跟隨」由 nav/useDrive 決定。
+   */
+  onUserCameraTakeoverRef: RefObject<(() => void) | null>
   /** couplet 合併造成的 node id 重映射（原始 OSM node → 合併後 node） */
   nodeRemapRef: RefObject<Map<number, number>>
   /** 被合併（drop 側）way → keep way 對照（LanePilot 標註匯入重映射用） */
@@ -361,6 +366,7 @@ export function useMapCore(
   const elevatedLayerRef = useRef<ElevatedLayer | null>(null)
   const selectedVehicleRef = useRef<string | null>(null)
   const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
+  const onUserCameraTakeoverRef = useRef<(() => void) | null>(null)
   const nodeRemapRef = useRef<Map<number, number>>(new Map())
   const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
   const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
@@ -616,6 +622,7 @@ export function useMapCore(
       journalRef, baysRef,
       rightLanesRef, motoBoxesRef,
       intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
+      onUserCameraTakeoverRef,
       nodeRemapRef, wayRemapRef, rawWaysRef,
       speedCamerasRef, speedCameraSourceRef,
       transitRef, setTransitVisible,
@@ -653,6 +660,16 @@ export function useMapCore(
     // 導航 30Hz 跟隨會把滾輪的平滑縮放掐死——跟隨迴圈靠這個時間戳暫時讓路
     map.on('wheel', () => { lastGestureRef.current = performance.now() })
     map.on('touchmove', () => { lastGestureRef.current = performance.now() })
+    // 使用者「自己把鏡頭移開」＝要求自由瀏覽（Google 地圖的行為）。只認帶 originalEvent
+    // 的事件——導航跟隨自己的 jumpTo 也會觸發 move/rotate，那不算使用者接管。
+    // 縮放不算：導航中放大看路口是常態，不該因此中斷跟隨（滾輪另有 250ms 讓路）。
+    const takeover = (ev: { originalEvent?: unknown }) => {
+      if (!ev.originalEvent) return
+      onUserCameraTakeoverRef.current?.()
+    }
+    map.on('dragstart', takeover)
+    map.on('rotatestart', takeover)
+    map.on('pitchstart', takeover)
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__map = map
 
     map.on('load', async () => {

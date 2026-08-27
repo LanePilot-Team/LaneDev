@@ -23,7 +23,9 @@ export function TopBanner({ drive, twoStage, profile }: {
   const dist = drive.nextDistM
   const phase = getGuidancePhase(dist)
   const distText = dist < PASS_THRESHOLD ? '現在' : formatDistanceText(dist)
-  const tone = twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
+  // 抵達自成一色（綠）：從「下一個動作是抵達」起看板就轉綠，收尾不是在終點才突然發生
+  const tone = m.kind === 'arrive' ? 'arrive'
+    : twoStage ? 'two-stage' : phase === 'near' ? 'near' : 'far'
   const guidance = selectLanePreviewGuidance({
     distanceM: dist,
     current: drive.roadLaneGuidance,
@@ -121,11 +123,55 @@ function SpeedCameraCard({ alert }: { alert: SpeedCameraAlert }) {
   )
 }
 
+/**
+ * 抵達卡。實機回報「結束的時候蠻不知所措」——原本抵達只有底部列一個小小的「已抵達」，
+ * 畫面其他部分幾乎沒變，分不出是系統沒認出我到了、還是它結束得太安靜。
+ * 所以抵達要佔滿頂部看板的位置、講清楚目的地，並給一顆明確的收尾按鈕。
+ */
+function ArrivalCard({ destinationName, onEnd }: {
+  destinationName?: string
+  onEnd: () => void
+}) {
+  return (
+    <div className="arrival-card">
+      <svg className="arrival-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="4" />
+        <path d="M15 24.5 L21.5 31 L33 19" fill="none" stroke="currentColor" strokeWidth="5"
+          strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div className="arrival-text">
+        <b>已抵達目的地</b>
+        <span>{destinationName ?? '導航結束'}</span>
+      </div>
+      <button className="arrival-done" onClick={onEnd}>完成導航</button>
+    </div>
+  )
+}
+
+/**
+ * 回到目前位置。導航中的鏡頭原本是「手勢後 250ms 就自動搶回」，等於地圖滑不動——
+ * 改成使用者一拖曳就交出鏡頭、自由瀏覽，要回車上再按這顆（Google 地圖的分工）。
+ */
+function RecenterButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="recenter-btn" onClick={onClick} title="回到目前位置">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="9" fill="none" stroke="currentColor" strokeWidth="4" />
+        <circle cx="24" cy="24" r="2.5" fill="currentColor" />
+        <path d="M24 4 V12 M24 36 V44 M4 24 H12 M36 24 H44" stroke="currentColor"
+          strokeWidth="4" strokeLinecap="round" />
+      </svg>
+      <span>回到目前位置</span>
+    </button>
+  )
+}
+
 const DECISION_LABEL: Record<DecisionKind, string> = { left: '左轉', straight: '直行', right: '右轉' }
 
 /** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
   drive, twoStage, profile, gpsMsg, multiplier, cameraAlert, decisionOptions,
+  destinationName, following, onRecenter,
   onEnd, onReplay, onCycleMultiplier, onTakeAlternative, onSwitchLane,
 }: {
   drive: DriveState | null
@@ -133,6 +179,11 @@ export function DriveHUD({
   profile: Profile
   gpsMsg: string | null
   multiplier: number
+  /** 目的地名稱（有選地點才有）——抵達卡與收尾語音都用它 */
+  destinationName?: string
+  /** 鏡頭是否跟隨車輛；false 時顯示「回到目前位置」 */
+  following: boolean
+  onRecenter: () => void
   /** 測速照相提示（沒有就不顯示卡片） */
   cameraAlert: SpeedCameraAlert | null
   decisionOptions: { kind: DecisionKind }[]
@@ -143,7 +194,7 @@ export function DriveHUD({
   onTakeAlternative: (kind: DecisionKind) => void
   onSwitchLane: (dir: -1 | 1) => void
 }) {
-  useSpeechGuidance({ drive, profile, twoStage })
+  useSpeechGuidance({ drive, profile, twoStage, destinationName })
 
   // 換車道按鈕只在桌面顯示（跟鍵盤變速一樣不給手機用，觸控版另外設計）
   const isDesktop = typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches
@@ -151,17 +202,27 @@ export function DriveHUD({
   // ── GPS 導航還沒收到第一筆定位（或定位失敗）時的過渡畫面 ──
   if (!drive) {
     return (
-      <div className="bottom-bar">
-        <button className="end-btn" onClick={onEnd}>✕ 結束</button>
-        <div className="trip"><b>{gpsMsg ?? '準備中…'}</b></div>
-      </div>
+      <>
+        {!following && <RecenterButton onClick={onRecenter} />}
+        <div className="bottom-bar">
+          <button className="end-btn" onClick={onEnd}>✕ 結束</button>
+          <div className="trip"><b>{gpsMsg ?? '準備中…'}</b></div>
+        </div>
+      </>
     )
   }
 
   return (
     <>
-      {/* ── 頂部導航看板 ── */}
-      <TopBanner drive={drive} twoStage={twoStage} profile={profile} />
+      {/* ── 頂部：抵達後換成抵達卡，其餘時間是導航看板 ── */}
+      {drive.arrived
+        ? <ArrivalCard destinationName={destinationName} onEnd={onEnd} />
+        : <TopBanner drive={drive} twoStage={twoStage} profile={profile} />}
+      {/* ── 鏡頭交還給使用者時的回位按鈕（Google 地圖式，不強制跟隨）── */}
+      {!following && <RecenterButton onClick={onRecenter} />}
+
+      {/* ── GPS 精度不足：位置還在畫，但先講清楚它現在不準 ── */}
+      {drive.gpsWeak && <div className="gps-weak">GPS 訊號較弱，位置可能不準</div>}
 
       {/* ── 測速照相提示 ── */}
       {cameraAlert && <SpeedCameraCard alert={cameraAlert} />}
@@ -183,7 +244,7 @@ export function DriveHUD({
         </div>
       )}
       <div className="bottom-bar">
-        <button className="end-btn" onClick={onEnd}>✕ 結束</button>
+        <button className="end-btn" onClick={onEnd}>{drive.arrived ? '✓ 完成' : '✕ 結束'}</button>
         {drive.arrived && onReplay && (
           <button className="replay-btn" onClick={onReplay}>↺ 再跑一次</button>
         )}
@@ -193,8 +254,9 @@ export function DriveHUD({
         <div className="trip">
           <b>{drive.remainM > 1000 ? `${(drive.remainM / 1000).toFixed(1)} 公里` : `${Math.round(drive.remainM)} 公尺`}</b>
           <span>
-            {drive.arrived ? '已抵達' :
-              new Date(Date.now() + drive.remainS * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + ' 抵達'}
+            {drive.arrived ? '已抵達'
+              : drive.arriving ? '即將抵達目的地'
+                : new Date(Date.now() + drive.remainS * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + ' 抵達'}
           </span>
           {drive.roadName && <span className="trip-road">{drive.roadName}</span>}
         </div>

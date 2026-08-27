@@ -18,6 +18,10 @@ export interface DriveState {
   next2: Maneuver | null
   nextDistM: number
   arrived: boolean
+  /** 即將抵達（剩餘距離進入提示範圍）：HUD 提早換成抵達卡，結束才不會太突然 */
+  arriving?: boolean
+  /** 這筆定位精度不足以分辨車道／方向（只有 GPS 導航會設）：HUD 標示訊號弱 */
+  gpsWeak?: boolean
   /** 目前所在道路名（span.road）——HUD 底部列顯示；detour 暫時路線可能沒有 */
   roadName?: string
   /** 目前行向的車道數/轉向真值——HUD 車道列隨所在路段即時更新 */
@@ -27,6 +31,8 @@ export interface DriveState {
 }
 
 const BASE_SPEED_KMH = 40
+/** 「即將抵達」提示範圍（公尺）——與 GPS 導航同一個門檻，兩種模式的收尾體驗一致 */
+const ARRIVING_THRESHOLD_M = 150
 
 export class Driver {
   private raf = 0
@@ -96,6 +102,7 @@ export class Driver {
       const next2 = ni >= 0 ? this.route.maneuvers[ni + 1] ?? null : null
       const remainM = this.route.lengthM - dRoute
       const arrived = remainM < 5 || this.traveled >= bandLen
+      const arriving = !arrived && remainM < ARRIVING_THRESHOLD_M
       // 目前所在道路（HUD 路名/車道列即時更新用）
       const rp = span?.road?.properties
       // 高架高度：用 span 的路段身分查（不做「找最近高架」——平面路從高架下穿過會誤抬）。
@@ -115,6 +122,7 @@ export class Driver {
         next2,
         nextDistM: next ? next.distM - dRoute : 0,
         arrived,
+        arriving,
       })
       if (!arrived && !this.stopped) this.raf = requestAnimationFrame(loop)
     }

@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import type { Profile } from '../core/graph'
 import type { DriveState } from './drive'
 import {
+  arrivalAnnouncement,
+  arrivingAnnouncement,
   buildSpeechAnnouncement,
   maneuverSpeechKey,
   speechStage,
@@ -12,12 +14,17 @@ export interface UseSpeechGuidanceArgs {
   drive: DriveState | null
   profile: Profile
   twoStage: boolean
+  /** 目的地名稱（有選地點才有）——收尾語音講得出名字，駕駛才確定系統認得自己到了 */
+  destinationName?: string
 }
 
 const START_KEY = 'start'
+const ARRIVING_KEY = 'arriving'
 const ARRIVAL_KEY = 'arrival'
 
-export function useSpeechGuidance({ drive, profile, twoStage }: UseSpeechGuidanceArgs): void {
+export function useSpeechGuidance({
+  drive, profile, twoStage, destinationName,
+}: UseSpeechGuidanceArgs): void {
   const spokenKeysRef = useRef(new Set<string>())
   const sessionStartedRef = useRef(false)
   const previousProgressRef = useRef<number | null>(null)
@@ -78,7 +85,7 @@ export function useSpeechGuidance({ drive, profile, twoStage }: UseSpeechGuidanc
       if (drive.arrived) {
         spokenKeysRef.current.add(START_KEY)
         spokenKeysRef.current.add(ARRIVAL_KEY)
-        speak('開始導航。已抵達目的地')
+        speak(`開始導航。${arrivalAnnouncement(destinationName)}`)
         return
       }
       if (!drive.next || !stage) {
@@ -102,9 +109,12 @@ export function useSpeechGuidance({ drive, profile, twoStage }: UseSpeechGuidanc
     }
 
     if (drive.arrived) {
-      speakOnce(ARRIVAL_KEY, '已抵達目的地')
+      speakOnce(ARRIVAL_KEY, arrivalAnnouncement(destinationName))
       return
     }
+
+    // 收尾預告：剩餘距離進入抵達範圍就先說一次，導航才不會在終點「啪」地結束。
+    if (drive.arriving) speakOnce(ARRIVING_KEY, arrivingAnnouncement(destinationName))
 
     if (!drive.next || !stage) return
     const key = `${maneuverSpeechKey(drive.next)}:${stage}`
@@ -118,7 +128,7 @@ export function useSpeechGuidance({ drive, profile, twoStage }: UseSpeechGuidanc
       twoStage,
       stage,
     }))
-  }, [drive, profile, twoStage])
+  }, [drive, profile, twoStage, destinationName])
 
   useEffect(() => {
     return () => {

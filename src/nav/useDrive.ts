@@ -77,6 +77,8 @@ export interface UseDriveParams {
   stopsRef: RefObject<Stop[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
   lastGestureRef: RefObject<number>
+  /** mapCore 註冊點：使用者拖曳/旋轉/傾斜地圖時通知這裡交還鏡頭 */
+  onUserCameraTakeoverRef: RefObject<(() => void) | null>
   /** 路線建好/重建後標記兩段式左轉旗標（journal 待轉區判斷邏輯在 App.tsx，這裡直接借用） */
   annotateTwoStage: (route: RouteResult) => void
   setZoneHighlight: (id: string | null) => void
@@ -101,6 +103,10 @@ export interface UseDriveResult {
   takeAlternative: (kind: DecisionKind) => void
   /** 換車道按鈕：dir -1=左、1=右 */
   switchLane: (dir: -1 | 1) => void
+  /** 鏡頭是否正在跟隨車輛；false = 使用者自己滑走了，正在自由瀏覽 */
+  following: boolean
+  /** 「回到目前位置」：重新跟隨並復原導航視角 */
+  recenter: () => void
 }
 
 export function useDrive(p: UseDriveParams): UseDriveResult {
@@ -116,9 +122,44 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const [multiplier, setMultiplier] = useState(3)
   const [gpsMsg, setGpsMsg] = useState<string | null>(null)
   const [cameraAlert, setCameraAlert] = useState<SpeedCameraAlert | null>(null)
+  // 鏡頭跟隨開關。ref 給每幀的跟隨迴圈讀（state 在 callback 內是舊值），state 給按鈕重繪。
+  const [following, setFollowing] = useState(true)
+  const followingRef = useRef(true)
 
   // 觸控/鍵盤共用同一個 multiplier state；Driver 實例則由這裡統一同步，兩種輸入來源都不用各自 assign
   useEffect(() => { if (driverRef.current) driverRef.current.multiplier = multiplier }, [multiplier])
+
+  function setFollow(on: boolean) {
+    followingRef.current = on
+    setFollowing(on)
+  }
+
+  /**
+   * 使用者自己動了鏡頭 → 停止跟隨，改成自由瀏覽（Google 地圖的行為）。
+   * 原本是「手勢後 250ms 就自動搶回鏡頭」，在手機上等於滑不動地圖，
+   * 每次都被拉回車子——那 250ms 只保留給縮放（讓 scrollZoom 的慣性跑完）。
+   */
+  useEffect(() => {
+    if (p.mode !== 'drive') return
+    p.onUserCameraTakeoverRef.current = () => setFollow(false)
+    return () => { p.onUserCameraTakeoverRef.current = null }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.mode])
+
+  /** 回到目前位置：重新跟隨，並把使用者瀏覽時改掉的縮放/俯角拉回導航視角 */
+  function recenter() {
+    const map = p.mapRef.current
+    const s = lastDriveRef.current
+    setFollow(true)
+    if (!map) return
+    if (!s) { map.easeTo({ ...NAV_CAMERA, duration: 400 }); return }
+    map.easeTo({
+      center: s.pos, bearing: s.bearing, ...NAV_CAMERA,
+      padding: { top: Math.round(map.getContainer().clientHeight * 0.45) },
+      elevation: s.elevM ?? 0,
+      duration: 400,
+    })
+  }
 
   const src = (id: string) => p.mapRef.current!.getSource(id) as GeoJSONSource
 
@@ -209,6 +250,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     gpsDriverRef.current = null
     setGpsMsg(null)
     setDrive(null)
+    setFollow(true) // 下一趟導航從「跟隨」開始
     routeCamerasRef.current = []
     voiceRef.current.reset()
     setCameraAlert(null)
@@ -247,7 +289,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
         // 不帶 zoom/pitch → 導航中可自由縮放（mvp 行為）；
         // 手勢後 250ms 內暫停跟隨，讓 scrollZoom 的平滑動畫跑完（車模照常更新）
-        if (performance.now() - p.lastGestureRef.current > 250) {
+        // 使用者滑走地圖後就不再跟隨（要按「回到目前位置」才恢復）；
+        // 縮放手勢仍只是暫時讓路 250ms，不會中斷跟隨。
+        if (followingRef.current && performance.now() - p.lastGestureRef.current > 250) {
           map.jumpTo({
             center: s.pos, bearing: s.bearing, padding: camPadding,
             elevation: s.elevM ?? 0, // 高架上鏡頭跟著抬同樣高度
@@ -272,6 +316,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const map = p.mapRef.current
     if (!route || !map) return
     p.setMode('drive')
+    setFollow(true)
     initialRouteRef.current = route
     // 導航中地圖每幀旋轉，符號圖層會不停重排——關掉最吵的單行箭頭與路名省 CPU
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
@@ -288,13 +333,18 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (!route || !map) return
     p.routeRef.current = route
     drawRouteLine(route)
+    setFollow(true)
     setNavCameraClamp(map, false)
     map.jumpTo(NAV_CAMERA) // 到達後使用者可能縮放過，重播時重設鏡頭
     runDriver(route)
   }
 
   /** 開始導航（真 GPS）：watchPosition 邏輯在 gpsNav.ts，這裡只負責接上跟 startDrive 同一套 HUD/車模/鏡頭 */
-  function startGpsNav() {
+  /**
+   * 開始／接續 GPS 導航。resume = true 是 reroute 走的路徑：路線換了但人還在同一趟，
+   * 這時不要重設鏡頭——使用者可能正在自由瀏覽，硬拉回車上就等於又一次「強制跟隨」。
+   */
+  function runGpsNav(resume: boolean) {
     const route = p.routeRef.current
     const map = p.mapRef.current
     if (!route || !map) return
@@ -303,8 +353,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
     map.setLayoutProperty('road-label', 'visibility', 'none')
     setNavCameraClamp(map, false)
-    map.jumpTo(NAV_CAMERA) // 真 GPS 導航原本沿用瀏覽時的鏡頭，跟模擬駕駛對齊
-    setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
+    if (!resume) setFollow(true)
+    if (followingRef.current) map.jumpTo(NAV_CAMERA) // 跟模擬駕駛對齊的導航視角
+    if (!resume) setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
     armSpeedCameras(route)
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
@@ -316,7 +367,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
         p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
         activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
-        if (performance.now() - p.lastGestureRef.current > 250) {
+        // 使用者滑走地圖後就不再跟隨（要按「回到目前位置」才恢復）；
+        // 縮放手勢仍只是暫時讓路 250ms，不會中斷跟隨。
+        if (followingRef.current && performance.now() - p.lastGestureRef.current > 250) {
           map.jumpTo({
             center: s.pos, bearing: s.bearing, padding: camPadding,
             elevation: s.elevM ?? 0, // 高架上鏡頭跟著抬同樣高度
@@ -334,6 +387,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   /** 重新規劃：從目前（可能已偏離）位置到終點重算路線並接續導航。共用給鍵盤橫移/路口決策/GPS 離線等各種偏離觸發情境。 */
+  /** 對外的「開始導航」入口——包一層是為了不把 click 事件物件當成 resume 參數 */
+  function startGpsNav() { runGpsNav(false) }
+
   function rerouteFrom(pos: [number, number]) {
     const to = p.stopsRef.current[p.stopsRef.current.length - 1]?.pos
     const g = p.graphRef.current
@@ -349,7 +405,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     p.routeRef.current = route
     drawRouteLine(route)
     // 目前是 GPS 導航中就繼續用 GPS 接續，否則走模擬（鍵盤橫移/路口決策都是模擬觸發）
-    if (gpsDriverRef.current) startGpsNav()
+    if (gpsDriverRef.current) runGpsNav(true)
     else runDriver(route)
   }
 
@@ -426,5 +482,6 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     drive, multiplier, gpsMsg, cameraAlert, decisionOptions,
     startDrive, startGpsNav, replayDrive, canReplay: !!initialRouteRef.current,
     stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+    following, recenter,
   }
 }

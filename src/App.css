@@ -616,3 +616,54 @@ body {
 .mlist-dist { font-size: 11.5px; color: #7a8494; }
 .mlist-item.two-stage .mlist-dist { color: rgba(0, 0, 0, 0.55); }
 .mlist-act { font-size: 13px; font-weight: 600; }
+
+/* ── 抵達（收尾）── 實機回報「結束得太突然，不知道是沒定位到還是沒提示」，
+   所以收尾分三段：看板轉綠預告 →（語音預告）→ 抵達卡佔住看板位置。 */
+.banner-arrive {
+  background: linear-gradient(180deg, #16a34a, #12833c);
+  color: #fff; box-shadow: 0 6px 24px rgba(18, 131, 60, 0.42);
+}
+.arrival-card {
+  position: absolute; top: 12px; left: 50%; z-index: 21;
+  width: 88%; max-width: 480px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  border-radius: 16px; padding: 14px 14px 14px 16px;
+  background: linear-gradient(180deg, #16a34a, #12833c);
+  color: #fff; box-shadow: 0 6px 24px rgba(18, 131, 60, 0.45);
+}
+.arrival-mark { width: 44px; height: 44px; flex: none; }
+.arrival-text { flex: 1; min-width: 0; }
+.arrival-text b { display: block; font-size: 22px; font-weight: 800; }
+.arrival-text span {
+  display: block; margin-top: 2px; font-size: 14px; opacity: 0.92;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.arrival-done {
+  flex: none; border: none; border-radius: 10px; padding: 10px 14px;
+  background: #fff; color: #12833c; font-size: 14px; font-weight: 800; cursor: pointer;
+}
+
+/* ── 回到目前位置 ── 導航中鏡頭交還給使用者後才出現（不強制跟隨）。
+   擺在底部列上方、速度圓標的對側，拇指構得到又不擋路口指引。 */
+.recenter-btn {
+  position: absolute; right: 14px; bottom: 92px; z-index: 22;
+  display: flex; align-items: center; gap: 7px;
+  border: none; border-radius: 22px; padding: 9px 14px 9px 11px;
+  background: #fff; color: #1058b8; font-size: 14px; font-weight: 700;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22); cursor: pointer;
+}
+.recenter-btn svg { width: 20px; height: 20px; flex: none; }
+@media (max-width: 360px) {
+  .recenter-btn span { display: none; }
+  .recenter-btn { padding: 11px; border-radius: 50%; }
+}
+
+/* ── GPS 精度不足 ── 位置照畫（貼在路線上），但要說清楚它現在不準 */
+.gps-weak {
+  position: absolute; left: 50%; bottom: 92px; z-index: 20;
+  transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 14px;
+  background: rgba(122, 91, 0, 0.92); color: #fff;
+  font-size: 12.5px; font-weight: 700; white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}

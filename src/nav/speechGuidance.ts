@@ -77,6 +77,23 @@ export const THEN_VERB: Record<Exclude<Maneuver['kind'], 'arrive'>, string> = {
   'slight-left': '靠左', 'slight-right': '靠右',
 }
 
+/**
+ * 收尾語音。實機回報「結束得很突然，不知道是沒定位到還是根本沒提示」——
+ * 所以抵達不是只播一句就沒了：先在 arriving 階段預告，抵達時明確說「導航結束」，
+ * 兩句都帶目的地名稱（有的話），駕駛才知道系統確實認得自己到了。
+ */
+export function arrivingAnnouncement(destinationName?: string): string {
+  return destinationName
+    ? `即將抵達${destinationName}，請注意周邊路況準備停車`
+    : '即將抵達目的地，請注意周邊路況準備停車'
+}
+
+export function arrivalAnnouncement(destinationName?: string): string {
+  return destinationName
+    ? `已抵達${destinationName}，導航結束`
+    : '已抵達目的地，導航結束'
+}
+
 export function maneuverSpeechKey(m: Maneuver): string {
   return `${m.nodeId ?? `d${m.distM}`}:${m.kind}`
 }

@@ -86,6 +86,7 @@ export default function App() {
     drive, multiplier, gpsMsg, cameraAlert, decisionOptions,
     startDrive, startGpsNav, replayDrive, canReplay,
     stopAllDrivers, cycleMultiplier, takeAlternative, switchLane,
+    following, recenter,
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
@@ -93,10 +94,15 @@ export default function App() {
     profileRef: planner.profileRef, stopsRef: planner.stopsRef,
     routePolicy: planner.routePolicy,
     vehicleLayerRef: core.vehicleLayerRef, lastGestureRef: core.lastGestureRef,
+    onUserCameraTakeoverRef: core.onUserCameraTakeoverRef,
     annotateTwoStage: planner.annotateTwoStage,
     setZoneHighlight: core.setZoneHighlight,
   })
   planner.stopAllDriversRef.current = stopAllDrivers
+
+  // 目的地名稱（最後一個停靠點的標籤）——抵達卡與收尾語音要講得出「到哪了」，
+  // 只用「已抵達目的地」在實機上分不出系統到底有沒有認出自己到了。
+  const destinationName = planner.stops[planner.stops.length - 1]?.label
 
   // 導航中關掉大眾運輸疊加圖層：3000 個站牌加標籤在每幀旋轉的地圖上會不停重排，
   // 跟 oneway-arrow／road-label 同理。使用者的開關狀態留著，結束導航自動復原。
@@ -245,6 +251,7 @@ export default function App() {
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg} multiplier={multiplier}
           cameraAlert={cameraAlert} decisionOptions={decisionOptions}
+          destinationName={destinationName} following={following} onRecenter={recenter}
           onEnd={endDrive} onReplay={canReplay ? replayDrive : undefined}
           onCycleMultiplier={cycleMultiplier}
           onTakeAlternative={takeAlternative} onSwitchLane={switchLane}

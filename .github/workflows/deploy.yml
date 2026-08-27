@@ -24,7 +24,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run build # prebuild 會先跑 lane-guidance:data，再 tsc -b && vite build
+      - name: Build
+        env:
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+        run: |
+          test -n "$VITE_GOOGLE_MAPS_API_KEY"
+          npm run build # prebuild 會先跑 lane-guidance:data，再 tsc -b && vite build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

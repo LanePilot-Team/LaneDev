@@ -7,6 +7,11 @@ import { haversine, bearing } from '../core/geo'
 import { spanAtDist, type RouteResult } from '../core/graph'
 import { surfaceHeightAt } from '../core/elevated3d'
 import type { DriveState } from './drive'
+import {
+  HIGH_ACCURACY_POSITION_OPTIONS,
+  geolocationErrorMessage,
+  geolocationUnavailableMessage,
+} from './geolocation'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
 const OFF_ROUTE_THRESHOLD_M = 60
@@ -18,12 +23,6 @@ const REROUTE_COOLDOWN_MS = 10000
 const ARRIVE_THRESHOLD_M = 20
 
 interface WakeLockSentinelLike { release(): Promise<void> }
-
-/** HTTPS 或 localhost 才能用 geolocation（照 mvp 的 isSecure 判斷） */
-export function isSecureContext(): boolean {
-  return typeof window !== 'undefined' &&
-    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-}
 
 export class GpsDriver {
   private watchId: number | null = null
@@ -46,8 +45,8 @@ export class GpsDriver {
   }
 
   async start() {
-    if (!('geolocation' in navigator)) { this.onError('此瀏覽器不支援 Geolocation API'); return }
-    if (!isSecureContext()) { this.onError('需要 HTTPS 才能取得定位，請用 tailscale serve 或 localhost 開啟'); return }
+    const unavailable = geolocationUnavailableMessage()
+    if (unavailable) { this.onError(unavailable); return }
     try {
       const wl = (navigator as Navigator & {
         wakeLock?: { request: (t: 'screen') => Promise<WakeLockSentinelLike> }
@@ -56,12 +55,8 @@ export class GpsDriver {
     } catch { /* 拿不到 wake lock 也沒關係，不影響導航 */ }
     this.watchId = navigator.geolocation.watchPosition(
       (pos) => this.onFix(pos),
-      (err) => this.onError(
-        err.code === err.PERMISSION_DENIED ? '未授權位置權限（請到瀏覽器設定打開）'
-        : err.code === err.POSITION_UNAVAILABLE ? 'GPS 訊號不可用'
-        : err.code === err.TIMEOUT ? 'GPS 取得逾時' : err.message,
-      ),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+      (err) => this.onError(geolocationErrorMessage(err)),
+      HIGH_ACCURACY_POSITION_OPTIONS,
     )
   }
 

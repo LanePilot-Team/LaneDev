@@ -147,11 +147,44 @@ export function foldJournal(journal: EnhancementRecord[]): Map<string, Record<st
   return out
 }
 
+/**
+ * 中央分隔島的迴轉開口：偏心道紀錄（turn_bay）人工開啟（present=1）且轉向含
+ * uturn 的節點。實體島路段在導航上整段禁止迴轉（graph.ts），只有這裡列出的
+ * 節點放行——實地的「迴轉道開口」就是靠這份標註表達。turns 未填時沿用
+ * turnbays.ts 的預設 'left|uturn'。
+ */
+function medianOpeningsByWay(
+  folded: Map<string, Record<string, string | number>>,
+): Map<number, Set<number>> {
+  const out = new Map<number, Set<number>>()
+  for (const [key, fields] of folded) {
+    // ~b = 逆向、~r/~m = 右轉附加道/機車停等格（不是迴轉開口）
+    const m = key.match(/^way\/(-?\d+)@node\/(-?\d+)(?:~b)?$/)
+    if (!m) continue
+    if (Number(fields.present) !== 1) continue
+    if (!String(fields.turns ?? 'left|uturn').includes('uturn')) continue
+    const wayId = Number(m[1]), nodeId = Number(m[2])
+    if (!out.has(wayId)) out.set(wayId, new Set())
+    out.get(wayId)!.add(nodeId)
+  }
+  return out
+}
+
 /** 把折疊後的覆寫值套到 Base Layer 道路上，回傳套用筆數 */
 export function applyToRoads(
   roads: RoadFeature[],
   folded: Map<string, Record<string, string | number>>,
 ): number {
+  const openings = medianOpeningsByWay(folded)
+  if (openings.size > 0) {
+    for (const r of roads) {
+      const p = r.properties
+      const nodes = openings.get(p.osm_id)
+      if (!nodes) continue
+      const hit = p.nodes.filter((id) => nodes.has(id))
+      if (hit.length > 0) p.medianOpeningNodes = hit
+    }
+  }
   let n = 0
   for (const r of roads) {
     // way 級（舊格式，整條套用）先鋪底，區塊級（way/W@b/N）覆蓋

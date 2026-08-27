@@ -1,6 +1,6 @@
 // 路線規劃側面板（mvp 起點/停靠點/終點還原）＋ 車種切換 ＋ 轉彎步驟清單。
 // LaneDev / LaneNav 共用：狀態與操作都在 usePlanner，這裡只是畫面。
-import { isSecureContext } from '../nav/gpsNav'
+import { isSecureContext } from '../nav/geolocation'
 import { ManeuverList } from './ManeuverList'
 import type { Planner } from './usePlanner'
 
@@ -43,8 +43,12 @@ export function PlanPanel({ planner, onClose, startDrive, startGpsNav }: {
           <span className="sp-grip" title="拖曳調整順序">⋮⋮</span>
           <span className="sp-dot" style={{ background: stopColor(i) }} />
           <span className="sp-label">{stopLabel(i)}</span>
-          <span className="sp-pos">
-            {s.pos ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
+          <span className={`sp-pos${s.label ? ' named' : ''}`}>
+            {s.label ? (
+              <><b>{s.label}</b><small>{s.pos
+                ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
+                : '附近找不到可導航道路'}</small></>
+            ) : s.pos ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
               : activeStop === s.id ? '👉 點擊地圖設定' : '未設定'}
           </span>
           {s.pos && <button className="mini" onClick={() => planner.resetStop(s.id)}>重設</button>}

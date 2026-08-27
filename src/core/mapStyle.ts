@@ -77,6 +77,12 @@ export function buildStyle(): StyleSpecification {
       occludedBuildings: { type: 'geojson', data: emptyFC as never },
       route: { type: 'geojson', data: emptyFC as never },
       endpoints: { type: 'geojson', data: emptyFC as never },
+      places: {
+        type: 'geojson',
+        data: asset('/data/places/places.geojson'),
+        attribution: '© OpenStreetMap contributors · 交通部 TDX',
+      },
+      placeSelection: { type: 'geojson', data: emptyFC as never },
       zones: { type: 'geojson', data: emptyFC as never },
       // 測速執法設置點：政府資料開放授權條款第 1 版要求顯名，attribution 掛在 source 上
       // 由 MapLibre 的 attribution control 統一顯示（見 core/speedCameras.ts）
@@ -688,6 +694,7 @@ export function buildStyle(): StyleSpecification {
         id: 'road-label', type: 'symbol', source: 'roads',
         minzoom: 14.5, maxzoom: LANE_ZOOM + 1,
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
+          ['!=', ['get', 'elevated'], true],
           ['!=', ['get', 'hideIntersectionInfo'], true],
           ['!=', ['get', 'hideRoadLabel'], true]],
         layout: {
@@ -708,6 +715,7 @@ export function buildStyle(): StyleSpecification {
         id: 'road-label-lane', type: 'symbol', source: 'roadlabels',
         minzoom: LANE_ZOOM + 1,
         filter: ['all', ['has', 'name'], ['!=', ['get', 'roadMarkingMode'], 'none'],
+          ['!=', ['get', 'elevated'], true],
           ['!=', ['get', 'hideIntersectionInfo'], true],
           ['!=', ['get', 'hideRoadLabel'], true]],
         layout: {
@@ -720,6 +728,139 @@ export function buildStyle(): StyleSpecification {
           'text-color': C.label,
           'text-halo-color': C.labelHalo,
           'text-halo-width': 1.6,
+        },
+      },
+
+      // ── 全地圖 POI：重要場站 → 區域設施 → 在地設施 → 店家，逐級顯示 ──
+      {
+        id: 'poi-major', type: 'symbol', source: 'places', minzoom: 11,
+        filter: ['==', ['get', 'tier'], 'major'],
+        layout: {
+          'symbol-sort-key': ['-', ['get', 'priority']],
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.56, 16, 0.72],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': false,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 13,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.45],
+          'text-max-width': 10,
+          'text-padding': 3,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#334155',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2,
+        },
+      },
+      {
+        id: 'poi-area', type: 'symbol', source: 'places', minzoom: 13,
+        filter: ['==', ['get', 'tier'], 'area'],
+        layout: {
+          'symbol-sort-key': ['-', ['get', 'priority']],
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.48, 17, 0.64],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': false,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 12.5,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.4],
+          'text-max-width': 10,
+          'text-padding': 3,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#3d4a5c',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.8,
+        },
+      },
+      {
+        id: 'poi-local', type: 'symbol', source: 'places', minzoom: 15,
+        filter: ['==', ['get', 'tier'], 'local'],
+        layout: {
+          'symbol-sort-key': ['-', ['get', 'priority']],
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.44, 18, 0.6],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': false,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 12,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.35],
+          'text-max-width': 10,
+          'text-padding': 3,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#4b5563',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.7,
+        },
+      },
+      {
+        id: 'poi-detail', type: 'symbol', source: 'places', minzoom: 16.5,
+        filter: ['==', ['get', 'tier'], 'detail'],
+        layout: {
+          'symbol-sort-key': ['-', ['get', 'priority']],
+          'icon-image': ['get', 'icon'],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 16.5, 0.4, 19, 0.56],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': false,
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11.5,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.3],
+          'text-max-width': 9,
+          'text-padding': 3,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#566171',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
+      },
+
+      // ── 地標搜尋結果 ──
+      {
+        id: 'place-selection-halo', type: 'circle', source: 'placeSelection',
+        paint: {
+          'circle-radius': 18,
+          'circle-color': '#2563eb',
+          'circle-opacity': 0.18,
+        },
+      },
+      {
+        id: 'place-selection-marker', type: 'circle', source: 'placeSelection',
+        paint: {
+          'circle-radius': 9,
+          'circle-color': '#2563eb',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3,
+        },
+      },
+      {
+        id: 'place-selection-label', type: 'symbol', source: 'placeSelection',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 15,
+          'text-anchor': 'top',
+          'text-offset': [0, 1.25],
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#173d74',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2,
         },
       },
 
@@ -790,8 +931,51 @@ function roadArrowImage(w: number, h: number, draw: (g: CanvasRenderingContext2D
   })
 }
 
+function poiIconImage(label: string, color: string) {
+  return canvasImage(56, 68, (g) => {
+    g.shadowColor = 'rgba(15, 23, 42, 0.28)'
+    g.shadowBlur = 5
+    g.shadowOffsetY = 2
+    g.beginPath()
+    g.moveTo(28, 63)
+    g.bezierCurveTo(22, 52, 7, 40, 7, 25)
+    g.bezierCurveTo(7, 12, 16, 4, 28, 4)
+    g.bezierCurveTo(40, 4, 49, 12, 49, 25)
+    g.bezierCurveTo(49, 40, 34, 52, 28, 63)
+    g.closePath()
+    g.fillStyle = color
+    g.fill()
+    g.shadowColor = 'transparent'
+    g.lineWidth = 3
+    g.strokeStyle = '#ffffff'
+    g.stroke()
+    g.fillStyle = '#ffffff'
+    g.font = `bold ${label === 'P' || label === '+' ? 25 : 21}px "Microsoft JhengHei", sans-serif`
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillText(label, 28, 25)
+  })
+}
+
+const POI_ICON_STYLES: Record<string, [string, string]> = {
+  'poi-transport': ['站', '#2563eb'],
+  'poi-parking': ['P', '#475569'],
+  'poi-food': ['食', '#e8792e'],
+  'poi-shopping': ['購', '#a855f7'],
+  'poi-education': ['學', '#0f8f73'],
+  'poi-medical': ['+', '#dc3545'],
+  'poi-government': ['公', '#52647a'],
+  'poi-tourism': ['景', '#d49a16'],
+  'poi-recreation': ['遊', '#35a25b'],
+  'poi-service': ['服', '#64748b'],
+  'poi-other': ['•', '#718096'],
+}
+
 export function makeIcons(): Record<string, ImageData> {
   return {
+    ...Object.fromEntries(Object.entries(POI_ICON_STYLES).map(([name, [label, color]]) =>
+      [name, poiIconImage(label, color)],
+    )),
     // 導航自車：白圈藍箭頭（線放置的箭頭指右 = 線方向）
     'car-arrow': canvasImage(72, 72, (g) => {
       g.shadowColor = 'rgba(0,0,0,0.35)'

@@ -8,13 +8,19 @@ import {
 } from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
 import { annotateBays, annotateRightLanes } from '../core/turnbays'
-import { angleDelta } from '../core/geo'
+import { angleDelta, haversine } from '../core/geo'
 import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
 import { isZoneEnabled } from '../core/zones'
 import { routeFailureText } from './routeFailure'
 import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
+import {
+  createPlaceRouteStops,
+  firstUnsetStopId,
+  type RouteDestination,
+  type Stop,
+} from './placeRoute'
 
-export interface Stop { id: number; pos: [number, number] | null }
+export type { RouteDestination, RouteStart, Stop } from './placeRoute'
 
 export const DEMO_FROM: [number, number] = [120.2758, 22.7327] // 高雄大學
 export const DEMO_TO: [number, number] = [120.3268, 22.7357] // 楠梓車站一帶
@@ -35,6 +41,11 @@ export interface Planner {
   /** App 在 useDrive 建好後把 stopAllDrivers 塞進來（clearAllRoute 要用） */
   stopAllDriversRef: RefObject<() => void>
   startPick: (demo: boolean) => void
+  startPlacePick: (destination: RouteDestination) => void
+  startPlaceFromCurrentLocation: (
+    destination: RouteDestination,
+    position: [number, number],
+  ) => void
   clearAllRoute: () => void
   addVia: () => void
   resetStop: (id: number) => void
@@ -169,6 +180,29 @@ export function usePlanner(core: MapCore): Planner {
     setRouteSummary({ km: route.lengthM / 1000, min: route.timeS / 60 })
   }
 
+  function snapRoutePoint(
+    point: [number, number],
+    maxDistanceM: number,
+    pointLabel: string,
+  ): [number, number] | null {
+    const graph = core.graphRef.current
+    if (!graph) {
+      setRouteError('路網仍在載入，請稍後再試')
+      return null
+    }
+    const snapped = graph.snapToLane(point, profileRef.current)
+    if (!snapped) {
+      setRouteError(`${pointLabel}附近找不到可通行道路`)
+      return null
+    }
+    const distance = haversine(point, snapped.pos)
+    if (distance > maxDistanceM) {
+      setRouteError(`${pointLabel}距離可通行道路過遠（${Math.round(distance)} 公尺）`)
+      return null
+    }
+    return snapped.pos
+  }
+
   function clearRouteLine() {
     routeRef.current = null
     setRouteSummary(null)
@@ -188,6 +222,45 @@ export function usePlanner(core: MapCore): Planner {
       setStops([{ id: 1, pos: null }, { id: 2, pos: null }])
       setActiveStop(1)
     }
+  }
+
+  /** 從搜尋地標進入規劃，可選擇由地圖點選或由已取得的目前位置作為起點。 */
+  function initializePlaceRoute(
+    destination: RouteDestination,
+    currentPosition?: [number, number],
+  ) {
+    clearAllRoute()
+    stopSeq.current = 2
+    const snappedDestination = snapRoutePoint(destination.position, 500, '目的地')
+    const snappedStart = currentPosition
+      ? snapRoutePoint(currentPosition, 180, '目前位置')
+      : null
+    const next = createPlaceRouteStops(
+      destination,
+      snappedDestination,
+      snappedStart ? { label: '我的位置', position: snappedStart } : null,
+    )
+    setStops(next)
+    setActiveStop(firstUnsetStopId(next))
+    // setStops() 會呼叫 routeFromStops() 並清除先前錯誤，所以 fallback 文案要最後設定。
+    if (!snappedDestination) {
+      setRouteError('目的地附近找不到可導航道路，請改選其他地點')
+    } else if (currentPosition && !snappedStart) {
+      setRouteError('目前位置附近找不到可導航道路，請改用地圖選擇起點')
+    }
+  }
+
+  /** 從搜尋地標進入規劃：目的地先吸附可通行車道，起點交給使用者點地圖。 */
+  function startPlacePick(destination: RouteDestination) {
+    initializePlaceRoute(destination)
+  }
+
+  /** 從裝置目前位置進入規劃；無法吸附時仍保留目的地供手動選擇起點。 */
+  function startPlaceFromCurrentLocation(
+    destination: RouteDestination,
+    position: [number, number],
+  ) {
+    initializePlaceRoute(destination, position)
   }
 
   function clearAllRoute() {
@@ -238,7 +311,10 @@ export function usePlanner(core: MapCore): Planner {
     let idx = list.findIndex((s) => s.id === activeStopRef.current)
     if (idx < 0 || list[idx].pos) idx = list.findIndex((s) => !s.pos)
     if (idx < 0) return
-    const next = list.map((s, i) => (i === idx ? { ...s, pos: p } : s))
+    const snapped = snapRoutePoint(p, 180, idx === 0 ? '起點' : '停靠點')
+    if (!snapped) return
+    setRouteError(null)
+    const next = list.map((s, i) => (i === idx ? { ...s, pos: snapped } : s))
     stopsRef.current = next
     setStopsState(next)
     const nextEmpty = next.find((s) => !s.pos)
@@ -290,7 +366,9 @@ export function usePlanner(core: MapCore): Planner {
     stops, stopsRef, activeStop, routeRef, routeSummary, routeError,
     profile, profileRef, routePolicy: routePolicyRef.current,
     dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
-    startPick, clearAllRoute, addVia, resetStop, removeStop, moveStop, handlePickClick,
+    startPick, startPlacePick, startPlaceFromCurrentLocation,
+    clearAllRoute, addVia, resetStop, removeStop, moveStop,
+    handlePickClick,
     computeTwoStage, isTwoStage, annotateTwoStage, toggleProfile,
   }
 }

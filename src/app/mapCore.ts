@@ -51,7 +51,7 @@ import {
 import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
 import { VehicleModelLayer } from '../core/models3d'
 import { buildElevation, setActiveElevation } from '../core/elevation'
-import { ElevatedLayer, setActiveElevatedLayer } from '../core/elevated3d'
+import { ElevatedLayer, setActiveElevatedLayer, surfaceHeightAt } from '../core/elevated3d'
 import { NANZI_CENTER, haversine } from '../core/geo'
 import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
 import { groundMarkingPolygons } from '../core/groundMarkings'
@@ -496,7 +496,15 @@ export function useMapCore(
   }, [src])
 
   const refreshVehicles = useCallback(() => {
-    vehicleLayerRef.current?.setVehicles(vehiclesRef.current, selectedVehicleRef.current)
+    // 車輛高度：把位置重新吸附回車道拿到「路段身分」，再問該路段的橋面高度。
+    // 不能用純位置查最近高架——平面路從高架正下方穿過時會誤抬（elevation.ts）。
+    // 吸附用的是放置時同一支 snapToLane，所以既有存檔的車也會被擺回正確高度。
+    const elevOf = (v: PlacedVehicle) => {
+      const snap = graphRef.current?.snapToLane(v.pos, v.type)
+      return snap?.feature ? surfaceHeightAt(snap.feature, v.pos) : 0
+    }
+    vehicleLayerRef.current?.setVehicles(
+      vehiclesRef.current, selectedVehicleRef.current, elevOf)
     saveVehicles(vehiclesRef.current)
     setVehicleCount(vehiclesRef.current.length)
     setSelectedVehicle(
@@ -657,8 +665,8 @@ export function useMapCore(
         img.src = url
       })
       const [motorcycleIcon, bicycleIcon] = await Promise.all([
-        loadSvg('/assets/road-markings/motorcycle.svg'),
-        loadSvg('/assets/road-markings/bicycle.svg'),
+        loadSvg(asset('/assets/road-markings/motorcycle.svg')),
+        loadSvg(asset('/assets/road-markings/bicycle.svg')),
       ])
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)

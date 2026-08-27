@@ -60,6 +60,7 @@ function motoLegalCarLanes(r: RoadFeature, back: boolean): number[] {
 /** 機車可否行駛（國道、OSM motorcycle=no、方向別自定義禁行機車）。 */
 export function motoAllowed(r: RoadFeature, back: boolean = false): boolean {
   const p = r.properties
+  if (back && p.phantomBackward) return false
   if (p.highway === 'motorway' || p.highway === 'motorway_link') return false
   if (p.motorcycle === 'no') return false
   const motoLane = p.oneway === 'yes' ? p.motoF : back ? p.motoB : p.motoF
@@ -67,9 +68,11 @@ export function motoAllowed(r: RoadFeature, back: boolean = false): boolean {
 }
 
 /** 汽車可否行駛：OSM motorcar=no（機車專用道路體，如高雄大學路機車道）禁行；
- * 該方向汽車車道數 = 0（編輯成純機車道的路段）也禁行 */
+ * 該方向汽車車道數 = 0（編輯成純機車道的路段）也禁行；
+ * phantomBackward = couplet 落單尾段虛構的對向車道，只渲染不通行 */
 export function carAllowed(r: RoadFeature, back: boolean): boolean {
   const p = r.properties
+  if (back && p.phantomBackward) return false
   if (p.motorcar === 'no') return false
   return (back ? p.lanesBackward : p.lanesForward) > 0
 }
@@ -81,11 +84,22 @@ function edgeAllowed(r: RoadFeature, back: boolean, profile: Profile): boolean {
 
 export { oneSideEntryTransitionAllowed }
 
+/**
+ * 實體中央分隔的路段：兩向之間有硬體阻隔（couplet 合併給的中央護欄／journal
+ * center_kind=island），或是高架橋面——都不可能就地跨越折返。
+ * 槽化線（hatch）不算：那是標線，偏心道就開在上面。
+ */
+function medianDivided(road: RoadFeature): boolean {
+  const p = road.properties
+  return (p.centerM > 0 && p.centerKind === 'island') || !!p.elevated
+}
+
 function transitionAllowed(
   incoming: Edge | undefined,
   outgoing: Edge,
   nodeId: number,
   barrierNode: boolean,
+  medianNode: boolean,
   profile: Profile,
 ): boolean {
   if (!incoming) return true
@@ -94,14 +108,14 @@ function transitionAllowed(
     incoming.road, incoming.back,
     outgoing.road, outgoing.back,
   )) return false
+  const incomingCoords = incoming.coords
+  const incomingBearing = bearing(
+    incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
+  const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
+  const delta = angleDelta(incomingBearing, outgoingBearing)
   const incomingBarrier = medianBarrierAt(incoming.road, nodeId)
   const outgoingBarrier = medianBarrierAt(outgoing.road, nodeId)
   if (barrierNode) {
-    const incomingCoords = incoming.coords
-    const incomingBearing = bearing(
-      incomingCoords[incomingCoords.length - 2], incomingCoords[incomingCoords.length - 1])
-    const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
-    const delta = angleDelta(incomingBearing, outgoingBearing)
     const sameMainRoad = medianContinuationAt(incoming.road, outgoing.road, nodeId)
     if ((incomingBarrier && outgoingBarrier)
       || ((incomingBarrier || outgoingBarrier) && sameMainRoad)) {
@@ -112,6 +126,15 @@ function transitionAllowed(
       return false
     }
   }
+  // 分隔島／橋面上不得迴轉。判定掛在「節點」而不是進出兩條邊上——高楠陸橋
+  // 橋頭（node 257742658）折返走的是兩條各自單行的地面 way，邊本身看不出中央
+  // 島，但該節點屬於中央有護欄的橋體區塊，實地就是折不回去。開口（迴轉道）由
+  // medianOpeningNodes 白名單放行。
+  // roadMergeBarrierNodes / centerIslandJoinNodes already apply the stricter,
+  // direction-aware continuation rules above.  Do not run the generic median
+  // check a second time there: split one-way arms can look like a geometric
+  // U-turn even when they are the explicitly paired straight continuation.
+  if (!barrierNode && medianNode && classifyTurn(delta) === 'uturn') return false
   return oneSideEntryTransitionAllowed(
     incoming.road, incoming.back, outgoing.road, outgoing.back, nodeId)
 }
@@ -404,6 +427,8 @@ function twinSeg(e: Edge, seg: number): number {
 export class RoadGraph {
   private nodePos = new Map<number, [number, number]>()
   private roadMergeBarrierNodes = new Set<number>()
+  /** 中央實體分隔（島／橋面）覆蓋到的節點，扣掉迴轉開口——在這些節點禁止迴轉 */
+  private medianNodes = new Set<number>()
   private adj = new Map<number, Edge[]>()
   private adjIn = new Map<number, Edge[]>() // 入邊索引（交叉路走向查詢用）
   private edges: Edge[] = []
@@ -432,6 +457,17 @@ export class RoadGraph {
       for (const id of r.properties.centerIslandJoinNodes ?? []) {
         this.roadMergeBarrierNodes.add(id)
       }
+      // Joined center-island arms have explicit barrier/continuation metadata.
+      // Applying the generic per-node U-turn ban to their whole block would also
+      // close legitimate turnarounds at the far end of the modeled arm.
+      if (medianDivided(r) && !r.properties.centerIslandJoinNodes?.length) {
+        for (const id of nodes) this.medianNodes.add(id)
+      }
+    }
+    // 開口在最後扣：同一節點可能同時屬於「有島」與「有開口」的兩個區塊，
+    // 只要任一區塊標了開口就放行，否則開口會被相鄰區塊的島蓋回去。
+    for (const r of roads) {
+      for (const id of r.properties.medianOpeningNodes ?? []) this.medianNodes.delete(id)
     }
     for (const r of roads) {
       const nodes = r.properties.nodes
@@ -753,7 +789,11 @@ export class RoadGraph {
       for (const o of this.adj.get(nodeId) ?? []) {
         if (o === self || o === self.twin) continue
         const q = o.road.properties
-        if (q.osm_id === sp.osm_id || (sp.name && q.name === sp.name)) continue
+        // 同名「且同等級」才算同路續接區塊。主線與側車道在 OSM 常共用路名
+        // （高楠公路 primary 35m ×「高楠公路」service 側車道），那是真正的交叉：
+        // 只比路名會把主線跳掉，收邊只剩 4.4m，停等格與停止線會伸進主線車道。
+        if (q.osm_id === sp.osm_id
+          || (sp.name && q.name === sp.name && q.highway === sp.highway)) continue
         if (q.width_m < minCrossWidthM && !crossQualifies?.(o.road)) continue
         w = Math.max(w, q.width_m)
       }
@@ -886,12 +926,17 @@ export class RoadGraph {
     return out
   }
 
-  /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者） */
+  /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者）。
+   * feature = 吸到的路段本身：車輛高度要用「路段身分」查橋面，不能用純位置查
+   * （平面路從高架正下方穿過時會誤抬——見 elevation.ts heightAtPos 註解）。 */
   snapToLane(p: [number, number], type: Profile):
-    { pos: [number, number]; bearing: number; road?: string } | null {
+    { pos: [number, number]; bearing: number; road?: string; feature?: RoadFeature } | null {
     const hit = this.projectToDirectedLane(p, type)
     if (!hit) return null
-    return { pos: hit.lanePos, bearing: hit.bearing, road: hit.edge.name }
+    return {
+      pos: hit.lanePos, bearing: hit.bearing,
+      road: hit.edge.name, feature: hit.edge.road,
+    }
   }
 
   route(
@@ -915,10 +960,17 @@ export class RoadGraph {
       return { route: null, failure: 'no-projection' }
     }
     const primaryGoal = projectedGoals[0]
-    const goals = primaryGoal.edge.road.properties.oneway === 'no'
-      && (primaryGoal.edge.road.properties.centerM || 0) <= 0
-      && !primaryGoal.edge.road.properties.roadMergeBarrierNodes?.length
-      && !primaryGoal.edge.road.properties.centerIslandJoinNodes?.length
+    const primaryProps = primaryGoal.edge.road.properties
+    // A joined center-island road models paired carriageways as one bidirectional
+    // feature.  A point on its centreline cannot identify the intended side, so
+    // let routing choose the reachable directed projection.  Ordinary divided
+    // roads still keep main's strict nearest-side behavior.
+    const joinedCenterIsland = !!primaryProps.centerIslandJoinNodes?.length
+    const goals = primaryProps.oneway === 'no'
+      && (joinedCenterIsland || (
+        (primaryProps.centerM || 0) <= 0
+        && !primaryProps.roadMergeBarrierNodes?.length
+      ))
       ? projectedGoals
       : [primaryGoal]
     for (const goal of goals) {
@@ -948,7 +1000,13 @@ export class RoadGraph {
       if (forwardOk) {
         const cs = dedupe([sA.pos, ...sA.edge.coords.slice(sA.seg + 1, sB.seg + 1), sB.pos])
         if (cs.length >= 2) return this.assemble([makeEdge(sA.edge.road, -1, -1, cs, sA.edge.back)], profile)
-      } else if (sA.edge.twin && edgeAllowed(sA.edge.road, true, profile)) {
+      } else if (sA.edge.twin && edgeAllowed(sA.edge.road, true, profile)
+        && (!medianDivided(sA.edge.road)
+          || !!sA.edge.road.properties.centerIslandJoinNodes?.length)) {
+        // 中央實體分隔的路段不走這條捷徑：起訖在同一段的對向車道時，直接接
+        // twin 等於原地穿過分隔島。交給下面的 A* 去找合法的繞行。
+        // centerIslandJoinNodes 是 anna 的合併道路模型；其接點限制由 barrier
+        // transition 處理，同一臂內的反向吸附仍需保留既有行為。
         const t = sA.edge.twin
         const a = twinSeg(sA.edge, sA.seg), b = twinSeg(sA.edge, sB.seg)
         const cs = dedupe([sA.pos, ...t.coords.slice(a + 1, b + 1), sB.pos])
@@ -1023,11 +1081,12 @@ export class RoadGraph {
       closed.add(currentKey)
       for (const ge of goalEntries) {
         if (ge.node === current.node) {
-          if (!transitionAllowed(
-            current.incoming, ge.part, current.node,
-            this.roadMergeBarrierNodes.has(current.node),
-            profile,
-          )) continue
+            if (!transitionAllowed(
+              current.incoming, ge.part, current.node,
+              this.roadMergeBarrierNodes.has(current.node),
+              this.medianNodes.has(current.node),
+              profile,
+            )) continue
           const transition = enforceLaneDirection
             ? this.laneTransitionPlan(
               current.incoming,
@@ -1051,6 +1110,7 @@ export class RoadGraph {
         if (!transitionAllowed(
           current.incoming, e, current.node,
           this.roadMergeBarrierNodes.has(current.node),
+          this.medianNodes.has(current.node),
           profile,
         )) continue
         const transition = enforceLaneDirection

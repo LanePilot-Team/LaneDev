@@ -5,7 +5,7 @@ import {
   mergeCouplets, absorbSideWays, applyLantianSections,
   type DropRemap, type CoupletSection,
 } from './couplet'
-import { applyFixups, collapseKnownIntersections, REMOVED_WAY_IDS } from './fixups'
+import { applyFixups, collapseKnownIntersections, hugSideLanes, REMOVED_WAY_IDS } from './fixups'
 import {
   collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
 } from './roads'
@@ -19,10 +19,31 @@ const CUSTOM_SECTION_ROADS = new Set([
   '土庫一路',
 ])
 
-/** 高楠公路陸橋本體（跨楠梓路口的成對單行，間距 ~12m）。北段短橋對
- * （103678994/103679015，間距 26m+）是實體分離雙橋、南段（294647549 等）是
- * 同向並排雙 way——都不是 couplet 對切模型，維持原樣 */
-const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159])
+/** 高楠公路陸橋本體（跨楠梓路口的成對單行，間距 ~12m）。北行被 OSM 拆成兩條
+ * （271982159 橋體 + 103679008 南端上橋段，後者掛舊名「縱貫公路」，見 fixups
+ * RENAMES），兩條合起來才對得上南行 23939182 的全長；preferKeep 釘死保留側 =
+ * 23939182，否則北行組頂點較多會奪走 keep、連帶讓高架/橋面/貼齊三份 way id
+ * 清單失效。北段短橋對（103678994/103679015，間距 26m+）是實體分離雙橋、
+ * 南段（294647549 等）是同向並排雙 way——都不是 couplet 對切模型，維持原樣 */
+const GAONAN_BRIDGE_IDS = new Set([23939182, 271982159, 103679008])
+
+/** 高楠陸橋北側接近段的成對單行（南下／北上）。南端不必併：北上是
+ * way/103679008，橋面已由 elevated3d SIDE_DECK_ABSORB 併成同一塊織帶，
+ * 只有導航的幽靈對向車道要擋（見 markPhantomBackwardTails）。 */
+const GAONAN_NORTH_IDS = new Set([
+  271982167, 271982165, 280277104, // 南下
+  25724906, 280277105, 280277108, 765913729, 280277107, // 北上
+])
+
+/** 高楠陸橋南側接近段的成對單行（南下／北上）。與北側同理：不併的話橋頭
+ * （node 259480561）的地面兩條單行道會被拉到合併中線端點上折出 V。
+ * ⚠ 2026-08-19 實測：再往南把 294820979/313518314/294820978（楠梓交流道接近段）
+ * 加進來，整組配對會重新分邊而失敗——V 回到 259480561、audit:uturn 378→374。
+ * 交流道那段的線形彎且同向多線並排，不是 couplet 對切模型，就停在這裡。 */
+const GAONAN_SOUTH_IDS = new Set([
+  23939183, 271982162, // 南下
+  268219246, 268219245, // 北上
+])
 
 /** 主慢分離道路：每向 = tertiary 主線＋residential 慢車道並排，泛用掃描會被
  * 「同向並排」防呆整條擋下。顯式處理：只合併 tertiary 主線 → 慢車道吸收進
@@ -162,6 +183,36 @@ function dedupeIdenticalWays(roads: RoadFeature[]): number {
 }
 
 /** 載入後的完整前處理。輸入會被就地修改，回傳切塊後的新陣列。 */
+/**
+ * 落單尾段的幽靈對向車道：couplet 合併是逐 way 判定的（頂點過半貼到對向就整條
+ * 併），尾端沒有對向 way 的那截會被一起雙向化——實地那裡的對向車道其實是另一
+ * 條 way（高楠陸橋南端 98m：北行走 way/103679008 縱貫公路）。多出來的那組反向
+ * 車道不存在，導航會拿它當最近的迴轉終點，規劃出「上橋→迴轉→下橋」。
+ *
+ * 這裡**只擋導航逆向，不動斷面**：落單尾段的 19.8m 寬是橋面與 hugSideLanes
+ * 的依據，改窄會讓貼邊的機車專用高架離開橋面邊緣（見 elevated3d.ts
+ * SIDE_DECK_ABSORB 註解，2026-08-12 已回退過一次）。
+ */
+function markPhantomBackwardTails(blocks: RoadFeature[]): number {
+  let marked = 0
+  for (const block of blocks) {
+    const p = block.properties
+    if (!p.coupletMerged || !p.coupletTailNodes) continue
+    // 整塊都在配對範圍之外才算（切點本身兩邊共用，允許留一個端點在範圍內）。
+    // 中段零星未配對是頂點取樣疏密造成的（長直區塊只有兩個頂點），拿它當判準
+    // 會把正常合併段從中間切斷、側街因此失去合法轉向
+    const tail = new Set(p.coupletTailNodes)
+    const inside = p.nodes.filter((id) => !tail.has(id))
+    if (inside.length > 1) continue
+    if (inside.length === 1
+      && inside[0] !== p.nodes[0]
+      && inside[0] !== p.nodes[p.nodes.length - 1]) continue
+    p.phantomBackward = true
+    marked++
+  }
+  return marked
+}
+
 export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 去重暫時停用：2026-07-29 實測會把軍校路整條移除、journal 孤兒 8→46、
   // 並讓 7 筆 deleted:1 失效（被刪的路段復活）。判定條件顯然不只命中那 57 條
@@ -197,7 +248,20 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 真值（primary 預設 4 是猜的），陸橋給 2+2 推薦值，實地確認後用編輯模式修
   roads = mergeCouplets(roads, new Set(['高楠公路']), {
     lanesF: 2, lanesB: 2, centerM: 0.6, centerKind: 'island',
-  }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id))
+  }, nodeRemap, wayRemap, (r) => GAONAN_BRIDGE_IDS.has(r.properties.osm_id),
+    (r) => r.properties.osm_id === 23939182)
+  // main 新版：把陸橋南北接近段也納入成對道路，避免橋頭折成 V 字，並將
+  // 同向機車高架貼合主橋；不擴張到交流道多線並排區。
+  roads = mergeCouplets(roads, new Set(['高楠公路']), {
+    lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'island',
+    centerFromGap: { roadW: 9.6, min: 0.6, max: 16 },
+  }, nodeRemap, wayRemap, (r) => GAONAN_NORTH_IDS.has(r.properties.osm_id))
+  roads = mergeCouplets(roads, new Set(['高楠公路']), {
+    lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'island',
+    centerFromGap: { roadW: 9.6, min: 0.6, max: 16 },
+  }, nodeRemap, wayRemap, (r) => GAONAN_SOUTH_IDS.has(r.properties.osm_id))
+  hugSideLanes(roads)
+
   // 旗楠路的 primary 是一組連續分向幹道；同名 residential 短側線不是對向主線，
   // 若整個路名一起分組會觸發「同向並排」防呆而整條不合併。
   // 機慢車道同樣是 primary，但不是對向主線（見 QINAN_MOTO_LANE_IDS）。
@@ -257,6 +321,7 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
       road.properties.hideRoadLabel = true
     }
   }
+  markPhantomBackwardTails(blocks)
   blocks = removeUnnamedShortSpurs(blocks).roads
   collapseShortDeadEnds(blocks)
   // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，

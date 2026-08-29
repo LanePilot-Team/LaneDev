@@ -1,0 +1,5 @@
+# Compiled web assets and Android binaries are opaque release artifacts.
+# Do not normalize line endings or run source diffs against generated bundles.
+app/src/main/assets/public/** -diff -text
+*.png binary
+*.jar binary

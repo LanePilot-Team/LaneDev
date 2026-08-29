@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LaneDev</string>
+    <string name="title_activity_main">LaneDev</string>
+    <string name="package_name">tw.lanepilot.lanedev</string>
+    <string name="custom_url_scheme">tw.lanepilot.lanedev</string>
+</resources>

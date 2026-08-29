@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>NavSim v0.2 — 楠梓＋左營</title>
+    <script>
+      // Google 官方 Dynamic Library Import bootstrap。這裡只註冊 importLibrary；
+      // 實際網路載入會等使用者主動切換至 Google Places 搜尋後才開始。
+      (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+        key: "%VITE_GOOGLE_MAPS_API_KEY%",
+        v: "weekly",
+        language: "zh-TW",
+        region: "TW",
+      });
+    </script>
+    <script type="module" crossorigin src="./assets/index-C81u-5qj.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DC4ybFMb.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

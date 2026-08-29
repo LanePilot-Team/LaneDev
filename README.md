@@ -7,6 +7,20 @@ App 使用 Android `WebViewAssetLoader`，從 APK 內安全的 HTTPS 本機來�
 LaneDev 資源。導航、道路資料、MapLibre、TDX 與 UI 都包含在 APK 中；網路只用於
 原本就需要的地圖服務或搜尋 API。
 
+## 只取得 Android 專案
+
+這個分支具有獨立 Git 歷史，不依賴 `main`。使用者可以只下載 Android 專用分支：
+
+```powershell
+git clone --branch codex/android-standalone --single-branch `
+  https://github.com/LanePilot-Team/LaneDev.git LaneDev-android-app
+cd LaneDev-android-app
+```
+
+clone 完成後即可直接用 Android Studio 開啟並建置，不需要另外 checkout、merge 或
+複製 `main` 的內容。APK 所需的已編譯前端與道路資料均已提交在
+`app/src/main/assets/public`。
+
 ## 開發與建置
 
 用 Android Studio 開啟此資料夾，等待 Gradle Sync，選擇手機或模擬器後按 Run。

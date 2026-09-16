@@ -89,5 +89,10 @@ lint/tmp/
 # Android Profiling
 *.hprof
 
+web-source/node_modules/
+web-source/dist/
+web-source/*.tsbuildinfo
+web-source.zip
+
 # The compiled LaneDev assets are deliberately tracked: this repository must
 # build without the web source repository, Node.js, Vite, or Capacitor.

@@ -1,0 +1,806 @@
+// 地圖核心：MapLibre 初始化、預設 shard 底圖載入、journal 載入/套用、
+// 跨功能共用的 refs 與重繪函式。LaneDev / LaneNav 兩個 App 共用（sync-lanenav 鏡像），
+// App.tsx 只留「模式機 + 點擊分派 + 畫面組裝」。
+import { useEffect, useRef, useState, useCallback, type RefObject } from 'react'
+import maplibregl, { Map as MLMap } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
+import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
+import { buildStyle, makeIcons } from '../core/mapStyle'
+import { asset } from '../core/asset'
+import {
+  buildDividers, buildRoadSurfaces, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
+} from '../core/roads'
+import { prepareBaseRoads } from '../core/pipeline'
+import type { DropRemap } from '../core/couplet'
+import { parseImported } from '../core/importmap'
+import { RoadGraph } from '../core/graph'
+import {
+  loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
+} from '../core/zones'
+import {
+  loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
+} from '../core/enhancements'
+import {
+  buildRoadMergeViews, selectPreparedRoadMergeView,
+  type RoadMergeReplayRow, type RoadMergeViews,
+} from '../core/roadMerge'
+import {
+  buildRawWays, humanWaitingZones, mergeLaneBaseZoneAudit, overlayWaitingZones, zonesFromLaneBase,
+  type RawWay,
+} from '../core/zoneimport'
+import { newRoadsFromFolded } from '../core/newroads'
+import {
+  speedCamerasToGeoJson, type SpeedCamera, type SpeedCameraDataset,
+} from '../core/speedCameras'
+import {
+  buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
+  buildSpecifiedWhiteMotoHatch,
+  buildLeftTurnWaitingAreas,
+  buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
+  type TurnBay, type RightLane, type MotoBox,
+} from '../core/turnbays'
+import { buildRoadLabelLines, buildRoadTexts, roadTextObstacles } from '../core/roadtext'
+import {
+  buildMedians, buildCenterIslands, buildMotoSepIslands, buildTwinIslands, mediansToGeoJSON,
+} from '../core/medians'
+import { loadVehicles, saveVehicles, type PlacedVehicle } from '../core/vehicles'
+import { VehicleModelLayer } from '../core/models3d'
+import { buildElevation, setActiveElevation } from '../core/elevation'
+import { ElevatedLayer, setActiveElevatedLayer, surfaceHeightAt } from '../core/elevated3d'
+import { NANZI_CENTER, haversine } from '../core/geo'
+import { cleanIntersectionFeatures, roadsWithCleanupFlags } from '../core/intersectionCleanup'
+import { groundMarkingPolygons } from '../core/groundMarkings'
+import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion'
+import {
+  loadStaticRoadDatabase, staticAnnotations, staticSegments,
+} from '../core/staticDatabase'
+import {
+  applyLaneBaseToRoads, buildLaneBaseIndex, extractLaneBase, remapLaneBase,
+  type LaneBaseApplyReport, type LaneBaseIndex, type LaneBaseRecord,
+} from '../core/laneBase'
+
+export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
+
+export const EMPTY_FC = { type: 'FeatureCollection', features: [] } as const
+
+const METERS_PER_LATITUDE_DEGREE = 111_000
+const NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID = '112463293'
+const JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID = '112463292'
+
+function isElevatedStation(feature: Feature<Polygon>): boolean {
+  const osmId = String(feature.properties?.osm_id ?? feature.id ?? '')
+  return feature.properties?.building === 'train_station' ||
+    osmId === JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID
+}
+
+/**
+ * Widen both long sides of an elevated station and place a continuous support
+ * wall at each new outer edge, away from the road beneath the station.
+ */
+function buildStationSideStructures(
+  station: Feature<Polygon>,
+  baseHeight: number,
+): Feature<Polygon>[] {
+  const ring = station.geometry.coordinates[0]
+  if (!ring || ring.length < 4 || baseHeight <= 0) return []
+
+  const lat = ring.reduce((sum, point) => sum + point[1], 0) / ring.length
+  const metersPerLongitudeDegree = METERS_PER_LATITUDE_DEGREE * Math.cos(lat * Math.PI / 180)
+  const vertices = ring.slice(0, -1)
+  const center: [number, number] = [
+    vertices.reduce((sum, point) => sum + point[0], 0) / vertices.length,
+    vertices.reduce((sum, point) => sum + point[1], 0) / vertices.length,
+  ]
+  const edges = vertices.map((p, index) => {
+    const q = ring[index + 1]
+    const dx = (q[0] - p[0]) * metersPerLongitudeDegree
+    const dy = (q[1] - p[1]) * METERS_PER_LATITUDE_DEGREE
+    return { p, q, dx, dy, length: Math.hypot(dx, dy), index }
+  }).filter((edge) => edge.length >= 12)
+    .sort((a, b) => b.length - a.length)
+  if (edges.length < 2) return []
+
+  const osmId = String(station.properties?.osm_id ?? station.id ?? 'station')
+  const isNanzihTechnologyParkStation =
+    osmId === NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID
+  type StationEdge = (typeof edges)[number]
+  let first: StationEdge | undefined
+  let second: StationEdge | undefined
+  if (isNanzihTechnologyParkStation) {
+    // This station has four narrow projecting wings. Only the two sides of its
+    // broad central body (ring edges 9 and 29) may receive support walls.
+    first = edges.find((edge) => edge.index === 9)
+    second = edges.find((edge) => edge.index === 29)
+    if (!first || !second) return []
+  } else {
+    const primary = edges[0]
+    first = primary
+    second = edges.find((edge) => {
+      const parallel = Math.abs(
+        (primary.dx * edge.dx + primary.dy * edge.dy) / (primary.length * edge.length),
+      )
+      const firstMid = [(primary.p[0] + primary.q[0]) / 2, (primary.p[1] + primary.q[1]) / 2]
+      const edgeMid = [(edge.p[0] + edge.q[0]) / 2, (edge.p[1] + edge.q[1]) / 2]
+      const separation = Math.hypot(
+        (edgeMid[0] - firstMid[0]) * metersPerLongitudeDegree,
+        (edgeMid[1] - firstMid[1]) * METERS_PER_LATITUDE_DEGREE,
+      )
+      return parallel >= 0.88 && separation >= 5
+    }) ?? edges[1]
+  }
+  if (!first || !second) return []
+
+  return [first, second].flatMap((edge, supportIndex) => {
+    const midpoint = [(edge.p[0] + edge.q[0]) / 2, (edge.p[1] + edge.q[1]) / 2]
+    let nx = -edge.dy / edge.length
+    let ny = edge.dx / edge.length
+    const towardCenterX = (center[0] - midpoint[0]) * metersPerLongitudeDegree
+    const towardCenterY = (center[1] - midpoint[1]) * METERS_PER_LATITUDE_DEGREE
+    // Use the normal pointing away from the footprint centre.
+    if (nx * towardCenterX + ny * towardCenterY > 0) {
+      nx *= -1
+      ny *= -1
+    }
+    const extensionWidth = isNanzihTechnologyParkStation ? 1.5 : 2.6
+    const wallThickness = isNanzihTechnologyParkStation ? 0.55 : 1.0
+    const offset = (meters: number): [number, number] => [
+      nx * meters / metersPerLongitudeDegree,
+      ny * meters / METERS_PER_LATITUDE_DEGREE,
+    ]
+    const innerWallOffset = offset(extensionWidth - wallThickness)
+    const outerOffset = offset(extensionWidth)
+    const extensionCoordinates: Position[][] = [[
+      edge.p,
+      edge.q,
+      [edge.q[0] + outerOffset[0], edge.q[1] + outerOffset[1]],
+      [edge.p[0] + outerOffset[0], edge.p[1] + outerOffset[1]],
+      edge.p,
+    ]]
+    const supportCoordinates: Position[][] = [[
+      [edge.p[0] + innerWallOffset[0], edge.p[1] + innerWallOffset[1]],
+      [edge.q[0] + innerWallOffset[0], edge.q[1] + innerWallOffset[1]],
+      [edge.q[0] + outerOffset[0], edge.q[1] + outerOffset[1]],
+      [edge.p[0] + outerOffset[0], edge.p[1] + outerOffset[1]],
+      [edge.p[0] + innerWallOffset[0], edge.p[1] + innerWallOffset[1]],
+    ]]
+    const sharedProperties = {
+      ...(station.properties ?? {}),
+      parent_osm_id: osmId,
+      station_parent_building: station.properties?.building ?? 'yes',
+    }
+    return [
+      {
+        type: 'Feature',
+        id: `station-extension/${osmId}/${supportIndex}`,
+        properties: {
+          ...sharedProperties,
+          building: 'station_extension',
+          height_m: Number(station.properties?.height_m) || baseHeight + 3,
+          min_height_m: baseHeight,
+        },
+        geometry: { type: 'Polygon', coordinates: extensionCoordinates },
+      },
+      {
+        type: 'Feature',
+        id: `station-support/${osmId}/${supportIndex}`,
+        properties: {
+          ...sharedProperties,
+          building: 'station_support',
+          height_m: baseHeight,
+          min_height_m: 0,
+        },
+        geometry: { type: 'Polygon', coordinates: supportCoordinates },
+      },
+    ] as Feature<Polygon>[]
+  })
+}
+
+/** 測速執法設置點（scripts/build_speed_cameras.mjs 產生的版本化資料檔） */
+async function loadSpeedCameraDataset(): Promise<SpeedCameraDataset> {
+  const res = await fetch(asset('/data/speed_cameras.json'))
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json() as SpeedCameraDataset
+  if (!Array.isArray(data.cameras)) throw new Error('cameras 欄位缺失')
+  return data
+}
+
+async function loadDefaultRoads() {
+  await loadStaticRoadDatabase()
+  const canonicalSegments = staticSegments()
+  if (!canonicalSegments.length) throw new Error('唯一靜態道路資料庫沒有路段')
+  const parsed = parseImported(
+    canonicalSegments.map((record) => JSON.stringify(record)).join('\n'),
+  )
+  if (parsed.kind !== 'map') throw new Error('唯一靜態道路資料庫格式錯誤')
+  return roadsFromGeoJSON(parsed.fc)
+}
+
+function applyLaneBaseRecords(
+  records: LaneBaseRecord[],
+  roads: RoadFeature[],
+  nodeRemap: Map<number, number>,
+  wayRemap: Map<number, DropRemap>,
+): { report: LaneBaseApplyReport; index: LaneBaseIndex } {
+  const remapped = remapLaneBase(records, {
+    existingWayIds: new Set(roads.map((road) => road.properties.osm_id)),
+    nodeRemap,
+    wayRemap,
+    wayApproachNodes: roads.reduce((index, road) => {
+      const nodes = index.get(road.properties.osm_id) ?? {
+        forward: new Set<number>(), backward: new Set<number>(),
+      }
+      nodes.forward.add(road.properties.nodes.at(-1)!)
+      if (road.properties.oneway !== 'yes') nodes.backward.add(road.properties.nodes[0])
+      index.set(road.properties.osm_id, nodes)
+      return index
+    }, new Map<number, { forward: Set<number>; backward: Set<number> }>()),
+  })
+  if (remapped.errors.length || remapped.unmappedSourceKeys.length) {
+    const detail = [...new Set([
+      ...remapped.errors,
+      ...remapped.unmappedSourceKeys.map((key) => `${key}: unmapped`),
+    ])].join('；')
+    throw new Error(`Lane Base 重映射失敗：${detail}`)
+  }
+  const index = buildLaneBaseIndex(remapped.records)
+  if (index.movementRuleErrors.length) {
+    throw new Error(`Lane Base movement rule 無法解析：${index.movementRuleErrors.join('；')}`)
+  }
+  return {
+    report: applyLaneBaseToRoads(roads, index),
+    index,
+  }
+}
+
+/** 跨功能共用的地圖狀態（refs 讓地圖 handler 安全讀寫）與重繪函式 */
+
+export interface MapCore {
+  mapRef: RefObject<MLMap | null>
+  /** 尚未套用 Lane Base／人工 journal 的 prepared roads，用於 session 匯入重建。 */
+  preparedRoadsRef: RefObject<RoadFeature[]>
+  roadsRef: RefObject<RoadFeature[]>
+  renderRoadsRef: RefObject<RoadFeature[]>
+  mergeReplayRef: RefObject<RoadMergeReplayRow[]>
+  graphRef: RefObject<RoadGraph | null>
+  laneBaseIndexRef: RefObject<LaneBaseIndex>
+  zonesRef: RefObject<Zone[]>
+  /** 每次 Lane Base 重建所得唯讀待轉區；不寫入 editor persistence。 */
+  baseZonesRef: RefObject<Zone[]>
+  selectedZoneRef: RefObject<string | null>
+  highlightedZoneRef: RefObject<string | null>
+  journalRef: RefObject<EnhancementRecord[]>
+  baysRef: RefObject<TurnBay[]>
+  /** 右轉附加車道（journal right_lane 折疊生成，refreshBays 重算） */
+  rightLanesRef: RefObject<RightLane[]>
+  /** 機車停等格（refreshBays 重算）——編輯面板讀 maxLanes/coveredLanes */
+  motoBoxesRef: RefObject<MotoBox[]>
+  intersectionsRef: RefObject<{ id: number; pos: [number, number] }[]>
+  vehiclesRef: RefObject<PlacedVehicle[]>
+  vehicleLayerRef: RefObject<VehicleModelLayer | null>
+  selectedVehicleRef: RefObject<string | null>
+  lastGestureRef: RefObject<number>
+  /**
+   * 使用者自己動了鏡頭（拖曳／旋轉／傾斜）時呼叫。導航跟隨用它來交還鏡頭控制權——
+   * 事件註冊在這裡（地圖實例的擁有者），實際「要不要停止跟隨」由 nav/useDrive 決定。
+   */
+  onUserCameraTakeoverRef: RefObject<(() => void) | null>
+  /** couplet 合併造成的 node id 重映射（原始 OSM node → 合併後 node） */
+  nodeRemapRef: RefObject<Map<number, number>>
+  /** 被合併（drop 側）way → keep way 對照（LanePilot 標註匯入重映射用） */
+  wayRemapRef: RefObject<Map<number, DropRemap>>
+  /** 前處理「之前」的原始 way 幾何快照（標註匯入的進入方位角後援：
+   * couplet/退化清理清掉的 way 在底圖與 wayRemap 都查不到） */
+  rawWaysRef: RefObject<Map<number, RawWay>>
+  /** 測速執法設置點（警政署開放資料，楠梓＋左營）——導航提示與地圖圖層共用 */
+  speedCamerasRef: RefObject<SpeedCamera[]>
+  /** 測速資料的來源／最後同步時間（授權要求顯名，畫面要能標示） */
+  speedCameraSourceRef: RefObject<SpeedCameraDataset['source'] | null>
+  /** 大眾運輸資料（TDX，楠梓＋左營）；未載入完成前為 null */
+  src: (id: string) => GeoJSONSource
+  refreshZones: (persist?: boolean) => void
+  setZoneHighlight: (id: string | null) => void
+  refreshBays: () => void
+  refreshVehicles: () => void
+  /** 路面與車道分隔線重繪（journal 覆寫/標註匯入後） */
+  redrawRoads: () => void
+  /** 換 Base Layer：換路網、重建圖、重算 bay（匯入地圖用） */
+  replaceBaseMap: (roads: RoadFeature[]) => boolean
+  /** 以目前 prepared roads 重建 session-only Lane Base，再套用人工 journal。 */
+  replaceSessionLaneBase: (records: LaneBaseRecord[]) => LaneBaseApplyReport
+  /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
+  previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
+  /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
+  refreshRoadMergeViews: (
+    journal?: EnhancementRecord[], preparedView?: RoadMergeViews,
+  ) => boolean
+}
+
+export interface MapCoreState {
+  core: MapCore
+  loading: boolean
+  zoneCount: number
+  zoneTick: number
+  vehicleCount: number
+  selectedVehicle: PlacedVehicle | null
+}
+
+export function useMapCore(
+  containerRef: RefObject<HTMLDivElement | null>,
+  onMapClick: (e: MapMouseEvent, map: MLMap) => void,
+): MapCoreState {
+  const mapRef = useRef<MLMap | null>(null)
+  const preparedRoadsRef = useRef<RoadFeature[]>([])
+  const roadsRef = useRef<RoadFeature[]>([])
+  const renderRoadsRef = useRef<RoadFeature[]>([])
+  const mergeReplayRef = useRef<RoadMergeReplayRow[]>([])
+  const graphRef = useRef<RoadGraph | null>(null)
+  const laneBaseIndexRef = useRef<LaneBaseIndex>(buildLaneBaseIndex([]))
+  const zonesRef = useRef<Zone[]>([])
+  const baseZonesRef = useRef<Zone[]>([])
+  const selectedZoneRef = useRef<string | null>(null)
+  const highlightedZoneRef = useRef<string | null>(null)
+  const journalRef = useRef<EnhancementRecord[]>([])
+  const baysRef = useRef<TurnBay[]>([])
+  const rightLanesRef = useRef<RightLane[]>([])
+  const motoBoxesRef = useRef<MotoBox[]>([])
+  const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
+  const vehiclesRef = useRef<PlacedVehicle[]>([])
+  const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
+  const elevatedLayerRef = useRef<ElevatedLayer | null>(null)
+  const selectedVehicleRef = useRef<string | null>(null)
+  const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
+  const onUserCameraTakeoverRef = useRef<(() => void) | null>(null)
+  const nodeRemapRef = useRef<Map<number, number>>(new Map())
+  const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
+  const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
+  const speedCamerasRef = useRef<SpeedCamera[]>([])
+  const speedCameraSourceRef = useRef<SpeedCameraDataset['source'] | null>(null)
+
+  const [loading, setLoading] = useState(true)
+  const [zoneCount, setZoneCount] = useState(0)
+  const [zoneTick, setZoneTick] = useState(0)
+  const [vehicleCount, setVehicleCount] = useState(0)
+  const [selectedVehicle, setSelectedVehicle] = useState<PlacedVehicle | null>(null)
+
+  // 點擊分派由 App 組裝（LaneNav 沒有 edit 分支）；用 ref 存最新 closure，地圖 handler 只綁一次
+  const clickRef = useRef(onMapClick)
+  clickRef.current = onMapClick
+
+  const src = useCallback((id: string) => mapRef.current!.getSource(id) as GeoJSONSource, [])
+
+  const refreshZones = useCallback((persist = true) => {
+    if (!mapRef.current) return
+    if (
+      highlightedZoneRef.current
+      && zonesRef.current.some((z) => z.id === highlightedZoneRef.current && z.visible === false)
+    ) {
+      highlightedZoneRef.current = null
+    }
+    src('zones').setData(groundMarkingPolygons(
+      zonesToGeoJSON(
+        zonesRef.current,
+        selectedZoneRef.current,
+        highlightedZoneRef.current,
+      ),
+      (properties) => properties?.kind === 'outline-casing' ? 0.34
+        : properties?.kind === 'outline' ? 0.18
+          : null,
+    ) as never)
+    // Client renders bundled zones without persisting derived or user changes.
+    setZoneCount(zonesRef.current.length)
+    setZoneTick((t) => t + 1)
+  }, [src])
+
+  const setZoneHighlight = useCallback((id: string | null) => {
+    if (highlightedZoneRef.current === id) return
+    highlightedZoneRef.current = id
+    if (!mapRef.current) return
+    src('zones').setData(groundMarkingPolygons(
+      zonesToGeoJSON(zonesRef.current, selectedZoneRef.current, id),
+      (properties) => properties?.kind === 'outline-casing' ? 0.34
+        : properties?.kind === 'outline' ? 0.18
+          : null,
+    ) as never)
+  }, [src])
+
+  /** 重算偏心左轉道（路網/車道數/journal 變動後都要跑：bay 的橫向位置依斷面寬推導） */
+  const refreshBays = useCallback(() => {
+    if (!mapRef.current || !graphRef.current) return
+    // 所有地面樣式使用捏合後的繪圖圖；導航與編輯仍使用 graphRef 的來源拓撲。
+    // 因此主路跨接縫連續，但側路端點仍存在並可生成自己的停止線。
+    const renderGraph = new RoadGraph(renderRoadsRef.current)
+    const journal = journalRef.current
+    baysRef.current = buildTurnBays(renderGraph, journal)
+    rightLanesRef.current = buildRightLanes(renderGraph, journal)
+    // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
+    const channel = [
+      ...buildChannelization(renderGraph, baysRef.current),
+      ...buildSpecifiedWhiteMotoHatch(renderGraph),
+    ]
+    const stopLines = buildStopLines(
+      renderGraph, baysRef.current, rightLanesRef.current, journal)
+    const leftWaitAreas = buildLeftTurnWaitingAreas(renderGraph, baysRef.current)
+    // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
+    const motoBoxes = buildMotoBoxes(
+      renderGraph, baysRef.current, rightLanesRef.current, journal)
+    motoBoxesRef.current = motoBoxes.boxes
+    const laneArrows = buildLaneArrows(
+      renderGraph, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
+      journal, stopLines)
+    const motoEntryIcons = buildMotoLaneEntryIcons(renderGraph, journal)
+    const turnBayFeaturesRaw = baysToGeoJSON(
+      baysRef.current, [...channel, ...stopLines, ...leftWaitAreas],
+      laneArrows, rightLanesRef.current, motoBoxes.boxes)
+    turnBayFeaturesRaw.features.push(
+      ...motoEntryIcons.features,
+      ...buildUnusedLaneGores(renderGraph, baysRef.current).features)
+    const turnBayFeatures = cleanIntersectionFeatures(turnBayFeaturesRaw)
+    src('turnbays').setData(groundMarkingPolygons(
+      turnBayFeatures,
+      (p) => p?.kind === 'line'
+        ? (p.color === 'stop' ? 0.45 : 0.15)
+        : null,
+    ) as never)
+    // 分隔島：Case B 自動推導（成對單行間）+ 顯式配對（高雄大學路四線並排）
+    // + Case A 編輯設定（中央帶類型 = 島）
+    const renderRoads = roadsForRendering(renderRoadsRef.current)
+    src('medians').setData(mediansToGeoJSON([
+      ...buildMedians(renderRoads),
+      ...buildTwinIslands(renderRoads, journalRef.current),
+      ...buildMotoSepIslands(renderGraph),
+      ...buildCenterIslands(renderGraph, baysRef.current),
+    ]) as never)
+    // 路面印字（禁行機車）：motorcycle 可被 journal 覆寫，跟著這條重算路徑走。
+    // 印字位置要避開同一段路已經畫好的箭頭、機車道入口圖示與停止線——
+    // 這些都在上面算完了，直接餵給 buildRoadTexts，不重算一份會漂移的位置。
+    const markingObstacles = roadTextObstacles({
+      arrows: laneArrows,
+      motoEntryIcons: motoEntryIcons.features,
+      stopLines,
+      motoBoxes: motoBoxes.boxes,
+    })
+    const roadTexts = cleanIntersectionFeatures(
+      buildRoadTexts(renderGraph, baysRef.current, rightLanesRef.current, markingObstacles))
+    src('roadtext').setData(roadTexts as never)
+    // 路名：只沿「避開所有地面標線與路面印字」的中心線區段排字
+    src('roadlabels').setData(buildRoadLabelLines(renderRoads, [
+      ...markingObstacles,
+      ...roadTexts.features.map((f) => ({
+        points: [(f.geometry as unknown as { coordinates: [number, number] }).coordinates],
+        alongHalfM: 5,
+        crossHalfM: 1,
+      })),
+    ]) as never)
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
+  }, [src])
+
+  const refreshVehicles = useCallback(() => {
+    // 車輛高度：把位置重新吸附回車道拿到「路段身分」，再問該路段的橋面高度。
+    // 不能用純位置查最近高架——平面路從高架正下方穿過時會誤抬（elevation.ts）。
+    // 吸附用的是放置時同一支 snapToLane，所以既有存檔的車也會被擺回正確高度。
+    const elevOf = (v: PlacedVehicle) => {
+      const snap = graphRef.current?.snapToLane(v.pos, v.type)
+      return snap?.feature ? surfaceHeightAt(snap.feature, v.pos) : 0
+    }
+    vehicleLayerRef.current?.setVehicles(
+      vehiclesRef.current, selectedVehicleRef.current, elevOf)
+    void 0
+    setVehicleCount(vehiclesRef.current.length)
+    setSelectedVehicle(
+      vehiclesRef.current.find((v) => v.id === selectedVehicleRef.current) ?? null)
+  }, [])
+
+  const redrawRoads = useCallback(() => {
+    const renderRoads = roadsForRendering(renderRoadsRef.current)
+    src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(renderRoads) } as never)
+    src('roadSurfaces').setData(buildRoadSurfaces(renderRoads) as never)
+    const dividerFeatures = cleanIntersectionFeatures(buildDividers(renderRoads))
+    src('dividers').setData(groundMarkingPolygons(
+      dividerFeatures,
+      (p) => p?.kind === 'center' ? 0.3
+        : p?.kind === 'tunnel-edge' ? 0.12 // 地下道側緣：比車道線細一點
+        : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
+      // 車道線與地下道側緣都是虛線（後者用虛線表示「在地面之下」）
+      (p) => p?.kind === 'lane' || p?.kind === 'tunnel-edge',
+    ) as never)
+  }, [src])
+
+  /** 高架高度模型重建（底圖就緒/更換時）：渲染（橋面）與車輛 z 共用同一份 */
+  const rebuildElevation = useCallback((roads: RoadFeature[]) => {
+    const model = buildElevation(roads)
+    setActiveElevation(model)
+    elevatedLayerRef.current?.setModel(model)
+  }, [])
+
+  const readOnly = (): never => { throw new Error('Android 用戶端不允許修改道路資料') }
+
+  const coreRef = useRef<MapCore>(null as never)
+  if (!coreRef.current) {
+    coreRef.current = {
+      mapRef, preparedRoadsRef, roadsRef, renderRoadsRef, mergeReplayRef,
+      graphRef, laneBaseIndexRef, zonesRef, baseZonesRef, selectedZoneRef, highlightedZoneRef,
+      journalRef, baysRef,
+      rightLanesRef, motoBoxesRef,
+      intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
+      onUserCameraTakeoverRef,
+      nodeRemapRef, wayRemapRef, rawWaysRef,
+      speedCamerasRef, speedCameraSourceRef,
+      src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
+      redrawRoads, replaceBaseMap: readOnly, replaceSessionLaneBase: readOnly,
+      previewJournal: () => null, refreshRoadMergeViews: readOnly,
+    }
+  }
+
+  // ── 地圖初始化 ──
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: containerRef.current!,
+      style: buildStyle(),
+      center: NANZI_CENTER,
+      zoom: 12.4,
+      maxPitch: 70,
+      // 內顯效能：把渲染像素密度上限鎖在 1.5×（高 DPI 螢幕的畫布像素數會翻倍以上）
+      pixelRatio: Math.min(window.devicePixelRatio, 1.5),
+      fadeDuration: 0, // 符號淡入淡出動畫關掉，省連續重繪
+      attributionControl: {
+        compact: true,
+        customAttribution: '© OpenStreetMap contributors',
+      },
+      // 效能：MSAA 與 preserveDrawingBuffer 在內顯上很貴，只在 ?screenshot 時開
+      canvasContextAttributes: false
+        ? { antialias: true, preserveDrawingBuffer: true }
+        : undefined,
+      // 中文字在本地渲染，不依賴 glyph 伺服器（伺服器只剩英數字會用到）
+      localIdeographFontFamily: '"Microsoft JhengHei", "PingFang TC", sans-serif',
+    })
+    mapRef.current = map
+    map.touchZoomRotate.enableRotation()
+    // 記錄縮放手勢時間：jumpTo 內部會 stop() 掉進行中的手勢動畫（handlers.stop），
+    // 導航 30Hz 跟隨會把滾輪的平滑縮放掐死——跟隨迴圈靠這個時間戳暫時讓路
+    map.on('wheel', () => { lastGestureRef.current = performance.now() })
+    map.on('touchmove', () => { lastGestureRef.current = performance.now() })
+    // 使用者「自己把鏡頭移開」＝要求自由瀏覽（Google 地圖的行為）。只認帶 originalEvent
+    // 的事件——導航跟隨自己的 jumpTo 也會觸發 move/rotate，那不算使用者接管。
+    // 縮放不算：導航中放大看路口是常態，不該因此中斷跟隨（滾輪另有 250ms 讓路）。
+    const takeover = (ev: { originalEvent?: unknown }) => {
+      if (!ev.originalEvent) return
+      onUserCameraTakeoverRef.current?.()
+    }
+    map.on('dragstart', takeover)
+    map.on('rotatestart', takeover)
+    map.on('pitchstart', takeover)
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__map = map
+
+    map.on('load', async () => {
+      const icons = makeIcons()
+      for (const [name, img] of Object.entries(icons)) map.addImage(name, img)
+      const loadSvg = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error(`無法載入路面標誌：${url}`))
+        img.src = url
+      })
+      const [motorcycleIcon, bicycleIcon] = await Promise.all([
+        loadSvg(asset('/assets/road-markings/motorcycle.svg')),
+        loadSvg(asset('/assets/road-markings/bicycle.svg')),
+      ])
+      map.addImage('moto-box-motorcycle', motorcycleIcon)
+      map.addImage('moto-box-bicycle', bicycleIcon)
+
+      // 測速執法設置點：與路網載入解耦——這是行車提示不是底圖，資料抓不到
+      // 只該少一個提示，不能讓整個導航起不來（資料指引第 4 節的「資料源短暫異常」）
+      loadSpeedCameraDataset().then((dataset) => {
+        speedCamerasRef.current = dataset.cameras
+        speedCameraSourceRef.current = dataset.source
+        src('speedCameras').setData(speedCamerasToGeoJson(dataset.cameras) as never)
+        console.info(`測速執法設置點 ${dataset.cameras.length} 筆（${dataset.districts.join('、')}）`
+          + `，來源同步時間 ${dataset.source.fetchedAt}`)
+      }).catch((cause) => {
+        console.warn('測速執法設置點載入失敗，本次導航沒有測速提示：', cause)
+      })
+
+      const [roadsRaw, buildingsRaw] = await Promise.all([
+        loadDefaultRoads(),
+        fetch(asset('/data/nanzih_buildings_height.geojson')).then((r) => r.json()) as
+          Promise<FeatureCollection<Polygon>>,
+      ])
+      // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
+      // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
+      // 不列入此清單。
+      const removedBuildingOsmIds = new Set([
+        '823172097', '823172098', '823172099',
+        '631751541', // 寶溪北街115巷
+        '682189070', // 大學南路273巷
+        '631753341', // 寶溪北街19巷
+        '631740710', // 無名 service 路段
+        '434973244', // 無名 service 路段
+        '773733480', // 大學三十八街207巷
+        '773733478', // 藍昌路532巷
+        '752957679', // 無名 service 路段
+        '237779871', // 大學三十二街388巷
+        '231986022', // 無名 service 路段
+        '464258028', // 無名 service 路段
+      ])
+      const preparedBuildings = buildingsRaw.features
+        .filter((feature) => !removedBuildingOsmIds.has(String(feature.properties?.osm_id ?? '')))
+        .map((feature) => {
+          const properties = { ...(feature.properties ?? {}) }
+          const osmId = String(properties.osm_id ?? '')
+          // 捷運／車站站體橫跨道路：底部抬高形成可通車的鏤空層，而非落地實心量體。
+          if (isElevatedStation({ ...feature, properties } as Feature<Polygon>)) {
+            // 楠梓科技園區站橫跨加昌路；它的 footprint 是高空站體，
+            // 需保留比一般車站更清楚的道路及導航標線淨空。
+            const minimumClearance = (
+              osmId === NANZIH_TECHNOLOGY_PARK_STATION_OSM_ID ||
+              osmId === JIACHANG_HAIZHUAN_ELEVATED_STATION_OSM_ID
+            ) ? 8 : 6
+            properties.min_height_m = Math.max(
+              Number(properties.min_height_m) || 0,
+              minimumClearance,
+            )
+            properties.height_m = Math.max(
+              Number(properties.height_m) || 9,
+              properties.min_height_m +
+                (minimumClearance === 8 ? 4 : 3),
+            )
+          }
+          return {
+            ...feature,
+            id: feature.id ?? `way/${properties.osm_id}`,
+            properties,
+          } as Feature<Polygon>
+        })
+      const stationSideStructures = preparedBuildings.flatMap((feature) =>
+        isElevatedStation(feature)
+          ? buildStationSideStructures(feature, Number(feature.properties?.min_height_m) || 0)
+          : [],
+      )
+      const buildings: FeatureCollection<Polygon> = {
+        ...buildingsRaw,
+        features: [...preparedBuildings, ...stationSideStructures],
+      }
+      // 底圖前處理（人工修正 → couplet 合併 → 切塊）收斂在 core/pipeline.ts，
+      // 與「匯入地圖」及離線 harness 共用。nodeRemap/wayRemap = 合併造成的
+      // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
+      rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
+      const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
+      preparedRoadsRef.current = structuredClone(roads)
+      const extraction = extractLaneBase([...staticAnnotations()])
+      if (extraction.errors.length) {
+        const error = new Error(
+          `Canonical Lane Base 萃取失敗：${extraction.errors.join('；')}`,
+        )
+        window.alert(error.message)
+        throw error
+      }
+      let canonicalLaneBase: ReturnType<typeof applyLaneBaseRecords>
+      try {
+        canonicalLaneBase = applyLaneBaseRecords(extraction.records, roads, nodeRemap, wayRemap)
+      } catch (cause) {
+        const error = new Error(
+          `Canonical Lane Base 載入失敗：${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+        window.alert(error.message)
+        throw error
+      }
+      laneBaseIndexRef.current = canonicalLaneBase.index
+      if (import.meta.env.DEV) {
+        const bounds = {
+          minLng: Infinity, minLat: Infinity,
+          maxLng: -Infinity, maxLat: -Infinity,
+        }
+        for (const road of roads) for (const point of road.geometry.coordinates) {
+          bounds.minLng = Math.min(bounds.minLng, point[0])
+          bounds.minLat = Math.min(bounds.minLat, point[1])
+          bounds.maxLng = Math.max(bounds.maxLng, point[0])
+          bounds.maxLat = Math.max(bounds.maxLat, point[1])
+        }
+        console.info('Canonical road database prepared', JSON.stringify({
+          roads: roads.length,
+          bounds: Number.isFinite(bounds.minLng) ? bounds : null,
+        }))
+      }
+      roadsRef.current = roads
+      nodeRemapRef.current = nodeRemap
+      wayRemapRef.current = wayRemap
+      // 除錯開關：?journal=off 不套人工 journal；canonical Lane Base 仍是底圖的一部分。
+      const journalOff = false
+      journalRef.current = journalOff
+        ? []
+        : remapJournalNodes(
+            loadJournal().filter((record) => record.author !== 'lanepilot'),
+            nodeRemap,
+          )
+      const folded = foldJournal(journalRef.current)
+      const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
+      applyToRoads(roadsAll, folded)
+      // 捏合＝journal 紀錄，每次載入才在記憶體內接合；靜態 OSM 一個位元組都不動，
+      // 所以重建 segments 也炸不到它。必須排在 applyToRoads 之後：checkRoadMerge
+      // 要比對兩段的車道配置，那是人工覆寫套用後才成立的。
+      // 導航保留來源路段；只有繪圖視圖接合幾何。被 drop 的次段仍可由 provenance 解析。
+      const activeRoads = roadsAll.filter((road) => !road.properties.deleted)
+      const mergeView = buildRoadMergeViews(activeRoads, journalRef.current)
+      roadsRef.current = mergeView.routingRoads
+      renderRoadsRef.current = mergeView.renderRoads
+      mergeReplayRef.current = mergeView.rows
+      if (mergeView.resolved.length > 0) {
+        console.info(`journal 捏合：解析 ${mergeView.resolved.length} 組路段`)
+      }
+      for (const row of mergeView.rows) {
+        if (!row.resolved) console.warn(`未套用道路捏合 ${row.mergeKey}：${row.detail}`)
+      }
+      redrawRoads()
+      src('buildings').setData(buildings)
+      setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
+      graphRef.current = new RoadGraph(roadsRef.current)
+      intersectionsRef.current = graphRef.current.intersections()
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
+      // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
+      // remap 表沒涵蓋的（drop 側互接節點合併後直接消失）用位置吸附最近路口補救
+      const knownInter = new Set(intersectionsRef.current.map((i) => i.id))
+      const humanZones = loadZones().map((z) => {
+        // remap 後仍要驗證存在——目標節點可能又被退化清理消滅（鏈斷）
+        let id = nodeRemap.get(z.intersectionId) ?? z.intersectionId
+        if (!knownInter.has(id)) {
+          let best: { id: number; d: number } | null = null
+          for (const it of intersectionsRef.current) {
+            const d = haversine(z.center, it.pos)
+            if (d < 30 && (!best || d < best.d)) best = { id: it.id, d }
+          }
+          if (best) id = best.id
+        }
+        return id === z.intersectionId ? z : { ...z, intersectionId: id }
+      })
+      const zoneResult = false
+        ? { zones: [], skips: [], accountedSourceKeys: [], unresolvedSourceKeys: [] }
+        : zonesFromLaneBase({
+            index: canonicalLaneBase.index,
+            graph: graphRef.current,
+            roads: roadsRef.current,
+            rawWays: rawWaysRef.current,
+          })
+      baseZonesRef.current = zoneResult.zones
+      zonesRef.current = overlayWaitingZones(
+        baseZonesRef.current, humanZones, loadDeletedZoneIds(),
+      )
+      if (zoneResult.skips.length || zoneResult.unresolvedSourceKeys.length) {
+        console.warn('Lane Base 待轉區仍有未解析規則', {
+          skips: zoneResult.skips,
+          sourceKeys: zoneResult.unresolvedSourceKeys,
+        })
+      }
+      // 初始繪製不得把 derived Lane Base zones 寫進 editor waiting_zones。
+      refreshZones(false)
+      refreshBays()
+      // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
+      const eLayer = new ElevatedLayer()
+      elevatedLayerRef.current = eLayer
+      setActiveElevatedLayer(eLayer) // usePlanner/useDrive 畫路線絲帶用（模組單例）
+      rebuildElevation(roadsAll)
+      map.addLayer(eLayer.asLayer())
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__elayer = eLayer
+      // 真 3D 車輛模型圖層（three.js）
+      const vLayer = new VehicleModelLayer()
+      vehicleLayerRef.current = vLayer
+      map.addLayer(vLayer.asLayer())
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__vlayer = vLayer
+      vehiclesRef.current = []
+      refreshVehicles()
+      setLoading(false)
+    })
+
+    map.on('click', (e) => clickRef.current(e, map))
+
+    return () => {
+      setActiveNavigationOcclusion(null)
+      map.remove()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return {
+    core: coreRef.current,
+    loading, zoneCount, zoneTick, vehicleCount, selectedVehicle,
+  }
+}

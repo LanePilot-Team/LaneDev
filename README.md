@@ -1,64 +1,47 @@
-# LaneDev Android
+# LaneDev Android 用戶端
 
-LaneDev 的獨立 Android App 專案。這個 repository 只需要 Android Studio、Android
-SDK 與 JDK；不包含 React／Vite 網頁原始碼，也不依賴 Node.js 或 Capacitor。
+在 Android Studio 開啟本資料夾，Gradle Sync 後選取裝置並執行 app。
+一般 APK 建置只需要 Android SDK 36 與 Android Studio 內建 JDK 21，
+不需要 Node.js，也不需要另一份網頁專案。
 
-App 使用 Android `WebViewAssetLoader`，從 APK 內安全的 HTTPS 本機來源載入已編譯
-LaneDev 資源。導航、道路資料、MapLibre、TDX 與 UI 都包含在 APK 中；網路只用於
-原本就需要的地圖服務或搜尋 API。
-
-## 只取得 Android 專案
-
-這個分支具有獨立 Git 歷史，不依賴 `main`。使用者可以只下載 Android 專用分支：
-
-```powershell
-git clone --branch codex/android-standalone --single-branch `
-  https://github.com/LanePilot-Team/LaneDev.git LaneDev-android-app
-cd LaneDev-android-app
-```
-
-clone 完成後即可直接用 Android Studio 開啟並建置，不需要另外 checkout、merge 或
-複製 `main` 的內容。APK 所需的已編譯前端與道路資料均已提交在
-`app/src/main/assets/public`。
-
-## 開發與建置
-
-用 Android Studio 開啟此資料夾，等待 Gradle Sync，選擇手機或模擬器後按 Run。
-
-PowerShell 建置 debug APK：
+## 建置
 
 ```powershell
 .\tools\gradle.ps1 assembleDebug
-```
-
-執行 JVM 單元測試：
-
-```powershell
 .\tools\gradle.ps1 testDebugUnitTest
 ```
 
-APK 輸出：`app/build/outputs/apk/debug/app-debug.apk`。
+APK：`app/build/outputs/apk/debug/app-debug.apk`。
 
-## 從網頁專案更新 App 畫面
+## 修改前端
 
-Android 專案可以單獨建置；只有要吸收新版網頁功能時，才需要另外存在的 LaneDev
-網頁來源。先在網頁專案執行 Android 相對路徑建置，再匯入：
+所有修改都在本 Git 工作區。可維護來源在 `web-source/`，來自原版
+`64a1fd8`，已調整成 Android 用戶端。修改來源後執行：
 
 ```powershell
-cd C:\code\LaneDev-android
-npm run build:android
-
-cd C:\code\LaneDev-android-app
-.\tools\import-web-assets.ps1 -WebProject C:\code\LaneDev-android
+.\tools\build-client.ps1
+.\tools\gradle.ps1 assembleDebug
 ```
 
-匯入後應提交 `app/src/main/assets/public`，因此任何人只 clone 本 Android repository
-也能建置，不需要取得網頁 repository。
+此步驟需要 Node.js（建議 22.18+）。它會安裝 lockfile 依賴、測試、建置、
+排除開發版模組與大眾運輸資料，再匯入 `app/src/main/assets/public`。
+將來源與打包結果一起提交。只建 APK 的人不需執行前端建置。
 
-## 權限與限制
+匯入工具要求 `client-policy.json` 並驗證 JavaScript 雜湊，拒絕直接匯入
+未經用戶端處理的網頁開發版。原有官方道路／待轉區資料保留為唯讀導航輸入；
+舊版手機 localStorage 的編輯不再套用。
 
-- 使用網路、前景粗略／精確定位與喚醒權限。
-- 外部頁面交由手機瀏覽器開啟，不在 App WebView 中載入。
-- 禁止 WebView file/content 存取與 HTTP mixed content。
-- APK 沒有桌面 Vite 寫檔 API；道路資料修改仍在網頁開發工具完成後再匯入。
-- API 金鑰不可直接提交；公開客戶端金鑰仍須在服務端設定 API／來源限制。
+## 用戶端功能
+
+- 首次啟動要求定位權限；請選擇精確位置。GPS 總開關須由使用者在系統設定開啟。
+- 「目前位置」可定位地圖；規劃路線預設取得目前起點，也可切換自訂起終點。
+- 導航僅使用 GPS，沒有模擬、錄影展示、速度倍率、道路編輯或資料匯入操作。
+- 語音使用 Android 原生 TextToSpeech。優先離線中文聲音，若只有網路中文聲音則明確顯示需要網路。
+  沒有中文語音時由「設定 → 安裝／設定中文語音」下載；可試聽或關閉。
+- 畫面使用簡短指令，語音保留完整車道與轉向文案。
+- 「設定 → 導航視距」可選 16–22，保存設定並套用至置中與重規劃。
+- 方向感測器在前景啟用，低速時用手機朝向；無可用方向資料時沿用路線方向。
+- 大眾运輸圖層、資料、交通場站／共享單車搜尋結果已排除，停車場和其他地標保留。
+
+真實磁場方向、各廠牌語音引擎與道路行駛仍須實機驗證。
+其他已發現但未修改的問題見 `docs/CLIENT_REVIEW.md`。

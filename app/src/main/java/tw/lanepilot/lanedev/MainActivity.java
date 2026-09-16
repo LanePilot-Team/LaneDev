@@ -25,10 +25,12 @@ import androidx.webkit.WebViewAssetLoader;
 public class MainActivity extends AppCompatActivity {
     private static final int LOCATION_PERMISSION_REQUEST = 1001;
     private static final String APP_HOST = "appassets.androidplatform.net";
-    private static final String APP_ORIGIN = "https://" + APP_HOST;
+    static final String APP_ORIGIN = "https://" + APP_HOST;
     private static final String APP_URL = APP_ORIGIN + "/assets/public/index.html";
 
     private WebView webView;
+    private NativeServices nativeServices;
+    private boolean requestingLocation;
     private String pendingGeoOrigin;
     private GeolocationPermissions.Callback pendingGeoCallback;
 
@@ -42,6 +44,8 @@ public class MainActivity extends AppCompatActivity {
         WebView.setWebContentsDebuggingEnabled(debuggable);
         webView = findViewById(R.id.lane_web_view);
         configureWebView(webView);
+        nativeServices = new NativeServices(this, webView);
+        if (!hasLocationPermission()) requestLocationPermission();
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -80,14 +84,29 @@ public class MainActivity extends AppCompatActivity {
                     WebView ignored,
                     WebResourceRequest request
             ) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                Uri url = request.getUrl();
+                if (APP_HOST.equals(url.getHost()) &&
+                        (!"GET".equals(request.getMethod()) || !url.getPath().startsWith("/assets/public/"))) {
+                    return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+                            java.util.Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
+                }
+                return assetLoader.shouldInterceptRequest(url);
+            }
+
+            @Override
+            public void onPageFinished(WebView ignored, String url) {
+                if (nativeServices != null) nativeServices.status();
             }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView ignored, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                if (APP_HOST.equals(uri.getHost())) return false;
-                startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                if (APP_HOST.equals(uri.getHost()) && "https".equals(uri.getScheme())
+                        && uri.getPath().startsWith("/assets/public/")) return false;
+                if (request.isForMainFrame() && ("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                    catch (android.content.ActivityNotFoundException ignoredError) { }
+                }
                 return true;
             }
         });
@@ -98,7 +117,9 @@ public class MainActivity extends AppCompatActivity {
                     String origin,
                     GeolocationPermissions.Callback callback
             ) {
-                if (!APP_ORIGIN.equals(origin)) {
+                Uri geoOrigin = Uri.parse(origin);
+                if (!"https".equals(geoOrigin.getScheme()) || !APP_HOST.equals(geoOrigin.getHost())
+                        || (geoOrigin.getPort() != -1 && geoOrigin.getPort() != 443)) {
                     callback.invoke(origin, false, false);
                     return;
                 }
@@ -106,21 +127,28 @@ public class MainActivity extends AppCompatActivity {
                     callback.invoke(origin, true, false);
                     return;
                 }
+                if (pendingGeoCallback != null) pendingGeoCallback.invoke(pendingGeoOrigin, false, false);
                 pendingGeoOrigin = origin;
                 pendingGeoCallback = callback;
-                ActivityCompat.requestPermissions(
-                        MainActivity.this,
-                        new String[]{
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                        },
-                        LOCATION_PERMISSION_REQUEST
-                );
+                requestLocationPermission();
             }
         });
     }
 
-    private boolean hasLocationPermission() {
+    void requestLocationPermission() {
+        if (requestingLocation) return;
+        requestingLocation = true;
+        ActivityCompat.requestPermissions(this, new String[] {
+                Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION
+        }, LOCATION_PERMISSION_REQUEST);
+    }
+
+    boolean hasFineLocationPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    boolean hasLocationPermission() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -134,10 +162,25 @@ public class MainActivity extends AppCompatActivity {
             @NonNull int[] grantResults
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != LOCATION_PERMISSION_REQUEST || pendingGeoCallback == null) return;
-        pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
+        if (requestCode != LOCATION_PERMISSION_REQUEST) return;
+        requestingLocation = false;
+        if (pendingGeoCallback != null)
+            pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
+        if (nativeServices != null) nativeServices.completeLocationRequests();
         pendingGeoCallback = null;
         pendingGeoOrigin = null;
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.onResume();
+        if (nativeServices != null) nativeServices.resume();
+    }
+
+    @Override protected void onPause() {
+        if (nativeServices != null) nativeServices.pause();
+        if (webView != null) webView.onPause();
+        super.onPause();
     }
 
     @Override
@@ -148,6 +191,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (nativeServices != null) nativeServices.destroy();
+        if (pendingGeoCallback != null) pendingGeoCallback.invoke(pendingGeoOrigin, false, false);
         if (webView != null) webView.destroy();
         super.onDestroy();
     }

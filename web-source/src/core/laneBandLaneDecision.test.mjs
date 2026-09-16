@@ -1,0 +1,168 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { laneBand, laneChoiceAreas } from './graph.ts'
+import { cumulative, haversine, pointAlong } from './geo.ts'
+
+const decision = (overrides = {}) => ({
+  allowed: true,
+  reason: 'compatible',
+  primaryLaneIndex: 2,
+  secondaryLaneIndices: [],
+  incompatibleLaneIndices: [],
+  inferred: false,
+  preparationM: 320,
+  laneChanges: 1,
+  difficultyS: 2,
+  shortPreparation: false,
+  postTurnLaneIndex: 2,
+  ...overrides,
+})
+
+const straightRoute = (laneDecision) => {
+  const coords = [[120, 22], [120.005, 22]]
+  const cum = cumulative(coords)
+  return {
+    coords,
+    cum,
+    lengthM: cum.at(-1),
+    timeS: 45,
+    maneuvers: [
+      {
+        distM: 400,
+        kind: 'right',
+        lanesForward: 4,
+        laneGuidance: {
+          laneCount: 4,
+          laneMovements: ['through', 'right', 'right', 'through'],
+          source: 'annotation',
+        },
+        laneDecision,
+      },
+      { distM: cum.at(-1), kind: 'arrive', lanesForward: 1 },
+    ],
+    spans: [{
+      toIdx: 1,
+      offM: 0,
+      leftM: -4.8,
+      rightM: 4.8,
+      road: { properties: { osm_id: 999001 } },
+      back: false,
+      laneGuidance: { laneCount: 4, source: 'annotation' },
+    }],
+    diverges: [],
+    weaves: [],
+  }
+}
+
+function offsetAt(route, distanceM) {
+  const band = laneBand(route)
+  let best = 0
+  for (let i = 1; i < band.routeD.length; i++) {
+    if (Math.abs(band.routeD[i] - distanceM) < Math.abs(band.routeD[best] - distanceM)) best = i
+  }
+  const d = band.routeD[best]
+  const base = pointAlong(route.coords, route.cum, d)
+  const c = band.coords[best]
+  const kx = 111320 * Math.cos((base.pos[1] * Math.PI) / 180)
+  const ex = (c[0] - base.pos[0]) * kx
+  const ny = (c[1] - base.pos[1]) * 110540
+  const rad = ((base.brg + 90) * Math.PI) / 180
+  return ex * Math.sin(rad) + ny * Math.cos(rad)
+}
+
+test('導航線使用保存的主要車道索引而不是固定最外側', () => {
+  const route = straightRoute(decision({ primaryLaneIndex: 2 }))
+
+  assert.ok(Math.abs(offsetAt(route, 390) - 1.6) < 0.35)
+})
+
+test('可選車道形成整片透明區域並每 60 公尺向主線收斂一道', () => {
+  const route = straightRoute(decision({
+    primaryLaneIndex: 3,
+    secondaryLaneIndices: [0, 1, 2],
+  }))
+
+  const [area] = laneChoiceAreas(route)
+  assert.deepEqual(area.laneIndices, [0, 1, 2, 3])
+  const widthAtRemaining = (remainingM) => {
+    const target = 400 - remainingM
+    let index = 0
+    for (let i = 1; i < area.routeD.length; i++) {
+      if (Math.abs(area.routeD[i] - target) < Math.abs(area.routeD[index] - target)) index = i
+    }
+    return haversine(area.left[index], area.right[index])
+  }
+  assert.ok(Math.abs(widthAtRemaining(180) - 9.6) < 0.5)
+  assert.ok(Math.abs(widthAtRemaining(120) - 6.4) < 0.5)
+  assert.ok(Math.abs(widthAtRemaining(60) - 3.2) < 0.5)
+  assert.deepEqual(area.ring[0], area.ring.at(-1))
+})
+
+test('導航線在保存的 preparationM 邊界開始切換車道', () => {
+  const route = straightRoute(decision({ primaryLaneIndex: 3, preparationM: 320 }))
+
+  assert.ok(Math.abs(offsetAt(route, 55)) < 0.1)
+  assert.ok(offsetAt(route, 95) > 0.15)
+})
+
+test('轉彎後導航線落在前瞻保存的車道而不是先回外側', () => {
+  const coords = [[120, 22], [120.001, 22], [120.001, 21.999]]
+  const cum = cumulative(coords)
+  const turnM = cum[1]
+  const route = {
+    coords,
+    cum,
+    lengthM: cum.at(-1),
+    timeS: 20,
+    maneuvers: [
+      {
+        distM: turnM,
+        kind: 'right',
+        lanesForward: 3,
+        laneDecision: decision({ primaryLaneIndex: 2, postTurnLaneIndex: 0 }),
+      },
+      { distM: cum.at(-1), kind: 'arrive', lanesForward: 3 },
+    ],
+    spans: [
+      { toIdx: 1, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+      { toIdx: 2, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+    ],
+    diverges: [],
+    weaves: [],
+  }
+
+  const actual = offsetAt(route, turnM + 10)
+  assert.ok(actual < -0.1, `actual offset ${actual.toFixed(2)}m`)
+})
+
+test('右轉前維持在目標車道，轉彎後才往新道路車道平滑', () => {
+  const coords = [[120, 22], [120.001, 22], [120.001, 21.999]]
+  const cum = cumulative(coords)
+  const turnM = cum[1]
+  const route = {
+    coords,
+    cum,
+    lengthM: cum.at(-1),
+    timeS: 20,
+    maneuvers: [
+      {
+        distM: turnM,
+        kind: 'right',
+        lanesForward: 3,
+        laneDecision: decision({ primaryLaneIndex: 2, postTurnLaneIndex: 0 }),
+      },
+      { distM: cum.at(-1), kind: 'arrive', lanesForward: 3 },
+    ],
+    spans: [
+      { toIdx: 1, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+      { toIdx: 2, offM: 0, leftM: -3.2, rightM: 3.2, laneGuidance: { laneCount: 3, source: 'annotation' } },
+    ],
+    diverges: [],
+    weaves: [],
+  }
+
+  const beforeTurn = offsetAt(route, turnM - 6)
+  const atTurn = offsetAt(route, turnM)
+  assert.ok(beforeTurn > 2.7, `before-turn offset ${beforeTurn.toFixed(2)}m`)
+  assert.ok(atTurn > 2.7, `at-turn offset ${atTurn.toFixed(2)}m`)
+})

@@ -17,8 +17,11 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
         </select>
       </label>
       <p>{state.tts}</p>
-      <button onClick={() => nativeCommand('ttsSettings')}>安裝／設定中文語音</button>
-      <button onClick={() => nativeCommand('speak', { text: '語音導航測試，前方路口請右轉。' })} disabled={!state.voice}>試聽</button>
+      <button onClick={() => nativeCommand('ttsInstall')}>下載中文語音</button>
+      <button onClick={() => nativeCommand('ttsSettings')}>系統語音設定</button>
+      <button onClick={() => nativeCommand('ttsRefresh')}>重新檢查語音</button>
+      <button onClick={() => nativeCommand('ttsTest')}>試聽中文</button>
+      <p role="status">{state.speech}<br />{state.audio}</p>
       <p>{state.location}</p>
       <button onClick={() => nativeCommand('locationSettings')}>開啟手機定位設定</button>
       <button onClick={() => nativeCommand('appSettings')}>App 定位權限</button>

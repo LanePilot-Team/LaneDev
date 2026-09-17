@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createPlaceRouteStops,
+  createPlaceRouteStops, withCurrentStart,
   firstUnsetStopId,
 } from './placeRoute.ts'
 
@@ -62,4 +62,24 @@ test('目前位置可用但目的地吸附失敗時改為等待設定目的地',
   })
 
   assert.equal(firstUnsetStopId(stops), 2)
+})
+
+test('地點完整地址隨路線端點保存，不以類型取代', () => {
+  const address = '高雄市楠梓區高雄大學路700號'
+  const stops = createPlaceRouteStops({ ...destination, address }, snappedDestination)
+  assert.equal(stops[1].address, address)
+  assert.equal(stops[1].placeId, destination.id)
+})
+
+test('搜尋起點改回目前位置，清掉舊地址但保留終點與停靠點', () => {
+  const stops = [
+    { id: 1, pos: [120, 22], label: '舊起點', address: '舊地址', placeId: 'old', placePosition: [120, 22] },
+    { id: 3, pos: [120.1, 22.1], label: '停靠點' },
+    { id: 2, pos: [120.2, 22.2], label: '終點' },
+  ]
+  const changed = withCurrentStart(stops, [120.3, 22.3])
+  assert.deepEqual(changed[0], { id: 1, pos: [120.3, 22.3], label: '我的位置' })
+  assert.equal(changed[1], stops[1])
+  assert.equal(changed[2], stops[2])
+  assert.equal(stops[0].label, '舊起點')
 })

@@ -1,15 +1,16 @@
-// 路線規劃側面板（mvp 起點/停靠點/終點還原）＋ 車種切換 ＋ 轉彎步驟清單。
-// LaneDev / LaneNav 共用：狀態與操作都在 usePlanner，這裡只是畫面。
-import { isSecureContext, requestCurrentPosition } from '../nav/geolocation'
+import { requestCurrentPosition } from '../nav/geolocation'
 import { useRef, useState, useEffect } from 'react'
 import { ManeuverList } from './ManeuverList'
 import type { Planner } from './usePlanner'
+import type { MapCore } from '../app/mapCore'
+import { PlaceSearch } from '../places/PlaceSearch'
+import { PlaceAddress } from '../places/PlaceAddress'
+import { destinationLabel, type DestinationSelection } from '../places/destination'
 
-export function PlanPanel({ planner, onClose, startGpsNav }: {
-  planner: Planner
-  onClose: () => void
-  startGpsNav: () => void
+export function PlanPanel({ core, planner, onClose, startGpsNav }: {
+  core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void
 }) {
+  const [editing, setEditing] = useState<number | null>(null)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
   const requestId = useRef(0)
@@ -26,76 +27,59 @@ export function PlanPanel({ planner, onClose, startGpsNav }: {
     } finally { if (id === requestId.current) setLocating(false) }
   }
   useEffect(() => {
-    if (planner.stops.every(stop => !stop.pos)) void useCurrentStart()
-    // Initial entry defaults to GPS; custom selection cancels this pending request.
+    if (!planner.stopsRef.current[0]?.pos) void useCurrentStart()
   }, [])
-  const { stops, activeStop, dragOverStop, routeError, routeSummary, profile } = planner
-
-  const stopLabel = (i: number) =>
-    i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
-  const stopColor = (i: number) =>
-    i === 0 ? '#22c55e' : i === stops.length - 1 ? '#ef4444' : '#1565c0'
-
-  return (
-    <div className="side-panel">
-      <div className="sp-head">
-        <b>路線規劃</b>
-        <span className="sp-profile">{profile === 'car' ? '🚗' : '🛵'}</span>
-        <button className="sp-close" onClick={onClose}>✕</button>
-      </div>
-      {/* 車種切換（換車種即重算路線；機車走兩段式/避開禁行路段） */}
-      <div className="sp-vehicle">
-        <button className={`mini${profile === 'car' ? ' on' : ''}`}
-          onClick={() => profile !== 'car' && planner.toggleProfile('pick')}>🚗 汽車</button>
-        <button className={`mini${profile === 'moto' ? ' on' : ''}`}
-          onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵 機車</button>
-      </div>
-      <div className="sp-vehicle">
-        <button className="mini" disabled={locating} onClick={useCurrentStart}>{locating ? '定位中…' : '使用目前位置作起點'}</button>
-        <button className="mini" onClick={() => { requestId.current++; setLocating(false); setLocationError(''); planner.startPick() }}>自訂起終點</button>
-      </div>
-      {locationError && <div role="alert" className="sp-error">{locationError}</div>}
-      {stops.map((s, i) => (
-        <div key={s.id}
-          className={`sp-stop${activeStop === s.id ? ' active' : ''}${dragOverStop === s.id ? ' drag-over' : ''}`}
-          draggable
-          onDragStart={() => { planner.dragStopRef.current = s.id }}
-          onDragOver={(e) => { e.preventDefault(); if (dragOverStop !== s.id) planner.setDragOverStop(s.id) }}
-          onDragLeave={() => planner.setDragOverStop((v) => (v === s.id ? null : v))}
-          onDrop={(e) => { e.preventDefault(); planner.setDragOverStop(null); planner.moveStop(planner.dragStopRef.current, s.id); planner.dragStopRef.current = null }}
-          onDragEnd={() => { planner.setDragOverStop(null); planner.dragStopRef.current = null }}>
-          <span className="sp-grip" title="拖曳調整順序">⋮⋮</span>
-          <span className="sp-dot" style={{ background: stopColor(i) }} />
-          <span className="sp-label">{stopLabel(i)}</span>
-          <span className={`sp-pos${s.label ? ' named' : ''}`}>
-            {s.label ? (
-              <><b>{s.label}</b><small>{s.pos
-                ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
-                : '附近找不到可導航道路'}</small></>
-            ) : s.pos ? `${s.pos[0].toFixed(4)}, ${s.pos[1].toFixed(4)}`
-              : activeStop === s.id ? '👉 點擊地圖設定' : '未設定'}
-          </span>
-          {s.pos && <button className="mini" onClick={() => planner.resetStop(s.id)}>重設</button>}
-          {i > 0 && i < stops.length - 1 && (
-            <button className="mini" onClick={() => planner.removeStop(s.id)}>✕</button>
-          )}
-        </div>
-      ))}
-      <button className="sp-add" onClick={planner.addVia}>＋ 新增停靠點</button>
-      {routeError && <div className="sp-error">{routeError}</div>}
-      {routeSummary && (
-        <div className="sp-summary">
-          <b>{routeSummary.km.toFixed(1)} 公里</b> · 約 {Math.max(1, Math.round(routeSummary.min))} 分鐘
-          <button className="mini go" onClick={startGpsNav} disabled={!isSecureContext()}
-            title={isSecureContext() ? '' : '需要 HTTPS，用 tailscale serve 開啟或改到手機瀏覽器'}>
-            📡 開始導航（GPS）
-          </button>
-        </div>
-      )}
-      {/* 轉彎步驟清單：routeSummary 更新時 routeRef 也已是同一條路線 */}
-      {routeSummary && planner.routeRef.current && (
-        <ManeuverList route={planner.routeRef.current} profile={profile} />
-      )}
+  const { stops, routeError, routeSummary, profile } = planner
+  const label = (i: number) => i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
+  function editStop(id: number) {
+    if (id === planner.stopsRef.current[0]?.id) {
+      requestId.current++
+      setLocating(false)
+    }
+    planner.selectStop(id)
+    setEditing(id)
+  }
+  function selectPlace(id: number, destination: DestinationSelection) {
+    const accepted = planner.setStopDestination(id, {
+      id: destination.id, label: destinationLabel(destination), position: destination.position,
+      provider: destination.provider,
+      address: destination.provider === 'local' ? destination.place.address : undefined,
+    })
+    if (!accepted) return
+    setEditing(null)
+    if (id === planner.stopsRef.current[0]?.id) setLocationError('')
+  }
+  return <section className="side-panel route-search-panel" aria-label="搜尋與路線規劃">
+    <div className="sp-head"><b>路線</b><button className="sp-close" aria-label="關閉路線" onClick={onClose}>✕</button></div>
+    <div className="sp-vehicle">
+      <button className={`mini${profile === 'car' ? ' on' : ''}`} onClick={() => profile !== 'car' && planner.toggleProfile('pick')}>🚗 汽車</button>
+      <button className={`mini${profile === 'moto' ? ' on' : ''}`} onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵 機車</button>
     </div>
-  )
+    {locating && <p role="status">正在取得目前位置…</p>}
+    {locationError && <p role="alert" className="sp-error">{locationError}；可直接搜尋起點。</p>}
+    {stops.map((stop, i) => <div className="route-stop" key={stop.id}>
+      <label htmlFor={`stop-${stop.id}`}>{label(i)}</label>
+      {editing === stop.id ? <div>
+        <PlaceSearch key={stop.id} core={core} mapLoading={false} selected={null} picker
+          initialQuery="" searchLabel={`搜尋${label(i)}地點或地址`}
+          onSelect={destination => selectPlace(stop.id, destination)} onClear={() => {}}
+          onChooseStart={() => {}} />
+        {i === 0 && <button className="location-suggestion" onClick={() => { setEditing(null); void useCurrentStart() }}>⌖ 目前位置</button>}
+        <button className="mini" onClick={() => setEditing(null)}>取消搜尋</button>
+      </div> : <input id={`stop-${stop.id}`} aria-label={label(i)} readOnly
+        value={stop.label || (stop.pos ? `${stop.pos[1].toFixed(5)}, ${stop.pos[0].toFixed(5)}` : '')}
+        placeholder={`搜尋${label(i)}地點或地址`} onFocus={() => editStop(stop.id)} onClick={() => editStop(stop.id)} />}
+      {editing !== stop.id && stop.placePosition && <PlaceAddress place={{ address: stop.address, position: stop.placePosition }} />}
+      {i > 0 && i < stops.length - 1 && <button className="mini" onClick={() => planner.removeStop(stop.id)}>移除停靠點</button>}
+    </div>)}
+    <button className="sp-add" onClick={() => { planner.addVia(); setEditing(null) }}>＋ 新增停靠點</button>
+    {routeError && <div role="alert" className="sp-error">{routeError}</div>}
+    {routeSummary && <div className="sp-summary">
+      <b>{routeSummary.km.toFixed(1)} 公里</b> · 約 {Math.max(1, Math.round(routeSummary.min))} 分鐘
+      <button className="mini go" disabled={editing !== null || locating} onClick={startGpsNav}>開始導航</button>
+    </div>}
+    {routeSummary && planner.routeRef.current && <details><summary>路線步驟</summary>
+      <ManeuverList route={planner.routeRef.current} profile={profile} />
+    </details>}
+  </section>
 }

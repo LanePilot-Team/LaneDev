@@ -5,8 +5,8 @@
   }
   const buttons = () => [...document.querySelectorAll('button')]
   buttons().find(b => b.innerText.includes('國立高雄大學\n')).click()
-  await wait(() => buttons().some(b => b.innerText.includes('從我的位置出發')))
-  buttons().find(b => b.innerText.includes('從我的位置出發')).click()
+  await wait(() => document.querySelector('.place-route-methods button'))
+  document.querySelector('.place-route-methods button').click()
   await wait(() => buttons().some(b => b.innerText.includes('開始導航')))
   return { text: document.body.innerText }
 })()

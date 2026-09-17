@@ -9,3 +9,17 @@
 .client-locate button { padding: 12px 16px; border: 0; border-radius: 10px; background: white; color: #16304a; box-shadow: 0 2px 12px #0003; float: right; }
 .client-locate p { background: white; padding: 12px; border-radius: 10px; color: #b42318; }
 .client-location-marker { font-size: 24px; color: #1976d2; text-shadow: 0 0 3px white; }
+/* Position and heading are deliberately separate visual elements. */
+.client-location-marker { width: 84px; height: 84px; pointer-events: none; }
+.client-location-marker .location-beam { position: absolute; inset: 0; background: linear-gradient(0deg, #2386f088 35%, #2386f000); clip-path: polygon(50% 50%, 16% 0, 84% 0); }
+.client-location-marker .location-dot { position: absolute; width: 18px; height: 18px; top: 33px; left: 33px; border-radius: 50%; background: #1683ee; border: 3px solid white; box-sizing: border-box; box-shadow: 0 1px 5px #0007; }
+.client-location-marker[data-heading="unknown"] .location-beam { display: none; }
+.side-panel.route-search-panel { left: 12px; right: auto; top: max(12px, env(safe-area-inset-top)); width: min(420px, calc(100vw - 24px)); max-height: 55vh; box-sizing: border-box; }
+.route-stop { margin: 10px 0; }
+.route-stop > label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+.route-stop > input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #c5d3e3; border-radius: 10px; background: #f5f8fc; color: #16304a; font-size: 16px; }
+.route-search-panel .stop-place-search { position: static; width: 100%; max-width: none; }
+.stop-place-search .place-search-form { box-shadow: none; border: 1px solid #6a9fe2; }
+.stop-place-search .place-results { max-height: 30vh; box-shadow: none; }
+.place-address { display: block; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.5; color: #566479; }
+.location-suggestion { background: #eef5ff; color: #1559a0; border: 0; padding: 12px; border-radius: 8px; margin: 6px 0; }

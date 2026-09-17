@@ -6,6 +6,14 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.location.LocationManager;
+import android.location.Geocoder;
+import android.location.Address;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.os.Bundle;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import android.net.Uri;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -33,6 +41,11 @@ final class NativeServices implements SensorEventListener {
     private TextToSpeech tts;
     private boolean ready, resumed, destroyed, navigating, initializing;
     private boolean bridgeAvailable;
+    private final ThreadPoolExecutor geocodePool = new ThreadPoolExecutor(2, 2, 30,
+        TimeUnit.SECONDS, new ArrayBlockingQueue<>(16));
+    private boolean refreshSpeechOnResume;
+    private String speechStatus = "尚未播放";
+    private int audioBytes;
     private String ttsStatus = "正在初始化中文語音…";
     private long lastHeadingAt;
     private int queuedSpeech;
@@ -69,13 +82,16 @@ final class NativeServices implements SensorEventListener {
             if (status != TextToSpeech.SUCCESS) {
                 ttsStatus = "語音服務無法啟動，請安裝或啟用文字轉語音引擎";
             } else {
+                // setLanguage may initialize/download a language that getVoices does not list yet.
+                int language = tts.setLanguage(Locale.TAIWAN);
                 Voice voice = null;
                 int bestScore = -1;
                 if (tts.getVoices() != null) {
                     for (Voice candidate : tts.getVoices()) {
                         if (!"zh".equals(candidate.getLocale().getLanguage())
-                                || (candidate.getFeatures() != null && candidate.getFeatures().contains("notInstalled"))) continue;
-                        int score = (candidate.isNetworkConnectionRequired() ? 0 : 2)
+) continue;
+                        boolean missing = candidate.getFeatures() != null && candidate.getFeatures().contains("notInstalled");
+                        int score = (missing ? 0 : 4) + (candidate.isNetworkConnectionRequired() ? 0 : 2)
                                 + ("TW".equals(candidate.getLocale().getCountry()) ? 1 : 0);
                         if (score > bestScore) { voice = candidate; bestScore = score; }
                     }
@@ -84,14 +100,34 @@ final class NativeServices implements SensorEventListener {
                     ready = true;
                     ttsStatus = (voice.isNetworkConnectionRequired() ? "中文語音已就緒，需網路（" : "離線中文語音已就緒（")
                             + voice.getLocale().toLanguageTag() + "）";
+                } else if (language >= TextToSpeech.LANG_AVAILABLE) {
+                    ready = true;
+                    ttsStatus = "中文語音引擎已就緒";
                 } else {
-                    ttsStatus = "缺少可用中文語音，請在語音設定下載中文語音資料";
+                    ttsStatus = language == TextToSpeech.LANG_MISSING_DATA
+                        ? "缺少中文語音資料，請按下載中文語音"
+                        : "目前引擎不支援中文，請在系統設定選擇支援中文的語音引擎";
                 }
+                tts.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
                 tts.setSpeechRate(0.95f);
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) {}
+                    @Override public void onStart(String id) {
+                        activity.runOnUiThread(() -> { speechStatus = "正在播放"; status(); });
+                    }
+                    @Override public void onAudioAvailable(String id, byte[] audio) {
+                        activity.runOnUiThread(() -> audioBytes += audio.length);
+                    }
                     @Override public void onDone(String id) { finishSpeech(false); }
                     @Override public void onError(String id) { finishSpeech(true); }
+                    @Override public void onError(String id, int code) {
+                        activity.runOnUiThread(() -> {
+                            queuedSpeech = Math.max(0, queuedSpeech - 1);
+                            speechStatus = "播放失敗（" + code + "）：請確認中文資料下載完成、網路及媒體音量";
+                            status();
+                        });
+                    }
                 });
             }
             status();
@@ -106,15 +142,25 @@ final class NativeServices implements SensorEventListener {
     private void finishSpeech(boolean failed) {
         activity.runOnUiThread(() -> {
             queuedSpeech = Math.max(0, queuedSpeech - 1);
-            if (failed) { ttsStatus = "語音播放失敗，請檢查手機語音設定"; status(); }
+            speechStatus = failed ? "播放失敗，請檢查中文資料與媒體音量"
+                : "引擎已完成播放（音訊 " + audioBytes + " bytes）；無聲請檢查媒體音量或藍牙輸出";
+            status();
         });
     }
 
     private void speak(String text) {
         if (text.isBlank() || text.length() > 1000 || !resumed) return;
-        if (!ready) { pendingSpeech = text; pendingSpeechAt = SystemClock.elapsedRealtime(); status(); return; }
+        if (!ready) {
+            pendingSpeech = text; pendingSpeechAt = SystemClock.elapsedRealtime();
+            initializeSpeech(); status(); return;
+        }
         if (queuedSpeech >= 3) return; // Avoid reading stale distances after a long queue.
-        int result = tts.speak(text, TextToSpeech.QUEUE_ADD, null, "nav-" + System.nanoTime());
+        Bundle parameters = new Bundle();
+        parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
+        audioBytes = 0;
+        speechStatus = "已送出語音，等待引擎播放";
+        int result = tts.speak(text, TextToSpeech.QUEUE_ADD, parameters, "nav-" + System.nanoTime());
+        status();
         if (result == TextToSpeech.SUCCESS) queuedSpeech++;
         else { ttsStatus = "語音播放失敗，請檢查手機語音設定"; status(); }
     }
@@ -133,7 +179,20 @@ final class NativeServices implements SensorEventListener {
                 navigating = command.optBoolean("active");
                 updateKeepScreenOn();
                 break;
-            case "ttsSettings": open(new Intent("com.android.settings.TTS_SETTINGS")); break;
+            case "ttsSettings":
+                refreshSpeechOnResume = true;
+                open(new Intent("com.android.settings.TTS_SETTINGS")); break;
+            case "ttsInstall":
+                refreshSpeechOnResume = true;
+                Intent install = new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+                if (tts != null && tts.getDefaultEngine() != null) install.setPackage(tts.getDefaultEngine());
+                open(install); break;
+            case "ttsRefresh": stopSpeech(); initializeSpeech(); break;
+            case "ttsTest":
+                stopSpeech();
+                if (!ready || refreshSpeechOnResume) { refreshSpeechOnResume = false; initializeSpeech(); }
+                speak("語音導航測試，前方路口請右轉。"); break;
+            case "reverseGeocode": reverseGeocode(command); break;
             case "locationSettings": open(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)); break;
             case "appSettings": open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.parse("package:" + activity.getPackageName()))); break;
@@ -144,13 +203,42 @@ final class NativeServices implements SensorEventListener {
     private void open(Intent intent) {
         try { activity.startActivity(intent); }
         catch (android.content.ActivityNotFoundException ignored) {
-            if ("com.android.settings.TTS_SETTINGS".equals(intent.getAction())) {
+            if (TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA.equals(intent.getAction())) {
+                ttsStatus = "目前引擎未提供下載頁，請到系統語音設定安裝中文資料或切換引擎";
+                status();
+            } else if ("com.android.settings.TTS_SETTINGS".equals(intent.getAction())) {
                 try { activity.startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)); }
                 catch (android.content.ActivityNotFoundException missing) {
                     ttsStatus = "沒有可用的語音設定，請先安裝文字轉語音引擎";
                     status();
                 }
             }
+        }
+    }
+
+    private void reverseGeocode(JSONObject command) {
+        String id = command.optString("id");
+        double lat = command.optDouble("lat", Double.NaN), lng = command.optDouble("lng", Double.NaN);
+        if (!Double.isFinite(lat) || !Double.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180
+                || !Geocoder.isPresent()) {
+            emit("addressResult", "id", id, "address", ""); return;
+        }
+        try {
+            geocodePool.execute(() -> {
+                String address = "";
+                try {
+                    List<Address> found = new Geocoder(activity.getApplicationContext(), Locale.TAIWAN)
+                        .getFromLocation(lat, lng, 1);
+                    if (found != null && !found.isEmpty()) {
+                        Address item = found.get(0);
+                        if (item.getMaxAddressLineIndex() >= 0) address = item.getAddressLine(0);
+                    }
+                } catch (Exception ignored) {}
+                String result = address == null ? "" : address;
+                activity.runOnUiThread(() -> emit("addressResult", "id", id, "address", result));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            emit("addressResult", "id", id, "address", "");
         }
     }
 
@@ -169,7 +257,10 @@ final class NativeServices implements SensorEventListener {
     }
 
     void status() {
-        emit("status", "tts", bridgeAvailable ? ttsStatus : "請更新 Android System WebView 以啟用語音服務",
+        AudioManager audio = (AudioManager) activity.getSystemService(MainActivity.AUDIO_SERVICE);
+        emit("status", "ttsReady", ready, "speech", speechStatus,
+            "audio", "媒體音量 " + audio.getStreamVolume(AudioManager.STREAM_MUSIC) + "/" + audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
+            "tts", bridgeAvailable ? ttsStatus : "請更新 Android System WebView 以啟用語音服務",
             "location", !activity.hasLocationPermission() ? "定位尚未授權"
                 : !locationEnabled() ? "手機定位已關閉"
                 : activity.hasFineLocationPermission() ? "精確定位權限已開啟" : "僅允許概略位置，請開啟精確定位",
@@ -196,7 +287,7 @@ final class NativeServices implements SensorEventListener {
         resumed = true;
         if (rotation != null) sensors.registerListener(this, rotation, SensorManager.SENSOR_DELAY_UI);
         updateKeepScreenOn();
-        if (!ready) initializeSpeech();
+        if (!ready || refreshSpeechOnResume) { refreshSpeechOnResume = false; initializeSpeech(); }
         status();
     }
 
@@ -216,6 +307,7 @@ final class NativeServices implements SensorEventListener {
 
     void destroy() {
         destroyed = true;
+        geocodePool.shutdownNow();
         sensors.unregisterListener(this);
         if (tts != null) { tts.stop(); tts.shutdown(); }
         locationRequests.clear();

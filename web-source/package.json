@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "postbuild": "node tools/package-client.mjs",
-    "test": "node --test src/nav/speechGuidance.test.mjs src/nav/geolocation.test.mjs src/plan/placeRoute.test.mjs src/native/client.test.mjs tools/client-data.test.mjs",
+    "test": "node --test src/nav/speechGuidance.test.mjs src/nav/geolocation.test.mjs src/plan/placeRoute.test.mjs src/places/places.test.mjs src/places/destination.test.mjs src/native/client.test.mjs tools/client-data.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

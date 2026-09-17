@@ -534,6 +534,13 @@ export function useMapCore(
 
   // ── 地圖初始化 ──
   useEffect(() => {
+    let bootPhase = performance.now()
+    function bootMeasure(name: string) {
+      const end = performance.now()
+      performance.measure('lanedev-boot:' + name, { start: bootPhase, end })
+      console.info('[startup]', name, Math.round(end - bootPhase) + 'ms')
+      bootPhase = end
+    }
     const map = new maplibregl.Map({
       container: containerRef.current!,
       style: buildStyle(),
@@ -573,6 +580,7 @@ export function useMapCore(
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__map = map
 
     map.on('load', async () => {
+      bootMeasure('map-style-load')
       const icons = makeIcons()
       for (const [name, img] of Object.entries(icons)) map.addImage(name, img)
       const loadSvg = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -585,6 +593,7 @@ export function useMapCore(
         loadSvg(asset('/assets/road-markings/motorcycle.svg')),
         loadSvg(asset('/assets/road-markings/bicycle.svg')),
       ])
+      bootMeasure('road-icon-decode')
       map.addImage('moto-box-motorcycle', motorcycleIcon)
       map.addImage('moto-box-bicycle', bicycleIcon)
 
@@ -605,6 +614,7 @@ export function useMapCore(
         fetch(asset('/data/nanzih_buildings_height.geojson')).then((r) => r.json()) as
           Promise<FeatureCollection<Polygon>>,
       ])
+      bootMeasure('read-local-datasets')
       // 建築－道路中心線幾何稽核：排除 footprint 覆蓋單一路段至少 75%、
       // 且沒有架空高度的建築。train_station／架高站由簍空與支架邏輯處理，
       // 不列入此清單。
@@ -663,8 +673,10 @@ export function useMapCore(
       // 底圖前處理（人工修正 → couplet 合併 → 切塊）收斂在 core/pipeline.ts，
       // 與「匯入地圖」及離線 harness 共用。nodeRemap/wayRemap = 合併造成的
       // node/way id 重映射——journal/zones 與 LanePilot 標註匯入都要跟著遷移
+      bootMeasure('prepare-buildings')
       rawWaysRef.current = buildRawWays(roadsRaw) // 前處理會變動幾何，先留原始快照
       const { roads, nodeRemap, wayRemap } = prepareBaseRoads(roadsRaw)
+      bootMeasure('prepare-road-geometry')
       preparedRoadsRef.current = structuredClone(roads)
       const extraction = extractLaneBase([...staticAnnotations()])
       if (extraction.errors.length) {
@@ -684,6 +696,7 @@ export function useMapCore(
         window.alert(error.message)
         throw error
       }
+      bootMeasure('canonical-lane-base')
       laneBaseIndexRef.current = canonicalLaneBase.index
       if (import.meta.env.DEV) {
         const bounds = {
@@ -730,12 +743,15 @@ export function useMapCore(
       for (const row of mergeView.rows) {
         if (!row.resolved) console.warn(`未套用道路捏合 ${row.mergeKey}：${row.detail}`)
       }
+      bootMeasure('apply-journal-merge')
       redrawRoads()
       src('buildings').setData(buildings)
       setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
+      bootMeasure('render-road-surfaces')
       graphRef.current = new RoadGraph(roadsRef.current)
       intersectionsRef.current = graphRef.current.intersections()
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__graph = graphRef.current
+      bootMeasure('routing-graph')
       // 待轉區的路口 node 也跟著 couplet 合併遷移（refreshZones 會回存）；
       // remap 表沒涵蓋的（drop 側互接節點合併後直接消失）用位置吸附最近路口補救
       const knownInter = new Set(intersectionsRef.current.map((i) => i.id))
@@ -772,7 +788,9 @@ export function useMapCore(
       }
       // 初始繪製不得把 derived Lane Base zones 寫進 editor waiting_zones。
       refreshZones(false)
+      bootMeasure('waiting-zones')
       refreshBays()
+      bootMeasure('lane-markings-render-graph')
       // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer
@@ -787,6 +805,7 @@ export function useMapCore(
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__vlayer = vLayer
       vehiclesRef.current = []
       refreshVehicles()
+      bootMeasure('3d-models')
       setLoading(false)
     })
 

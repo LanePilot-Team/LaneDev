@@ -121,14 +121,8 @@ export default function App() {
     setMode(m)
   }
 
-  function startPick() {
-    planner.clearAllRoute()
-    clearDestinationSelection()
-    setMode('pick')
-    planner.startPick()
-  }
-
   function startPlacePick(destination: DestinationSelection) {
+    clearDestinationSelection()
     setRoadInfo(null)
     core.refreshZones()
     core.refreshVehicles()
@@ -136,6 +130,7 @@ export default function App() {
     planner.startPlacePick({
       id: destination.id,
       label: destinationLabel(destination),
+      address: destination.provider === 'local' ? destination.place.address : undefined,
       position: destination.position,
       provider: destination.provider,
     })
@@ -145,41 +140,6 @@ export default function App() {
       pitch: 0,
       bearing: 0,
       essential: true,
-    })
-  }
-
-  function startPlaceFromCurrentLocation(
-    destination: DestinationSelection,
-    position: [number, number],
-  ) {
-    setRoadInfo(null)
-    core.refreshZones()
-    core.refreshVehicles()
-    setMode('pick')
-    planner.startPlaceFromCurrentLocation({
-      id: destination.id,
-      label: destinationLabel(destination),
-      position: destination.position,
-      provider: destination.provider,
-    }, position)
-  }
-
-  function activeRoutePickLabel() {
-    const index = planner.stops.findIndex((stop) => stop.id === planner.activeStop)
-    if (index === planner.stops.length - 1) return '目的地'
-    if (index > 0) return `停靠點 ${index}`
-    return '起點'
-  }
-
-  function focusDistrict(district: 'nanzih' | 'zuoying') {
-    const center: [number, number] = district === 'zuoying'
-      ? [120.294, 22.686]
-      : [120.303, 22.739]
-    core.mapRef.current?.flyTo({
-      center,
-      zoom: 13.6,
-      pitch: 0,
-      bearing: 0,
     })
   }
 
@@ -199,7 +159,6 @@ export default function App() {
           onSelect={showDestinationSelection}
           onClear={clearDestinationSelection}
           onChooseStart={startPlacePick}
-          onUseCurrentLocation={startPlaceFromCurrentLocation}
         />
       )}
 
@@ -214,29 +173,9 @@ export default function App() {
         />
       )}
 
-      {/* ── 工具列 ── */}
-      {mode !== 'drive' && (
-        <div className="toolbar">
-          <button className={mode === 'browse' ? 'on' : ''} onClick={() => switchMode('browse')}>瀏覽</button>
-          <button disabled={loading} className={mode === 'pick' ? 'on' : ''} onClick={() => startPick()}>規劃路線</button>
-          <button onClick={() => focusDistrict('nanzih')}>楠梓區</button>
-          <button onClick={() => focusDistrict('zuoying')}>左營區</button>
-          <button className="profile" onClick={() => planner.toggleProfile(modeRef.current)}>
-            {planner.profile === 'car' ? '🚗 汽車' : '🛵 機車'}
-          </button>
-        </div>
-      )}
-
       {/* ── 側面板：路線規劃 ── */}
-      {mode === 'pick' && planner.activeStop !== null &&
-        planner.stops.some((stop) => stop.placeId) && (
-        <div className="hint route-pick-hint">
-          <span aria-hidden="true">◎</span> 點選地圖上的{activeRoutePickLabel()}
-          <button className="mini" onClick={() => switchMode('browse')}>取消</button>
-        </div>
-      )}
       {mode === 'pick' && (
-        <PlanPanel planner={planner} onClose={() => switchMode('browse')}
+        <PlanPanel core={core} planner={planner} onClose={() => switchMode('browse')}
           startGpsNav={startGpsNav} />
       )}
 

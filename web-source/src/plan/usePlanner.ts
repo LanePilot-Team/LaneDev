@@ -14,7 +14,7 @@ import { isZoneEnabled } from '../core/zones'
 import { routeFailureText } from './routeFailure'
 import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
 import {
-  createPlaceRouteStops,
+  createPlaceRouteStops, withCurrentStart,
   firstUnsetStopId,
   type RouteDestination,
   type Stop,
@@ -44,6 +44,8 @@ export interface Planner {
     destination: RouteDestination,
     position: [number, number],
   ) => void
+  selectStop: (id: number) => void
+  setStopDestination: (id: number, destination: RouteDestination) => boolean
   setCurrentStart: (position: [number, number]) => void
   clearAllRoute: () => void
   addVia: () => void
@@ -175,7 +177,7 @@ export function usePlanner(core: MapCore): Planner {
     const b = route.coords.reduce(
       (acc, c) => acc.extend(c as [number, number]),
       new maplibregl.LngLatBounds(route.coords[0], route.coords[0]))
-    core.mapRef.current!.fitBounds(b, { padding: { top: 80, bottom: 80, left: 80, right: 240 }, pitch: 0, bearing: 0 })
+    core.mapRef.current!.fitBounds(b, { padding: { top: Math.min(300, core.mapRef.current!.getContainer().clientHeight * 0.45), bottom: 100, left: 35, right: 35 }, pitch: 0, bearing: 0 })
     setRouteSummary({ km: route.lengthM / 1000, min: route.timeS / 60 })
   }
 
@@ -256,11 +258,24 @@ export function usePlanner(core: MapCore): Planner {
     initializePlaceRoute(destination, position)
   }
 
+  function setStopDestination(id: number, destination: RouteDestination) {
+    if (!stopsRef.current.some(s => s.id === id)) return false
+    const snapped = snapRoutePoint(destination.position, 500, destination.label)
+    if (!snapped) return false
+    const next = stopsRef.current.map(s => s.id === id ? {
+      ...s, pos: snapped, label: destination.label, placeId: destination.id,
+      placePosition: destination.position, placeProvider: destination.provider,
+      address: destination.address,
+    } : s)
+    setStops(next)
+    setActiveStop(firstUnsetStopId(next))
+    return true
+  }
+
   function setCurrentStart(position: [number, number]) {
     const snapped = snapRoutePoint(position, 180, '目前位置')
     if (!snapped) return
-    const next = stopsRef.current.map((stop, i) => i === 0
-      ? { ...stop, pos: snapped, label: '我的位置', placeId: undefined } : stop)
+    const next = withCurrentStart(stopsRef.current, snapped)
     setStops(next)
     setActiveStop(firstUnsetStopId(next))
   }
@@ -283,7 +298,7 @@ export function usePlanner(core: MapCore): Planner {
   }
 
   function resetStop(id: number) {
-    setStops(stopsRef.current.map((s) => (s.id === id ? { ...s, pos: null } : s)))
+    setStops(stopsRef.current.map((s) => (s.id === id ? { id: s.id, pos: null } : s)))
     setActiveStop(id)
   }
 
@@ -369,6 +384,7 @@ export function usePlanner(core: MapCore): Planner {
     profile, profileRef, routePolicy: routePolicyRef.current,
     dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
     startPick, startPlacePick, startPlaceFromCurrentLocation,
+    selectStop: setActiveStop, setStopDestination,
     setCurrentStart, clearAllRoute, addVia, resetStop, removeStop, moveStop,
     handlePickClick,
     computeTwoStage, isTwoStage, annotateTwoStage, toggleProfile,

@@ -17,6 +17,9 @@ let state = {
   voice: stored('client.voice', 'true') !== 'false',
   zoom: validZoom(Number(stored('client.zoom', '20'))),
   tts: '正在檢查語音服務…',
+  ttsReady: false,
+  speech: '尚未播放',
+  audio: '',
   location: '定位尚未授權',
   heading: null as number | null,
   headingAt: 0,
@@ -53,7 +56,7 @@ export function deviceHeading() {
 }
 if (typeof window !== 'undefined') window.addEventListener('lane-native', ((event: CustomEvent) => {
   const data = event.detail
-  if (data.type === 'status') publish({ tts: data.tts, location: data.location, compass: data.compass })
+  if (data.type === 'status') publish({ tts: data.tts, ttsReady: Boolean(data.ttsReady), speech: data.speech || '', audio: data.audio || '', location: data.location, compass: data.compass })
   if (data.type === 'heading') publish({
     heading: typeof data.value === 'number' && Number.isFinite(data.value) ? data.value : null,
     headingAt: Date.now(),

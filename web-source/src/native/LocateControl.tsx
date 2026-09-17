@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Marker } from 'maplibre-gl'
 import type { MapCore } from '../app/mapCore'
 import { requestCurrentPosition } from '../nav/geolocation'
-import { useClientState } from './client'
+import { deviceHeading, useClientState } from './client'
 
 export function LocateControl({ core, loading, navigating }: {
   core: MapCore; loading: boolean; navigating: boolean
 }) {
-  const { heading } = useClientState()
+  const { heading, headingAt } = useClientState()
   const marker = useRef<Marker | null>(null)
   const sequence = useRef(0)
   const [busy, setBusy] = useState(false)
@@ -20,9 +20,19 @@ export function LocateControl({ core, loading, navigating }: {
     return () => { sequence.current++; marker.current?.remove(); marker.current = null }
   }, [navigating])
   useEffect(() => {
-    marker.current?.setRotation(heading ?? 0)
-    if (marker.current) marker.current.getElement().textContent = heading === null ? '●' : '▲'
-  }, [heading])
+    const update = () => {
+      const current = deviceHeading()
+      marker.current?.setRotation(current ?? 0)
+      if (marker.current) {
+        marker.current.getElement().dataset.heading = current === null ? 'unknown' : 'known'
+        marker.current.getElement().setAttribute('aria-label', current === null
+          ? '目前位置；朝向暫不可用' : `目前位置；面向 ${Math.round(current)} 度，扇形為朝向`)
+      }
+    }
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [heading, headingAt])
   async function locate() {
     const id = ++sequence.current
     setBusy(true); setError('')
@@ -32,9 +42,13 @@ export function LocateControl({ core, loading, navigating }: {
       marker.current?.remove()
       const element = document.createElement('div')
       element.className = 'client-location-marker'
-      element.textContent = heading === null ? '●' : '▲'
+      const currentHeading = deviceHeading()
+      element.dataset.heading = currentHeading === null ? 'unknown' : 'known'
+      const beam = document.createElement('span'); beam.className = 'location-beam'
+      const dot = document.createElement('span'); dot.className = 'location-dot'
+      element.append(beam, dot)
       element.setAttribute('aria-label', '目前位置與手機朝向')
-      marker.current = new Marker({ element, rotationAlignment: 'map', rotation: heading ?? 0 })
+      marker.current = new Marker({ element, rotationAlignment: 'map', rotation: currentHeading ?? 0 })
         .setLngLat(result.position).addTo(core.mapRef.current)
       core.mapRef.current.easeTo({ center: result.position, zoom: 18 })
     } catch (e) { if (id === sequence.current) setError(e instanceof Error ? e.message : '無法定位') }

@@ -384,6 +384,23 @@ function staticRoadDatabaseWriter() {
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/LaneDev/' : '/',
   plugins: [react(), staticRoadDatabaseWriter()],
+  build: {
+    // 第三方函式庫拆成獨立 chunk：它們只有升版才會變，而應用程式碼每次部署都變。
+    // 分開之後回訪者的 maplibre/three/turf 可以直接命中快取，不必跟著重下載。
+    // 這裡只動打包輸出，不改任何應用程式碼，因此沒有行為風險。
+    rolldownOptions: {
+      output: {
+        advancedChunks: {
+          groups: [
+            { name: 'maplibre', test: /node_modules[/\\]maplibre-gl[/\\]/ },
+            { name: 'three', test: /node_modules[/\\]three[/\\]/ },
+            { name: 'turf', test: /node_modules[/\\]@turf[/\\]/ },
+            { name: 'react', test: /node_modules[/\\](react|react-dom|scheduler)[/\\]/ },
+          ],
+        },
+      },
+    },
+  },
   server: {
     host: true,
     port: 5190,

@@ -95,7 +95,12 @@ function readBrowserEditor(): Partial<StaticEditorState> {
 
 export async function loadStaticRoadDatabase(): Promise<StaticRoadDatabase> {
   if (database) return database
-  const response = await fetch(DATABASE_URL, { cache: 'no-store' })
+  // dev：編輯器會經 vite 中介層原子寫回這個檔案，快取會讓剛存的編輯看起來消失，
+  // 所以必須 no-store。production：線上版是靜態站且無寫入能力，檔案只在部署時改變，
+  // 交給瀏覽器依 ETag 重新驗證即可——回訪可拿 304，省掉整份資料庫的傳輸。
+  const response = await fetch(DATABASE_URL, {
+    cache: import.meta.env.DEV ? 'no-store' : 'default',
+  })
   if (!response.ok) throw new Error(`讀取唯一靜態道路資料庫失敗（HTTP ${response.status}）`)
   database = await response.json() as StaticRoadDatabase
   if (!Array.isArray(database.segments) || !database.segments.length) {

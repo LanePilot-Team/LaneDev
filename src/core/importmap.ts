@@ -163,17 +163,31 @@ export function parseImported(text: string): ImportResult {
     } catch { /* 落到 jsonl 解析 */ }
   }
 
-  // JSONL：逐行解析，路段與標註分開收
-  const features: Feature<LineString>[] = []
-  const annotations: AnnotationRecord[] = []
+  // JSONL：逐行解析後，走與 parseImportedRecords 完全相同的分流邏輯
+  const records: Record<string, unknown>[] = []
   for (const line of trimmed.split('\n')) {
     if (!line.trim()) continue
-    let rec: Record<string, unknown>
     try {
-      rec = JSON.parse(line)
+      records.push(JSON.parse(line))
     } catch {
       throw new Error('不是有效的 JSONL（某一行無法解析）')
     }
+  }
+  return parseImportedRecords(records)
+}
+
+/**
+ * 與 parseImported 相同的分流與驗證，但輸入是「已經解析好的物件陣列」。
+ *
+ * 靜態資料庫（road_database.json）的 segments 讀進來時本來就是物件，
+ * 若再 JSON.stringify → join 換行 → 逐行 JSON.parse 繞一圈，等於對
+ * 5,478 筆資料做兩次多餘的序列化，還要生出一個十幾 MB 的中繼字串。
+ * 這個入口讓那條路徑跳過 string 層，驗證邏輯與 JSONL 路徑共用同一份。
+ */
+export function parseImportedRecords(records: Record<string, unknown>[]): ImportResult {
+  const features: Feature<LineString>[] = []
+  const annotations: AnnotationRecord[] = []
+  for (const rec of records) {
     if (String((rec.object_identity as Record<string, unknown> | undefined)?.object_type ?? '')
       .includes('annotation')) {
       const ann = annotationRecord(rec)

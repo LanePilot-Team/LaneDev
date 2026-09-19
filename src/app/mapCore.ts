@@ -13,7 +13,7 @@ import {
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
-import { parseImported } from '../core/importmap'
+import { parseImportedRecords } from '../core/importmap'
 import { RoadGraph } from '../core/graph'
 import {
   loadDeletedZoneIds, loadZones, saveZones, zonesToGeoJSON, type Zone,
@@ -222,9 +222,9 @@ async function loadDefaultRoads() {
   await loadStaticRoadDatabase()
   const canonicalSegments = staticSegments()
   if (!canonicalSegments.length) throw new Error('唯一靜態道路資料庫沒有路段')
-  const parsed = parseImported(
-    canonicalSegments.map((record) => JSON.stringify(record)).join('\n'),
-  )
+  // staticSegments() 回傳的已經是解析好的物件，直接走物件入口；
+  // 先 stringify 成 5,478 行再逐行 parse 回來是多餘的往返（實測 ~94ms）。
+  const parsed = parseImportedRecords(canonicalSegments)
   if (parsed.kind !== 'map') throw new Error('唯一靜態道路資料庫格式錯誤')
   return roadsFromGeoJSON(parsed.fc)
 }

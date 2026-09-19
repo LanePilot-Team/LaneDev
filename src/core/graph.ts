@@ -954,6 +954,7 @@ export class RoadGraph {
     profile: Profile = 'car',
     policy: LaneRoutePolicy = {},
   ): RouteSearchResult {
+    RoadGraph.searchStats = { expanded: 0, generated: 0, goalChecks: 0 }
     const sA = this.projectToDirectedLane(fromP, profile)
     const projectedGoals = this.projectToDirectedLanes(toP, profile)
     if (!sA || projectedGoals.length === 0) {
@@ -983,6 +984,10 @@ export class RoadGraph {
     }
     return { route: null, failure: 'unreachable' }
   }
+
+  /** A* 搜尋統計（診斷用；由 routeDetailed 歸零，routeToProjection 累加）。
+   * 只做整數累加，不影響搜尋結果，也不在熱路徑配置物件。 */
+  static searchStats = { expanded: 0, generated: 0, goalChecks: 0 }
 
   private routeToProjection(
     sA: DirectedLaneProjection,
@@ -1056,6 +1061,7 @@ export class RoadGraph {
     for (const s of startEntries) {
       const key = stateKey(s.node, s.part, undefined)
       if (s.part.timeS < (g.get(key) ?? Infinity)) {
+        RoadGraph.searchStats.generated++
         states.set(key, { node: s.node, incoming: s.part })
         g.set(key, s.part.timeS)
         startPart.set(key, s.part)
@@ -1078,6 +1084,7 @@ export class RoadGraph {
       if (bestGoal && curF >= bestGoal.cost) break
       const current = states.get(currentKey)
       if (!current) continue
+      RoadGraph.searchStats.expanded++
       closed.add(currentKey)
       for (const ge of goalEntries) {
         if (ge.node === current.node) {
@@ -1129,6 +1136,7 @@ export class RoadGraph {
         const tentative = g.get(currentKey)! + e.timeS
           + (transition?.decision.difficultyS ?? 0)
         if (tentative < (g.get(nextKey) ?? Infinity)) {
+          RoadGraph.searchStats.generated++
           states.set(nextKey, {
             node: e.to,
             incoming: e,

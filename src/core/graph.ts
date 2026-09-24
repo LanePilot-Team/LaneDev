@@ -762,7 +762,24 @@ export class RoadGraph {
    * 中央槽化線渲染用：scope 內所有方向邊 + 兩端路口的收邊量（交叉路半寬），
    * 標線不畫進路口框。turnbays.ts 的 buildChannelization 使用。
    */
+  /** 效能實驗用：scopeEdges 呼叫次數與累計耗時（perf-lab 量測）。 */
+  static scopeStats = { calls: 0, ms: 0, edgesScanned: 0 }
+
   scopeEdges(
+    scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2,
+    crossQualifies?: (r: RoadFeature) => boolean,
+  ): ScopeEdge[] {
+    const __t = performance.now()
+    try {
+      return this.scopeEdgesImpl(scope, minCrossWidthM, clearanceM, crossQualifies)
+    } finally {
+      RoadGraph.scopeStats.calls++
+      RoadGraph.scopeStats.ms += performance.now() - __t
+      RoadGraph.scopeStats.edgesScanned += this.edges.length
+    }
+  }
+
+  private scopeEdgesImpl(
     scope: (r: RoadFeature) => boolean, minCrossWidthM = 7, clearanceM = 1.2,
     crossQualifies?: (r: RoadFeature) => boolean,
   ): ScopeEdge[] {

@@ -13,6 +13,16 @@ import { coupletStats, resetCoupletStats } from '../src/core/couplet'
 import { RoadGraph } from '../src/core/graph'
 import { foldJournal, applyToRoads } from '../src/core/enhancements'
 import { buildRoadMergeViews } from '../src/core/roadMerge'
+import {
+  buildTurnBays, buildRightLanes, buildMotoBoxes, buildStopLines,
+  buildChannelization, buildSpecifiedWhiteMotoHatch, buildLaneArrows,
+  buildLeftTurnWaitingAreas, baysToGeoJSON, buildMotoLaneEntryIcons,
+  buildUnusedLaneGores,
+} from '../src/core/turnbays'
+import { buildRoadSurfaces, buildDividers, roadsForRendering } from '../src/core/roads'
+import { groundMarkingPolygons } from '../src/core/groundMarkings'
+import { cleanIntersectionFeatures } from '../src/core/intersectionCleanup'
+import { buildRoadTexts } from '../src/core/roadtext'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const arg = (n: string, d: string) =>
@@ -29,7 +39,8 @@ const phaseSamples: Record<string, number>[] = []
 // 讀檔只做一次（磁碟快取影響大，不是我們要量的變因）
 const text = readFileSync(DB_PATH, 'utf8')
 
-for (let i = 0; i < RUNS; i++) {
+const RENDER_ONLY = process.argv.includes('--render-only')
+for (let i = 0; i < (RENDER_ONLY ? 0 : RUNS); i++) {
   const s: Sample = {}
   const phases: Record<string, number> = {}
 
@@ -96,7 +107,9 @@ const agg = (list: Record<string, number>[]) => {
 const main = agg(samples)
 const sub = agg(phaseSamples)
 
-if (AS_JSON) {
+if (RENDER_ONLY) {
+  // 只跑幾何生成段，避免第一段留下的堆積壓力污染量測
+} else if (AS_JSON) {
   console.log(JSON.stringify({ runs: RUNS, main, prepareSubPhases: sub }, null, 2))
 } else {
   const total = main['總計(新路徑)']
@@ -114,4 +127,81 @@ if (AS_JSON) {
     console.log(`  ${k.padEnd(34)} ${String(v).padStart(8)} ms`)
   }
   console.log(`  couplet 呼叫次數                    ${String(sub['couplet呼叫次數']).padStart(8)}`)
+}
+
+// ── 第二段：路網圖之後的「幾何生成」階段 ────────────────────────────────
+// 前面量的只到「路網圖可用」，但使用者要看到地圖還得等這一段跑完。
+// 這裡複製 mapCore.refreshBays() 的呼叫序列（含它內部會再建一次 RoadGraph）。
+if (process.argv.includes('--render') || process.argv.includes('--render-only')) {
+  const db2 = JSON.parse(text)
+  const parsed2 = parseImportedRecords(db2.segments as Record<string, unknown>[])
+  if (parsed2.kind !== 'map') throw new Error('bad')
+  const { roads: prepared2 } = prepareBaseRoads(roadsFromGeoJSON(parsed2.fc))
+  applyToRoads(prepared2, foldJournal(db2.editor.journal))
+  const view2 = buildRoadMergeViews(prepared2, db2.editor.journal)
+  const journal2 = db2.editor.journal
+  const r: Record<string, number> = {}
+  const scopeAt: Record<string, number> = {}
+  const snapScope = (k: string) => { scopeAt[k] = RoadGraph.scopeStats.calls }
+  let t = ms()
+
+  const renderGraph = new RoadGraph(view2.renderRoads)
+  r['R1_第二次建圖(renderGraph)'] = ms() - t
+
+  t = ms(); const bays = buildTurnBays(renderGraph, journal2); r['R2_buildTurnBays'] = ms() - t
+  t = ms(); const rl = buildRightLanes(renderGraph, journal2); r['R3_buildRightLanes'] = ms() - t
+  t = ms()
+  const channel = [...buildChannelization(renderGraph, bays),
+    ...buildSpecifiedWhiteMotoHatch(renderGraph)]
+  r['R4_buildChannelization'] = ms() - t
+  snapScope('before_stopLines')
+  t = ms(); const stops = buildStopLines(renderGraph, bays, rl, journal2); r['R5_buildStopLines'] = ms() - t
+  snapScope('after_stopLines')
+  t = ms(); const waits = buildLeftTurnWaitingAreas(renderGraph, bays); r['R6_leftTurnWaitAreas'] = ms() - t
+  t = ms(); const boxes = buildMotoBoxes(renderGraph, bays, rl, journal2); r['R7_buildMotoBoxes'] = ms() - t
+  t = ms(); const arrows = buildLaneArrows(renderGraph, bays, rl, boxes.dirs, journal2); r['R8_buildLaneArrows'] = ms() - t
+  t = ms()
+  const fc = baysToGeoJSON(bays, [...channel, ...stops, ...waits], arrows, rl, boxes.boxes)
+  fc.features.push(...buildMotoLaneEntryIcons(renderGraph, journal2).features,
+    ...buildUnusedLaneGores(renderGraph, bays).features)
+  r['R9_baysToGeoJSON'] = ms() - t
+  t = ms(); const cleaned = cleanIntersectionFeatures(fc); r['R10_cleanIntersection'] = ms() - t
+  t = ms()
+  groundMarkingPolygons(cleaned, (p) => p?.kind === 'line' ? (p.color === 'stop' ? 0.45 : 0.15) : null)
+  r['R11_groundMarkingPolygons'] = ms() - t
+  t = ms(); const rr = roadsForRendering(view2.renderRoads); r['R12_roadsForRendering'] = ms() - t
+  t = ms(); buildRoadSurfaces(rr); r['R13_buildRoadSurfaces'] = ms() - t
+  t = ms(); buildDividers(rr); r['R14_buildDividers'] = ms() - t
+  t = ms(); buildRoadTexts(renderGraph, bays); r['R15_buildRoadTexts'] = ms() - t
+
+  const sum = Object.values(r).reduce((a, b) => a + b, 0)
+  console.log('')
+  console.log('=== scopeEdges 呼叫統計（整個幾何生成段）===')
+  console.log(`  總呼叫次數        ${RoadGraph.scopeStats.calls}`)
+  console.log(`  累計耗時          ${RoadGraph.scopeStats.ms.toFixed(1)} ms`)
+  console.log(`  累計掃過的 edge   ${RoadGraph.scopeStats.edgesScanned.toLocaleString()}`)
+  console.log(`  其中 buildStopLines 內   ${(scopeAt['after_stopLines'] ?? 0) - (scopeAt['before_stopLines'] ?? 0)} 次`)
+  console.log('\n=== 第二段：幾何生成（refreshBays 等效序列）===')
+  for (const [k, v] of Object.entries(r).sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${k.padEnd(32)} ${v.toFixed(1).padStart(8)} ms`)
+  }
+  console.log(`  ${'小計'.padEnd(31)} ${sum.toFixed(1).padStart(8)} ms`)
+
+  // ── 幾何結果能不能存起來下次直接用？（IndexedDB 快取方向的可行性）──
+  const { gzipSync } = await import('node:zlib')
+  const surfaces = buildRoadSurfaces(rr)
+  const dividers = buildDividers(rr)
+  const payload = { turnbays: cleaned, surfaces, dividers }
+  let t2 = ms(); const js = JSON.stringify(payload); const serMs = ms() - t2
+  t2 = ms(); const back = JSON.parse(js); const deMs = ms() - t2
+  const gz = gzipSync(Buffer.from(js), { level: 6 }).length
+  console.log('')
+  console.log('=== 幾何結果序列化可行性 ===')
+  console.log(`  圖徵數            turnbays ${cleaned.features.length} / surfaces ${surfaces.features.length} / dividers ${dividers.features.length}`)
+  console.log(`  JSON 大小         ${(Buffer.byteLength(js) / 1048576).toFixed(2)} MB（gzip ${(gz / 1048576).toFixed(2)} MB）`)
+  console.log(`  序列化（只在第一次） ${serMs.toFixed(0)} ms`)
+  console.log(`  反序列化（第二次起） ${deMs.toFixed(0)} ms`)
+  console.log(`  對照：現算全部       ${sum.toFixed(0)} ms`)
+  console.log(`  比值               ${(sum / deMs).toFixed(1)}×`)
+  void back
 }

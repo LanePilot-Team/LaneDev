@@ -213,12 +213,28 @@ function markPhantomBackwardTails(blocks: RoadFeature[]): number {
   return marked
 }
 
+/**
+ * 效能實驗用的階段計時鉤子。未設定時只多一次 undefined 判斷，成本可忽略；
+ * 設定後 prepareBaseRoads 會回報每個階段的毫秒數（見 perf-lab/）。
+ */
+let prepareProfiler: ((phase: string, ms: number) => void) | undefined
+export function setPrepareProfiler(fn?: (phase: string, ms: number) => void) {
+  prepareProfiler = fn
+}
+function phase<T>(name: string, run: () => T): T {
+  if (!prepareProfiler) return run()
+  const t = performance.now()
+  const out = run()
+  prepareProfiler(name, performance.now() - t)
+  return out
+}
+
 export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
   // 去重暫時停用：2026-07-29 實測會把軍校路整條移除、journal 孤兒 8→46、
   // 並讓 7 筆 deleted:1 失效（被刪的路段復活）。判定條件顯然不只命中那 57 條
   // 跨區重複，根因釐清前不可啟用。
   void dedupeIdenticalWays
-  applyFixups(raw)
+  phase('applyFixups', () => applyFixups(raw))
   const nodeRemap = new Map<number, number>()
   const wayRemap = new Map<number, DropRemap>()
   // 藍田路 = 2+2+中央 3.2m 偏心帶（槽化）；大學南路 = 2+2+機車道+實體島，
@@ -260,7 +276,7 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
     lanesF: 3, lanesB: 3, centerM: 0.6, centerKind: 'island',
     centerFromGap: { roadW: 9.6, min: 0.6, max: 16 },
   }, nodeRemap, wayRemap, (r) => GAONAN_SOUTH_IDS.has(r.properties.osm_id))
-  hugSideLanes(roads)
+  phase('hugSideLanes', () => hugSideLanes(roads))
 
   // 旗楠路的 primary 是一組連續分向幹道；同名 residential 短側線不是對向主線，
   // 若整個路名一起分組會觸發「同向並排」防呆而整條不合併。
@@ -305,25 +321,27 @@ export function prepareBaseRoads(raw: RoadFeature[]): BasePrep {
       }
     }
   }
-  for (const name of coupletCandidates(roads)) {
-    roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap)
-  }
+  phase('generic-couplet-scan', () => {
+    for (const name of coupletCandidates(roads)) {
+      roads = mergeCouplets(roads, new Set([name]), SIMPLE_SECTION, nodeRemap, wayRemap)
+    }
+  })
   // 分隔道路合併後，將人工確認的雙節點路口收斂成單一十字中心。
-  collapseKnownIntersections(roads, nodeRemap)
+  phase('collapseKnownIntersections', () => collapseKnownIntersections(roads, nodeRemap))
   // 高雄大學路「不」做 couplet 合併：四線並排林蔭大道（主慢分離），
   // 分隔島由 medians.ts TWIN_ISLAND_PAIRS 顯式配對生成
-  applyLantianSections(roads) // 745巷以東 = 東三西二、無中央帶
+  phase('applyLantianSections', () => applyLantianSections(roads)) // 745巷以東 = 東三西二、無中央帶
   // 依路口切塊：車道/中央帶/轉向編輯的最小單位 = 路口到路口（journal 區塊鍵）
-  let blocks = splitAtIntersections(roads)
+  let blocks = phase('splitAtIntersections', () => splitAtIntersections(roads))
   blocks = blocks.filter((road) => !QINAN_TUKU_REMOVED_BLOCKS.has(blockKey(road)))
   for (const road of blocks) {
     if (HIDDEN_FLOATING_ROAD_LABEL_BLOCKS.has(blockKey(road))) {
       road.properties.hideRoadLabel = true
     }
   }
-  markPhantomBackwardTails(blocks)
-  blocks = removeUnnamedShortSpurs(blocks).roads
-  collapseShortDeadEnds(blocks)
+  phase('markPhantomBackwardTails', () => markPhantomBackwardTails(blocks))
+  blocks = phase('removeUnnamedShortSpurs', () => removeUnnamedShortSpurs(blocks).roads)
+  phase('collapseShortDeadEnds', () => collapseShortDeadEnds(blocks))
   // 高架旗標：地面車道級渲染（路面/分隔線/印字/單行箭頭）略過這些區塊，
   // 改由 elevated3d 的 3D 橋面全長取代（含近地爬升段）
   for (const r of blocks) {

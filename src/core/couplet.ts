@@ -308,7 +308,21 @@ export function coupletGrouping(
  * 併到 keep 側既有 node、去重退化段——journal 區塊鍵/偏心道鍵/待轉區都存 node id，
  * 呼叫端要用這張表遷移既有標註（enhancements.remapJournalNodes）。
  */
+
+/** 效能實驗用：累計 mergeCouplets 的呼叫次數與總耗時（perf-lab 量測用）。 */
+export const coupletStats = { calls: 0, ms: 0 }
+export function resetCoupletStats() { coupletStats.calls = 0; coupletStats.ms = 0 }
+
 export function mergeCouplets(
+  ...args: Parameters<typeof mergeCoupletsImpl>
+): ReturnType<typeof mergeCoupletsImpl> {
+  const t = performance.now()
+  const out = mergeCoupletsImpl(...args)
+  coupletStats.calls++
+  coupletStats.ms += performance.now() - t
+  return out
+}
+function mergeCoupletsImpl(
   roads: RoadFeature[],
   scopeNames: Set<string>,
   section: CoupletSection = { lanesF: 2, lanesB: 2, centerM: 3.2 },

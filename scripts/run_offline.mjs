@@ -22,6 +22,6 @@ const bundle = await rolldown({
 })
 await bundle.write({ file: outfile, format: 'esm' })
 await bundle.close()
-const run = spawnSync(process.execPath, [outfile, ...process.argv.slice(3)], { stdio: 'inherit' })
+const run = spawnSync(process.execPath, [...(process.env.NODE_EXTRA_ARGS ? process.env.NODE_EXTRA_ARGS.split(" ") : []), outfile, ...process.argv.slice(3)], { stdio: 'inherit' })
 rmSync(outfile, { force: true })
 process.exit(run.status ?? 1)

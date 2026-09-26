@@ -23,3 +23,17 @@
 .stop-place-search .place-results { max-height: 30vh; box-shadow: none; }
 .place-address { display: block; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.5; color: #566479; }
 .location-suggestion { background: #eef5ff; color: #1559a0; border: 0; padding: 12px; border-radius: 8px; margin: 6px 0; }
+/* Small route-input affordances; the search/planning flow is unchanged. */
+.route-input-help, .stop-search-help, .stop-editing-hint { margin: 6px 0 10px; font-size: 12px; line-height: 1.5; color: #566479; }
+.route-stop-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.route-stop-heading label { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+.route-stop-dot { width: 9px; height: 9px; border-radius: 50%; background: #1976d2; flex: none; }
+.route-stop-dot.start { background: #16824c; }
+.route-stop-dot.end { background: #d83438; }
+.stop-edit-action { border: 0; background: transparent; color: #1559a0; padding: 8px 6px; min-height: 40px; font-size: 13px; font-weight: 600; }
+.route-stop.is-editing { padding: 10px; margin: 8px -6px; border: 1px solid #83b6f3; background: #f5f9ff; border-radius: 12px; }
+.route-stop > input { cursor: text; }
+.route-stop > input:focus-visible, .stop-edit-action:focus-visible { outline: 2px solid #1976d2; outline-offset: 2px; }
+.side-panel.route-search-panel.is-searching { max-height: calc(100dvh - 120px); }
+.route-search-panel .stop-place-search .place-results { max-height: min(34vh, 300px); }
+.route-search-panel .sp-summary { flex-wrap: wrap; }

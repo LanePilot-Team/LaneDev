@@ -15,6 +15,7 @@ import { activeElevatedLayer } from '../core/elevated3d'
 import type { DriveState } from './drive'
 import { clientState, ensureLocation, nativeCommand } from '../native/client'
 import { GpsDriver } from './gpsNav'
+import { GpsAnimation } from './gpsAnimation'
 import { VehicleModelLayer } from '../core/models3d'
 import { angleDelta, cumulative } from '../core/geo'
 import type { Mode } from '../app/mapCore'
@@ -98,6 +99,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const followingRef = useRef(true)
 
   const sessionRef = useRef(0)
+  const stopVisualRef = useRef<(() => void) | null>(null)
+  const displayRef = useRef<{ pos: [number, number]; bearing: number; elevM: number } | null>(null)
+  const cameraResumeAtRef = useRef(0)
   useEffect(() => {
     const onZoom = () => {
       if (p.mode === 'drive') p.mapRef.current?.jumpTo({ zoom: clientState().zoom })
@@ -108,6 +112,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   useEffect(() => () => {
     sessionRef.current++
     gpsDriverRef.current?.stop()
+    stopVisualRef.current?.()
     voiceRef.current.reset()
     nativeCommand('navigation', { active: false })
   }, [])
@@ -132,10 +137,11 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   /** 回到目前位置：重新跟隨，並把使用者瀏覽時改掉的縮放/俯角拉回導航視角 */
   function recenter() {
     const map = p.mapRef.current
-    const s = lastDriveRef.current
+    const s = displayRef.current ?? lastDriveRef.current
     setFollow(true)
     if (!map) return
     if (!s) { map.easeTo({ ...navCamera(), duration: 400 }); return }
+    cameraResumeAtRef.current = performance.now() + 400
     map.easeTo({
       center: s.pos, bearing: s.bearing, ...navCamera(),
       padding: { top: Math.round(map.getContainer().clientHeight * 0.45) },
@@ -230,6 +236,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     nativeCommand('navigation', { active: false })
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
+    stopVisualRef.current?.()
+    stopVisualRef.current = null
+    displayRef.current = null
     setGpsMsg(null)
     setDrive(null)
     lastDriveRef.current = null
@@ -260,34 +269,62 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     map.setLayoutProperty('road-label', 'visibility', 'none')
     setNavCameraClamp(map, false)
     if (!resume) setFollow(true)
-    if (followingRef.current) map.jumpTo(navCamera()) // 跟模擬駕駛對齊的導航視角
+    if (followingRef.current) map.jumpTo(navCamera())
     if (!resume) setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
     armSpeedCameras(route)
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
+    stopVisualRef.current?.()
+    displayRef.current = null
+    let animation: GpsAnimation
+    let frame = 0
+    let stopped = false
+    const freeze = () => {
+      cancelAnimationFrame(frame)
+      frame = 0
+      animation?.reset()
+    }
+    const visibility = () => { freeze() } // resume only on a fresh GPS fix
+    const resize = () => { camPadding.top = Math.round(map.getContainer().clientHeight * 0.45) }
+    const drawFrame = (now: number) => {
+      frame = 0
+      if (stopped || document.hidden) return
+      const sample = animation.sample(now)
+      if (!sample) return
+      const { pos, fix } = sample
+      displayRef.current = { pos, bearing: fix.bearing, elevM: fix.elevM }
+      p.vehicleLayerRef.current?.setNav(pos, fix.bearing, p.profileRef.current, fix.elevM)
+      activeNavigationOcclusion()?.update(pos, fix.bearing, fix.elevM)
+      if (followingRef.current && now > cameraResumeAtRef.current &&
+        now - p.lastGestureRef.current > 250) {
+        map.jumpTo({ center: pos, bearing: fix.bearing, padding: camPadding, elevation: fix.elevM })
+      }
+      if (sample.moving) frame = requestAnimationFrame(drawFrame)
+    }
+    document.addEventListener('visibilitychange', visibility)
+    map.on('resize', resize)
+    stopVisualRef.current = () => {
+      stopped = true
+      freeze()
+      document.removeEventListener('visibilitychange', visibility)
+      map.off('resize', resize)
+    }
     const gps = new GpsDriver(
       route,
-      (s) => {
+      (s, fix) => {
         lastDriveRef.current = s
         updateZoneHighlight(s)
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
-        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
-        activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
-        // 使用者滑走地圖後就不再跟隨（要按「回到目前位置」才恢復）；
-        // 縮放手勢仍只是暫時讓路 250ms，不會中斷跟隨。
-        if (followingRef.current && performance.now() - p.lastGestureRef.current > 250) {
-          map.jumpTo({
-            center: s.pos, bearing: s.bearing, padding: camPadding,
-            elevation: s.elevM ?? 0, // 高架上鏡頭跟著抬同樣高度
-          })
-        }
+        if (!fix || s.gpsWeak || document.hidden) freeze()
+        else if (animation.push(fix, performance.now()) && !frame) frame = requestAnimationFrame(drawFrame)
         setGpsMsg(null)
         setDrive(s)
         updateSpeedCameraAlert(s)
       },
       (pos) => rerouteFrom(pos),
-      (msg) => setGpsMsg(msg),
+      (msg) => { freeze(); setGpsMsg(msg) },
     )
+    animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum)
     gpsDriverRef.current = gps
     gps.start()
   }

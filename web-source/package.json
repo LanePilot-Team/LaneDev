@@ -4,10 +4,11 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node tools/build-runtime.mjs && vite",
+    "prebuild": "node tools/build-runtime.mjs",
     "build": "tsc -b && vite build",
     "postbuild": "node tools/package-client.mjs",
-    "test": "node --test src/nav/speechGuidance.test.mjs src/nav/geolocation.test.mjs src/plan/placeRoute.test.mjs src/places/places.test.mjs src/places/destination.test.mjs src/native/client.test.mjs tools/client-data.test.mjs",
+    "test": "node --test src/nav/speechGuidance.test.mjs src/nav/geolocation.test.mjs src/nav/gpsAnimation.test.mjs src/core/buildingOcclusion.test.mjs src/plan/placeRoute.test.mjs src/places/places.test.mjs src/places/destination.test.mjs src/native/client.test.mjs tools/client-data.test.mjs tools/compact-render-data.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

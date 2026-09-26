@@ -32,6 +32,25 @@ foreach ($scriptFile in $scriptFiles) {
 }
 if (Test-Path -LiteralPath (Join-Path $source 'data/transit.json')) { throw '客戶端不可包含大眾運輸資料' }
 
+$runtimeRoot = Join-Path $source 'data/runtime'
+$runtimeManifestPath = Join-Path $runtimeRoot 'manifest.json'
+if (-not (Test-Path -LiteralPath $runtimeManifestPath) -or -not $policy.runtimeManifest) {
+    throw '缺少已驗證的預計算路網，請執行 npm run build'
+}
+if ((Get-FileHash -LiteralPath $runtimeManifestPath -Algorithm SHA256).Hash -ne $policy.runtimeManifest) {
+    throw '預計算路網清單校驗失敗'
+}
+$runtimeManifest = Get-Content -Raw -LiteralPath $runtimeManifestPath | ConvertFrom-Json
+if ($runtimeManifest.format -ne 'lanedev-precomputed-v1') { throw '預計算路網版本不符' }
+$runtimeRecords = @($runtimeManifest.navigation) + @($runtimeManifest.sources.PSObject.Properties | ForEach-Object { $_.Value })
+foreach ($record in $runtimeRecords) {
+    if ($record.file -cnotmatch '^[a-zA-Z0-9_-]+\.[a-f0-9]{64}\.json$') { throw '預計算資料路徑無效' }
+    $runtimeFile = Join-Path $runtimeRoot $record.file
+    if ((Get-FileHash -LiteralPath $runtimeFile -Algorithm SHA256).Hash -ne $record.sha256) {
+        throw "預計算資料校驗失敗：$($record.file)"
+    }
+}
+
 $resolvedSource = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $source))
 $resolvedTarget = [System.IO.Path]::GetFullPath($target)
 if ($resolvedSource -eq $resolvedTarget) {

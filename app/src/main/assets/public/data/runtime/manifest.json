@@ -1,0 +1,46 @@
+{
+  "format": "lanedev-precomputed-v1",
+  "inputHash": "a9f85fa9a9d83004cd55b119e696edbdbeab9cfdaaeccd579099af154490db47",
+  "navigation": {
+    "file": "navigation.913fee5f10fc27e078bbd0c0e53559bc37ea31269ed2a3c99fc19e5651a982aa.json",
+    "sha256": "913fee5f10fc27e078bbd0c0e53559bc37ea31269ed2a3c99fc19e5651a982aa"
+  },
+  "sources": {
+    "roads": {
+      "file": "roads.8ca4cd417893bf939996b17e18c4dbb7fdc5889ad1f8e5caf208067e424e6cd9.json",
+      "sha256": "8ca4cd417893bf939996b17e18c4dbb7fdc5889ad1f8e5caf208067e424e6cd9"
+    },
+    "roadSurfaces": {
+      "file": "roadSurfaces.2927cefa120955a47178160a0ca25a1909abe0480768fae37ac26b2f27700ad5.json",
+      "sha256": "2927cefa120955a47178160a0ca25a1909abe0480768fae37ac26b2f27700ad5"
+    },
+    "dividers": {
+      "file": "dividers.0a55a458eb16734dbbf5f55a803802403e3c49a3337fae2ee1b5c031cb0ef498.json",
+      "sha256": "0a55a458eb16734dbbf5f55a803802403e3c49a3337fae2ee1b5c031cb0ef498"
+    },
+    "buildings": {
+      "file": "buildings.3dd85c2b9991a6142638fc125323b903f7d0116d35296700cd9a5b0df87aca39.json",
+      "sha256": "3dd85c2b9991a6142638fc125323b903f7d0116d35296700cd9a5b0df87aca39"
+    },
+    "zones": {
+      "file": "zones.78c7de0d3560954cf7471f14928225dfb3e686f7e223a746a9f72c209a80e9d1.json",
+      "sha256": "78c7de0d3560954cf7471f14928225dfb3e686f7e223a746a9f72c209a80e9d1"
+    },
+    "turnbays": {
+      "file": "turnbays.7ef8d50a33192dd0b444240054530365b7f000c1d8513014bbebe16f229e842b.json",
+      "sha256": "7ef8d50a33192dd0b444240054530365b7f000c1d8513014bbebe16f229e842b"
+    },
+    "medians": {
+      "file": "medians.e25d77060310ab5c1c0b711e9c4eec3038a9a114fd4913581d24a94dfb7f6b69.json",
+      "sha256": "e25d77060310ab5c1c0b711e9c4eec3038a9a114fd4913581d24a94dfb7f6b69"
+    },
+    "roadtext": {
+      "file": "roadtext.cb9a9ae8f96961be62619a3e88e63160536138ace7f19c644311b0a766cf08da.json",
+      "sha256": "cb9a9ae8f96961be62619a3e88e63160536138ace7f19c644311b0a766cf08da"
+    },
+    "roadlabels": {
+      "file": "roadlabels.9c131ccb6832a74d92edee392abe6cb463e9bc2b53aeaa1bf40940e41cd838c5.json",
+      "sha256": "9c131ccb6832a74d92edee392abe6cb463e9bc2b53aeaa1bf40940e41cd838c5"
+    }
+  }
+}

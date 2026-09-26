@@ -8,6 +8,7 @@ import { cumulative, haversine } from '../core/geo'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph'
 import { surfaceHeightAt } from '../core/elevated3d'
 import type { DriveState } from './drive'
+import type { GpsDisplayFix } from './gpsAnimation'
 import { matchToRoute, smoothBearing, type MatchResult } from './mapMatch'
 import {
   HIGH_ACCURACY_POSITION_OPTIONS,
@@ -67,7 +68,7 @@ export class GpsDriver {
 
   constructor(
     private route: RouteResult,
-    private onTick: (s: DriveState) => void,
+    private onTick: (s: DriveState, fix?: GpsDisplayFix) => void,
     /** 連續偏離超過門檻時呼叫，帶目前定位，App 負責重新規劃 */
     private onOffRoute: (pos: [number, number]) => void,
     private onError: (msg: string) => void,
@@ -98,7 +99,8 @@ export class GpsDriver {
     if (this.finished) return
     const { longitude: lon, latitude: lat, speed, accuracy } = pos.coords
     const here: [number, number] = [lon, lat]
-    const now = Date.now()
+    const now = pos.timestamp
+    if (!Number.isFinite(now) || Date.now() - now > 10000 || now <= this.lastFixTs) return
     const elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
 
     // 車速：優先用裝置回報值；沒有就用位移/時間推（低速時 GPS 常回 null）
@@ -183,16 +185,18 @@ export class GpsDriver {
       arrived,
       arriving,
       gpsWeak: match.quality === 'weak',
-    })
+    }, { distanceM: match.distM, timestamp: now, bearing: this.smoothBrg, elevM })
     if (arrived) {
       this.finished = true
       this.stop()
     }
   }
 
-  private emit(state: DriveState) {
+  get displayPath() { return { coords: this.band.coords, cum: this.bandCum } }
+
+  private emit(state: DriveState, fix?: GpsDisplayFix) {
     this.lastState = state
-    this.onTick(state)
+    this.onTick(state, fix)
   }
 
   stop() {

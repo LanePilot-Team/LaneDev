@@ -39,7 +39,7 @@ const emptyFC = { type: 'FeatureCollection', features: [] } as const
 export function buildStyle(): StyleSpecification {
   return {
     version: 8,
-    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    // MapLibre 5 draws all glyphs locally when glyphs is omitted: offline startup.
     sources: {
       'taiwan-ocean': {
         type: 'geojson',
@@ -518,7 +518,7 @@ export function buildStyle(): StyleSpecification {
         paint: {
           'fill-color': [
             'case',
-            ['boolean', ['get', 'highlighted'], false], 'rgba(250,204,21,0.68)',
+            ['boolean', ['feature-state', 'highlighted'], false], 'rgba(250,204,21,0.68)',
             ['boolean', ['get', 'selected'], false], 'rgba(59,130,246,0.35)',
             'rgba(255,255,255,0.28)',
           ],
@@ -541,7 +541,7 @@ export function buildStyle(): StyleSpecification {
         paint: {
           'fill-color': [
             'case',
-            ['boolean', ['get', 'highlighted'], false], '#fde047',
+            ['boolean', ['feature-state', 'highlighted'], false], '#fde047',
             ['boolean', ['get', 'selected'], false], '#3b82f6',
             '#ffffff',
           ],

@@ -92,6 +92,8 @@ lint/tmp/
 web-source/node_modules/
 web-source/dist/
 web-source/*.tsbuildinfo
+web-source/.runtime-build/
+web-source/public/data/runtime/
 web-source.zip
 
 # The compiled LaneDev assets are deliberately tracked: this repository must

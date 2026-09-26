@@ -77,21 +77,14 @@ export const THEN_VERB: Record<Exclude<Maneuver['kind'], 'arrive'>, string> = {
   'slight-left': '靠左', 'slight-right': '靠右',
 }
 
-/**
- * 收尾語音。實機回報「結束得很突然，不知道是沒定位到還是根本沒提示」——
- * 所以抵達不是只播一句就沒了：先在 arriving 階段預告，抵達時明確說「導航結束」，
- * 兩句都帶目的地名稱（有的話），駕駛才知道系統確實認得自己到了。
- */
-export function arrivingAnnouncement(destinationName?: string): string {
-  return destinationName
-    ? `即將抵達${destinationName}，請注意周邊路況準備停車`
-    : '即將抵達目的地，請注意周邊路況準備停車'
+/** Keep arrival names short; verbose place names remain on screen. */
+export function arrivingAnnouncement(_destinationName?: string): string {
+  return '即將抵達目的地'
 }
 
 export function arrivalAnnouncement(destinationName?: string): string {
-  return destinationName
-    ? `已抵達${destinationName}，導航結束`
-    : '已抵達目的地，導航結束'
+  const name = destinationName?.trim()
+  return `已抵達${name && name.length <= 12 ? name : '目的地'}，導航結束`
 }
 
 export function maneuverSpeechKey(m: Maneuver): string {
@@ -107,19 +100,30 @@ export function buildSpeechAnnouncement(args: {
   stage: SpeechStage
 }): string {
   const { distanceM, maneuver, next2, profile, twoStage, stage } = args
-  const phase: Phase = stage === 'far' ? 'far' : 'near'
-  const bay = !twoStage && maneuver.bayOffM !== undefined
-  const guidance = guidanceText(maneuver, phase, profile, twoStage, bay).replaceAll('・', '，')
+  const far = stage === 'far'
+  let action: string
+  if (maneuver.kind === 'arrive') {
+    return stage === 'now' ? '即將抵達目的地' : `${formatDistanceText(distanceM)}，抵達目的地`
+  }
+  if (profile === 'moto' && maneuver.motoLeftTurnLane &&
+      ['left', 'slight-left', 'uturn'].includes(maneuver.kind)) {
+    action = maneuver.kind === 'uturn' ? '靠右進入機車左轉道，準備迴轉' : '靠右進入機車左轉道'
+  } else if (twoStage) {
+    action = far ? '靠右準備兩段式左轉' : '靠右進入待轉區'
+  } else if (far && (maneuver.kind === 'left' || maneuver.kind === 'uturn')) {
+    action = `${maneuver.bayOffM !== undefined ? '進入左轉道' : '靠左'}準備${THEN_VERB[maneuver.kind]}`
+  } else if (far && maneuver.kind === 'right') {
+    action = '靠右準備右轉'
+  } else {
+    action = THEN_VERB[maneuver.kind]
+  }
   const distance = stage === 'now' ? '現在' : formatDistanceText(distanceM)
-  const after = stage === 'far' ? '後' : ''
-  const preparation = stage === 'far' && maneuver.kind !== 'arrive'
-    ? twoStage ? '，請提早靠右進入待轉區' : '，請提早變換車道'
+  const subsequent = stage === 'near' && !twoStage && next2 && next2.kind !== 'arrive'
+    && next2.distM > maneuver.distM && next2.distM - maneuver.distM < 60
+    ? `，隨後${next2.twoStage ? '兩段式左轉' : THEN_VERB[next2.kind]}`
     : ''
-  const subsequent = stage === 'near' && next2 && next2.kind !== 'arrive'
-    && next2.distM - maneuver.distM < 60
-    ? `，隨後${THEN_VERB[next2.kind]}`
-    : ''
-  const warning = maneuver.laneDecision?.shortPreparation
-    ? '。前方換道距離較短，請注意安全；若無法換道請繼續行駛，系統將重新規劃。' : ''
-  return `${distance}${after}${guidance}${preparation}${subsequent}${warning}`
+  const warning = stage === 'near' && maneuver.laneDecision?.shortPreparation
+    ? '，勿勉強變道' : ''
+  return `${distance}，${action}${warning || subsequent}`
+
 }

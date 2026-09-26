@@ -38,8 +38,9 @@ export function PlaceSearch({
   onSelect,
   onClear,
   onChooseStart,
-  picker = false, initialQuery = '', searchLabel = '搜尋地點或地址',
+  picker = false, initialQuery = '', searchLabel = '搜尋地點或地址', inputId,
 }: {
+  inputId?: string
   picker?: boolean
   initialQuery?: string
   searchLabel?: string
@@ -50,6 +51,8 @@ export function PlaceSearch({
   onClear: () => void
   onChooseStart: (destination: DestinationSelection) => void
 }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (picker) inputRef.current?.select() }, [picker])
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState(initialQuery)
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -171,6 +174,7 @@ export function PlaceSearch({
       <form className="place-search-form" onSubmit={submit}>
         <span className="place-search-icon" aria-hidden="true">⌕</span>
         <input
+          ref={inputRef} id={inputId}
           value={query}
           onChange={(event) => {
             const nextQuery = event.target.value
@@ -200,6 +204,7 @@ export function PlaceSearch({
         </button>
       </form>
 
+      {picker && !hasQuery && <p className="stop-search-help">輸入地點名稱或地址，再選擇搜尋結果。</p>}
       {hasQuery && provider === 'local' && !resolvedSelected && (
         <div className="place-results" role="listbox" aria-label="搜尋結果">
           {dataState === 'loading' && <div className="place-message">載入地標資料中…</div>}

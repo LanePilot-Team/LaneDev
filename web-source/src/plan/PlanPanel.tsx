@@ -49,23 +49,29 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
     setEditing(null)
     if (id === planner.stopsRef.current[0]?.id) setLocationError('')
   }
-  return <section className="side-panel route-search-panel" aria-label="搜尋與路線規劃">
+  return <section className={`side-panel route-search-panel${editing !== null ? ' is-searching' : ''}`} aria-label="搜尋與路線規劃">
     <div className="sp-head"><b>路線</b><button className="sp-close" aria-label="關閉路線" onClick={onClose}>✕</button></div>
     <div className="sp-vehicle">
       <button className={`mini${profile === 'car' ? ' on' : ''}`} onClick={() => profile !== 'car' && planner.toggleProfile('pick')}>🚗 汽車</button>
       <button className={`mini${profile === 'moto' ? ' on' : ''}`} onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵 機車</button>
     </div>
+    <p className="route-input-help">點選起點或終點即可搜尋更換；選好地點後自動更新路線。</p>
     {locating && <p role="status">正在取得目前位置…</p>}
     {locationError && <p role="alert" className="sp-error">{locationError}；可直接搜尋起點。</p>}
-    {stops.map((stop, i) => <div className="route-stop" key={stop.id}>
-      <label htmlFor={`stop-${stop.id}`}>{label(i)}</label>
+    {stops.map((stop, i) => <div className={`route-stop${editing === stop.id ? ' is-editing' : ''}`} key={stop.id}
+      onKeyDown={event => { if (event.key === 'Escape') setEditing(null) }}>
+      <div className="route-stop-heading">
+        <label htmlFor={`stop-${stop.id}`}><span className={`route-stop-dot ${i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'via'}`} aria-hidden="true" />{label(i)}</label>
+        {editing === stop.id ? <button className="stop-edit-action" onClick={() => setEditing(null)}>取消</button>
+          : <button className="stop-edit-action" aria-label={`更換${label(i)}`} onClick={() => editStop(stop.id)}>更換</button>}
+      </div>
       {editing === stop.id ? <div>
+        <p className="stop-editing-hint" role="status">正在設定{label(i)} · 選取結果才會套用</p>
         <PlaceSearch key={stop.id} core={core} mapLoading={false} selected={null} picker
-          initialQuery="" searchLabel={`搜尋${label(i)}地點或地址`}
+          inputId={`stop-${stop.id}`} initialQuery={stop.label === '我的位置' ? '' : stop.label ?? ''} searchLabel={`搜尋${label(i)}地點或地址`}
           onSelect={destination => selectPlace(stop.id, destination)} onClear={() => {}}
           onChooseStart={() => {}} />
         {i === 0 && <button className="location-suggestion" onClick={() => { setEditing(null); void useCurrentStart() }}>⌖ 目前位置</button>}
-        <button className="mini" onClick={() => setEditing(null)}>取消搜尋</button>
       </div> : <input id={`stop-${stop.id}`} aria-label={label(i)} readOnly
         value={stop.label || (stop.pos ? `${stop.pos[1].toFixed(5)}, ${stop.pos[0].toFixed(5)}` : '')}
         placeholder={`搜尋${label(i)}地點或地址`} onFocus={() => editStop(stop.id)} onClick={() => editStop(stop.id)} />}
@@ -76,7 +82,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
     {routeError && <div role="alert" className="sp-error">{routeError}</div>}
     {routeSummary && <div className="sp-summary">
       <b>{routeSummary.km.toFixed(1)} 公里</b> · 約 {Math.max(1, Math.round(routeSummary.min))} 分鐘
-      <button className="mini go" disabled={editing !== null || locating} onClick={startGpsNav}>開始導航</button>
+      <button className="mini go" disabled={editing !== null || locating} onClick={startGpsNav}>{editing !== null ? '請先選好地點' : '開始導航'}</button>
     </div>}
     {routeSummary && planner.routeRef.current && <details><summary>路線步驟</summary>
       <ManeuverList route={planner.routeRef.current} profile={profile} />

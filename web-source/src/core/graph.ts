@@ -151,6 +151,15 @@ interface Edge {
   twin?: Edge
 }
 
+/** Versioned build-time graph; road/twin references are restored by index. */
+export interface RoadGraphSnapshot {
+  version: 1
+  nodes: [number, [number, number]][]
+  barriers: number[]
+  medians: number[]
+  edges: (Omit<Edge, 'road' | 'twin'> & { roadIndex: number; twinIndex: number })[]
+}
+
 interface TransitionPlan {
   decision: LaneDecision
   entryLaneIndex?: number
@@ -425,6 +434,46 @@ function twinSeg(e: Edge, seg: number): number {
 }
 
 export class RoadGraph {
+  snapshot(roads: RoadFeature[]): RoadGraphSnapshot {
+    const roadIds = new Map(roads.map((road, i) => [road, i]))
+    const edgeIds = new Map(this.edges.map((edge, i) => [edge, i]))
+    return {
+      version: 1, nodes: [...this.nodePos], barriers: [...this.roadMergeBarrierNodes],
+      medians: [...this.medianNodes],
+      edges: this.edges.map(({ road, twin, ...edge }) => {
+        const roadIndex = roadIds.get(road)
+        if (roadIndex === undefined) throw new Error('Graph road missing from runtime dataset')
+        return { ...edge, roadIndex, twinIndex: twin ? edgeIds.get(twin)! : -1 }
+      }),
+    }
+  }
+
+  static fromSnapshot(data: RoadGraphSnapshot, roads: RoadFeature[]): RoadGraph {
+    if (data.version !== 1 || !data.edges.length || !data.nodes.length) {
+      throw new Error('不支援或空白的預計算路網')
+    }
+    const graph = new RoadGraph([])
+    graph.nodePos = new Map(data.nodes)
+    graph.roadMergeBarrierNodes = new Set(data.barriers)
+    graph.medianNodes = new Set(data.medians)
+    const edges: Edge[] = data.edges.map(({ roadIndex, twinIndex: _twin, ...edge }) => {
+      const road = roads[roadIndex]
+      if (!road || !graph.nodePos.has(edge.from) || !graph.nodePos.has(edge.to)) {
+        throw new Error('預計算路網參照不完整')
+      }
+      return { ...edge, road }
+    })
+    edges.forEach((edge, i) => {
+      const twin = data.edges[i].twinIndex
+      if (twin !== -1) {
+        if (!edges[twin] || data.edges[twin].twinIndex !== i) throw new Error('路網反向邊無效')
+        edge.twin = edges[twin]
+      }
+      graph.push(edge)
+    })
+    return graph
+  }
+
   private nodePos = new Map<number, [number, number]>()
   private roadMergeBarrierNodes = new Set<number>()
   /** 中央實體分隔（島／橋面）覆蓋到的節點，扣掉迴轉開口——在這些節點禁止迴轉 */

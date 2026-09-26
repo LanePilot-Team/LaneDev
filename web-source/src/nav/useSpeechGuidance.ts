@@ -67,7 +67,7 @@ export function useSpeechGuidance({
       if (drive.arrived) {
         spokenKeysRef.current.add(START_KEY)
         spokenKeysRef.current.add(ARRIVAL_KEY)
-        speak(`開始導航。${arrivalAnnouncement(destinationName)}`)
+        speak(arrivalAnnouncement(destinationName))
         return
       }
       if (!drive.next || !stage) {
@@ -86,7 +86,7 @@ export function useSpeechGuidance({
       })
       spokenKeysRef.current.add(START_KEY)
       spokenKeysRef.current.add(key)
-      speak(`開始導航。${announcement}`)
+      speak(announcement)
       return
     }
 
@@ -96,7 +96,10 @@ export function useSpeechGuidance({
     }
 
     // 收尾預告：剩餘距離進入抵達範圍就先說一次，導航才不會在終點「啪」地結束。
-    if (drive.arriving) speakOnce(ARRIVING_KEY, arrivingAnnouncement(destinationName))
+    if (drive.arriving && (!drive.next || drive.next.kind === 'arrive')) {
+      speakOnce(ARRIVING_KEY, arrivingAnnouncement(destinationName))
+      return
+    }
 
     if (!drive.next || !stage) return
     const key = `${maneuverSpeechKey(drive.next)}:${stage}`

@@ -35,7 +35,7 @@ export default function App() {
 
 
   // ── 點擊分派 ──
-  const { core, loading, zoneCount, zoneTick, vehicleCount, selectedVehicle } =
+  const { core, loading, loadError, zoneCount, zoneTick, vehicleCount, selectedVehicle } =
     useMapCore(containerRef, (e, map) => {
       const m = modeRef.current
       const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
@@ -149,7 +149,10 @@ export default function App() {
 
       <ClientSettings navigating={mode === 'drive'} />
       <LocateControl core={core} loading={loading} navigating={mode === 'drive'} />
-      {loading && <div className="loading">載入楠梓＋左營路網中…</div>}
+      {loading && <div className="loading" role={loadError ? 'alert' : 'status'}>
+        {loadError ? <><p>{loadError}</p><button onClick={() => location.reload()}>重新載入</button></>
+          : '載入楠梓＋左營路網中…'}
+      </div>}
 
       {mode === 'browse' && (
         <PlaceSearch

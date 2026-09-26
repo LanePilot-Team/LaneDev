@@ -175,6 +175,23 @@ export const blockKeyOf = (r: RoadFeature) =>
   `way/${r.properties.osm_id}@b/${r.properties.blockNode}`
 
 export class ElevationModel {
+  snapshot() {
+    return { version: 1 as const, blocks: [...this.blocks.values()],
+      dGround: [...this.dGround], nodeH: [...this.nodeH] }
+  }
+
+  static fromSnapshot(data: ReturnType<ElevationModel['snapshot']>): ElevationModel {
+    if (data.version !== 1) throw new Error('高架資料版本不相容')
+    const model = new ElevationModel([])
+    for (const block of data.blocks) {
+      model.blocks.set(block.road, block)
+      model.byKey.set(blockKeyOf(block.road), block)
+    }
+    model.dGround = new Map(data.dGround)
+    model.nodeH = new Map(data.nodeH)
+    return model
+  }
+
   private blocks = new Map<RoadFeature, BlockElev>()
   /** 同上，改用區塊鍵索引——跨「路網圖／繪圖」兩份底圖查表用（見 blockKeyOf） */
   private byKey = new Map<string, BlockElev>()

@@ -212,5 +212,6 @@ export class VehicleModelLayer {
       this.scene.add(this.nav)
     }
     this.place(this.nav, pos, bearing, elevM)
+    this.map?.triggerRepaint()
   }
 }

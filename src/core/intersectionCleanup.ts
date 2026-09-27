@@ -41,7 +41,36 @@ export function roadsWithCleanupFlags(roads: RoadFeature[]): RoadFeature[] {
   })
 }
 
+/** 清空區的經緯度外框（各向外留 40 m，大於任一清空區中心到角落的距離） */
+const CLEANUP_BOXES = CLEAN_INTERSECTIONS.map((z) => {
+  const margin = Math.hypot(
+    Math.max(-z.alongMinM, z.alongMaxM), Math.max(-z.acrossMinM, z.acrossMaxM)) + 10
+  const dLon = margin / (111320 * Math.cos(22.73 * Math.PI / 180))
+  const dLat = margin / 110540
+  return {
+    minLon: z.center[0] - dLon, maxLon: z.center[0] + dLon,
+    minLat: z.center[1] - dLat, maxLat: z.center[1] + dLat,
+  }
+})
+
+/**
+ * 路口清空：把線上落在清空區內的部分挖掉。
+ * 只有外框碰到清空區的線才每 0.5 m 取樣判斷；其餘（全圖幾乎所有線）原樣回傳。
+ * 以前是每條線都加密成 0.5 m 一點並把加密點留在輸出，分隔線因此膨脹到 120 MB，
+ * MapLibre setData 在主執行緒序列化它要好幾秒（補算後拖地圖的主要卡頓）。
+ */
 function clipLine(coords: [number, number][]): [number, number][][] {
+  if (coords.length < 2) return []
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity
+  for (const [lon, lat] of coords) {
+    if (lon < minLon) minLon = lon
+    if (lon > maxLon) maxLon = lon
+    if (lat < minLat) minLat = lat
+    if (lat > maxLat) maxLat = lat
+  }
+  const near = CLEANUP_BOXES.some((b) =>
+    maxLon >= b.minLon && minLon <= b.maxLon && maxLat >= b.minLat && minLat <= b.maxLat)
+  if (!near) return [coords]
   const dense: [number, number][] = []
   for (let i = 1; i < coords.length; i++) {
     const a = coords[i - 1], b = coords[i]
@@ -53,13 +82,17 @@ function clipLine(coords: [number, number][]): [number, number][][] {
   }
   const runs: [number, number][][] = []
   let run: [number, number][] = []
+  let clipped = false
   const flush = () => { if (run.length >= 2) runs.push(run); run = [] }
   for (const p of dense) {
-    if (inIntersectionCleanup(p)) flush()
-    else run.push(p)
+    if (inIntersectionCleanup(p)) {
+      clipped = true
+      flush()
+    } else run.push(p)
   }
   flush()
-  return runs
+  // 靠近但沒有真的進入清空區：原線即可，不必帶加密點
+  return clipped ? runs : [coords]
 }
 
 export function cleanIntersectionFeatures(fc: FeatureCollection): FeatureCollection {

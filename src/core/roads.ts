@@ -259,7 +259,9 @@ export function mapRoadProps(p: RoadProps): MapRoadProps {
   return rest
 }
 
-type RoadSurfaceProps = MapRoadProps & {
+/** 路面多邊形只帶點選查詢（RoadInfoCard／stackPick／新路選取）會讀的欄位 */
+type SurfaceQueryKey = 'osm_id' | 'blockNode' | 'name' | 'highway' | 'lanes' | 'oneway' | 'maxspeed' | 'userRoad'
+type RoadSurfaceProps = Pick<RoadProps, SurfaceQueryKey> & {
   surfaceKind: 'casing' | 'surface'
   /** 畫在地面圖層之下（mapStyle 的 tunnel-* 圖層組）——見 isTunnel */
   underground: boolean
@@ -456,13 +458,19 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
 }
 
 /**
- * 折線的圓頭圓角 buffer，以「互相重疊的凸片」表達：每段一個矩形、每個轉折
- * 外側一片扇形、兩端各一個半圓。這些片的聯集在數學上就等於 buffer（Minkowski
- * 和），但省掉 turf buffer 內部 JSTS 的投影與多邊形聯集（原本佔啟動 ~6 秒）。
+ * 折線的圓頭圓角 buffer（Minkowski 和），省掉 turf buffer 內部 JSTS 的投影與
+ * 多邊形聯集（原本佔啟動 ~6 秒）。兩種輸出，覆蓋的區域相同：
  *
- * 只適用於「不透明、無描邊」的 fill：重疊處同色疊畫看不出來。所有環統一逆時針，
+ * 1. 單一外框環（優先）：左緣順走、前端半圓、右緣倒走、後端半圓。轉折外側用圓弧、
+ *    內側用兩條偏移邊的交點。環若自交（內側交點超出相鄰段、U 型急彎兩臂太近…）
+ *    就放棄，改走 2。
+ * 2. 互相重疊的凸片：每段一個矩形、每個轉折外側一片扇形、兩端各一個半圓，聯集即 buffer。
+ *    頂點較多——MapLibre setData 會在主執行緒逐頂點序列化再 postMessage，
+ *    全用凸片時補算後拖地圖會多卡好幾秒，所以只當退路。
+ *
+ * 只適用於「不透明、無描邊」的 fill：凸片重疊處同色疊畫看不出來。所有環統一逆時針，
  * 否則 MapLibre 依環繞方向分組時會把反向的片當成洞。
- * steps 與 turf buffer 相同：每 90° 的圓弧分段數。
+ * steps 與 turf buffer 相同：每 90° 的圓弧分段數；兩種輸出的圓弧取樣點完全相同。
  */
 export function strokePolygons(
   coords: [number, number][], radiusM: number, steps = 4,
@@ -517,8 +525,14 @@ export function strokePolygons(
   for (let i = 0; i < pts.length - 1; i++) {
     const [x1, y1] = pts[i]
     const [x2, y2] = pts[i + 1]
-    const a = Math.atan2(y2 - y1, x2 - x1)
-    heading.push(a)
+    heading.push(Math.atan2(y2 - y1, x2 - x1))
+  }
+  const outline = strokeOutline(pts, heading, radiusM, steps)
+  if (outline) return { type: 'MultiPolygon', coordinates: [ring(outline)] }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i]
+    const [x2, y2] = pts[i + 1]
+    const a = heading[i]
     const nx = -Math.sin(a) * radiusM
     const ny = Math.cos(a) * radiusM
     polys.push(ring([[x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x2 - nx, y2 - ny], [x2 + nx, y2 + ny]]))
@@ -528,14 +542,109 @@ export function strokePolygons(
   polys.push(fan(pts[pts.length - 1], heading[heading.length - 1] - Math.PI / 2, Math.PI))
   // 轉折外側補扇形（左轉 → 右側外凸，右轉 → 左側）
   for (let i = 1; i < pts.length - 1; i++) {
-    let turn = heading[i] - heading[i - 1]
-    while (turn > Math.PI) turn -= 2 * Math.PI
-    while (turn <= -Math.PI) turn += 2 * Math.PI
+    const turn = turnAngle(heading[i - 1], heading[i])
     if (Math.abs(turn) < 1e-9) continue
     const side = turn > 0 ? -Math.PI / 2 : Math.PI / 2
     polys.push(fan(pts[i], heading[i - 1] + side, turn))
   }
   return { type: 'MultiPolygon', coordinates: polys }
+}
+
+/** 轉角 normalize 到 (-π, π] */
+function turnAngle(from: number, to: number): number {
+  let turn = to - from
+  while (turn > Math.PI) turn -= 2 * Math.PI
+  while (turn <= -Math.PI) turn += 2 * Math.PI
+  return turn
+}
+
+/**
+ * strokePolygons 的單一外框環（公尺座標、未閉合）。做不出「簡單多邊形」就回 null：
+ * 內側轉角的交點必須落在相鄰兩段之內，且整個環不得自交。
+ */
+function strokeOutline(
+  pts: [number, number][], heading: number[], r: number, steps: number,
+): [number, number][] | null {
+  const n = pts.length
+  // 圓弧取樣：與凸片 fan() 相同的分段數與角度；不含尾（尾由下一段接上），
+  // withHead=false 時也不含頭（頭已是上一段的最後一點，重複點會變成零長度邊）
+  const arc = (
+    out: [number, number][], c: [number, number], a0: number, sweep: number, withHead = true,
+  ) => {
+    const k = Math.max(1, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * steps - 1e-9))
+    for (let i = withHead ? 0 : 1; i < k; i++) {
+      const a = a0 + (sweep * i) / k
+      out.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)])
+    }
+  }
+  const segLen = (i: number) => Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+  /** side = +1 左緣、-1 右緣；依行進方向走一遍，回傳該側的邊界點（不含兩端半圓） */
+  const chain = (side: 1 | -1): [number, number][] | null => {
+    const out: [number, number][] = []
+    const off = (c: [number, number], a: number): [number, number] =>
+      [c[0] - side * r * Math.sin(a), c[1] + side * r * Math.cos(a)]
+    out.push(off(pts[0], heading[0]))
+    for (let i = 1; i < n - 1; i++) {
+      const a1 = heading[i - 1]
+      const a2 = heading[i]
+      const turn = turnAngle(a1, a2)
+      if (Math.abs(turn) < 1e-9) continue
+      if (turn * side > 0) {
+        // 往這一側轉 → 這側是內側：兩條偏移邊的交點，沿段退縮 r·tan(|turn|/2)
+        const setback = r * Math.tan(Math.abs(turn) / 2)
+        if (!(setback < segLen(i - 1) && setback < segLen(i))) return null
+        const nx = -Math.sin(a1) - Math.sin(a2)
+        const ny = Math.cos(a1) + Math.cos(a2)
+        const scale = (side * r) / (1 + Math.cos(turn))
+        out.push([pts[i][0] + nx * scale, pts[i][1] + ny * scale])
+      } else {
+        // 外側：從前一段的法線掃到下一段的法線（與凸片的扇形同一組取樣點）
+        arc(out, pts[i], a1 + side * Math.PI / 2, turn)
+        out.push(off(pts[i], a2))
+      }
+    }
+    out.push(off(pts[n - 1], heading[n - 2]))
+    return out
+  }
+  const left = chain(1)
+  const right = chain(-1)
+  if (!left || !right) return null
+  const ringXY: [number, number][] = [...left]
+  // 前端半圓：左法線 → 經正前方 → 右法線（順時針）
+  arc(ringXY, pts[n - 1], heading[n - 2] + Math.PI / 2, -Math.PI, false)
+  ringXY.push(...right.reverse())
+  // 後端半圓：右法線 → 經正後方 → 左法線（順時針）
+  arc(ringXY, pts[0], heading[0] - Math.PI / 2, -Math.PI, false)
+  return ringSelfIntersects(ringXY) ? null : ringXY
+}
+
+/** 閉合環（首尾不重複）是否有任兩條不相鄰的邊相交 */
+function ringSelfIntersects(ring: [number, number][]): boolean {
+  const m = ring.length
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  for (let i = 0; i < m; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % m]
+    const minX = Math.min(a[0], b[0]), maxX = Math.max(a[0], b[0])
+    const minY = Math.min(a[1], b[1]), maxY = Math.max(a[1], b[1])
+    for (let j = i + 2; j < m; j++) {
+      if (i === 0 && j === m - 1) continue // 首尾兩邊相鄰
+      const c = ring[j]
+      const d = ring[(j + 1) % m]
+      if (Math.max(c[0], d[0]) < minX || Math.min(c[0], d[0]) > maxX
+        || Math.max(c[1], d[1]) < minY || Math.min(c[1], d[1]) > maxY) continue
+      const d1 = cross(c, d, a)
+      const d2 = cross(c, d, b)
+      const d3 = cross(a, b, c)
+      const d4 = cross(a, b, d)
+      // 含共線接觸在內一律視為自交，寧可退回凸片
+      if ((d1 > 0) !== (d2 > 0) || d1 === 0 || d2 === 0) {
+        if ((d3 > 0) !== (d4 > 0) || d3 === 0 || d4 === 0) return true
+      }
+    }
+  }
+  return false
 }
 
 /**
@@ -548,6 +657,7 @@ export function buildRoadSurfaces(
   const features: Feature<Polygon | MultiPolygon, RoadSurfaceProps>[] = []
   for (const road of roads) {
     if (road.properties.elevated || road.geometry.coordinates.length < 2) continue
+    const p = road.properties
     // OSM 的雙向道路軸代表分向基準，不是非對稱斷面的外框中心。
     // 將路面中心往車道較多的一側平移，中央帶與相鄰對稱區段才能連續。
     let surfaceAxis: Feature<LineString> = road
@@ -570,7 +680,13 @@ export function buildRoadSurfaces(
       features.push({
         type: 'Feature',
         geometry: polygon,
-        properties: { ...mapRoadProps(road.properties), surfaceKind, underground: isTunnel(road.properties) },
+        // 路面是全圖最大的 source（兩倍道路數、每條上百頂點）；MapLibre 在主執行緒用 JS
+        // 逐物件序列化 setData 的資料，帶整份道路屬性會讓補算後多卡好幾秒
+        properties: {
+          osm_id: p.osm_id, blockNode: p.blockNode, name: p.name, highway: p.highway,
+          lanes: p.lanes, oneway: p.oneway, maxspeed: p.maxspeed, userRoad: p.userRoad,
+          surfaceKind, underground: isTunnel(p),
+        },
       })
     }
   }

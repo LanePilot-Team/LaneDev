@@ -4,6 +4,7 @@
 //   ready     navigate → `.loading` 消失且 __map 存在
 //   ltSum/ltMax  ready 前 long task 總和／最長一筆
 //   prefetch  ready 後，背景補算車道級幾何完成所需時間（-1 = 該版本沒有延後機制）
+//   prefetchLtMax  補算期間最長一次主執行緒佔用（＝拖地圖會感受到的最長卡頓）
 //   zoomIn    jumpTo zoom 16.5 → map idle
 //   zoneSig   待轉區推導結果的 sha1 前 12 碼（對拍用；舊版未曝露時為 null 的雜湊）
 // 用法：npm run dev 後
@@ -92,10 +93,28 @@ async function once() {
   const ltSum = lt.reduce((s, [, d]) => s + d, 0); const ltMax = Math.max(0, ...lt.map(([, d]) => d))
   // 背景補算（若有）：等延後的車道級幾何補完，量從 ready 起算的時間
   let prefetch = -1
+  let prefetchLtMax = -1
+  let prefetchLtCount = -1
   if (await evaluate(`!!window.__lanePaintDirty`)) {
     const tp = Date.now()
+    const ltStart = await evaluate(`window.__lt.length`)
+    if (PROFILE) await send('Profiler.start')
     while (await evaluate(`window.__lanePaintDirty.roads || window.__lanePaintDirty.bays`)) await sleep(50)
     prefetch = Date.now() - tp
+    if (PROFILE) await summarize(send, 'prefetch')
+    // 補算期間的 long task：使用者此時拖地圖會感受到的最長一次卡頓
+    const plt = await evaluate(`window.__lt.slice(${ltStart})`)
+    prefetchLtMax = Math.round(Math.max(0, ...plt.map(([, d]) => d)))
+    prefetchLtCount = plt.length
+    const steps = await evaluate(`window.__paintSteps ?? null`)
+    if (steps && process.argv.includes('--timeline')) {
+      // 時間軸：S=補算步驟（起點/耗時），L=long task；用來找卡頓是誰造成的
+      const ev = []
+      for (let i = 0; i < steps.length; i += 2) ev.push([steps[i], 'S', steps[i + 1]])
+      for (const [st, d] of plt) ev.push([Math.round(st), 'L', Math.round(d)])
+      ev.sort((a, b) => a[0] - b[0])
+      console.error(ev.map(([t, k, d]) => `${k}@${t}+${d}`).join('  '))
+    }
   }
   await evaluate(`new Promise((res) => window.__map.loaded() ? res() : window.__map.once('idle', res))`)
   await sleep(1500) // 讓初始渲染穩定
@@ -121,10 +140,10 @@ async function once() {
   ws.close(); proc.kill()
   await sleep(500)
   try { rmSync(dir, { recursive: true, force: true }) } catch {}
-  return { zoneSig, ready, ltSum: Math.round(ltSum), ltMax: Math.round(ltMax), prefetch, zoomIn: Math.round(zoomIn) }
+  return { zoneSig, ready, ltSum: Math.round(ltSum), ltMax: Math.round(ltMax), prefetch, prefetchLtMax, prefetchLtCount, zoomIn: Math.round(zoomIn) }
 }
 
 const rows = []
 for (let i = 0; i < RUNS; i++) { const r = await once(); rows.push(r); console.log(JSON.stringify(r)) }
 const med = (k) => rows.map((r) => r[k]).sort((a, b) => a - b)[Math.floor(rows.length / 2)]
-console.log(`median ready ${med('ready')} ms  longTask sum ${med('ltSum')} max ${med('ltMax')}  zoomIn ${med('zoomIn')} ms  prefetch ${med('prefetch')}`)
+console.log(`median ready ${med('ready')} ms  longTask sum ${med('ltSum')} max ${med('ltMax')}  zoomIn ${med('zoomIn')} ms  prefetch ${med('prefetch')}  prefetchLtMax ${med('prefetchLtMax')} (n=${med('prefetchLtCount')})`)

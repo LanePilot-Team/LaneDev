@@ -255,19 +255,34 @@ export function applyManualApproachMarkingSetback(edge: ScopeEdge): ScopeEdge {
  * 名稱或 way 邊界切短的連續進口採用緊湊配置，自動標線仍維持保守門檻。
  */
 function hasManualRoadField(
-  journal: EnhancementRecord[],
+  index: ManualFieldIndex,
   properties: { osm_id: number; blockNode: number },
   fields: string[],
 ): boolean {
-  const blockKey = `way/${properties.osm_id}@b/${properties.blockNode}`
-  const wayKey = `way/${properties.osm_id}`
-  for (let index = journal.length - 1; index >= 0; index--) {
-    const record = journal[index]
+  const block = index.get(`way/${properties.osm_id}@b/${properties.blockNode}`)
+  const way = index.get(`way/${properties.osm_id}`)
+  return fields.some((field) => block?.has(field) || way?.has(field))
+}
+
+/** target key → 曾被寫入（值非 undefined）的欄位集合。
+ * 語意與逐筆掃描完全相同（任何一筆非 delete 的 road 紀錄寫過即算），
+ * 但查詢從 O(journal) 變 O(1)；原本逐邊掃 3,400 筆 journal 佔啟動 ~2.3 秒。
+ * 每次 build 呼叫各建一次，不跨呼叫快取，journal 被原地 append 也不會過期。 */
+type ManualFieldIndex = Map<string, Set<string>>
+function buildManualFieldIndex(journal: EnhancementRecord[]): ManualFieldIndex {
+  const index: ManualFieldIndex = new Map()
+  for (const record of journal) {
     if (record.op === 'delete' || record.target.type !== 'road') continue
-    if (record.target.key !== blockKey && record.target.key !== wayKey) continue
-    if (fields.some((field) => record.fields?.[field] !== undefined)) return true
+    const fields = record.fields
+    if (!fields) continue
+    let set = index.get(record.target.key)
+    for (const [field, value] of Object.entries(fields)) {
+      if (value === undefined) continue
+      if (!set) index.set(record.target.key, set = new Set())
+      set.add(field)
+    }
   }
-  return false
+  return index
 }
 
 const anchorKey = (a: BayAnchor) => `way/${a.wayId}@node/${a.nodeId}${a.back ? '~b' : ''}`
@@ -1153,6 +1168,7 @@ export function buildLaneArrows(
    */
   stopLines: PaintLine[] = [],
 ): GroundArrow[] {
+  const manualIndex = buildManualFieldIndex(journal)
   const stopGrid = indexObstacles(stopLines
     .filter((line) => line.coords.length >= 2)
     .map((line) => ({ points: line.coords, alongHalfM: 0.4, crossHalfM: 0 })))
@@ -1270,7 +1286,7 @@ export function buildLaneArrows(
     // 自動標線仍要求完整的 6m 緩衝；人工已儲存箭頭設定時，允許短 OSM
     // 分段使用較緊湊的配置。典型案例是「益群橋 → 短藍田路 → 援中路」，
     // 道路本身連續，但 OSM 在橋名切換處把進口切成約二十公尺的小段。
-    const manualArrow = hasManualRoadField(journal, p, [
+    const manualArrow = hasManualRoadField(manualIndex, p, [
       e.back ? 'arrow_display_b' : 'arrow_display_f',
       e.back ? 'turn_lanes_backward' : 'turn_lanes',
     ])
@@ -1697,6 +1713,7 @@ export function buildStopLines(
   graph: RoadGraph, bays: TurnBay[], rightLanes: RightLane[],
   journal: EnhancementRecord[] = [],
 ): PaintLine[] {
+  const manualIndex = buildManualFieldIndex(journal)
   const mergeEntryNodes = new Set<number>()
   for (const edge of graph.scopeEdges(() => true, 0, 0)) {
     for (const node of edge.road.properties.oneSideEntryNodes ?? []) {
@@ -1771,7 +1788,7 @@ export function buildStopLines(
     // 人工明確開啟停止線時允許緊湊進口；自動生成仍維持 6m 防護，
     // 不會因此替其他短路段普遍補線。
     const manualStop = hasManualRoadField(
-      journal, p, [e.back ? 'stop_line_b' : 'stop_line_f'])
+      manualIndex, p, [e.back ? 'stop_line_b' : 'stop_line_f'])
     if (d < e.startSetbackM + (forced || manualStop || corridorOuterStop ? 1 : 6)) continue
     // 同一 way/節點可能有多個切塊候選；只有真正成功產生停止線後才標記，
     // 避免先遇到過短切塊而把後續有效進入方向誤判為重複。

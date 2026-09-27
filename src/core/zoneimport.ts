@@ -6,7 +6,7 @@ import type { AnnotationRecord } from './importmap'
 import type { RoadFeature } from './roads'
 import type { RoadGraph, TurnOption } from './graph'
 import type { DropRemap } from './couplet'
-import { makeZoneCtx, planZone, type Zone } from './zones'
+import { makeZoneCtx, planZone, type Zone, type ZoneCtx } from './zones'
 import { angleDelta, bearing as geoBearing, haversine } from './geo'
 import { laneBaseZoneCandidates, type LaneBaseIndex } from './laneBase.ts'
 
@@ -120,8 +120,12 @@ export function zonesFromLaneBase(args: {
   const skips: ZoneSkip[] = []
   const resolvedGeometry = new Set<string>()
   const candidates = laneBaseZoneCandidates(args.index)
+  // 每個候選各呼叫一次 zonesFromAnnotations；路網查詢表只跟 graph/roads 有關，
+  // 迴圈內不變，建一次共用（原本每個候選重掃全圖，啟動時佔 ~16 秒）
+  const prepared = prepareZoneImport(args.graph, args.roads)
   for (const candidate of candidates) {
     const result = zonesFromAnnotations({
+      prepared,
       records: [{
         segmentKey: `way/${candidate.approachWayId}`,
         sourceKey: candidate.sourceKey,
@@ -197,6 +201,24 @@ function rawBearingAt(raw: RawWay, i: number, dir: Dir): number | null {
   return null
 }
 
+/** zonesFromAnnotations 的路網查詢表：只由 graph/roads 決定，可在多次呼叫間共用 */
+export interface ZoneImportPrepared {
+  byId: Map<number, RoadFeature[]>
+  interPos: Map<number, [number, number]>
+  ctx: ZoneCtx
+}
+
+export function prepareZoneImport(graph: RoadGraph, roads: RoadFeature[]): ZoneImportPrepared {
+  const byId = new Map<number, RoadFeature[]>()
+  for (const r of roads) {
+    const id = r.properties.osm_id
+    if (!byId.has(id)) byId.set(id, [])
+    byId.get(id)!.push(r)
+  }
+  const interPos = new Map(graph.intersections().map((i) => [i.id, i.pos]))
+  return { byId, interPos, ctx: makeZoneCtx(graph) }
+}
+
 /**
  * 標註 → 待轉區。回傳新生成的 zones（id = zone-lp-{node}-{fromBearing}，確定性、
  * 可重跑）與略過清單。existing 只做去重（同路口同進入向 30° 內不重複生成），
@@ -210,18 +232,13 @@ export function zonesFromAnnotations(args: {
   wayRemap: Map<number, DropRemap>
   rawWays?: Map<number, RawWay>
   existing?: Zone[]
+  /** 同一 graph/roads 連續呼叫時傳入，省掉每次重建（須由 prepareZoneImport 以同一組 graph/roads 產生） */
+  prepared?: ZoneImportPrepared
 }): ZoneImportResult {
   const { records, graph, roads, nodeRemap, wayRemap, rawWays } = args
   const existing = args.existing ?? []
-  const byId = new Map<number, RoadFeature[]>()
-  for (const r of roads) {
-    const id = r.properties.osm_id
-    if (!byId.has(id)) byId.set(id, [])
-    byId.get(id)!.push(r)
-  }
-  const inters = graph.intersections()
-  const interPos = new Map(inters.map((i) => [i.id, i.pos]))
-  const ctx = makeZoneCtx(graph)
+  const { byId, interPos, ctx } = args.prepared ?? prepareZoneImport(graph, roads)
+  const inters = graph.intersections() // graph 內有快取
   const zones: Zone[] = []
   const skips: ZoneSkip[] = []
   const taken = (nodeId: number, fromBearing: number) =>

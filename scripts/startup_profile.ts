@@ -150,6 +150,14 @@ if (process.argv.includes('--render') || process.argv.includes('--render-only'))
 
   t = ms(); const bays = buildTurnBays(renderGraph, journal2); r['R2_buildTurnBays'] = ms() - t
   t = ms(); const rl = buildRightLanes(renderGraph, journal2); r['R3_buildRightLanes'] = ms() - t
+  // 2026-09-27 起 mapCore 先算停等格（資料面），車道級繪圖延後到 zoom ≥ 14.5
+  // --old-order：停等格排回停止線之後（09-27 以前的順序），用來對拍調序是否影響輸出
+  const OLD_ORDER = process.argv.includes('--old-order')
+  let boxes!: ReturnType<typeof buildMotoBoxes>
+  const runBoxes = () => {
+    t = ms(); boxes = buildMotoBoxes(renderGraph, bays, rl, journal2); r['R7_buildMotoBoxes'] = ms() - t
+  }
+  if (!OLD_ORDER) runBoxes()
   t = ms()
   const channel = [...buildChannelization(renderGraph, bays),
     ...buildSpecifiedWhiteMotoHatch(renderGraph)]
@@ -158,8 +166,8 @@ if (process.argv.includes('--render') || process.argv.includes('--render-only'))
   t = ms(); const stops = buildStopLines(renderGraph, bays, rl, journal2); r['R5_buildStopLines'] = ms() - t
   snapScope('after_stopLines')
   t = ms(); const waits = buildLeftTurnWaitingAreas(renderGraph, bays); r['R6_leftTurnWaitAreas'] = ms() - t
-  t = ms(); const boxes = buildMotoBoxes(renderGraph, bays, rl, journal2); r['R7_buildMotoBoxes'] = ms() - t
-  t = ms(); const arrows = buildLaneArrows(renderGraph, bays, rl, boxes.dirs, journal2); r['R8_buildLaneArrows'] = ms() - t
+  if (OLD_ORDER) runBoxes()
+  t = ms(); const arrows = buildLaneArrows(renderGraph, bays, rl, boxes.dirs, journal2, stops); r['R8_buildLaneArrows'] = ms() - t
   t = ms()
   const fc = baysToGeoJSON(bays, [...channel, ...stops, ...waits], arrows, rl, boxes.boxes)
   fc.features.push(...buildMotoLaneEntryIcons(renderGraph, journal2).features,
@@ -171,7 +179,18 @@ if (process.argv.includes('--render') || process.argv.includes('--render-only'))
   r['R11_groundMarkingPolygons'] = ms() - t
   t = ms(); const rr = roadsForRendering(view2.renderRoads); r['R12_roadsForRendering'] = ms() - t
   t = ms(); buildRoadSurfaces(rr); r['R13_buildRoadSurfaces'] = ms() - t
-  t = ms(); buildDividers(rr); r['R14_buildDividers'] = ms() - t
+  t = ms(); const dividerLines = buildDividers(rr); r['R14_buildDividers'] = ms() - t
+  // mapCore.paintRoads 的後半：分隔線轉貼地多邊形（虛線切段）。09-27 以前 harness 漏量這段
+  t = ms(); const dividerClean = cleanIntersectionFeatures(dividerLines); r['R14a_dividerCleanup'] = ms() - t
+  t = ms()
+  const dividerMarkings = groundMarkingPolygons(
+    dividerClean,
+    (p) => p?.kind === 'center' ? 0.3
+      : p?.kind === 'tunnel-edge' ? 0.12
+      : ['lane', 'center-double', 'moto'].includes(String(p?.kind)) ? 0.15 : null,
+    (p) => p?.kind === 'lane' || p?.kind === 'tunnel-edge',
+  )
+  r['R14b_dividerMarkings'] = ms() - t
   t = ms(); buildRoadTexts(renderGraph, bays); r['R15_buildRoadTexts'] = ms() - t
 
   const sum = Object.values(r).reduce((a, b) => a + b, 0)
@@ -204,4 +223,14 @@ if (process.argv.includes('--render') || process.argv.includes('--render-only'))
   console.log(`  對照：現算全部       ${sum.toFixed(0)} ms`)
   console.log(`  比值               ${(sum / deMs).toFixed(1)}×`)
   void back
+
+  // ── 輸出指紋：最佳化前後逐 byte 比對，證明無損 ──
+  if (process.argv.includes('--hash')) {
+    const { createHash } = await import('node:crypto')
+    const sha = (v: unknown) => createHash('sha1').update(JSON.stringify(v)).digest('hex').slice(0, 12)
+    console.log('')
+    console.log('=== 輸出指紋（sha1 前 12 碼）===')
+    const parts: Record<string, unknown> = { stops, arrows, boxes, bays, rl, cleaned, surfaces, dividers, dividerMarkings }
+    for (const [k, v] of Object.entries(parts)) console.log(`  ${k.padEnd(10)} ${sha(v)}`)
+  }
 }

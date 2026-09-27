@@ -30,7 +30,7 @@ function iconMeters(meters: number | ExpressionSpecification, imgPx: number): Ex
   return ['interpolate', ['exponential', 2], ['zoom'], 10, s(10), 24, s(24)]
 }
 
-const LANE_ZOOM = 15 // 之下畫簡化路網、之上畫車道級
+export const LANE_ZOOM = 15 // 之下畫簡化路網、之上畫車道級
 
 /** 大眾運輸圖層群組（工具列一次開關；預設 visibility: none） */
 export const TRANSIT_LAYER_IDS = [

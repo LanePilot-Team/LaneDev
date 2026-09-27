@@ -4,7 +4,7 @@
 //   雙向道：way 線 = 分向中心。順向（畫線方向）車道在右側、逆向在左側，
 //           各方向最外側可有一條機車道（2.2m，白實線分隔）。
 //   單行道：way 線 = 斷面中心，全部車道屬順向。
-import { buffer, lineOffset } from '@turf/turf'
+import { lineOffset } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson'
 import {
   angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M,
@@ -244,7 +244,22 @@ export type RoadFeature = Feature<LineString> & { properties: RoadProps }
 export const isTunnel = (p: RoadProps): boolean =>
   p.tunnel === 'yes' || p.tunnel === 'building_passage' || p.layer < 0
 
-type RoadSurfaceProps = RoadProps & {
+/** 只供管線內部追溯用、地圖樣式與點選查詢都不讀的大型陣列欄位 */
+type MapOmittedKey = 'sourceSegments' | 'laneFieldSourcesF' | 'laneFieldSourcesB' | 'nodes'
+export type MapRoadProps = Omit<RoadProps, MapOmittedKey>
+
+/**
+ * 送進 MapLibre source 的道路屬性。setData 會在主執行緒用 JS 逐物件序列化
+ * 整份資料再丟給 worker，這幾個陣列原本佔 roads source 屬性量的一半以上
+ * （sourceSegments 還帶一份座標），卻沒有任何樣式或 queryRenderedFeatures
+ * 使用者讀它們（樣式只讀純量；點選查詢拿 osm_id/blockNode 回查 roadsRef）。
+ */
+export function mapRoadProps(p: RoadProps): MapRoadProps {
+  const { sourceSegments: _s, laneFieldSourcesF: _f, laneFieldSourcesB: _b, nodes: _n, ...rest } = p
+  return rest
+}
+
+type RoadSurfaceProps = MapRoadProps & {
   surfaceKind: 'casing' | 'surface'
   /** 畫在地面圖層之下（mapStyle 的 tunnel-* 圖層組）——見 isTunnel */
   underground: boolean
@@ -441,6 +456,89 @@ export function roadsFromGeoJSON(raw: FeatureCollection<LineString>): RoadFeatur
 }
 
 /**
+ * 折線的圓頭圓角 buffer，以「互相重疊的凸片」表達：每段一個矩形、每個轉折
+ * 外側一片扇形、兩端各一個半圓。這些片的聯集在數學上就等於 buffer（Minkowski
+ * 和），但省掉 turf buffer 內部 JSTS 的投影與多邊形聯集（原本佔啟動 ~6 秒）。
+ *
+ * 只適用於「不透明、無描邊」的 fill：重疊處同色疊畫看不出來。所有環統一逆時針，
+ * 否則 MapLibre 依環繞方向分組時會把反向的片當成洞。
+ * steps 與 turf buffer 相同：每 90° 的圓弧分段數。
+ */
+export function strokePolygons(
+  coords: [number, number][], radiusM: number, steps = 4,
+): MultiPolygon | null {
+  if (coords.length === 0 || !(radiusM > 0)) return null
+  // 以首點為原點的等距矩形投影（公尺），道路尺度下與 turf 的方位等距投影差距在公分以下
+  const [lon0, lat0] = coords[0]
+  const R = 6371008.8
+  const kx = (Math.PI / 180) * R * Math.cos((lat0 * Math.PI) / 180)
+  const ky = (Math.PI / 180) * R
+  const pts: [number, number][] = []
+  for (const [lon, lat] of coords) {
+    const x = (lon - lon0) * kx
+    const y = (lat - lat0) * ky
+    const last = pts[pts.length - 1]
+    if (!last || Math.hypot(x - last[0], y - last[1]) > 1e-6) pts.push([x, y])
+  }
+  const back = ([x, y]: [number, number]): [number, number] => [lon0 + x / kx, lat0 + y / ky]
+  const ring = (xy: [number, number][]): [number, number][][] => {
+    let area = 0
+    for (let i = 0; i < xy.length; i++) {
+      const [x1, y1] = xy[i]
+      const [x2, y2] = xy[(i + 1) % xy.length]
+      area += x1 * y2 - x2 * y1
+    }
+    const ccw = area < 0 ? xy.reverse() : xy
+    const out = ccw.map(back)
+    out.push(out[0])
+    return [out]
+  }
+  /** 以 c 為圓心、從角度 a0 掃過 sweep 的扇形（含圓心） */
+  const fan = (c: [number, number], a0: number, sweep: number) => {
+    const n = Math.max(1, Math.ceil((Math.abs(sweep) / (Math.PI / 2)) * steps - 1e-9))
+    const xy: [number, number][] = [c]
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (sweep * i) / n
+      xy.push([c[0] + radiusM * Math.cos(a), c[1] + radiusM * Math.sin(a)])
+    }
+    return ring(xy)
+  }
+  const polys: [number, number][][][] = []
+  if (pts.length === 1) {
+    const n = 4 * steps
+    const c = pts[0]
+    polys.push(ring(Array.from({ length: n }, (_, i): [number, number] => [
+      c[0] + radiusM * Math.cos((2 * Math.PI * i) / n),
+      c[1] + radiusM * Math.sin((2 * Math.PI * i) / n),
+    ])))
+    return { type: 'MultiPolygon', coordinates: polys }
+  }
+  const heading: number[] = []
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i]
+    const [x2, y2] = pts[i + 1]
+    const a = Math.atan2(y2 - y1, x2 - x1)
+    heading.push(a)
+    const nx = -Math.sin(a) * radiusM
+    const ny = Math.cos(a) * radiusM
+    polys.push(ring([[x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x2 - nx, y2 - ny], [x2 + nx, y2 + ny]]))
+  }
+  // 兩端半圓：起點朝後、終點朝前
+  polys.push(fan(pts[0], heading[0] + Math.PI / 2, Math.PI))
+  polys.push(fan(pts[pts.length - 1], heading[heading.length - 1] - Math.PI / 2, Math.PI))
+  // 轉折外側補扇形（左轉 → 右側外凸，右轉 → 左側）
+  for (let i = 1; i < pts.length - 1; i++) {
+    let turn = heading[i] - heading[i - 1]
+    while (turn > Math.PI) turn -= 2 * Math.PI
+    while (turn <= -Math.PI) turn += 2 * Math.PI
+    if (Math.abs(turn) < 1e-9) continue
+    const side = turn > 0 ? -Math.PI / 2 : Math.PI / 2
+    polys.push(fan(pts[i], heading[i - 1] + side, turn))
+  }
+  return { type: 'MultiPolygon', coordinates: polys }
+}
+
+/**
  * 產生真正貼在地面的道路面。MapLibre line-width 是螢幕像素寬度，鏡頭傾斜時
  * 近端不會按地面透視縮放，因此車道級路面改用實際公尺 buffer 的 polygon。
  */
@@ -464,14 +562,15 @@ export function buildRoadSurfaces(
       ['casing', 2.4],
       ['surface', 0.8],
     ] as const) {
-      const polygon = buffer(surfaceAxis, (road.properties.width_m + extraWidth) / 2, {
-        units: 'meters',
-        steps: 4,
-      })
+      const polygon = strokePolygons(
+        surfaceAxis.geometry.coordinates as [number, number][],
+        (road.properties.width_m + extraWidth) / 2,
+      )
       if (!polygon) continue
       features.push({
-        ...polygon,
-        properties: { ...road.properties, surfaceKind, underground: isTunnel(road.properties) },
+        type: 'Feature',
+        geometry: polygon,
+        properties: { ...mapRoadProps(road.properties), surfaceKind, underground: isTunnel(road.properties) },
       })
     }
   }

@@ -6,10 +6,10 @@ import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
-import { buildStyle, makeIcons } from '../core/mapStyle'
+import { LANE_ZOOM, buildStyle, makeIcons } from '../core/mapStyle'
 import { asset } from '../core/asset'
 import {
-  buildDividers, buildRoadSurfaces, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
+  buildDividers, buildRoadSurfaces, mapRoadProps, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
 } from '../core/roads'
 import { prepareBaseRoads } from '../core/pipeline'
 import type { DropRemap } from '../core/couplet'
@@ -360,6 +360,18 @@ export function useMapCore(
   const baysRef = useRef<TurnBay[]>([])
   const rightLanesRef = useRef<RightLane[]>([])
   const motoBoxesRef = useRef<MotoBox[]>([])
+  const motoBoxDirsRef = useRef<Set<string>>(new Set())
+  /**
+   * 車道級幾何（路面多邊形、分隔線、停止線、箭頭、印字…）延後到鏡頭接近
+   * LANE_ZOOM 才生成：這些圖層 minzoom 全部 ≥ LANE_ZOOM，而啟動 zoom 12.4
+   * 時算了也看不到，卻佔掉啟動主執行緒的大半。資料面（bays/rightLanes/
+   * motoBoxes，規劃與編輯會讀）仍立即計算，只有「畫」延後。
+   * 值為 true 表示該來源欠一次重繪：總覽圖畫完後背景補算，或使用者先放大時
+   * 由 zoom 事件立即補上。
+   */
+  const lanePaintDirtyRef = useRef({ bays: false, roads: false })
+  /** refreshBays 建的繪圖圖，留給延後的 paintBays 使用 */
+  const renderGraphRef = useRef<RoadGraph | null>(null)
   const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
   const vehiclesRef = useRef<PlacedVehicle[]>([])
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
@@ -439,6 +451,30 @@ export function useMapCore(
     const journal = journalRef.current
     baysRef.current = buildTurnBays(renderGraph, journal)
     rightLanesRef.current = buildRightLanes(renderGraph, journal)
+    // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
+    const motoBoxes = buildMotoBoxes(
+      renderGraph, baysRef.current, rightLanesRef.current, journal)
+    motoBoxesRef.current = motoBoxes.boxes
+    motoBoxDirsRef.current = motoBoxes.dirs
+    renderGraphRef.current = renderGraph
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
+    if (!lanePaintVisible()) {
+      lanePaintDirtyRef.current.bays = true
+      return
+    }
+    paintBays()
+  }, [src])
+
+  /** 目前（或即將）看得到車道級圖層嗎？預留 0.5 級，讓 flyTo 途中先算好 */
+  const lanePaintVisible = () => (mapRef.current?.getZoom() ?? Infinity) >= LANE_ZOOM - 0.5
+
+  /** refreshBays 的繪圖半部：只在車道級圖層可見時跑 */
+  const paintBays = useCallback(() => {
+    const renderGraph = renderGraphRef.current
+    if (!renderGraph) return
+    lanePaintDirtyRef.current.bays = false
+    const journal = journalRef.current
+    const motoBoxes = { boxes: motoBoxesRef.current, dirs: motoBoxDirsRef.current }
     // 中央帶標線（雙黃邊界＋槽化斜紋）＋ 路口停止線 ＋ 路口地面車道箭頭
     const channel = [
       ...buildChannelization(renderGraph, baysRef.current),
@@ -447,10 +483,6 @@ export function useMapCore(
     const stopLines = buildStopLines(
       renderGraph, baysRef.current, rightLanesRef.current, journal)
     const leftWaitAreas = buildLeftTurnWaitingAreas(renderGraph, baysRef.current)
-    // 機車停等格（白框，停止線與車道箭頭之間）；有格的行向箭頭往後退讓
-    const motoBoxes = buildMotoBoxes(
-      renderGraph, baysRef.current, rightLanesRef.current, journal)
-    motoBoxesRef.current = motoBoxes.boxes
     const laneArrows = buildLaneArrows(
       renderGraph, baysRef.current, rightLanesRef.current, motoBoxes.dirs,
       journal, stopLines)
@@ -498,7 +530,6 @@ export function useMapCore(
         crossHalfM: 1,
       })),
     ]) as never)
-    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bays = baysRef.current
   }, [src])
 
   const refreshVehicles = useCallback(() => {
@@ -519,7 +550,22 @@ export function useMapCore(
 
   const redrawRoads = useCallback(() => {
     const renderRoads = roadsForRendering(renderRoadsRef.current)
-    src('roads').setData({ type: 'FeatureCollection', features: roadsWithCleanupFlags(renderRoads) } as never)
+    src('roads').setData({
+      type: 'FeatureCollection',
+      features: roadsWithCleanupFlags(renderRoads)
+        .map((road) => ({ ...road, properties: mapRoadProps(road.properties) })),
+    } as never)
+    if (!lanePaintVisible()) {
+      lanePaintDirtyRef.current.roads = true
+      return
+    }
+    paintRoads()
+  }, [src])
+
+  /** redrawRoads 的繪圖半部：車道級路面與分隔線 */
+  const paintRoads = useCallback(() => {
+    lanePaintDirtyRef.current.roads = false
+    const renderRoads = roadsForRendering(renderRoadsRef.current)
     src('roadSurfaces').setData(buildRoadSurfaces(renderRoads) as never)
     const dividerFeatures = cleanIntersectionFeatures(buildDividers(renderRoads))
     src('dividers').setData(groundMarkingPolygons(
@@ -670,6 +716,13 @@ export function useMapCore(
     map.on('dragstart', takeover)
     map.on('rotatestart', takeover)
     map.on('pitchstart', takeover)
+    // 延後的車道級幾何：鏡頭一接近 LANE_ZOOM 就補畫（見 lanePaintDirtyRef）
+    map.on('zoom', () => {
+      const dirty = lanePaintDirtyRef.current
+      if (!(dirty.roads || dirty.bays) || !lanePaintVisible()) return
+      if (dirty.roads) paintRoads()
+      if (dirty.bays) paintBays()
+    })
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__map = map
 
     map.on('load', async () => {
@@ -873,6 +926,7 @@ export function useMapCore(
             rawWays: rawWaysRef.current,
           })
       baseZonesRef.current = zoneResult.zones
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__baseZones = zoneResult
       zonesRef.current = overlayWaitingZones(
         baseZonesRef.current, humanZones, loadDeletedZoneIds(),
       )
@@ -885,6 +939,23 @@ export function useMapCore(
       // 初始繪製不得把 derived Lane Base zones 寫進 editor waiting_zones。
       refreshZones(false)
       refreshBays()
+      // 延後的車道級幾何在總覽圖第一次畫完後背景補算，分兩個 task 讓出主執行緒；
+      // 使用者若先放大，zoom 事件會把剩下的一次補完（見 lanePaintDirtyRef）
+      map.once('idle', () => {
+        const step = () => {
+          const dirty = lanePaintDirtyRef.current
+          if (dirty.roads) {
+            paintRoads()
+            setTimeout(step, 0)
+          } else if (dirty.bays) {
+            paintBays()
+          }
+        }
+        setTimeout(step, 0)
+      })
+      if (import.meta.env.DEV) {
+        (window as unknown as Record<string, unknown>).__lanePaintDirty = lanePaintDirtyRef.current
+      }
       // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
       const eLayer = new ElevatedLayer()
       elevatedLayerRef.current = eLayer

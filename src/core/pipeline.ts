@@ -215,7 +215,7 @@ function markPhantomBackwardTails(blocks: RoadFeature[]): number {
 
 /**
  * 效能實驗用的階段計時鉤子。未設定時只多一次 undefined 判斷，成本可忽略；
- * 設定後 prepareBaseRoads 會回報每個階段的毫秒數（見 perf-lab/）。
+ * 設定後 prepareBaseRoads 會回報每個階段的毫秒數（效能量測用）。
  */
 let prepareProfiler: ((phase: string, ms: number) => void) | undefined
 export function setPrepareProfiler(fn?: (phase: string, ms: number) => void) {

@@ -762,7 +762,7 @@ export class RoadGraph {
    * 中央槽化線渲染用：scope 內所有方向邊 + 兩端路口的收邊量（交叉路半寬），
    * 標線不畫進路口框。turnbays.ts 的 buildChannelization 使用。
    */
-  /** 效能實驗用：scopeEdges 呼叫次數與累計耗時（perf-lab 量測）。 */
+  /** 效能量測用：scopeEdges 呼叫次數與累計耗時。 */
   static scopeStats = { calls: 0, ms: 0, edgesScanned: 0 }
 
   scopeEdges(

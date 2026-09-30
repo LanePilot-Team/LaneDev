@@ -309,7 +309,7 @@ export function coupletGrouping(
  * 呼叫端要用這張表遷移既有標註（enhancements.remapJournalNodes）。
  */
 
-/** 效能實驗用：累計 mergeCouplets 的呼叫次數與總耗時（perf-lab 量測用）。 */
+/** 效能量測用：累計 mergeCouplets 的呼叫次數與總耗時。 */
 export const coupletStats = { calls: 0, ms: 0 }
 export function resetCoupletStats() { coupletStats.calls = 0; coupletStats.ms = 0 }
 

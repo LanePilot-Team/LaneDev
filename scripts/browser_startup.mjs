@@ -1,4 +1,4 @@
-// 瀏覽器端啟動量測（perf-lab E9 起的主要工具）：headless Chrome 經 CDP 開 dev server。
+// 瀏覽器端啟動量測，效能量測用的主要工具：headless Chrome 經 CDP 開 dev server。
 // Node harness（startup_profile.ts）只模擬幾何管線，09-27 證實它漏掉了真實載入路徑
 // 的最大宗（待轉區匯入 16 秒），所以結論一律以這支的數字為準。
 //   ready     navigate → `.loading` 消失且 __map 存在

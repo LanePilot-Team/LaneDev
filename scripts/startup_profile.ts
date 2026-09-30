@@ -1,4 +1,4 @@
-// 啟動路徑分階段剖析。perf-lab 的主要量測工具。
+// 啟動路徑分階段剖析，效能量測用。
 //   node scripts/run_offline.mjs scripts/startup_profile.ts [--runs=3] [--json]
 //
 // 量的是「從讀檔到路網圖可用」這條主執行緒路徑，拆成可獨立最佳化的階段。

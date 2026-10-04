@@ -4,6 +4,7 @@
 // 貼合對象是「路線帶」（laneBand）而不是路網中心線——畫面上的藍線就是這條帶，
 // 車貼在帶上才會跟藍線重合；貼中心線的話車會固定偏一個車道寬。
 import { deviceHeading } from '../native/client'
+import { remainingRouteSeconds } from './arrivalEstimate'
 import { cumulative, haversine } from '../core/geo'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph'
 import { surfaceHeightAt } from '../core/elevated3d'
@@ -178,7 +179,7 @@ export class GpsDriver {
       speedKmh,
       traveledM,
       remainM,
-      remainS: speedKmh > 1 ? remainM / (speedKmh / 3.6) : 0,
+      remainS: remainingRouteSeconds(this.route.lengthM, this.route.timeS, remainM, arrived),
       next,
       next2,
       nextDistM: next ? next.distM - traveledM : 0,

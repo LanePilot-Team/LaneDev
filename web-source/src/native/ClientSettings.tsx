@@ -6,7 +6,7 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
   const state = useClientState()
   useEffect(() => { nativeCommand('status') }, [])
   return <details className={`client-settings${navigating ? ' navigating' : ''}`}>
-    <summary>設定</summary>
+    <summary><span aria-hidden="true">⚙</span> 設定 <span className="settings-expand">展開 ▾</span><span className="settings-collapse">收合 ▴</span></summary>
     <div className="client-settings-body">
       <label><input type="checkbox" checked={state.voice} onChange={e => setVoice(e.target.checked)} /> 語音導航</label>
       <label>導航視距

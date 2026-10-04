@@ -1,11 +1,12 @@
-import { booleanPointInPolygon, destination, point } from '@turf/turf'
-import type { Feature, Polygon } from 'geojson'
+import { booleanIntersects, booleanPointInPolygon, lineString, point } from '@turf/turf'
+import type { Feature, Polygon, MultiPolygon } from 'geojson'
 import type { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 
-type Building = Feature<Polygon, {
+type Building = Feature<Polygon | MultiPolygon, {
   osm_id?: number
   building?: string
   min_height_m?: number
+  height_m?: number
 }>
 
 type IndexedBuilding = {
@@ -16,15 +17,40 @@ type IndexedBuilding = {
 
 const bboxOf = (f: Building): [number, number, number, number] => {
   let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity
-  for (const ring of f.geometry.coordinates) for (const [lng, lat] of ring) {
+  const polygons = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates
+  for (const polygon of polygons) for (const ring of polygon) for (const [lng, lat] of ring) {
     west = Math.min(west, lng); south = Math.min(south, lat)
     east = Math.max(east, lng); north = Math.max(north, lat)
   }
   return [west, south, east, north]
 }
 
-const insideBox = (p: [number, number], b: IndexedBuilding['bbox']) =>
-  p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]
+export type ViewRay = { eye: [number, number]; altitude: number; target: [number, number]; targetAltitude: number }
+
+/** Clip the sight line to the extrusion's height interval before testing its
+ * footprint. Continuous intersection also catches thin buildings and holes. */
+export function blocksView(feature: Building, ray: ViewRay): boolean {
+  const base = Number(feature.properties?.min_height_m ?? 0)
+  const roof = Number(feature.properties?.height_m ?? 9)
+  if (!Number.isFinite(base) || !Number.isFinite(roof) || roof <= base) return false
+  const dz = ray.targetAltitude - ray.altitude
+  let from = 0, to = 1
+  if (Math.abs(dz) < 0.001) {
+    if (ray.altitude < base || ray.altitude > roof) return false
+  } else {
+    const a = (base - ray.altitude) / dz, b = (roof - ray.altitude) / dz
+    from = Math.max(0, Math.min(a, b)); to = Math.min(1, Math.max(a, b))
+    if (from > to) return false
+  }
+  const at = (t: number): [number, number] => [
+    ray.eye[0] + (ray.target[0] - ray.eye[0]) * t,
+    ray.eye[1] + (ray.target[1] - ray.eye[1]) * t,
+  ]
+  const a = at(from), b = at(to)
+  return a[0] === b[0] && a[1] === b[1]
+    ? booleanPointInPolygon(point(a), feature)
+    : booleanIntersects(lineString([a, b]), feature)
+}
 
 /** Local grid query + source diffs; opacity stays on the two supported layers. */
 export class BuildingOcclusion {
@@ -37,7 +63,7 @@ export class BuildingOcclusion {
   constructor(map: Pick<MLMap, 'getSource'>, buildings: Building[]) {
     this.map = map
     const indexed = buildings
-      .filter((f) => f.geometry?.type === 'Polygon' && f.id !== undefined)
+      .filter((f) => ['Polygon', 'MultiPolygon'].includes(f.geometry?.type) && f.id !== undefined)
       .map((feature) => ({ feature, id: feature.id!, bbox: bboxOf(feature) }))
     for (const b of indexed) {
       if (this.byId.has(b.id)) throw new Error('建築來源必須有唯一 ID')
@@ -63,25 +89,22 @@ export class BuildingOcclusion {
     })
   }
 
-  update(pos: [number, number], bearing: number, elevM = 0) {
+  updateView(ray: ViewRay, force = false) {
     const now = performance.now()
-    if (now - this.lastUpdate < 120) return false
+    if (!force && now - this.lastUpdate < 120) return false
     this.lastUpdate = now
-    // 後方涵蓋傾斜鏡頭到車輛的視線，前方涵蓋下一段導航路況。
-    const probes = [-45, -25, -10, 0, 12, 28, 48, 70].map((m) => {
-      if (m === 0) return pos
-      const p = destination(point(pos), Math.abs(m) / 1000, m < 0 ? bearing + 180 : bearing)
-      return p.geometry.coordinates as [number, number]
-    })
+    if (![...ray.eye, ...ray.target, ray.altitude, ray.targetAltitude].every(Number.isFinite)) return false
     const next = new Set<string | number>()
     const nearby = new Set<IndexedBuilding>()
-    for (const p of probes) {
-      const key = `${Math.floor(p[0] / 0.002)}:${Math.floor(p[1] / 0.002)}`
-      for (const b of this.cells.get(key) ?? []) nearby.add(b)
+    const west = Math.min(ray.eye[0], ray.target[0]), east = Math.max(ray.eye[0], ray.target[0])
+    const south = Math.min(ray.eye[1], ray.target[1]), north = Math.max(ray.eye[1], ray.target[1])
+    for (let x = Math.floor(west / 0.002); x <= Math.floor(east / 0.002); x++) {
+      for (let y = Math.floor(south / 0.002); y <= Math.floor(north / 0.002); y++) {
+        for (const b of this.cells.get(`${x}:${y}`) ?? []) nearby.add(b)
+      }
     }
     for (const b of nearby) {
-      // 一般建築只在視線走廊實際穿過 footprint 時淡出；架空站體也適用。
-      if (probes.some((p) => insideBox(p, b.bbox) && booleanPointInPolygon(point(p), b.feature))) {
+      if (b.bbox[2] >= west && b.bbox[0] <= east && b.bbox[3] >= south && b.bbox[1] <= north && blocksView(b.feature, ray)) {
         next.add(b.id)
       }
     }
@@ -97,4 +120,3 @@ export class BuildingOcclusion {
     this.faded.clear()
   }
 }
-

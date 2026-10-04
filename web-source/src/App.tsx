@@ -8,7 +8,7 @@ import { usePlanner } from './plan/usePlanner'
 import { PlanPanel } from './plan/PlanPanel'
 import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
 import { useDrive } from './nav/useDrive'
-import { DriveHUD } from './nav/DriveHUD'
+import { DriveHUD, RecenterButton } from './nav/DriveHUD'
 import { ClientSettings } from './native/ClientSettings'
 import { LocateControl } from './native/LocateControl'
 import { PlaceSearch } from './places/PlaceSearch'
@@ -147,8 +147,11 @@ export default function App() {
     <div className="app" data-zone-tick={zoneTick} data-mode={mode}>
       <div ref={containerRef} className="map" />
 
-      <ClientSettings navigating={mode === 'drive'} />
-      <LocateControl core={core} loading={loading} navigating={mode === 'drive'} />
+      <div className={`map-actions${mode === 'drive' ? ' navigating' : ''}`}>
+        {mode === 'drive' && !following && <RecenterButton onClick={recenter} />}
+        <LocateControl core={core} loading={loading} navigating={mode === 'drive'} />
+        <ClientSettings navigating={mode === 'drive'} />
+      </div>
       {loading && <div className="loading" role={loadError ? 'alert' : 'status'}>
         {loadError ? <><p>{loadError}</p><button onClick={() => location.reload()}>重新載入</button></>
           : '載入楠梓＋左營路網中…'}
@@ -171,7 +174,7 @@ export default function App() {
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg}
           cameraAlert={cameraAlert}
-          destinationName={destinationName} following={following} onRecenter={recenter}
+          destinationName={destinationName}
           onEnd={endDrive}
         />
       )}

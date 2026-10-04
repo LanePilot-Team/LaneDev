@@ -80,7 +80,6 @@ export const GooglePlaceSearch = forwardRef<
       })
       const contentConfig = new library.PlaceContentConfigElement()
       const address = new library.PlaceAddressElement()
-      const type = new library.PlaceTypeElement()
       const attribution = new library.PlaceAttributionElement({
         lightSchemeColor: 'GRAY',
         darkSchemeColor: 'WHITE',
@@ -89,7 +88,8 @@ export const GooglePlaceSearch = forwardRef<
         maxResultCount: 5,
       })
 
-      contentConfig.append(address, type, attribution)
+      // Keep required attribution and request only the optional address content.
+      contentConfig.append(address, attribution)
       searchElement.append(contentConfig, request)
 
       const handleLoad: EventListener = () => updateState('ready')

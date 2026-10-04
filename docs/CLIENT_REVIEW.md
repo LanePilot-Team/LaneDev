@@ -1,5 +1,35 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-10-04：搜尋／規劃介面、ETA 與鏡頭遮擋
+
+### 本次要求的修改
+
+- 本地搜尋候選只留下地址，移除地名、圖示、來源標籤及筆數；選取之後的目的地與起終點仍保留地名，搜尋與路線選取使用原本的 ID／座標。清單底部保留資料授權署名。缺門牌者仍明確標示附近地址或查無詳細地址，不捏造門牌。
+- 起終點搜尋欄與結果自適應規劃白色面板的內容寬度；移除編輯中的內嵌小卡，車種按鈕均分寬度，修正 inherited max-width 造成的右側空間。
+- 根因為 GPS 車速 <= 1 km/h 時 remainS 被設成 0。改依規劃路線 timeS／lengthM 與剩餘距離推估，再加上現在時間。停車或 GPS 無速度不會變成零分鐘；重新規劃沿用新路線估時。規劃及導航顯示分鐘均向上取整。這是離線估計，不包含即時交通或號誌等待預測。
+- 回到目前位置、目前位置與設定放入同一個垂直排列容器，設定展開時也不互相覆盖。設定改深藍色按鈕，展開／收合文字及箭頭隨原生 details 開關切換。
+- 所有內建 Polygon／MultiPolygon 建築依「實際鏡頭到中心視點的 3D 視線」判斷遮擋，考慮建物底部、頂部高度及中庭孔洞。使用現有 22% 半透明層（不是影像高斯模糊）；離開遮擋後還原。不限導航／GPS 更新，拖曳、旋轉、縮放也生效。橋面保留原本虛化，車輛與路線不淡出。
+- 保留空間索引、120 ms 節流與 source.updateData 差量；moveend 延後補做最後一次，避免 jumpTo 每一幀都繞過節流。MapLibre 相機讀取集中在 occlusion.ts 的 typed transform 適配層，升級 MapLibre 時需重跑測試。
+
+### 驗證
+
+- npm ci --ignore-scripts、npm test（50 項）、npm run build；24 組路線還原結果一致（22 組可通行）。官方道路與待轉資料未修改。
+- tools/import-web-assets.ps1 匯入；assembleDebug、testDebugUnitTest 通過。
+- Pixel 6／API 37、411×914 CSS 像素、軟體 GPU：16 筆本地候選只有地址節點；搜尋欄與白色面板內寬同為 355 px，無橫向溢出。取消搜尋可返回原路線，未確認搜尋時不能開始導航。
+- 約 1.9 公里路線在靜止、0 km/h 時仍顯示約 4 分鐘與未來抵達時刻；單元測試另驗證 10:00 + 300 秒 = 10:05，以及跨午夜加總。
+- 拖圖後出現回位按鈕，設定開／關均與回位按鈕相距 10 px，重複點擊可收合。
+- 不送 GPS 新位置，只移動相機：15 m 普通建築 way/105823225 淡出；移開／縮至 3D 顯示門檻以下恢復全部 1,164 棟。測試 20 次旋轉與縮放期間，建築來源 setData = 0、updateData = 4。
+- 可重跑工具：tools/verify-client-ui.mjs（連線 localhost:9223 的 Debug WebView）、tools/client-ui-scenario.js、tools/client-occlusion-scenario.js。UI 測試從未規劃的主畫面開始；先以 adb 注入楠梓區目前位置 120.2790,22.7300。
+
+### 限制與額外事項（不另行修正）
+
+- Google Places 備援仍未設定 API key，無法做線上驗證。本次只保留其可配置的地址內容並移除類型，保留必要署名；SDK 自帶標題／詳細資訊入口並非本地候選列，是否能完全地址化仍須有 key 時驗證，沒有以 CSS 強行遮蓋 SDK 內容或改用另一個付費 API。參考：[官方內容配置](https://developers.google.com/maps/documentation/javascript/reference/place-widget-child-elements)、[官方樣式與署名規定](https://developers.google.com/maps/documentation/javascript/places-ui-kit/custom-styling)。
+- 僅地址顯示時，同一地址的多個地點無法靠名稱區分；依使用者要求保留地址版，不自行加回名稱。
+- 模擬器截圖仍可見 Android 狀態列與頂部導航看板共用空間（既有安全區問題）；本輪沒有修改。
+- 規劃面板展開至接近全高時，右下角控制群仍可能碰到面板底端或地圖署名；本次限定修正回位／設定互相重疊，未重新安排整體面板與署名區。
+- 既有 npm audit 5 項（1 moderate、2 high、2 critical）及官方路網前處理警告未擅自升級或改資料。
+- 仍需實機驗證不同視距／橋下與高樓密集環境的遮擋觀感、GPS 漂移與道路 ETA 準確度；模擬器不代表實機穩定幀率。本轮沒有推送 Git，保留 .idea 與使用者未追蹤 CSV。
+
 ## 2026-09-26 後續：已獲准實作啟動與導航流暢度
 
 - 第 3、4 項已由評估轉為實作。固定路網、待轉區、路面標線及高架資料移到打包前計算；手機讀取版本化成品，移除外部字型等待。GPS 顯示插值、同步鏡頭、建築差量更新及待轉區 feature-state 已接上。

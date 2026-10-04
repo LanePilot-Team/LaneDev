@@ -338,7 +338,8 @@ export function useMapCore(
       if (!buildingsResponse.ok) throw new Error('無法讀取建築資料')
       const buildings = await buildingsResponse.json() as FeatureCollection<Polygon>
       if (disposed) return
-      setActiveNavigationOcclusion(new NavigationOcclusion(map, buildings.features as never))
+      const occlusion = new NavigationOcclusion(map, buildings.features as never)
+      setActiveNavigationOcclusion(occlusion)
       bootMeasure('submit-precomputed-layers')
       // 高架橋面 3D 圖層（three.js）——先於車輛圖層加入，車輛畫在橋面之上
       const eLayer = new ElevatedLayer()
@@ -357,6 +358,17 @@ export function useMapCore(
       bootMeasure('3d-models')
       await sourcesReady
       if (disposed || abort.signal.aborted) return
+      // Camera gestures and zoom still update occlusion while GPS is stationary.
+      let occlusionTimer: ReturnType<typeof setTimeout> | undefined
+      map.on('move', () => occlusion.updateCamera(map))
+      map.on('moveend', () => {
+        // jumpTo emits moveend on every animation frame. Flush only after the
+        // camera settles, instead of bypassing the throttle at display rate.
+        clearTimeout(occlusionTimer)
+        occlusionTimer = setTimeout(() => occlusion.updateCamera(map, true), 125)
+      })
+      map.on('remove', () => clearTimeout(occlusionTimer))
+      occlusion.updateCamera(map, true)
       bootMeasure('map-sources-ready')
       clearTimeout(bootTimeout)
       setLoading(false)

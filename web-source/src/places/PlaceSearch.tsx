@@ -19,16 +19,6 @@ import {
   type DestinationSelection,
 } from './destination'
 
-function sourceInfo(place: PlaceRecord) {
-  const references = place.sourceRefs?.length ? place.sourceRefs : [{ source: place.source }]
-  const sources = [...new Set(references
-    .map((reference) => reference.source))]
-  return {
-    label: sources.map((source) => source === 'osm' ? 'OSM' : 'TDX').join('＋'),
-    className: sources.length > 1 ? 'mixed' : sources[0],
-  }
-}
-
 type SearchProvider = 'local' | 'google'
 
 export function PlaceSearch({
@@ -215,25 +205,22 @@ export function PlaceSearch({
             <div className="place-message">找不到符合「{query.trim()}」的地點</div>
           )}
           {results.map((place) => {
-            const source = sourceInfo(place)
             return <button
               type="button"
               role="option"
               aria-selected={false}
               className="place-result"
               key={place.id}
+              data-place-id={place.id}
               onClick={() => showPlace(place)}
             >
-              <span className="place-pin" aria-hidden="true">●</span>
               <span className="place-result-copy">
-                <b>{place.name}</b>
-                <PlaceAddress place={place} />
+                <PlaceAddress place={place} addressOnly />
               </span>
-              <span className={`place-source ${source.className}`}>{source.label}</span>
             </button>
           })}
           {results.length > 0 && (
-            <div className="place-attribution">共顯示 {results.length} 筆 · © OpenStreetMap contributors · 交通部 TDX</div>
+            <div className="place-attribution">© OpenStreetMap contributors · 交通部 TDX</div>
           )}
           {dataState !== 'loading' && (
             <div className={`place-provider-switch${results.length === 0 ? ' prominent' : ''}`}>

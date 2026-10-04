@@ -38,7 +38,7 @@ export function lookupAddress(position: [number, number]): Promise<string> {
   return result
 }
 
-export function PlaceAddress({ place }: { place: Pick<PlaceRecord, 'address' | 'position'> }) {
+export function PlaceAddress({ place, addressOnly = false }: { place: Pick<PlaceRecord, 'address' | 'position'>; addressOnly?: boolean }) {
   const [lookup, setLookup] = useState<{ key: string; text: string } | null>(null)
   const key = place.position.join(',')
   const known = place.address?.trim()
@@ -52,6 +52,6 @@ export function PlaceAddress({ place }: { place: Pick<PlaceRecord, 'address' | '
   }, [key, known])
   const result = lookup?.key === key ? lookup.text : null
   return <small className="place-address">{known || (result === null ? '查詢詳細地址中…'
-    : result ? `附近地址：${result}（座標查詢，非確認門牌）`
-      : `詳細地址未提供 · 座標 ${place.position[1].toFixed(5)}, ${place.position[0].toFixed(5)}`)}</small>
+    : result ? `附近地址：${result}${addressOnly ? '' : '（座標查詢，非確認門牌）'}`
+      : addressOnly ? '詳細地址未提供' : `詳細地址未提供 · 座標 ${place.position[1].toFixed(5)}, ${place.position[0].toFixed(5)}`)}</small>
 }

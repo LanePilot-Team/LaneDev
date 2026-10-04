@@ -3,6 +3,7 @@
 import type { Maneuver, Profile } from '../core/graph'
 import type { DriveState } from './drive'
 import { useClientState } from '../native/client'
+import { arrivalTimestamp } from './arrivalEstimate'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
 import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
 import { ENFORCEMENT_LABEL, type SpeedCameraAlert } from '../core/speedCameras'
@@ -152,7 +153,7 @@ function ArrivalCard({ destinationName, onEnd }: {
  * 回到目前位置。導航中的鏡頭原本是「手勢後 250ms 就自動搶回」，等於地圖滑不動——
  * 改成使用者一拖曳就交出鏡頭、自由瀏覽，要回車上再按這顆（Google 地圖的分工）。
  */
-function RecenterButton({ onClick }: { onClick: () => void }) {
+export function RecenterButton({ onClick }: { onClick: () => void }) {
   return (
     <button className="recenter-btn" onClick={onClick} title="回到目前位置">
       <svg viewBox="0 0 48 48" aria-hidden="true">
@@ -170,7 +171,7 @@ function RecenterButton({ onClick }: { onClick: () => void }) {
 /** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
   drive, twoStage, profile, gpsMsg, cameraAlert,
-  destinationName, following, onRecenter,
+  destinationName,
   onEnd,
 }: {
   drive: DriveState | null
@@ -179,9 +180,6 @@ export function DriveHUD({
   gpsMsg: string | null
   /** 目的地名稱（有選地點才有）——抵達卡與收尾語音都用它 */
   destinationName?: string
-  /** 鏡頭是否跟隨車輛；false 時顯示「回到目前位置」 */
-  following: boolean
-  onRecenter: () => void
   /** 測速照相提示（沒有就不顯示卡片） */
   cameraAlert: SpeedCameraAlert | null
   onEnd: () => void
@@ -197,7 +195,6 @@ export function DriveHUD({
   if (!drive) {
     return (
       <>
-        {!following && <RecenterButton onClick={onRecenter} />}
         <div className="bottom-bar">
           <button className="end-btn" onClick={onEnd}>✕ 結束</button>
           <div className="trip"><b>{gpsMsg ?? '準備中…'}</b></div>
@@ -212,8 +209,6 @@ export function DriveHUD({
       {drive.arrived
         ? <ArrivalCard destinationName={destinationName} onEnd={onEnd} />
         : <TopBanner drive={drive} twoStage={twoStage} profile={profile} />}
-      {/* ── 鏡頭交還給使用者時的回位按鈕（Google 地圖式，不強制跟隨）── */}
-      {!following && <RecenterButton onClick={onRecenter} />}
 
       {/* ── GPS 精度不足：位置還在畫，但先講清楚它現在不準 ── */}
       {gpsMsg && <div role="alert" className="gps-weak">{gpsMsg}</div>}
@@ -236,7 +231,7 @@ export function DriveHUD({
           <span>
             {drive.arrived ? '已抵達'
               : drive.arriving ? '即將抵達目的地'
-                : new Date(Date.now() + drive.remainS * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }) + ' 抵達'}
+                : `約 ${Math.max(1, Math.ceil(drive.remainS / 60))} 分鐘 · ` + new Date(arrivalTimestamp(Date.now(), drive.remainS)).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' 抵達'}
           </span>
           {drive.roadName && <span className="trip-road">{drive.roadName}</span>}
         </div>

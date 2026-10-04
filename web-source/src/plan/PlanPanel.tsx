@@ -81,7 +81,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
     <button className="sp-add" onClick={() => { planner.addVia(); setEditing(null) }}>＋ 新增停靠點</button>
     {routeError && <div role="alert" className="sp-error">{routeError}</div>}
     {routeSummary && <div className="sp-summary">
-      <b>{routeSummary.km.toFixed(1)} 公里</b> · 約 {Math.max(1, Math.round(routeSummary.min))} 分鐘
+      <b>{routeSummary.km.toFixed(1)} 公里</b> · 約 {Math.max(1, Math.ceil(routeSummary.min))} 分鐘
       <button className="mini go" disabled={editing !== null || locating} onClick={startGpsNav}>{editing !== null ? '請先選好地點' : '開始導航'}</button>
     </div>}
     {routeSummary && planner.routeRef.current && <details><summary>路線步驟</summary>

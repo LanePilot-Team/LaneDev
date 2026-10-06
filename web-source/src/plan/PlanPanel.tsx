@@ -11,6 +11,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
   core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void
 }) {
   const [editing, setEditing] = useState<number | null>(null)
+  const [stepsOpen, setStepsOpen] = useState(true)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
   const requestId = useRef(0)
@@ -109,7 +110,8 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
           {editing !== null ? '請先選好地點' : '開始導航'}
         </button>
       </div>}
-      {routeSummary && planner.routeRef.current && <details className="route-steps" open><summary>路線步驟・向下滑動查看更多</summary>
+      {routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
+        onToggle={event => setStepsOpen(event.currentTarget.open)}><summary>路線步驟・向下滑動查看更多</summary>
         <ManeuverList route={planner.routeRef.current} profile={profile} />
       </details>}
     </div>

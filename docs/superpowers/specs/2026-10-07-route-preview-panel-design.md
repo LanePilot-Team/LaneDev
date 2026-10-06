@@ -18,14 +18,14 @@
    - 「更換」按鈕。
 5. 「更換」會開啟該端點的搜尋流程；選定新地點後，回到預覽卡片並更新路線、距離與時間。
 6. 保留「新增停靠點」操作，並使用次要的虛線按鈕，避免與主要導航操作競爭。
-7. 汽車／機車切換保留在卡片上方，以兩個等寬選項呈現目前車種。
+7. 汽車／機車切換與短提示同列，使用兩個等寬圖標選項呈現目前車種，並保留可及性標籤。
 8. 卡片底部只保留一個滿寬、醒目的「開始導航」按鈕；在起點尚未定位、正在定位、端點搜尋中或路線無效時，按鈕維持停用並顯示目前可操作狀態。
 9. 關閉路線面板的 X 按鈕保留，關閉後回到地圖瀏覽模式，不改變既有清除路線與模式切換行為。
 
 ### 版面與視覺
 
 - 桌面與較寬畫面：使用左側或上方的浮動白色卡片，地圖仍保持可見。
-- 手機畫面：使用接近底部 sheet 的浮動卡片，卡片圓角與地圖重疊，但不遮住主要路線預覽。
+- 手機畫面：使用固定在上方、具有限制高度的浮動卡片，卡片圓角與地圖重疊，但保留約 45–50% 畫面給主要路線預覽。
 - 卡片內容按「路線預覽 → 車種 → 起點／終點 → 停靠點 → 距離／時間 → 開始導航」排序。
 - 不再顯示目前面板中較長的操作說明段落。
 - 目的地地址只顯示地點名稱與地址，不顯示「座標查詢，非確認門牌」。
@@ -84,6 +84,28 @@ This section supersedes the earlier mobile bottom-sheet placement for the route 
 - Use a fixed-height, equal-width segmented control for car/motorcycle selection so switching does not change the card height or button positions.
 - Keep adding a via stop as a secondary action and keep the full-width start-navigation button at the bottom of the card.
 
+### 2026-10-07 Compact Vehicle and Scroll Revision
+
+依照實機回饋，再縮短路線預覽卡的第一視覺層級：
+
+- 「確認起終點後即可開始導航」與汽車／機車控制放在同一列。
+- 汽車／機車只顯示圖標，不再顯示完整文字；保留 `aria-label`、tooltip 與選取狀態，避免辨識性與可及性下降。
+- 路線卡採固定可視高度，約保留手機畫面 45–50% 的地圖空間。
+- 標題列、起點、終點、既有停靠點與「新增停靠點」屬於固定可見區；「新增停靠點」不得因內容變長而需要滑動才能找到。
+- 路線距離／時間、開始導航與路線步驟放在卡片內部的可滾動內容區，避免整張面板持續向上推擠地圖與地圖操作。
+- 編輯起點／終點或搜尋結果展開時，卡片仍可在手機高度內滾動；搜尋結果不得遮住關閉與取消操作。
+
+### 2026-10-07 Compact Vehicle and Scroll Revision (English)
+
+Based on device feedback, reduce the first visual layer of the route preview card:
+
+- Place “確認起終點後即可開始導航” and the car/motorcycle controls on one row.
+- Show icons only for car/motorcycle; retain `aria-label`, tooltip, and selected state so discoverability and accessibility are not lost.
+- Give the route card a bounded visible height, targeting roughly 45–50% of the phone viewport for the map.
+- Keep the header, origin, destination, existing via stops, and “新增停靠點” in the always-visible region; the add-via action must not require scrolling to discover.
+- Put route distance/time, start navigation, and route steps in an internal scroll region so the whole panel does not continue pushing map controls away.
+- When editing a stop or showing search results, keep the card scrollable within the phone viewport; search results must not cover close or cancel controls.
+
 ---
 
 ## English Version
@@ -100,14 +122,14 @@ Redesign the route-planning screen shown after the user taps “路線” into a
 4. Each origin and destination row shows a colored marker, a label, a place name or “目前位置”, an address summary when available, and a “更換” action.
 5. Tapping “更換” opens the existing search flow for that stop. Selecting a new place returns to the preview card and updates the route, distance, and duration.
 6. “新增停靠點” remains available as a secondary dashed action so it does not compete with the primary navigation action.
-7. Car/motorcycle selection remains in the card and uses two equal-width options with a clear selected state.
+7. Car/motorcycle selection shares a row with the short hint and uses two equal-width icon options with accessible labels and a clear selected state.
 8. The card ends with one full-width, prominent “開始導航” button. It remains disabled while the origin is locating, a stop is being edited, or no valid route is available.
 9. The existing close button remains and returns to browse mode without changing the existing route-clearing and mode-switching behavior.
 
 ### Layout and Visual Direction
 
 - On desktop and wide screens, use a floating white card near the left/top area while keeping the map visible.
-- On phones, use a bottom-sheet-like floating card that overlaps the map without hiding the main route preview.
+- On phones, use a top-pinned floating card with a bounded height; it may overlap the map while preserving roughly 45–50% of the viewport for the route preview.
 - Order the content as: route preview, vehicle type, origin/destination, via stops, distance/time, and start navigation.
 - Remove the current long instructional paragraph.
 - Show only the place name and address for a selected destination; do not show “座標查詢，非確認門牌”.

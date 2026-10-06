@@ -112,7 +112,7 @@ Based on device feedback, reduce the first visual layer of the route preview car
 
 - 汽車／機車控制恢復為「圖標＋文字」（`🚗 汽車`、`🛵 機車`），仍與短提示同列，使用緊湊的等寬選項，不讓控制列重新佔滿一整行。
 - 路線成功產生後，路線步驟預設展開，標題顯示「路線步驟・向下滑動查看更多」，讓使用者知道卡片下方仍有內容。
-- 路線步驟仍位於路線卡的內部滾動區；使用者可直接下滑閱讀，也可點擊標題收合。
+- 路線步驟仍位於路線卡的可滾動內容區；使用者可直接下滑閱讀，也可點擊標題收合。
 
 ### 2026-10-07 Vehicle Label and Route-Step Discoverability Revision (English)
 
@@ -120,7 +120,25 @@ Based on the latest device feedback, improve discoverability in two places:
 
 - Restore text labels alongside the car/motorcycle icons (`🚗 汽車`, `🛵 機車`) while keeping the controls in the same compact row as the short hint and using equal-width options.
 - Open route steps by default after a valid route is available and label the summary “路線步驟・向下滑動查看更多” so users know the card has more content below.
-- Keep route steps inside the route card's internal scroll region; users can scroll to read them or click the summary to collapse them.
+- Keep route steps inside the route card's scrollable content; users can scroll to read them or click the summary to collapse them.
+
+### 2026-10-07 Whole-Card Scrolling Revision
+
+為避免新增停靠點後固定區與資訊區搶觸控，路線卡改成單一滾動容器：
+
+- 不論是否有新增停靠點，整張路線卡都可以上下滑動。
+- 路線摘要、步驟、起終點與停靠點不再各自建立內層滾動，避免手指落在錯誤區域時滑不動。
+- 標題列（路線預覽、汽車／機車、關閉）固定在卡片頂端，滑到步驟深處仍可切換車種或關閉卡片。
+- 卡片高度與地圖可視空間維持既有設定；只有卡片內容在固定高度內滾動。
+
+### 2026-10-07 Whole-Card Scrolling Revision (English)
+
+To prevent the primary stop area and the secondary information area from competing for touch input after adding a via stop, make the route card a single scroll container:
+
+- The entire route card scrolls vertically with or without via stops.
+- Origin/destination rows, via stops, route summary, and route steps do not create competing nested scroll regions.
+- Keep the header row (route preview, car/motorcycle, close) sticky at the card top so vehicle switching and closing remain available while reading steps.
+- Preserve the existing card height and map visibility; only the card contents scroll within the bounded card.
 
 ---
 

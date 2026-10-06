@@ -76,10 +76,11 @@
   .side-panel.route-preview-card {
     left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top)); bottom: auto;
     width: auto; max-width: none; height: min(52dvh, 480px); max-height: min(52dvh, 480px);
-    overflow: hidden; border-radius: 20px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain; border-radius: 20px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
   }
   .side-panel.route-preview-card.is-searching {
-    height: auto; max-height: calc(100dvh - 96px); overflow-y: auto;
+    height: auto; max-height: calc(100dvh - 96px); overflow-y: auto; overflow-x: hidden;
   }
   .side-panel.route-preview-card.is-searching .route-preview-secondary { overflow: visible; }
 }

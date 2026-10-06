@@ -241,7 +241,11 @@ body {
 .place-pin { color: #2563eb; font-size: 15px; flex: none; }
 .place-result-copy { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .place-result-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.place-result-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7a8494; font-size: 11.5px; }
+.place-result-copy small {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; text-overflow: ellipsis; white-space: normal;
+  color: #7a8494; font-size: 11.5px; line-height: 1.35;
+}
 .place-source {
   flex: none; border-radius: 999px; padding: 3px 7px;
   font-size: 10px; font-weight: 800; letter-spacing: .04em;
@@ -317,14 +321,17 @@ body {
 .place-route-choice > p {
   margin: 13px 0 8px; color: #667386; font-size: 12px; font-weight: 700;
 }
-.place-route-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.place-route-methods { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .place-route-methods button {
-  min-width: 0; min-height: 74px; border: 1px solid #dbe2ea; border-radius: 11px;
-  padding: 9px; display: grid; grid-template-columns: 25px 1fr; align-items: center;
-  column-gap: 5px; text-align: left; background: #f7f9fb; color: #667386;
+  width: 100%; min-width: 0; min-height: 68px; border: 1px solid #dbe2ea; border-radius: 13px;
+  padding: 10px 14px; display: grid; grid-template-columns: 32px 1fr; align-items: center;
+  column-gap: 9px; text-align: left; background: #f7f9fb; color: #667386;
 }
-.place-route-methods button > span { grid-row: 1 / 3; font-size: 23px; text-align: center; }
-.place-route-methods button b { min-width: 0; font-size: 12px; }
+.place-route-methods button > span {
+  grid-row: 1 / 3; display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 50%; background: #dcecff; color: #1058b8; font-size: 18px; font-weight: 800;
+}
+.place-route-methods button b { min-width: 0; font-size: 14px; }
 .place-route-methods button small { font-size: 10.5px; color: #98a2b0; }
 .place-route-methods button:disabled { opacity: .58; }
 .place-route-methods button:focus-visible {
@@ -440,6 +447,68 @@ body {
   font-size: 14px; color: #3d4a5c;
 }
 .sp-summary b { font-size: 17px; color: #24303f; }
+.route-preview-card {
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  padding: 12px 14px 14px;
+}
+.route-preview-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.route-preview-title { min-width: 0; display: grid; gap: 2px; flex: 1; }
+.route-preview-head .sp-kicker { color: #1769e8; }
+.route-preview-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.route-profile {
+  display: flex; flex: none; align-items: center; gap: 3px; height: 32px;
+  padding: 3px; border-radius: 10px; background: #eef2f7;
+}
+.route-profile-option {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px; padding: 0; border: 0; border-radius: 7px;
+  background: transparent; color: #718096; font-size: 16px; line-height: 1; cursor: pointer;
+}
+.route-profile-option.on { background: #fff; color: #1769e8; box-shadow: 0 1px 4px rgba(33, 52, 77, 0.11); }
+.route-profile-option:focus-visible { outline: 2px solid #1769e8; outline-offset: 2px; }
+.route-preview-primary { flex: none; min-height: 0; }
+.route-preview-secondary { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.route-preview-secondary:empty { display: none; }
+.route-preview-secondary > .route-status-error { margin-top: 10px; }
+.route-preview-secondary .route-preview-summary { margin-top: 10px; }
+.route-stops { display: grid; gap: 8px; }
+.route-stop-card {
+  margin: 0; padding: 8px 9px; border: 1px solid #edf0f4;
+  border-radius: 11px; background: #fbfcfe;
+}
+.route-stop-card.is-editing { border-color: #76a7ef; background: #fff; }
+.route-stop-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.route-stop-field { min-width: 0; display: grid; gap: 2px; }
+.route-stop-label { color: #6b7b91; font-size: 10px; font-weight: 800; }
+.route-stop-value {
+  min-width: 0; width: 100%; padding: 0; border: 0; background: transparent;
+  color: #172235; font-size: 13px; font-weight: 700;
+}
+.route-stop-value:focus { outline: 0; }
+.route-stop-card .place-address {
+  margin: 3px 0 0 18px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 10.5px; line-height: 1.35;
+}
+.route-stop-editing-head { margin-bottom: 7px; }
+.route-stop-editing-copy { color: #718096; font-size: 11px; }
+.route-stop-card .stop-edit-action { min-height: 32px; padding: 5px 4px; }
+.route-via-remove { margin-top: 7px; padding: 5px 9px; background: #f1f3f6; color: #667386; }
+.route-status { margin: 6px 0 10px; color: #566479; font-size: 12px; }
+.route-status-error { margin: 8px 0 0; }
+.route-add-stop { margin-top: 8px; padding: 8px; }
+.route-preview-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f4; }
+.route-preview-metrics {
+  display: flex; align-items: baseline; justify-content: space-between;
+  color: #62728a; font-size: 12px;
+}
+.route-preview-metrics b { color: #172235; font-size: 20px; }
+.route-start-button {
+  width: 100%; margin-top: 12px; padding: 12px; border: 0; border-radius: 12px;
+  background: #1769e8; color: #fff; font-size: 15px; font-weight: 800; cursor: pointer;
+}
+.route-start-button:disabled { cursor: default; opacity: .55; }
+.route-steps { margin-top: 12px; border-top: 1px solid #edf0f4; padding-top: 10px; }
+.route-steps > summary { color: #1769e8; cursor: pointer; font-size: 12px; font-weight: 700; }
 .side-panel .mini { background: #eef1f5; color: #24303f; }
 .side-panel .mini.go { background: #22c55e; color: #fff; }
 .side-panel .mini.on { background: #3b82f6; color: #fff; }
@@ -513,6 +582,65 @@ body {
   position: absolute; bottom: 24px; left: 14px; z-index: 20;
   background: #fff; border-radius: 14px; padding: 14px 40px 12px 16px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18); max-width: 300px;
+}
+@media (max-width: 600px) {
+  /* Keep the two map actions at the bottom-right and reserve that column for them. */
+  .road-card { right: calc(150px + env(safe-area-inset-right)); bottom: calc(112px + env(safe-area-inset-bottom)); max-width: none; box-sizing: border-box; }
+  .map-actions { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .map-actions.navigating { bottom: calc(112px + env(safe-area-inset-bottom)); }
+
+  /* MapLibre attribution stays compact as a left-side info icon, then expands
+     only through the left side so the action column remains unobstructed. */
+  .maplibregl-ctrl-bottom-left { bottom: env(safe-area-inset-bottom); left: 0; width: calc(100% - 150px); }
+  .maplibregl-ctrl-bottom-left > .maplibregl-ctrl { float: none; width: 100%; margin: 0; }
+  .maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib {
+    width: 24px;
+    min-height: 24px;
+    box-sizing: border-box;
+    margin: 0 12px 16px;
+    padding: 0;
+  }
+  .maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib.maplibregl-compact-show {
+    width: calc(100% - 24px);
+    max-width: none;
+    max-height: none;
+    box-sizing: border-box;
+    margin: 0 12px 16px;
+    padding: 8px 8px 8px 36px;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+    line-height: 1.45;
+  }
+  .maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib-button {
+    left: 0;
+    right: auto;
+    top: auto;
+    bottom: 0;
+  }
+}
+.maplibregl-ctrl-attrib-inner .lanedev-attribution-line {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  text-wrap: pretty;
 }
 .road-card .mini {
   position: absolute; top: 8px; right: 8px;

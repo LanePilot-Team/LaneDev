@@ -58,10 +58,10 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
       <div className="route-profile" role="group" aria-label="交通工具">
         <button type="button" className={`route-profile-option${profile === 'car' ? ' on' : ''}`}
           aria-label="汽車" title="汽車" aria-pressed={profile === 'car'}
-          onClick={() => profile !== 'car' && planner.toggleProfile('pick')}>🚗</button>
+          onClick={() => profile !== 'car' && planner.toggleProfile('pick')}>🚗 汽車</button>
         <button type="button" className={`route-profile-option${profile === 'moto' ? ' on' : ''}`}
           aria-label="機車" title="機車" aria-pressed={profile === 'moto'}
-          onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵</button>
+          onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵 機車</button>
       </div>
       <button className="sp-close" aria-label="關閉路線" onClick={onClose}>✕</button>
     </div>
@@ -109,7 +109,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
           {editing !== null ? '請先選好地點' : '開始導航'}
         </button>
       </div>}
-      {routeSummary && planner.routeRef.current && <details className="route-steps"><summary>查看路線步驟</summary>
+      {routeSummary && planner.routeRef.current && <details className="route-steps" open><summary>路線步驟・向下滑動查看更多</summary>
         <ManeuverList route={planner.routeRef.current} profile={profile} />
       </details>}
     </div>

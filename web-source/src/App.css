@@ -461,12 +461,12 @@ body {
 .route-preview-head .sp-kicker { color: #1769e8; }
 .route-preview-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .route-profile {
-  display: flex; flex: none; align-items: center; gap: 3px; height: 32px;
-  padding: 3px; border-radius: 10px; background: #eef2f7;
+  display: flex; flex: none; align-items: center; gap: 0; height: 26px;
+  padding: 0; border-radius: 7px; background: #eef2f7;
 }
 .route-profile-option {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 58px; height: 26px; padding: 0 6px; border: 0; border-radius: 7px;
+  width: 58px; min-width: 58px; height: 26px; padding: 0 4px; border: 0; border-radius: 7px;
   background: transparent; color: #718096; font-size: 11px; font-weight: 700;
   line-height: 1; white-space: nowrap; cursor: pointer;
 }

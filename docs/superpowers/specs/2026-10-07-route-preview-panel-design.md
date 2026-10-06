@@ -62,6 +62,28 @@
 - 不重新設計導航中的 HUD、語音播報或地圖樣式。
 - 不新增帳號、同步、收藏或歷史路線功能。
 
+### 2026-10-07 實機回饋修訂
+
+本節 supersedes the earlier mobile bottom-sheet placement for the route preview card.
+
+- 手機版路線預覽卡固定在畫面上方，地圖與路線預覽留在下方。
+- 定位與設定按鈕回到底部右側，不能因路線卡片展開而被擠到上方。
+- 起點與終點改成緊湊的預填欄位：同一列顯示顏色圓點、起點／終點標籤、目前值與「更換」按鈕。
+- 地址降為欄位下方的小字；不為地址另占一張大卡片。
+- 汽車／機車改成固定高度、固定欄寬的分段控制，切換時不改變面板高度或按鈕位置。
+- 新增停靠點保留為次要操作，開始導航保持在卡片底部的滿寬主按鈕。
+
+### 2026-10-07 Feedback Revision
+
+This section supersedes the earlier mobile bottom-sheet placement for the route preview card.
+
+- On phones, pin the route preview card at the top so the map and route preview remain visible below it.
+- Return the locate/settings controls to the bottom-right; expanding the route card must not push those controls upward.
+- Render origin and destination as compact prefilled rows: colored dot, origin/destination label, current value, and a same-row “更換” action.
+- Reduce the address to a small secondary line below each field instead of a separate large content block.
+- Use a fixed-height, equal-width segmented control for car/motorcycle selection so switching does not change the card height or button positions.
+- Keep adding a via stop as a secondary action and keep the full-width start-navigation button at the bottom of the card.
+
 ---
 
 ## English Version

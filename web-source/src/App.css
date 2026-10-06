@@ -461,8 +461,9 @@ body {
 }
 .route-profile-option {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 26px; padding: 0; border: 0; border-radius: 7px;
-  background: transparent; color: #718096; font-size: 16px; line-height: 1; cursor: pointer;
+  min-width: 58px; height: 26px; padding: 0 6px; border: 0; border-radius: 7px;
+  background: transparent; color: #718096; font-size: 11px; font-weight: 700;
+  line-height: 1; white-space: nowrap; cursor: pointer;
 }
 .route-profile-option.on { background: #fff; color: #1769e8; box-shadow: 0 1px 4px rgba(33, 52, 77, 0.11); }
 .route-profile-option:focus-visible { outline: 2px solid #1769e8; outline-offset: 2px; }

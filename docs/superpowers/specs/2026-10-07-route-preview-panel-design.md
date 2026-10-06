@@ -18,7 +18,7 @@
    - 「更換」按鈕。
 5. 「更換」會開啟該端點的搜尋流程；選定新地點後，回到預覽卡片並更新路線、距離與時間。
 6. 保留「新增停靠點」操作，並使用次要的虛線按鈕，避免與主要導航操作競爭。
-7. 汽車／機車切換與短提示同列，使用兩個等寬圖標選項呈現目前車種，並保留可及性標籤。
+7. 汽車／機車切換與短提示同列，使用兩個等寬圖標＋文字選項呈現目前車種，並保留可及性標籤。
 8. 卡片底部只保留一個滿寬、醒目的「開始導航」按鈕；在起點尚未定位、正在定位、端點搜尋中或路線無效時，按鈕維持停用並顯示目前可操作狀態。
 9. 關閉路線面板的 X 按鈕保留，關閉後回到地圖瀏覽模式，不改變既有清除路線與模式切換行為。
 
@@ -89,7 +89,7 @@ This section supersedes the earlier mobile bottom-sheet placement for the route 
 依照實機回饋，再縮短路線預覽卡的第一視覺層級：
 
 - 「確認起終點後即可開始導航」與汽車／機車控制放在同一列。
-- 汽車／機車只顯示圖標，不再顯示完整文字；保留 `aria-label`、tooltip 與選取狀態，避免辨識性與可及性下降。
+- 汽車／機車使用圖標＋短文字標籤；保留 `aria-label`、tooltip 與選取狀態，並維持緊湊的等寬控制列。
 - 路線卡採固定可視高度，約保留手機畫面 45–50% 的地圖空間。
 - 標題列、起點、終點、既有停靠點與「新增停靠點」屬於固定可見區；「新增停靠點」不得因內容變長而需要滑動才能找到。
 - 路線距離／時間、開始導航與路線步驟放在卡片內部的可滾動內容區，避免整張面板持續向上推擠地圖與地圖操作。
@@ -100,11 +100,27 @@ This section supersedes the earlier mobile bottom-sheet placement for the route 
 Based on device feedback, reduce the first visual layer of the route preview card:
 
 - Place “確認起終點後即可開始導航” and the car/motorcycle controls on one row.
-- Show icons only for car/motorcycle; retain `aria-label`, tooltip, and selected state so discoverability and accessibility are not lost.
+- Show an icon and short text label for each vehicle; retain `aria-label`, tooltip, and selected state while keeping the control row compact and equal-width.
 - Give the route card a bounded visible height, targeting roughly 45–50% of the phone viewport for the map.
 - Keep the header, origin, destination, existing via stops, and “新增停靠點” in the always-visible region; the add-via action must not require scrolling to discover.
 - Put route distance/time, start navigation, and route steps in an internal scroll region so the whole panel does not continue pushing map controls away.
 - When editing a stop or showing search results, keep the card scrollable within the phone viewport; search results must not cover close or cancel controls.
+
+### 2026-10-07 Vehicle Label and Route-Step Discoverability Revision
+
+依照最新實機回饋，補強兩個可發現性問題：
+
+- 汽車／機車控制恢復為「圖標＋文字」（`🚗 汽車`、`🛵 機車`），仍與短提示同列，使用緊湊的等寬選項，不讓控制列重新佔滿一整行。
+- 路線成功產生後，路線步驟預設展開，標題顯示「路線步驟・向下滑動查看更多」，讓使用者知道卡片下方仍有內容。
+- 路線步驟仍位於路線卡的內部滾動區；使用者可直接下滑閱讀，也可點擊標題收合。
+
+### 2026-10-07 Vehicle Label and Route-Step Discoverability Revision (English)
+
+Based on the latest device feedback, improve discoverability in two places:
+
+- Restore text labels alongside the car/motorcycle icons (`🚗 汽車`, `🛵 機車`) while keeping the controls in the same compact row as the short hint and using equal-width options.
+- Open route steps by default after a valid route is available and label the summary “路線步驟・向下滑動查看更多” so users know the card has more content below.
+- Keep route steps inside the route card's internal scroll region; users can scroll to read them or click the summary to collapse them.
 
 ---
 
@@ -122,7 +138,7 @@ Redesign the route-planning screen shown after the user taps “路線” into a
 4. Each origin and destination row shows a colored marker, a label, a place name or “目前位置”, an address summary when available, and a “更換” action.
 5. Tapping “更換” opens the existing search flow for that stop. Selecting a new place returns to the preview card and updates the route, distance, and duration.
 6. “新增停靠點” remains available as a secondary dashed action so it does not compete with the primary navigation action.
-7. Car/motorcycle selection shares a row with the short hint and uses two equal-width icon options with accessible labels and a clear selected state.
+7. Car/motorcycle selection shares a row with the short hint and uses two equal-width icon-and-text options with accessible labels and a clear selected state.
 8. The card ends with one full-width, prominent “開始導航” button. It remains disabled while the origin is locating, a stop is being edited, or no valid route is available.
 9. The existing close button remains and returns to browse mode without changing the existing route-clearing and mode-switching behavior.
 

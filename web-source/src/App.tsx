@@ -32,6 +32,7 @@ export default function App() {
 
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
   const [selectedDestination, setSelectedDestination] = useState<DestinationSelection | null>(null)
+  const [mapPickingStopId, setMapPickingStopId] = useState<number | null>(null)
 
 
   // ── 點擊分派 ──
@@ -49,7 +50,10 @@ export default function App() {
         clearDestinationSelection()
         setRoadInfo(queryRoadInfoAt(map, e.point))
       }
-      else if (m === 'pick') planner.handlePickClick(p)
+      else if (m === 'pick' && mapPickingStopId !== null) {
+        const selected = planner.handlePickClick(p, mapPickingStopId)
+        if (selected) setMapPickingStopId(null)
+      }
     })
   const planner = usePlanner(core)
   const {
@@ -114,6 +118,7 @@ export default function App() {
   }
 
   function switchMode(m: Mode) {
+    setMapPickingStopId(null)
     if (modeRef.current === 'drive') endDrive()
     if (m !== 'pick') planner.clearAllRoute()
     if (m !== 'browse' || modeRef.current === 'pick') clearDestinationSelection()

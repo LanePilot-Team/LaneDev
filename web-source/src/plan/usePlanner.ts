@@ -15,7 +15,7 @@ import { routeFailureText } from './routeFailure'
 import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
 import {
   createPlaceRouteStops, withCurrentStart,
-  firstUnsetStopId,
+  firstUnsetStopId, withMapSelectedStop,
   type RouteDestination,
   type Stop,
 } from './placeRoute'
@@ -52,7 +52,7 @@ export interface Planner {
   resetStop: (id: number) => void
   removeStop: (id: number) => void
   moveStop: (fromId: number | null, toId: number) => void
-  handlePickClick: (p: [number, number]) => void
+  handlePickClick: (p: [number, number], targetStopId?: number) => boolean
   computeTwoStage: (m: Maneuver, prof: Profile) => boolean
   isTwoStage: (m: Maneuver | null) => boolean
   annotateTwoStage: (route: RouteResult) => void
@@ -322,22 +322,36 @@ export function usePlanner(core: MapCore): Planner {
     setStops(list)
   }
 
-  /** pick 模式的地圖點擊：指派給「作用中」的停靠點；沒有就找第一個未設定的 */
-  function handlePickClick(p: [number, number]) {
+  /** 地圖點擊：指定停靠點時精準替換，未指定時保留既有作用中/第一個未設定行為。 */
+  function handlePickClick(p: [number, number], targetStopId?: number): boolean {
     const list = stopsRef.current
-    let idx = list.findIndex((s) => s.id === activeStopRef.current)
-    if (idx < 0 || list[idx].pos) idx = list.findIndex((s) => !s.pos)
-    if (idx < 0) return
-    const snapped = snapRoutePoint(p, 180, idx === 0 ? '起點' : '停靠點')
-    if (!snapped) return
+    let targetId = targetStopId
+    if (targetId === undefined) {
+      const active = list.find((stop) => stop.id === activeStopRef.current)
+      targetId = active && !active.pos
+        ? active.id
+        : list.find((stop) => !stop.pos)?.id
+    }
+    if (targetId === undefined) return false
+
+    const targetIndex = list.findIndex((stop) => stop.id === targetId)
+    if (targetIndex < 0) return false
+    const pointLabel = targetIndex === 0
+      ? '起點'
+      : targetIndex === list.length - 1 ? '終點' : '停靠點'
+    const snapped = snapRoutePoint(p, 180, pointLabel)
+    if (!snapped) return false
+    const next = withMapSelectedStop(list, targetId, snapped)
+    if (!next) return false
+
     setRouteError(null)
-    const next = list.map((s, i) => (i === idx ? { ...s, pos: snapped } : s))
     stopsRef.current = next
     setStopsState(next)
     const nextEmpty = next.find((s) => !s.pos)
     setActiveStop(nextEmpty ? nextEmpty.id : null)
     syncEndpoints()
     routeFromStops()
+    return true
   }
 
   /**

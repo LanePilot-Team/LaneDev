@@ -449,7 +449,7 @@ body {
 .sp-summary b { font-size: 17px; color: #24303f; }
 .route-preview-card {
   display: flex; flex-direction: column; min-height: 0;
-  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin;
+  overflow: hidden; overscroll-behavior: contain; scrollbar-width: thin;
   padding: 12px 14px 14px;
 }
 .route-preview-head {
@@ -464,6 +464,7 @@ body {
   display: flex; flex: none; align-items: center; gap: 0; height: 26px;
   padding: 0; border-radius: 7px; background: #eef2f7;
 }
+.route-preview-head > .route-profile { flex: 0 0 auto; width: max-content; }
 .route-profile-option {
   display: inline-flex; align-items: center; justify-content: center;
   width: 58px; min-width: 58px; height: 26px; padding: 0 4px; border: 0; border-radius: 7px;
@@ -474,6 +475,7 @@ body {
 .route-profile-option:focus-visible { outline: 2px solid #1769e8; outline-offset: 2px; }
 .route-preview-primary { flex: none; min-height: 0; }
 .route-preview-secondary { flex: none; min-height: 0; overflow: visible; }
+.route-preview-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: thin; }
 .route-preview-secondary:empty { display: none; }
 .route-preview-secondary > .route-status-error { margin-top: 10px; }
 .route-preview-secondary .route-preview-summary { margin-top: 10px; }

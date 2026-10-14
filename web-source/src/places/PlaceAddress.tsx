@@ -52,6 +52,6 @@ export function PlaceAddress({ place, addressOnly = false }: { place: Pick<Place
   }, [key, known])
   const result = lookup?.key === key ? lookup.text : null
   return <small className="place-address">{known || (result === null ? '查詢詳細地址中…'
-    : result ? `附近地址：${result}${addressOnly ? '' : '（座標查詢，非確認門牌）'}`
+    : result ? `${result}${addressOnly ? '' : '（座標查詢，非確認門牌）'}`
       : addressOnly ? '詳細地址未提供' : `詳細地址未提供 · 座標 ${place.position[1].toFixed(5)}, ${place.position[0].toFixed(5)}`)}</small>
 }

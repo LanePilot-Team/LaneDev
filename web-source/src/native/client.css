@@ -76,8 +76,12 @@
   .side-panel.route-preview-card {
     left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top)); bottom: auto;
     width: auto; max-width: none; height: auto; max-height: min(52dvh, 480px);
-    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    overflow: hidden;
     overscroll-behavior: contain; border-radius: 20px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .side-panel.route-preview-card.route-steps-open,
+  .side-panel.route-preview-card.route-steps-closed {
+    height: min(416px, calc(100dvh - 24px)); max-height: min(416px, calc(100dvh - 24px));
   }
   .side-panel.route-preview-card.is-searching {
     height: auto; max-height: calc(100dvh - 96px); overflow-y: auto; overflow-x: hidden;

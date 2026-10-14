@@ -214,7 +214,9 @@ export function PlaceSearch({
               data-place-id={place.id}
               onClick={() => showPlace(place)}
             >
+              <span className="place-pin" aria-hidden="true">●</span>
               <span className="place-result-copy">
+                <b>{place.name}</b>
                 <PlaceAddress place={place} addressOnly />
               </span>
             </button>
@@ -265,14 +267,15 @@ export function PlaceSearch({
               <small>{resolvedSelected.provider === 'local' ? '目的地' : 'Google Places 目的地'}</small>
               <b>{destinationLabel(resolvedSelected)}</b>
               {resolvedSelected.provider === 'local'
-                ? <PlaceAddress place={resolvedSelected.place} />
+                ? <PlaceAddress place={resolvedSelected.place} addressOnly />
                 : <small>地址請見 Google 搜尋結果</small>}
             </span>
             <button type="button" onClick={clearMarker}>變更</button>
           </div>
           <div className="place-route-methods">
-            <button type="button" className="active" disabled={mapLoading}
+            <button type="button" className="active route-primary-button" disabled={mapLoading}
               onClick={() => planRoute(resolvedSelected)}>
+              <span aria-hidden="true">➜</span>
               <b>路線</b><small>預設從目前位置出發，可搜尋變更起終點</small>
             </button>
           </div>

@@ -83,6 +83,9 @@
   .side-panel.route-preview-card.route-steps-closed {
     height: min(416px, calc(100dvh - 24px)); max-height: min(416px, calc(100dvh - 24px));
   }
+  .side-panel.route-preview-card.is-collapsed {
+    height: auto; max-height: none;
+  }
   .side-panel.route-preview-card.is-searching {
     height: auto; max-height: calc(100dvh - 96px); overflow-y: auto; overflow-x: hidden;
   }

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  coordinateDestination,
   destinationLabel,
   googleDestination,
   localDestination,
@@ -49,6 +50,17 @@ test('Google 地點只轉成導航需要的 ID、座標與使用者查詢文字'
     queryLabel: '高雄咖啡廳',
   })
   assert.equal(destinationLabel(destination), 'Google：高雄咖啡廳')
+})
+
+test('座標目的地不需要地標 ID，標籤仍保留緯經度', () => {
+  const destination = coordinateDestination([120.3012, 22.6273])
+
+  assert.deepEqual(destination, {
+    provider: 'coordinate',
+    id: 'coordinate:120.3012,22.6273',
+    position: [120.3012, 22.6273],
+  })
+  assert.equal(destinationLabel(destination), '22.62730, 120.30120')
 })
 
 test('Google 結果缺少導航必要欄位時不建立目的地', () => {

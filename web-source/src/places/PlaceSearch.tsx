@@ -13,11 +13,13 @@ import {
   type PlaceRecord,
 } from './places'
 import {
+  coordinateDestination,
   destinationLabel,
   googleDestination,
   localDestination,
   type DestinationSelection,
 } from './destination'
+import { parseCoordinateQuery } from './coordinateQuery'
 
 type SearchProvider = 'local' | 'google'
 
@@ -52,9 +54,14 @@ export function PlaceSearch({
   const [googleSelectionError, setGoogleSelectionError] = useState<string | null>(null)
   const googleSearchRef = useRef<GooglePlaceSearchHandle>(null)
   const results = useMemo(() => searchPlaces(places, query), [places, query])
+  const coordinatePosition = useMemo(() => parseCoordinateQuery(query), [query])
+  const coordinateSelection = useMemo(
+    () => coordinatePosition ? coordinateDestination(coordinatePosition) : null,
+    [coordinatePosition],
+  )
   const resolvedSelected = useMemo(() => {
     if (!selected) return null
-    if (selected.provider === 'google-ui-kit') return selected
+    if (selected.provider !== 'local') return selected
     const place = places.find((candidate) => candidate.id === selected.id) ?? selected.place
     return localDestination(place)
   }, [places, selected])
@@ -150,6 +157,10 @@ export function PlaceSearch({
       void searchWithGoogle()
       return
     }
+    if (coordinateSelection) {
+      showDestination(coordinateSelection)
+      return
+    }
     if (results[0]) showPlace(results[0])
   }
 
@@ -179,7 +190,7 @@ export function PlaceSearch({
           }}
           aria-label={searchLabel}
           autoFocus={picker}
-          placeholder={searchLabel}
+          placeholder={`${searchLabel}或緯度,經度`}
           autoComplete="off"
         />
         {hasQuery && (
@@ -189,14 +200,29 @@ export function PlaceSearch({
         )}
         <button type="submit" className="place-submit"
           disabled={!hasQuery || googleState === 'loading' ||
-            (provider === 'local' && (!results.length || mapLoading))}>
+            (provider === 'local' && (!results.length && !coordinateSelection || mapLoading))}>
           {provider === 'google' ? 'Google 搜尋' : '搜尋'}
         </button>
       </form>
 
-      {picker && !hasQuery && <p className="stop-search-help">輸入地點名稱或地址，再選擇搜尋結果。</p>}
+      {picker && !hasQuery && <p className="stop-search-help">輸入地點名稱、地址或緯度,經度，也可直接在地圖上選取。</p>}
       {hasQuery && provider === 'local' && !resolvedSelected && (
         <div className="place-results" role="listbox" aria-label="搜尋結果">
+          {coordinateSelection && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={false}
+              className="place-result coordinate-result"
+              onClick={() => showDestination(coordinateSelection)}
+            >
+              <span className="place-pin" aria-hidden="true">⌖</span>
+              <span className="place-result-copy">
+                <b>使用座標導航</b>
+                <small>緯度 {coordinateSelection.position[1].toFixed(5)}，經度 {coordinateSelection.position[0].toFixed(5)}</small>
+              </span>
+            </button>
+          )}
           {dataState === 'loading' && <div className="place-message">載入地標資料中…</div>}
           {dataState === 'error' && (
             <div className="place-message error">無法載入地標資料，請先執行手動更新腳本。</div>
@@ -264,11 +290,15 @@ export function PlaceSearch({
           <div className="place-route-target">
             <span className="place-route-pin" aria-hidden="true">●</span>
             <span>
-              <small>{resolvedSelected.provider === 'local' ? '目的地' : 'Google Places 目的地'}</small>
+              <small>{resolvedSelected.provider === 'local'
+                ? '目的地'
+                : resolvedSelected.provider === 'coordinate' ? '座標目的地' : 'Google Places 目的地'}</small>
               <b>{destinationLabel(resolvedSelected)}</b>
               {resolvedSelected.provider === 'local'
                 ? <PlaceAddress place={resolvedSelected.place} addressOnly />
-                : <small>地址請見 Google 搜尋結果</small>}
+                : resolvedSelected.provider === 'coordinate'
+                  ? <small>不需要地標，可直接規劃路線</small>
+                  : <small>地址請見 Google 搜尋結果</small>}
             </span>
             <button type="button" onClick={clearMarker}>變更</button>
           </div>

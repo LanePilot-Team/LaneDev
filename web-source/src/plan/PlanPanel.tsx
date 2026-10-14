@@ -96,8 +96,8 @@ export function PlanPanel({
       <button className="sp-close" aria-label="關閉路線" onClick={onClose}>✕</button>
     </div>
     {panelCollapsed && mapPickingStopId !== null && (
-      <div className="route-preview-collapsed-status" role="status">
-        <span>地圖選取中</span>
+      <div className={`route-preview-collapsed-status${routeError ? ' has-error' : ''}`} role="status">
+        <span>{routeError ? `選取失敗：${routeError}` : '地圖選取中'}</span>
         <button type="button" onClick={onCancelMapPick}>取消</button>
       </div>
     )}
@@ -147,6 +147,11 @@ export function PlanPanel({
                 </label>
                 <button className="stop-edit-action" aria-label={`更換${label(i)}`} onClick={() => editStop(stop.id)}>更換</button>
               </div>
+              {!stop.pos && <button
+                type="button"
+                className="map-pick-button"
+                onClick={() => { editStop(stop.id); startMapPick(stop.id) }}
+              >⌖ 在地圖上選取此停靠點</button>}
               {stop.placePosition && <PlaceAddress addressOnly place={{ address: stop.address, position: stop.placePosition }} />}
             </>}
             {i > 0 && i < stops.length - 1 && <button className="mini route-via-remove" onClick={() => { onCancelMapPick(); planner.removeStop(stop.id) }}>移除停靠點</button>}

@@ -1,6 +1,6 @@
 import type { PlaceRecord } from './places'
 
-export type DestinationProvider = 'local' | 'google-ui-kit'
+export type DestinationProvider = 'local' | 'google-ui-kit' | 'coordinate'
 
 export type DestinationSelection =
   | {
@@ -15,6 +15,11 @@ export type DestinationSelection =
       position: [number, number]
       /** 使用者自己提交的查詢文字，不是從 Google 結果擷取的名稱。 */
       queryLabel: string
+    }
+  | {
+      provider: 'coordinate'
+      id: string
+      position: [number, number]
     }
 
 export function localDestination(place: PlaceRecord): DestinationSelection {
@@ -50,8 +55,16 @@ export function googleDestination(
   }
 }
 
+export function coordinateDestination(position: [number, number]): DestinationSelection {
+  return {
+    provider: 'coordinate',
+    id: `coordinate:${position[0]},${position[1]}`,
+    position,
+  }
+}
+
 export function destinationLabel(destination: DestinationSelection): string {
-  return destination.provider === 'local'
-    ? destination.place.name
-    : `Google：${destination.queryLabel}`
+  if (destination.provider === 'local') return destination.place.name
+  if (destination.provider === 'google-ui-kit') return `Google：${destination.queryLabel}`
+  return `${destination.position[1].toFixed(5)}, ${destination.position[0].toFixed(5)}`
 }

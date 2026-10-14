@@ -91,7 +91,9 @@ export default function App() {
           id: destination.id,
           name: destinationLabel(destination),
           provider: destination.provider,
-          source: destination.provider === 'local' ? destination.place.source : 'google-ui-kit',
+          source: destination.provider === 'local'
+            ? destination.place.source
+            : destination.provider === 'google-ui-kit' ? 'google-ui-kit' : 'coordinate',
           category: destination.provider === 'local' ? destination.place.category : 'other',
         },
         geometry: { type: 'Point', coordinates: destination.position },

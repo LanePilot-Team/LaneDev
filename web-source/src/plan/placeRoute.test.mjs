@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createPlaceRouteStops, withCurrentStart,
-  firstUnsetStopId,
+  firstUnsetStopId, mapSelectionLabel, withMapSelectedStop,
 } from './placeRoute.ts'
 
 const destination = {
@@ -82,4 +82,33 @@ test('搜尋起點改回目前位置，清掉舊地址但保留終點與停靠�
   assert.equal(changed[1], stops[1])
   assert.equal(changed[2], stops[2])
   assert.equal(stops[0].label, '舊起點')
+})
+
+test('地圖選址只更新指定停靠點並清除舊地標資料', () => {
+  const stops = [
+    { id: 1, pos: [120, 22], label: '舊起點', address: '舊地址', placeId: 'old-start', placePosition: [120, 22], placeProvider: 'local' },
+    { id: 3, pos: [120.1, 22.1], label: '舊停靠點', address: '舊停靠地址', placeId: 'old-via', placePosition: [120.1, 22.1], placeProvider: 'local' },
+    { id: 2, pos: [120.2, 22.2], label: '終點', placeId: 'destination' },
+  ]
+  const position = [120.15, 22.15]
+
+  const changed = withMapSelectedStop(stops, 3, position)
+
+  assert.deepEqual(changed, [
+    stops[0],
+    { id: 3, pos: position, label: mapSelectionLabel(position) },
+    stops[2],
+  ])
+  assert.deepEqual(stops[1], {
+    id: 3, pos: [120.1, 22.1], label: '舊停靠點', address: '舊停靠地址',
+    placeId: 'old-via', placePosition: [120.1, 22.1], placeProvider: 'local',
+  })
+})
+
+test('地圖選址找不到指定停靠點時回傳 null', () => {
+  assert.equal(withMapSelectedStop([{ id: 1, pos: null }], 2, [120, 22]), null)
+})
+
+test('地圖選址標籤包含容易辨識的緯經度', () => {
+  assert.equal(mapSelectionLabel([120.2847, 22.7339]), '地圖選取位置 · 22.73390, 120.28470')
 })

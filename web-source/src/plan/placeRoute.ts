@@ -55,3 +55,20 @@ export function firstUnsetStopId(stops: Stop[]): number | null {
 export function withCurrentStart(stops: Stop[], position: [number, number]): Stop[] {
   return stops.map((stop, i) => i === 0 ? { id: stop.id, pos: position, label: '我的位置' } : stop)
 }
+
+export function mapSelectionLabel(position: [number, number]): string {
+  const [lng, lat] = position
+  return `地圖選取位置 · ${lat.toFixed(5)}, ${lng.toFixed(5)}`
+}
+
+/** Replace exactly one stop with a snapped map coordinate and discard stale place metadata. */
+export function withMapSelectedStop(
+  stops: Stop[],
+  id: number,
+  position: [number, number],
+): Stop[] | null {
+  if (!stops.some((stop) => stop.id === id)) return null
+  return stops.map((stop) => stop.id === id
+    ? { id: stop.id, pos: position, label: mapSelectionLabel(position) }
+    : stop)
+}

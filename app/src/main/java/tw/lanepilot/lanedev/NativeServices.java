@@ -268,7 +268,8 @@ final class NativeServices implements SensorEventListener {
 
     void status() {
         AudioManager audio = (AudioManager) activity.getSystemService(MainActivity.AUDIO_SERVICE);
-        emit("status", "ttsReady", ready, "speech", speechStatus,
+        emit("status", "simulationEnabled", activity.isSimulationEnabled(),
+            "ttsReady", ready, "speech", speechStatus,
             "audio", "媒體音量 " + audio.getStreamVolume(AudioManager.STREAM_MUSIC) + "/" + audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC),
             "tts", bridgeAvailable ? ttsStatus : "請更新 Android System WebView 以啟用語音服務",
             "location", !activity.hasLocationPermission() ? "定位尚未授權"

@@ -14,6 +14,9 @@ export function validZoom(value: number) {
   return Number.isFinite(value) ? Math.max(16, Math.min(22, value)) : 20
 }
 let state = {
+  // Vite dev server exposes the tool locally; packaged APKs receive the final
+  // value from Android so only debuggable builds can expose simulation controls.
+  simulationEnabled: Boolean(import.meta.env?.DEV),
   voice: stored('client.voice', 'true') !== 'false',
   zoom: validZoom(Number(stored('client.zoom', '20'))),
   tts: '正在檢查語音服務…',
@@ -56,7 +59,12 @@ export function deviceHeading() {
 }
 if (typeof window !== 'undefined') window.addEventListener('lane-native', ((event: CustomEvent) => {
   const data = event.detail
-  if (data.type === 'status') publish({ tts: data.tts, ttsReady: Boolean(data.ttsReady), speech: data.speech || '', audio: data.audio || '', location: data.location, compass: data.compass })
+  if (data.type === 'status') publish({
+    simulationEnabled: typeof data.simulationEnabled === 'boolean'
+      ? data.simulationEnabled : state.simulationEnabled,
+    tts: data.tts, ttsReady: Boolean(data.ttsReady), speech: data.speech || '',
+    audio: data.audio || '', location: data.location, compass: data.compass,
+  })
   if (data.type === 'heading') publish({
     heading: typeof data.value === 'number' && Number.isFinite(data.value) ? data.value : null,
     headingAt: Date.now(),

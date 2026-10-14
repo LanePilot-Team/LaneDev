@@ -8,7 +8,11 @@
     window.addEventListener('lane-native', handler)
     LaneNative.postMessage(JSON.stringify({ type: 'status' }))
   })
-  assert(!/編輯地圖|匯入地圖|Demo 路線|開始模擬|大眾運輸/.test(document.body.innerText), 'Developer controls exposed')
+  const developerControls = /編輯地圖|匯入地圖|Demo 路線|大眾運輸/.test(document.body.innerText)
+  assert(!developerControls, 'Forbidden developer controls exposed')
+  if (!status.simulationEnabled) {
+    assert(!/開始模擬導航|開發模擬|[1248]x/.test(document.body.innerText), 'Simulation controls exposed in release')
+  }
   const places = await (await fetch('./data/places/places.json')).json()
   assert(!places.places.some(p => p.category === 'transport'), 'Transport POI exposed')
   const blockedWrite = await fetch('/api/static-road-database/editor', { method: 'PUT', body: '{}' })

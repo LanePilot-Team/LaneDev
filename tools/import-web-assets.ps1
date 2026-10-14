@@ -19,7 +19,7 @@ if (-not (Test-Path -LiteralPath $policyPath)) {
 }
 $policy = Get-Content -Raw -LiteralPath $policyPath | ConvertFrom-Json
 if ($policy.format -ne 'lanedev-android-client-v1' -or $policy.editor -ne $false -or
-    $policy.simulation -ne $false -or $policy.transit -ne $false) {
+    $policy.simulation -ne $true -or $policy.transit -ne $false) {
     throw '此資源包未通過 Android 用戶端功能限制檢查'
 }
 $scriptFiles = @(Get-ChildItem -LiteralPath (Join-Path $source 'assets') -Filter '*.js' -File)

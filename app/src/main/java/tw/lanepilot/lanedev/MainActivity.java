@@ -30,6 +30,7 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private NativeServices nativeServices;
+    private boolean simulationEnabled;
     private boolean requestingLocation;
     private String pendingGeoOrigin;
     private GeolocationPermissions.Callback pendingGeoCallback;
@@ -42,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
 
         boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        simulationEnabled = debuggable;
         WebView.setWebContentsDebuggingEnabled(debuggable);
         webView = findViewById(R.id.lane_web_view);
         configureWebView(webView);
@@ -154,6 +156,10 @@ public class MainActivity extends AppCompatActivity {
                 == PackageManager.PERMISSION_GRANTED
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    boolean isSimulationEnabled() {
+        return simulationEnabled;
     }
 
     @Override

@@ -1,7 +1,7 @@
 // 導航 HUD（高德式）：頂部指引看板、車道列、速度圓標、底部資訊列、路口決策按鈕。
 // guidanceText / ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
 import type { Maneuver, Profile } from '../core/graph'
-import type { DriveState } from './drive'
+import { SIMULATION_MULTIPLIERS, type DriveState, type SimulationMultiplier } from './drive'
 import { useClientState } from '../native/client'
 import { arrivalTimestamp } from './arrivalEstimate'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
@@ -167,11 +167,42 @@ export function RecenterButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+function SimulationControls({
+  paused, multiplier, onPause, onResume, onMultiplier, onEnd,
+}: {
+  paused: boolean
+  multiplier: SimulationMultiplier
+  onPause: () => void
+  onResume: () => void
+  onMultiplier: (multiplier: SimulationMultiplier) => void
+  onEnd: () => void
+}) {
+  return (
+    <section className="simulation-controls" aria-label="開發模擬導航控制">
+      <div className="simulation-controls-head">
+        <span>開發模擬</span><b>{multiplier}x</b>
+      </div>
+      <div className="simulation-speed" role="group" aria-label="模擬速度">
+        {SIMULATION_MULTIPLIERS.map(value => <button key={value} type="button"
+          className={value === multiplier ? 'on' : ''}
+          aria-pressed={value === multiplier} onClick={() => onMultiplier(value)}>{value}x</button>)}
+      </div>
+      <div className="simulation-actions">
+        <button type="button" onClick={paused ? onResume : onPause}>
+          {paused ? '▶ 繼續' : 'Ⅱ 暫停'}
+        </button>
+        <button type="button" className="simulation-end" onClick={onEnd}>結束模擬</button>
+      </div>
+    </section>
+  )
+}
+
 
 /** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
   drive, twoStage, profile, gpsMsg, cameraAlert,
   destinationName,
+  simulation,
   onEnd,
 }: {
   drive: DriveState | null
@@ -182,6 +213,14 @@ export function DriveHUD({
   destinationName?: string
   /** 測速照相提示（沒有就不顯示卡片） */
   cameraAlert: SpeedCameraAlert | null
+  simulation?: {
+    active: boolean
+    paused: boolean
+    multiplier: SimulationMultiplier
+    onPause: () => void
+    onResume: () => void
+    onMultiplier: (multiplier: SimulationMultiplier) => void
+  }
   onEnd: () => void
   /** 模擬到達後的「再跑一次」；GPS 導航不傳（不顯示按鈕） */
 }) {
@@ -213,6 +252,11 @@ export function DriveHUD({
       {/* ── GPS 精度不足：位置還在畫，但先講清楚它現在不準 ── */}
       {gpsMsg && <div role="alert" className="gps-weak">{gpsMsg}</div>}
       {!gpsMsg && drive.gpsWeak && <div className="gps-weak">GPS 訊號較弱，位置可能不準</div>}
+
+      {simulation?.active && <SimulationControls
+        paused={simulation.paused} multiplier={simulation.multiplier}
+        onPause={simulation.onPause} onResume={simulation.onResume}
+        onMultiplier={simulation.onMultiplier} onEnd={onEnd} />}
 
       {/* ── 測速照相提示 ── */}
       {cameraAlert && <SpeedCameraCard alert={cameraAlert} />}

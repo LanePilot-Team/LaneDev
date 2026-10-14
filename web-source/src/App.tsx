@@ -54,7 +54,9 @@ export default function App() {
   const planner = usePlanner(core)
   const {
     drive, gpsMsg, cameraAlert,
-    startGpsNav, stopAllDrivers,
+    startGpsNav, startSimulation, simulationEnabled, simulationActive,
+    simulationPaused, simulationMultiplier, pauseSimulation, resumeSimulation,
+    setSimulationMultiplier, stopAllDrivers,
     following, recenter,
   } = useDrive({
     mode, setMode,
@@ -175,6 +177,14 @@ export default function App() {
           profile={planner.profile} gpsMsg={gpsMsg}
           cameraAlert={cameraAlert}
           destinationName={destinationName}
+          simulation={{
+            active: simulationActive,
+            paused: simulationPaused,
+            multiplier: simulationMultiplier,
+            onPause: pauseSimulation,
+            onResume: resumeSimulation,
+            onMultiplier: setSimulationMultiplier,
+          }}
           onEnd={endDrive}
         />
       )}
@@ -182,7 +192,8 @@ export default function App() {
       {/* ── 側面板：路線規劃 ── */}
       {mode === 'pick' && (
         <PlanPanel core={core} planner={planner} onClose={() => switchMode('browse')}
-          startGpsNav={startGpsNav} />
+          startGpsNav={startGpsNav} startSimulation={startSimulation}
+          simulationEnabled={simulationEnabled} />
       )}
 
       {/* ── 路段資訊卡（瀏覽模式）── */}

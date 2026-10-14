@@ -2,10 +2,10 @@
   "format": "lanedev-android-client-v1",
   "source": "64a1fd8",
   "editor": false,
-  "simulation": false,
+  "simulation": true,
   "transit": false,
   "scripts": {
-    "index-DD9dz9fU.js": "4e31db69322ffe812a4277131cf5f8c98450cc1a86953131225dc0499dd58aab"
+    "index-SBWz7xBR.js": "a0bbf50cdcf0bed98d26f8da7989539613f3ae37f55f5a6a9b3ef9dad14133c5"
   },
-  "runtimeManifest": "868aef4ea86aa790e22ef357248df8b7a57f313e0fa892565a667a5d7277c8c5"
+  "runtimeManifest": "2c052c13bc3fbac28abbb40ebdb7f5c1034d64bdd7c7e1211691a513034fa090"
 }

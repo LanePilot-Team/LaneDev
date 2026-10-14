@@ -24,7 +24,7 @@ geo.features = geo.features.filter(feature => !isTransitPlace(feature.properties
 await writeFile(target, JSON.stringify(geo))
 
 const modules = JSON.parse(await readFile(path.join(dist, 'client-modules.json'), 'utf8'))
-const forbidden = modules.filter(name => /\/src\/(edit\/|app\/importFlow|core\/(transit|buildRuntime|runtimeBuildEntry|pipeline)|nav\/drive\.ts)/.test(name))
+const forbidden = modules.filter(name => /\/src\/(edit\/|app\/importFlow|core\/(transit|buildRuntime|runtimeBuildEntry|pipeline))/.test(name))
 if (forbidden.length) throw new Error(`Client bundle contains developer modules: ${forbidden.join(', ')}`)
 const scripts = {}
 const runtimeDir = path.join(dist, 'data/runtime')
@@ -43,8 +43,8 @@ for (const name of await readdir(path.join(dist, 'assets'))) {
 }
 await writeFile(path.join(dist, 'client-policy.json'), JSON.stringify({
   format: 'lanedev-android-client-v1', source: '64a1fd8',
-  editor: false, simulation: false, transit: false, scripts,
+  editor: false, simulation: true, transit: false, scripts,
   runtimeManifest: createHash('sha256').update(manifestBytes).digest('hex'),
 }, null, 2))
 await rm(path.join(dist, 'client-modules.json'))
-console.log('Client package checked: no editor, simulation or transit modules; transport POIs removed.')
+console.log('Client package checked: no editor or transit modules; debug-only simulation enabled; transport POIs removed.')

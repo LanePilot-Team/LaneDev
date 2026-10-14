@@ -13,6 +13,7 @@ import {
 } from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
 import type { DriveState } from './drive'
+import { Driver, type SimulationMultiplier } from './drive'
 import { clientState, ensureLocation, nativeCommand } from '../native/client'
 import { GpsDriver } from './gpsNav'
 import { GpsAnimation } from './gpsAnimation'
@@ -76,6 +77,14 @@ export interface UseDriveResult {
   /** 目前該顯示的測速照相提示（沒有就是 null） */
   cameraAlert: SpeedCameraAlert | null
   startGpsNav: () => void
+  startSimulation: () => void
+  simulationEnabled: boolean
+  simulationActive: boolean
+  simulationPaused: boolean
+  simulationMultiplier: SimulationMultiplier
+  pauseSimulation: () => void
+  resumeSimulation: () => void
+  setSimulationMultiplier: (multiplier: SimulationMultiplier) => void
   /** 停止目前的 GPS 導航並清空行駛相關 state；給 endDrive/clearAllRoute 共用 */
   stopAllDrivers: () => void
   /** 鏡頭是否正在跟隨車輛；false = 使用者自己滑走了，正在自由瀏覽 */
@@ -86,6 +95,7 @@ export interface UseDriveResult {
 
 export function useDrive(p: UseDriveParams): UseDriveResult {
   const gpsDriverRef = useRef<GpsDriver | null>(null)
+  const simulationDriverRef = useRef<Driver | null>(null)
   const lastDriveRef = useRef<DriveState | null>(null)
   const activeZoneIdRef = useRef<string | null>(null)
   const routeCamerasRef = useRef<RouteCamera[]>([])
@@ -94,6 +104,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [gpsMsg, setGpsMsg] = useState<string | null>(null)
   const [cameraAlert, setCameraAlert] = useState<SpeedCameraAlert | null>(null)
+  const [simulationActive, setSimulationActive] = useState(false)
+  const [simulationPaused, setSimulationPaused] = useState(false)
+  const [simulationMultiplier, setSimulationMultiplierState] = useState<SimulationMultiplier>(1)
+  const [simulationEnabled, setSimulationEnabled] = useState(clientState().simulationEnabled)
   // 鏡頭跟隨開關。ref 給每幀的跟隨迴圈讀（state 在 callback 內是舊值），state 給按鈕重繪。
   const [following, setFollowing] = useState(true)
   const followingRef = useRef(true)
@@ -102,6 +116,16 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const stopVisualRef = useRef<(() => void) | null>(null)
   const displayRef = useRef<{ pos: [number, number]; bearing: number; elevM: number } | null>(null)
   const cameraResumeAtRef = useRef(0)
+  useEffect(() => {
+    const onNative = (event: Event) => {
+      const data = (event as CustomEvent).detail
+      if (data?.type === 'status' && typeof data.simulationEnabled === 'boolean') {
+        setSimulationEnabled(data.simulationEnabled)
+      }
+    }
+    window.addEventListener('lane-native', onNative)
+    return () => window.removeEventListener('lane-native', onNative)
+  }, [])
   useEffect(() => {
     const onZoom = () => {
       if (p.mode === 'drive') p.mapRef.current?.jumpTo({ zoom: clientState().zoom })
@@ -112,6 +136,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   useEffect(() => () => {
     sessionRef.current++
     gpsDriverRef.current?.stop()
+    simulationDriverRef.current?.stop()
     stopVisualRef.current?.()
     voiceRef.current.reset()
     nativeCommand('navigation', { active: false })
@@ -231,16 +256,42 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     })
   }
 
+  function publishDriveState(s: DriveState) {
+    lastDriveRef.current = s
+    updateZoneHighlight(s)
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
+    setDrive(s)
+    updateSpeedCameraAlert(s)
+  }
+
+  function updateSimulationVisual(
+    s: DriveState, map: MLMap, camPadding: { top: number },
+  ) {
+    const now = performance.now()
+    displayRef.current = { pos: s.pos, bearing: s.bearing, elevM: s.elevM ?? 0 }
+    p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM)
+    activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
+    if (followingRef.current && now > cameraResumeAtRef.current &&
+      now - p.lastGestureRef.current > 250) {
+      map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding, elevation: s.elevM ?? 0 })
+    }
+  }
+
   function stopAllDrivers() {
     sessionRef.current++
     nativeCommand('navigation', { active: false })
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
+    simulationDriverRef.current?.stop()
+    simulationDriverRef.current = null
     stopVisualRef.current?.()
     stopVisualRef.current = null
     displayRef.current = null
     setGpsMsg(null)
     setDrive(null)
+    setSimulationActive(false)
+    setSimulationPaused(false)
+    setSimulationMultiplierState(1)
     lastDriveRef.current = null
     setFollow(true) // 下一趟導航從「跟隨」開始
     routeCamerasRef.current = []
@@ -259,6 +310,51 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     }
   }
 
+  function startSimulation() {
+    const route = p.routeRef.current
+    const map = p.mapRef.current
+    if (!simulationEnabled || !route || !map) return
+    const session = ++sessionRef.current
+    p.setMode('drive')
+    nativeCommand('navigation', { active: true })
+    map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
+    map.setLayoutProperty('road-label', 'visibility', 'none')
+    setNavCameraClamp(map, false)
+    setFollow(true)
+    map.jumpTo(navCamera())
+    setDrive(null)
+    setGpsMsg(null)
+    setSimulationActive(true)
+    setSimulationPaused(false)
+    setSimulationMultiplierState(1)
+    gpsDriverRef.current?.stop()
+    gpsDriverRef.current = null
+    simulationDriverRef.current?.stop()
+    stopVisualRef.current?.()
+    displayRef.current = null
+    armSpeedCameras(route)
+    const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
+    const resize = () => { camPadding.top = Math.round(map.getContainer().clientHeight * 0.45) }
+    let stopped = false
+    map.on('resize', resize)
+    stopVisualRef.current = () => {
+      stopped = true
+      map.off('resize', resize)
+    }
+    const driver = new Driver(route, (s) => {
+      if (stopped || session !== sessionRef.current) return
+      publishDriveState(s)
+      updateSimulationVisual(s, map, camPadding)
+      if (s.arrived) {
+        setSimulationActive(false)
+        setSimulationPaused(false)
+      }
+    })
+    driver.setMultiplier(1)
+    simulationDriverRef.current = driver
+    driver.start()
+  }
+
   function runGpsNav(resume: boolean) {
     const route = p.routeRef.current
     const map = p.mapRef.current
@@ -272,6 +368,11 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (followingRef.current) map.jumpTo(navCamera())
     if (!resume) setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
     armSpeedCameras(route)
+    simulationDriverRef.current?.stop()
+    simulationDriverRef.current = null
+    setSimulationActive(false)
+    setSimulationPaused(false)
+    setSimulationMultiplierState(1)
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
     stopVisualRef.current?.()
@@ -312,14 +413,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const gps = new GpsDriver(
       route,
       (s, fix) => {
-        lastDriveRef.current = s
-        updateZoneHighlight(s)
-        if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
+        publishDriveState(s)
         if (!fix || s.gpsWeak || document.hidden) freeze()
         else if (animation.push(fix, performance.now()) && !frame) frame = requestAnimationFrame(drawFrame)
         setGpsMsg(null)
-        setDrive(s)
-        updateSpeedCameraAlert(s)
       },
       (pos) => rerouteFrom(pos),
       (msg) => { freeze(); setGpsMsg(msg) },
@@ -344,6 +441,24 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     }
   }
 
+  function pauseSimulation() {
+    if (!simulationActive) return
+    simulationDriverRef.current?.pause()
+    setSimulationPaused(true)
+  }
+
+  function resumeSimulation() {
+    if (!simulationActive) return
+    simulationDriverRef.current?.resume()
+    setSimulationPaused(false)
+  }
+
+  function setSimulationMultiplier(multiplier: SimulationMultiplier) {
+    if (!simulationActive) return
+    simulationDriverRef.current?.setMultiplier(multiplier)
+    setSimulationMultiplierState(multiplier)
+  }
+
   function rerouteFrom(pos: [number, number]) {
     const to = p.stopsRef.current[p.stopsRef.current.length - 1]?.pos
     const g = p.graphRef.current
@@ -362,5 +477,11 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (gpsDriverRef.current) runGpsNav(true)
   }
 
-  return { drive, gpsMsg, cameraAlert, startGpsNav, stopAllDrivers, following, recenter }
+  return {
+    drive, gpsMsg, cameraAlert, startGpsNav, startSimulation,
+    simulationEnabled,
+    simulationActive, simulationPaused, simulationMultiplier,
+    pauseSimulation, resumeSimulation, setSimulationMultiplier,
+    stopAllDrivers, following, recenter,
+  }
 }

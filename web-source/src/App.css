@@ -515,6 +515,8 @@ body {
   background: #1769e8; color: #fff; font-size: 15px; font-weight: 800; cursor: pointer;
 }
 .route-start-button:disabled { cursor: default; opacity: .55; }
+.simulation-start-button { background: #4b5563; }
+.simulation-start-button::before { content: '開發測試 · '; opacity: .78; }
 .route-steps { margin-top: 12px; border-top: 1px solid #edf0f4; padding-top: 10px; }
 .route-steps > summary { color: #1769e8; cursor: pointer; font-size: 12px; font-weight: 700; }
 .side-panel .mini { background: #eef1f5; color: #24303f; }
@@ -793,6 +795,23 @@ body {
   .recenter-btn span { display: none; }
   .recenter-btn { padding: 11px; border-radius: 50%; }
 }
+
+/* ── 開發模擬控制：小型浮動卡，不佔用主要導航看板 ── */
+.simulation-controls {
+  position: absolute; right: 14px; bottom: calc(146px + env(safe-area-inset-bottom)); z-index: 22;
+  width: min(196px, calc(100vw - 28px)); box-sizing: border-box;
+  padding: 9px; border-radius: 13px; background: rgba(20, 31, 48, 0.94);
+  color: #fff; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+.simulation-controls-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.simulation-controls-head b { color: #ffd54a; font-size: 15px; }
+.simulation-speed, .simulation-actions { display: flex; gap: 5px; margin-top: 7px; }
+.simulation-controls button {
+  min-height: 32px; flex: 1; border: 1px solid rgba(255, 255, 255, 0.26); border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.simulation-controls button.on { border-color: #7eb5ff; background: #1769d2; }
+.simulation-controls .simulation-end { color: #ffd2d2; border-color: rgba(255, 140, 140, 0.55); }
 
 /* ── GPS 精度不足 ── 位置照畫（貼在路線上），但要說清楚它現在不準 */
 .gps-weak {

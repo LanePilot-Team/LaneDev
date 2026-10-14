@@ -7,8 +7,9 @@ import { PlaceSearch } from '../places/PlaceSearch'
 import { PlaceAddress } from '../places/PlaceAddress'
 import { destinationLabel, type DestinationSelection } from '../places/destination'
 
-export function PlanPanel({ core, planner, onClose, startGpsNav }: {
+export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation, simulationEnabled }: {
   core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void
+  startSimulation: () => void; simulationEnabled: boolean
 }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [stepsOpen, setStepsOpen] = useState(true)
@@ -111,6 +112,10 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
           <button className="route-start-button" disabled={editing !== null || locating} onClick={startGpsNav}>
             {editing !== null ? '請先選好地點' : '開始導航'}
           </button>
+          {simulationEnabled && <button className="route-start-button simulation-start-button"
+            disabled={editing !== null || locating} onClick={startSimulation}>
+            {editing !== null ? '請先選好地點' : '開始模擬導航'}
+          </button>}
         </div>}
         {routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
           onToggle={event => setStepsOpen(event.currentTarget.open)}><summary>路線步驟・向下滑動查看更多</summary>

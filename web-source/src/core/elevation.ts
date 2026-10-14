@@ -10,8 +10,8 @@
 //     端節點有平面道路共用（資料邊界的斷頭不算，維持全高不落地）。
 //   - 連續高架（匝道銜接國道、layer 1 接 layer 2）中間不下地：接地距離用
 //     整個高架子網路的沿線最短路（多源 Dijkstra）算，不是逐區塊各自爬升。
-import type { RoadFeature } from './roads'
-import { COS_LAT, cumulative, bearing, angleDelta, pointAlong } from './geo'
+import type { RoadFeature } from './roads.ts'
+import { COS_LAT, cumulative, bearing, angleDelta, pointAlong } from './geo.ts'
 
 /** OSM layer → 公尺（1≈6m、2≈12m；缺省/0 視同 1 層） */
 export const LAYER_HEIGHT_M = 6

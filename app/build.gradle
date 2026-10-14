@@ -2,9 +2,25 @@ plugins {
     id 'com.android.application'
 }
 
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+def googleMapsApiKey = localProperties.getProperty('GOOGLE_MAPS_API_KEY', '').trim()
+def escapedGoogleMapsApiKey = googleMapsApiKey
+        .replace('\\', '\\\\')
+        .replace('"', '\\"')
+        .replace('\r', '\\r')
+        .replace('\n', '\\n')
+
 android {
     namespace 'tw.lanepilot.lanedev'
     compileSdk 36
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         applicationId 'tw.lanepilot.lanedev'
@@ -13,6 +29,7 @@ android {
         versionCode 1
         versionName '1.0.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'String', 'GOOGLE_MAPS_API_KEY', '"' + escapedGoogleMapsApiKey + '"'
     }
 
     buildTypes {

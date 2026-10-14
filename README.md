@@ -13,6 +13,40 @@
 
 APK：`app/build/outputs/apk/debug/app-debug.apk`。
 
+## Google Maps API Key（本機 Demo）
+
+Android APK 建置時，請把組員提供的「已限制」Key 放在工作區根目錄的
+`local.properties`；這個檔案已被 Git 忽略，不要把 Key 貼到程式碼、README 或對話中：
+
+```properties
+sdk.dir=C:\\Users\\你的帳號\\AppData\\Local\\Android\\Sdk
+GOOGLE_MAPS_API_KEY=AIzaSy...
+```
+
+接著重新建置 APK：
+
+```powershell
+.\tools\gradle.ps1 assembleDebug
+```
+
+建置時 Android 會把 Key 注入 APK 內的 WebView 首頁；安裝到手機後不需要攜帶
+`local.properties`。這只是 Demo 的便利做法，APK 內的 client-side Key 仍可能被取出，
+所以 Google Cloud 至少要設定 API 限制，並使用專門給這個 Demo 的 Key。
+
+注意：目前搜尋使用的是 WebView 內的 Maps JavaScript API／Places API (New) Text Search，
+不是原生 Maps SDK；因此 Google Cloud 需要啟用 Maps JavaScript API 與 Places API (New)，
+不需要另外啟用 Places UI Kit。Google 官方指出，APK 內的 bundled WebView 資源可能不會送出可供網站限制
+判斷的 `Referer`；因此 Android app 限制（套件名稱
+`tw.lanepilot.lanedev` 與目前 Debug SHA-1）不保證能單獨限制這條 JavaScript 呼叫鏈。
+若組員加上 Android restriction 後搜尋失敗，這是 API 平台限制，不是 Key 注入失敗；
+屆時要改用適合 WebView 的專用限制策略，或將 Maps／Places 改成原生 SDK／後端代理。
+
+若只在 `web-source` 瀏覽器開發伺服器測試，可另外建立未追蹤的 `web-source/.env.local`：
+
+```properties
+VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
+```
+
 ## 修改前端
 
 所有修改都在本 Git 工作區。可維護來源在 `web-source/`，來自原版

@@ -5,7 +5,14 @@ body {
   overflow: hidden;
 }
 
-.app { position: relative; height: 100%; }
+.app {
+  position: relative;
+  height: 100%;
+  --map-action-size: 40px;
+  --map-action-gap: 8px;
+  --map-action-right: max(12px, env(safe-area-inset-right));
+  --map-action-stack-height: calc(var(--map-action-size) * 2 + var(--map-action-gap));
+}
 .map { position: absolute; inset: 0; }
 
 .loading {
@@ -634,14 +641,23 @@ body {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18); max-width: 300px;
 }
 @media (max-width: 600px) {
-  /* Keep the two map actions at the bottom-right and reserve that column for them. */
-  .road-card { right: calc(150px + env(safe-area-inset-right)); bottom: calc(112px + env(safe-area-inset-bottom)); max-width: none; box-sizing: border-box; }
+  /* Match the road card to the actual icon-button column instead of reserving a fixed blank area. */
+  .road-card {
+    right: calc(var(--map-action-size) + var(--map-action-right) + var(--map-action-gap));
+    bottom: calc(112px + env(safe-area-inset-bottom));
+    max-width: none;
+    box-sizing: border-box;
+  }
   .map-actions { bottom: calc(16px + env(safe-area-inset-bottom)); }
   .map-actions.navigating { bottom: calc(112px + env(safe-area-inset-bottom)); }
 
   /* MapLibre attribution stays compact as a left-side info icon, then expands
      only through the left side so the action column remains unobstructed. */
-  .maplibregl-ctrl-bottom-left { bottom: env(safe-area-inset-bottom); left: 0; width: calc(100% - 150px); }
+  .maplibregl-ctrl-bottom-left {
+    bottom: env(safe-area-inset-bottom);
+    left: 0;
+    width: calc(100% - var(--map-action-size) - var(--map-action-right) - var(--map-action-gap));
+  }
   .maplibregl-ctrl-bottom-left > .maplibregl-ctrl { float: none; width: 100%; margin: 0; }
   .maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib {
     width: 24px;
@@ -653,28 +669,41 @@ body {
   .maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib.maplibregl-compact-show {
     width: calc(100% - 24px);
     max-width: none;
-    max-height: none;
+    height: var(--map-action-stack-height);
+    max-height: var(--map-action-stack-height);
+    min-height: var(--map-action-stack-height);
+    display: block;
+    position: relative;
     box-sizing: border-box;
     margin: 0 12px 16px;
-    padding: 8px 8px 8px 36px;
-    overflow: visible;
+    padding: 3px 8px 3px 36px;
+    overflow: hidden;
     white-space: normal;
-    overflow-wrap: break-word;
+    overflow-wrap: normal;
     word-break: normal;
-    font-size: 10px;
-    line-height: 1.35;
+    line-break: strict;
+    text-wrap: pretty;
+    font-size: 12px;
+    line-height: 1.45;
   }
   .maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib-inner {
-    display: flex;
-    flex-direction: column;
+    display: block;
+    position: absolute;
+    left: 36px;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     align-items: stretch;
     gap: 2px;
-    width: 100%;
+    width: auto;
+    height: auto;
     box-sizing: border-box;
     text-align: left;
     white-space: normal;
-    overflow-wrap: break-word;
+    overflow-wrap: normal;
     word-break: normal;
+    line-break: strict;
+    text-wrap: pretty;
     line-height: 1.45;
   }
   .maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib-button {
@@ -688,9 +717,13 @@ body {
   display: block;
   min-width: 0;
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
+  line-break: strict;
   text-wrap: pretty;
+}
+.maplibregl-ctrl-attrib-inner .lanedev-attribution-line + .lanedev-attribution-line {
+  margin-top: 2px;
 }
 .road-card .mini {
   position: absolute; top: 8px; right: 8px;
@@ -708,20 +741,30 @@ body {
 .bottom-bar {
   position: absolute; bottom: 0; left: 0; right: 0; z-index: 20;
   background: #fff; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: 14px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px;
   box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.12);
   border-radius: 18px 18px 0 0;
 }
-.trip { flex: 1; text-align: center; }
-.trip b { font-size: 19px; color: #24303f; margin-right: 10px; }
-.trip span { font-size: 14px; color: #7a8494; }
+.trip {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto; column-gap: 10px; align-items: baseline; text-align: left;
+}
+.trip b {
+  grid-row: 1 / span 2; align-self: center;
+  font-size: 19px; line-height: 1.2; color: #24303f; white-space: nowrap;
+}
+.trip .trip-eta {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 14px; color: #7a8494;
+}
 .trip .trip-road {
-  display: block; margin-top: 2px;
+  grid-column: 2; min-width: 0; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13px; font-weight: 700; color: #3d4a5c;
 }
 .end-btn, .mult-btn {
   border: none; border-radius: 10px; padding: 10px 14px;
-  font-size: 14px; font-weight: 700; cursor: pointer;
+  font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .end-btn { background: #f1f3f6; color: #3d4a5c; }
 .mult-btn { background: #eef3fb; color: #1058b8; min-width: 52px; }

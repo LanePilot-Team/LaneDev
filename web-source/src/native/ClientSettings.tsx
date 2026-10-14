@@ -6,10 +6,8 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
   const state = useClientState()
   useEffect(() => { nativeCommand('status') }, [])
   return <details className={`client-settings${navigating ? ' navigating' : ''}`}>
-    <summary>
+    <summary aria-label="設定" title="設定">
       <span className="settings-icon" aria-hidden="true">⚙</span>
-      <span>設定</span>
-      <span className="settings-close" aria-hidden="true">×</span>
     </summary>
     <div className="client-settings-body">
       <section className="settings-section">

@@ -39,7 +39,7 @@ function formatAttributionLines(map: MLMap) {
     inner.replaceChildren(...parts.map(part => {
       const line = document.createElement('span')
       line.className = 'lanedev-attribution-line'
-      line.innerHTML = part
+      line.innerHTML = part.replace('內政部警政署', '內政部警政署<br />')
       return line
     }))
   }

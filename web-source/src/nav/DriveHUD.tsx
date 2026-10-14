@@ -272,7 +272,7 @@ export function DriveHUD({
         <button className="end-btn" onClick={onEnd}>{drive.arrived ? '✓ 完成' : '✕ 結束'}</button>
         <div className="trip">
           <b>{drive.remainM > 1000 ? `${(drive.remainM / 1000).toFixed(1)} 公里` : `${Math.round(drive.remainM)} 公尺`}</b>
-          <span>
+          <span className="trip-eta">
             {drive.arrived ? '已抵達'
               : drive.arriving ? '即將抵達目的地'
                 : `約 ${Math.max(1, Math.ceil(drive.remainS / 60))} 分鐘 · ` + new Date(arrivalTimestamp(Date.now(), drive.remainS)).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' 抵達'}

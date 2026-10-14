@@ -196,7 +196,7 @@ body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); cursor: pointer;
 }
 .toolbar button.on { background: #1058b8; color: #fff; }
-.app[data-mode='pick'] .maplibregl-canvas { cursor: crosshair; }
+.app[data-mode='pick'][data-map-picking='true'] .maplibregl-canvas { cursor: crosshair; }
 
 /* ── 地標搜尋 ── */
 .place-search {
@@ -500,6 +500,26 @@ body {
 .route-stop-editing-head { margin-bottom: 7px; }
 .route-stop-editing-copy { color: #718096; font-size: 11px; }
 .route-stop-card .stop-edit-action { min-height: 32px; padding: 5px 4px; }
+.map-pick-button {
+  width: 100%; margin-top: 6px; padding: 8px 10px;
+  border: 1px solid #b8c8df; border-radius: 9px;
+  background: #f4f8ff; color: #1769e8;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.map-pick-button.on { background: #1769e8; color: #fff; }
+.map-pick-button:focus-visible, .map-pick-hint button:focus-visible {
+  outline: 2px solid #1769e8; outline-offset: 2px;
+}
+.map-pick-hint {
+  display: flex; align-items: center; gap: 7px; margin-top: 6px;
+  padding: 8px 9px; border-radius: 8px;
+  background: #eaf2ff; color: #24538e; font-size: 11px; line-height: 1.35;
+}
+.map-pick-hint span { min-width: 0; flex: 1; }
+.map-pick-hint button {
+  flex: none; border: 0; padding: 3px 0; background: transparent;
+  color: #1769e8; font-size: 11px; font-weight: 800; cursor: pointer;
+}
 .route-via-remove { margin-top: 7px; padding: 5px 9px; background: #f1f3f6; color: #667386; }
 .route-status { margin: 6px 0 10px; color: #566479; font-size: 12px; }
 .route-status-error { margin: 8px 0 0; }

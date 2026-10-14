@@ -7,9 +7,15 @@ import { PlaceSearch } from '../places/PlaceSearch'
 import { PlaceAddress } from '../places/PlaceAddress'
 import { destinationLabel, type DestinationSelection } from '../places/destination'
 
-export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation, simulationEnabled }: {
-  core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void
-  startSimulation: () => void; simulationEnabled: boolean
+export function PlanPanel({
+  core, planner, onClose, startGpsNav, startSimulation, simulationEnabled,
+  mapPickingStopId, onStartMapPick, onCancelMapPick,
+}: {
+  core: MapCore; planner: Planner; onClose: () => void
+  startGpsNav: () => void; startSimulation: () => void; simulationEnabled: boolean
+  mapPickingStopId: number | null
+  onStartMapPick: (stopId: number) => void
+  onCancelMapPick: () => void
 }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [stepsOpen, setStepsOpen] = useState(true)
@@ -34,6 +40,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation
   const { stops, routeError, routeSummary, profile } = planner
   const label = (i: number) => i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
   function editStop(id: number) {
+    onCancelMapPick()
     if (id === planner.stopsRef.current[0]?.id) {
       requestId.current++
       setLocating(false)
@@ -48,6 +55,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation
       address: destination.provider === 'local' ? destination.place.address : undefined,
     })
     if (!accepted) return
+    onCancelMapPick()
     setEditing(null)
     if (id === planner.stopsRef.current[0]?.id) setLocationError('')
   }
@@ -74,7 +82,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation
         {locationError && <p role="alert" className="sp-error route-status-error">{locationError}；可直接搜尋起點。</p>}
         <div className="route-stops">
           {stops.map((stop, i) => <div className={`route-stop route-stop-card${editing === stop.id ? ' is-editing' : ''}`} key={stop.id}
-            onKeyDown={event => { if (event.key === 'Escape') setEditing(null) }}>
+            onKeyDown={event => { if (event.key === 'Escape') { onCancelMapPick(); setEditing(null) } }}>
             {editing === stop.id ? <>
               <div className="route-stop-row route-stop-editing-head">
                 <span className={`route-stop-dot ${i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'via'}`} aria-hidden="true" />
@@ -85,7 +93,23 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation
                 inputId={`stop-${stop.id}`} initialQuery={stop.label === '我的位置' ? '' : stop.label ?? ''} searchLabel={`搜尋${label(i)}地點或地址`}
                 onSelect={destination => selectPlace(stop.id, destination)} onClear={() => {}}
                 onChooseStart={() => {}} />
-              {i === 0 && <button className="location-suggestion" onClick={() => { setEditing(null); void useCurrentStart() }}>⌖ 目前位置</button>}
+              <button
+                type="button"
+                className={`map-pick-button${mapPickingStopId === stop.id ? ' on' : ''}`}
+                aria-pressed={mapPickingStopId === stop.id}
+                onClick={() => mapPickingStopId === stop.id
+                  ? onCancelMapPick()
+                  : onStartMapPick(stop.id)}
+              >
+                {mapPickingStopId === stop.id ? '取消地圖選取' : '⌖ 在地圖上選取'}
+              </button>
+              {mapPickingStopId === stop.id && (
+                <div className="map-pick-hint" role="status">
+                  <span>請在地圖上點選{label(i)}；系統會吸附到附近道路。</span>
+                  <button type="button" onClick={onCancelMapPick}>取消</button>
+                </div>
+              )}
+              {i === 0 && <button className="location-suggestion" onClick={() => { onCancelMapPick(); setEditing(null); void useCurrentStart() }}>⌖ 目前位置</button>}
             </> : <>
               <div className="route-stop-row">
                 <span className={`route-stop-dot ${i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'via'}`} aria-hidden="true" />
@@ -100,10 +124,10 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimulation
               </div>
               {stop.placePosition && <PlaceAddress addressOnly place={{ address: stop.address, position: stop.placePosition }} />}
             </>}
-            {i > 0 && i < stops.length - 1 && <button className="mini route-via-remove" onClick={() => planner.removeStop(stop.id)}>移除停靠點</button>}
+            {i > 0 && i < stops.length - 1 && <button className="mini route-via-remove" onClick={() => { onCancelMapPick(); planner.removeStop(stop.id) }}>移除停靠點</button>}
           </div>)}
         </div>
-        <button className="sp-add route-add-stop" onClick={() => { planner.addVia(); setEditing(null) }}>＋ 新增停靠點</button>
+        <button className="sp-add route-add-stop" onClick={() => { onCancelMapPick(); planner.addVia(); setEditing(null) }}>＋ 新增停靠點</button>
       </div>
       <div className="route-preview-secondary">
         {routeError && <div role="alert" className="sp-error route-status-error">{routeError}</div>}

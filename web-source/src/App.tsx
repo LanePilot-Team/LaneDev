@@ -151,7 +151,8 @@ export default function App() {
   }
 
   return (
-    <div className="app" data-zone-tick={zoneTick} data-mode={mode}>
+    <div className="app" data-zone-tick={zoneTick} data-mode={mode}
+      data-map-picking={mapPickingStopId !== null}>
       <div ref={containerRef} className="map" />
 
       <div className={`map-actions${mode === 'drive' ? ' navigating' : ''}`}>
@@ -198,7 +199,9 @@ export default function App() {
       {mode === 'pick' && (
         <PlanPanel core={core} planner={planner} onClose={() => switchMode('browse')}
           startGpsNav={startGpsNav} startSimulation={startSimulation}
-          simulationEnabled={simulationEnabled} />
+          simulationEnabled={simulationEnabled} mapPickingStopId={mapPickingStopId}
+          onStartMapPick={setMapPickingStopId}
+          onCancelMapPick={() => setMapPickingStopId(null)} />
       )}
 
       {/* ── 路段資訊卡（瀏覽模式）── */}

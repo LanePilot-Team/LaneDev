@@ -6,6 +6,7 @@ import type { MapCore } from '../app/mapCore'
 import { PlaceSearch } from '../places/PlaceSearch'
 import { PlaceAddress } from '../places/PlaceAddress'
 import { destinationLabel, type DestinationSelection } from '../places/destination'
+import { nextRoutePanelCollapsed, routePanelToggleLabel } from './routePanelState'
 
 export function PlanPanel({
   core, planner, onClose, startGpsNav, startSimulation, simulationEnabled,
@@ -21,8 +22,12 @@ export function PlanPanel({
   const [stepsOpen, setStepsOpen] = useState(true)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
   const requestId = useRef(0)
   useEffect(() => () => { requestId.current++ }, [])
+  useEffect(() => {
+    if (mapPickingStopId === null) setPanelCollapsed(false)
+  }, [mapPickingStopId])
   async function useCurrentStart() {
     const id = ++requestId.current
     setLocating(true)
@@ -59,8 +64,12 @@ export function PlanPanel({
     setEditing(null)
     if (id === planner.stopsRef.current[0]?.id) setLocationError('')
   }
+  function startMapPick(id: number) {
+    onStartMapPick(id)
+    setPanelCollapsed(true)
+  }
   const routeStepsClass = routeSummary ? (stepsOpen ? ' route-steps-open' : ' route-steps-closed') : ''
-  return <section className={`side-panel route-search-panel route-preview-card${editing !== null ? ' is-searching' : ''}${routeStepsClass}`} aria-label="搜尋與路線規劃">
+  return <section className={`side-panel route-search-panel route-preview-card${editing !== null ? ' is-searching' : ''}${panelCollapsed ? ' is-collapsed' : ''}${routeStepsClass}`} aria-label="搜尋與路線規劃">
     <div className="sp-head route-preview-head">
       <div className="route-preview-title">
         <span className="sp-kicker">路線預覽</span>
@@ -74,9 +83,25 @@ export function PlanPanel({
           aria-label="機車" title="機車" aria-pressed={profile === 'moto'}
           onClick={() => profile !== 'moto' && planner.toggleProfile('pick')}>🛵 機車</button>
       </div>
+      <button
+        type="button"
+        className="route-panel-toggle"
+        aria-label={routePanelToggleLabel(panelCollapsed)}
+        aria-expanded={!panelCollapsed}
+        aria-controls="route-preview-body"
+        onClick={() => setPanelCollapsed(nextRoutePanelCollapsed(panelCollapsed))}
+      >
+        {panelCollapsed ? '⌄' : '⌃'}
+      </button>
       <button className="sp-close" aria-label="關閉路線" onClick={onClose}>✕</button>
     </div>
-    <div className="route-preview-body">
+    {panelCollapsed && mapPickingStopId !== null && (
+      <div className="route-preview-collapsed-status" role="status">
+        <span>地圖選取中</span>
+        <button type="button" onClick={onCancelMapPick}>取消</button>
+      </div>
+    )}
+    {!panelCollapsed && <div id="route-preview-body" className="route-preview-body">
       <div className="route-preview-primary">
         {locating && <p className="route-status" role="status">正在取得目前位置…</p>}
         {locationError && <p role="alert" className="sp-error route-status-error">{locationError}；可直接搜尋起點。</p>}
@@ -99,7 +124,7 @@ export function PlanPanel({
                 aria-pressed={mapPickingStopId === stop.id}
                 onClick={() => mapPickingStopId === stop.id
                   ? onCancelMapPick()
-                  : onStartMapPick(stop.id)}
+                  : startMapPick(stop.id)}
               >
                 {mapPickingStopId === stop.id ? '取消地圖選取' : '⌖ 在地圖上選取'}
               </button>
@@ -146,6 +171,6 @@ export function PlanPanel({
           <ManeuverList route={planner.routeRef.current} profile={profile} />
         </details>}
       </div>
-    </div>
+    </div>}
   </section>
 }

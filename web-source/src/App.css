@@ -460,6 +460,12 @@ body {
 .route-preview-title { min-width: 0; display: grid; gap: 2px; flex: 1; }
 .route-preview-head .sp-kicker { color: #1769e8; }
 .route-preview-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.route-panel-toggle {
+  flex: none; width: 28px; height: 28px; padding: 0;
+  border: none; border-radius: 8px; background: #eef1f5; color: #3d4a5c;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.route-panel-toggle:focus-visible { outline: 2px solid #1769e8; outline-offset: 2px; }
 .route-profile {
   display: flex; flex: none; align-items: center; gap: 0; height: 26px;
   padding: 0; border-radius: 7px; background: #eef2f7;
@@ -476,6 +482,19 @@ body {
 .route-preview-primary { flex: none; min-height: 0; }
 .route-preview-secondary { flex: none; min-height: 0; overflow: visible; }
 .route-preview-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: thin; }
+.route-preview-card.is-collapsed { max-height: none; padding-bottom: 10px; }
+.route-preview-card.is-collapsed .route-preview-head { margin-bottom: 0; border-bottom: none; }
+.route-preview-card.is-collapsed .route-profile { display: none; }
+.route-preview-collapsed-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 9px; border-radius: 8px; background: #eaf2ff;
+  color: #24538e; font-size: 11px; line-height: 1.3;
+}
+.route-preview-collapsed-status button {
+  flex: none; border: 0; padding: 3px 0; background: transparent;
+  color: #1769e8; font-size: 11px; font-weight: 800; cursor: pointer;
+}
+.route-preview-collapsed-status button:focus-visible { outline: 2px solid #1769e8; outline-offset: 2px; }
 .route-preview-secondary:empty { display: none; }
 .route-preview-secondary > .route-status-error { margin-top: 10px; }
 .route-preview-secondary .route-preview-summary { margin-top: 10px; }

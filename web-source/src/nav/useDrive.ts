@@ -55,6 +55,8 @@ export interface UseDriveParams {
   setMode: (m: Mode) => void
   mapRef: RefObject<MLMap | null>
   routeRef: RefObject<RouteResult | null>
+  /** 模擬可使用的路線；可能是正式嚴格路線，也可能是開發專用放寬路線。 */
+  simulationRouteRef: RefObject<RouteResult | null>
   graphRef: RefObject<RoadGraph | null>
   zonesRef: RefObject<Zone[]>
   /** 測速執法設置點（mapCore 載入的警政署開放資料）；空陣列＝沒有測速提示 */
@@ -311,7 +313,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   function startSimulation() {
-    const route = p.routeRef.current
+    const route = p.simulationRouteRef.current ?? p.routeRef.current
     const map = p.mapRef.current
     if (!simulationEnabled || !route || !map) return
     const session = ++sessionRef.current

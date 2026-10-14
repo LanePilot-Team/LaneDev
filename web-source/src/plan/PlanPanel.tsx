@@ -42,7 +42,9 @@ export function PlanPanel({
   useEffect(() => {
     if (!planner.stopsRef.current[0]?.pos) void useCurrentStart()
   }, [])
-  const { stops, routeError, routeSummary, profile } = planner
+  const { stops, routeError, routeSummary, simulationRouteSummary, routeNotice, profile } = planner
+  const previewSummary = routeSummary ?? simulationRouteSummary
+  const previewRoute = planner.simulationRouteRef.current
   const label = (i: number) => i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
   function editStop(id: number) {
     onCancelMapPick()
@@ -68,7 +70,7 @@ export function PlanPanel({
     onStartMapPick(id)
     setPanelCollapsed(true)
   }
-  const routeStepsClass = routeSummary ? (stepsOpen ? ' route-steps-open' : ' route-steps-closed') : ''
+  const routeStepsClass = previewSummary ? (stepsOpen ? ' route-steps-open' : ' route-steps-closed') : ''
   return <section className={`side-panel route-search-panel route-preview-card${editing !== null ? ' is-searching' : ''}${panelCollapsed ? ' is-collapsed' : ''}${routeStepsClass}`} aria-label="搜尋與路線規劃">
     <div className="sp-head route-preview-head">
       <div className="route-preview-title">
@@ -161,19 +163,20 @@ export function PlanPanel({
       </div>
       <div className="route-preview-secondary">
         {routeError && <div role="alert" className="sp-error route-status-error">{routeError}</div>}
-        {routeSummary && <div className="route-preview-summary">
-          <div className="route-preview-metrics"><span><b>{routeSummary.km.toFixed(1)}</b> 公里</span><span>約 {Math.max(1, Math.ceil(routeSummary.min))} 分鐘</span></div>
-          <button className="route-start-button" disabled={editing !== null || locating} onClick={startGpsNav}>
+        {routeNotice && <div role="status" className="route-status-note">{routeNotice}</div>}
+        {previewSummary && <div className="route-preview-summary">
+          <div className="route-preview-metrics"><span><b>{previewSummary.km.toFixed(1)}</b> 公里</span><span>約 {Math.max(1, Math.ceil(previewSummary.min))} 分鐘</span></div>
+          {routeSummary && planner.routeRef.current && <button className="route-start-button" disabled={editing !== null || locating} onClick={startGpsNav}>
             {editing !== null ? '請先選好地點' : '開始導航'}
-          </button>
-          {simulationEnabled && <button className="route-start-button simulation-start-button"
+          </button>}
+          {simulationEnabled && previewRoute && <button className="route-start-button simulation-start-button"
             disabled={editing !== null || locating} onClick={startSimulation}>
-            {editing !== null ? '請先選好地點' : '開始模擬導航'}
+            {editing !== null ? '請先選好地點' : routeSummary ? '開始模擬導航' : '開始模擬導航（放寬路線）'}
           </button>}
         </div>}
-        {routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
+        {previewRoute && <details className="route-steps" open={stepsOpen}
           onToggle={event => setStepsOpen(event.currentTarget.open)}><summary>路線步驟・向下滑動查看更多</summary>
-          <ManeuverList route={planner.routeRef.current} profile={profile} />
+          <ManeuverList route={previewRoute} profile={profile} />
         </details>}
       </div>
     </div>}

@@ -28,6 +28,8 @@ export type Profile = 'car' | 'moto'
 export type RouteFailureReason = 'no-projection' | 'unreachable' | 'lane-direction'
 
 export interface LaneRoutePolicy {
+  /** 僅開發模擬可使用道路連通但不符合車道箭頭的路線；正式 GPS 不應開啟。 */
+  allowLaneDirectionFallback?: boolean
   isTwoStage?: (input: {
     nodeId: number
     wayId: number
@@ -1028,7 +1030,10 @@ export class RoadGraph {
     }
     for (const goal of goals) {
       const roadOnly = this.routeToProjection(sA, goal, toP, profile, policy, false)
-      if (roadOnly) return { route: null, failure: 'lane-direction' }
+      if (roadOnly) {
+        if (policy.allowLaneDirectionFallback) return { route: roadOnly }
+        return { route: null, failure: 'lane-direction' }
+      }
     }
     return { route: null, failure: 'unreachable' }
   }

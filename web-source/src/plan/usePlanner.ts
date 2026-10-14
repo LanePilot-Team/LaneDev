@@ -4,7 +4,7 @@ import { useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 import {
   mergeRoutes, laneBand, laneChoiceAreas,
-  type RouteResult, type Maneuver, type Profile, type LaneRoutePolicy,
+  type RouteResult, type Maneuver, type Profile, type LaneRoutePolicy, type RouteFailureReason,
 } from '../core/graph'
 import { activeElevatedLayer } from '../core/elevated3d'
 import { annotateBays, annotateRightLanes } from '../core/turnbays'
@@ -28,8 +28,13 @@ export interface Planner {
   stopsRef: RefObject<Stop[]>
   activeStop: number | null
   routeRef: RefObject<RouteResult | null>
+  /** 正式 GPS 可用的嚴格路線；模擬放寬路線不會寫入這個 ref。 */
   routeSummary: { km: number; min: number } | null
+  /** 模擬要使用的路線；正常情況與 routeRef 相同，放寬情況則只有這裡有值。 */
+  simulationRouteRef: RefObject<RouteResult | null>
+  simulationRouteSummary: { km: number; min: number } | null
   routeError: string | null
+  routeNotice: string | null
   profile: Profile
   profileRef: RefObject<Profile>
   routePolicy: LaneRoutePolicy
@@ -69,8 +74,11 @@ export function usePlanner(core: MapCore): Planner {
   const setActiveStop = (id: number | null) => { activeStopRef.current = id; setActiveStopState(id) }
 
   const routeRef = useRef<RouteResult | null>(null)
+  const simulationRouteRef = useRef<RouteResult | null>(null)
   const [routeSummary, setRouteSummary] = useState<{ km: number; min: number } | null>(null)
+  const [simulationRouteSummary, setSimulationRouteSummary] = useState<{ km: number; min: number } | null>(null)
   const [routeError, setRouteError] = useState<string | null>(null)
+  const [routeNotice, setRouteNotice] = useState<string | null>(null)
   const [profile, setProfileState] = useState<Profile>('car')
   const profileRef = useRef<Profile>('car')
   const dragStopRef = useRef<number | null>(null) // 停靠點拖曳排序：拖曳中的 stop id
@@ -131,10 +139,13 @@ export function usePlanner(core: MapCore): Planner {
 
   function routeFromStops() {
     setRouteError(null)
+    setRouteNotice(null)
     const pts = stopsRef.current.map((s) => s.pos)
     const g = core.graphRef.current
     if (!g || pts.some((p) => !p)) { clearRouteLine(); return }
     const legs: RouteResult[] = []
+    let failedAt = -1
+    let failureReason: RouteFailureReason | undefined
     for (let i = 0; i < pts.length - 1; i++) {
       const result = g.routeDetailed(
         pts[i]!,
@@ -143,16 +154,62 @@ export function usePlanner(core: MapCore): Planner {
         routePolicyRef.current,
       )
       if (!result.route) {
-        clearRouteLine()
-        setRouteError(routeFailureText(result.failure, i + 1))
-        return
+        failedAt = i
+        failureReason = result.failure
+        break
       }
       legs.push(result.route)
     }
+    if (failedAt >= 0) {
+      if (failureReason !== 'lane-direction') {
+        clearRouteLine()
+        setRouteError(routeFailureText(failureReason, failedAt + 1))
+        return
+      }
+
+      // 正式 GPS 保留嚴格車道方向；只有開發模擬另算一條道路連通路線。
+      const relaxedPolicy: LaneRoutePolicy = {
+        ...routePolicyRef.current,
+        allowLaneDirectionFallback: true,
+      }
+      const relaxedLegs: RouteResult[] = []
+      for (let i = 0; i < pts.length - 1; i++) {
+        const result = g.routeDetailed(
+          pts[i]!,
+          pts[i + 1]!,
+          profileRef.current,
+          relaxedPolicy,
+        )
+        if (!result.route) {
+          clearRouteLine()
+          setRouteError(routeFailureText(result.failure, i + 1))
+          return
+        }
+        relaxedLegs.push(result.route)
+      }
+      const route = relaxedLegs.length > 1 ? mergeRoutes(relaxedLegs) : relaxedLegs[0]
+      annotateTwoStage(route)
+      routeRef.current = null
+      simulationRouteRef.current = route
+      setRouteSummary(null)
+      setSimulationRouteSummary({ km: route.lengthM / 1000, min: route.timeS / 60 })
+      setRouteNotice('此路線放寬車道方向限制，僅供開發模擬；正式 GPS 導航不可用')
+      renderRoute(route)
+      return
+    }
+
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
     annotateTwoStage(route)
     routeRef.current = route
+    simulationRouteRef.current = route
+    setSimulationRouteSummary(null)
+    setRouteNotice(null)
     // 路線帶偏移到實際行駛車道（車道級導航的視覺核心）。
+    setRouteSummary({ km: route.lengthM / 1000, min: route.timeS / 60 })
+    renderRoute(route)
+  }
+
+  function renderRoute(route: RouteResult) {
     // 高架段交給 elevated3d 畫 3D 絲帶（貼橋面），MapLibre 只畫平面段
     const band = laneBand(route)
     const choices = laneChoiceAreas(route)
@@ -178,7 +235,6 @@ export function usePlanner(core: MapCore): Planner {
       (acc, c) => acc.extend(c as [number, number]),
       new maplibregl.LngLatBounds(route.coords[0], route.coords[0]))
     core.mapRef.current!.fitBounds(b, { padding: { top: Math.min(300, core.mapRef.current!.getContainer().clientHeight * 0.45), bottom: 100, left: 35, right: 35 }, pitch: 0, bearing: 0 })
-    setRouteSummary({ km: route.lengthM / 1000, min: route.timeS / 60 })
   }
 
   function snapRoutePoint(
@@ -206,7 +262,10 @@ export function usePlanner(core: MapCore): Planner {
 
   function clearRouteLine() {
     routeRef.current = null
+    simulationRouteRef.current = null
     setRouteSummary(null)
+    setSimulationRouteSummary(null)
+    setRouteNotice(null)
     activeElevatedLayer()?.setRoute(null)
     if (core.mapRef.current) core.src('route').setData(EMPTY_FC as never)
   }
@@ -394,7 +453,8 @@ export function usePlanner(core: MapCore): Planner {
   }
 
   return {
-    stops, stopsRef, activeStop, routeRef, routeSummary, routeError,
+    stops, stopsRef, activeStop, routeRef, routeSummary, simulationRouteRef,
+    simulationRouteSummary, routeError, routeNotice,
     profile, profileRef, routePolicy: routePolicyRef.current,
     dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
     startPick, startPlacePick, startPlaceFromCurrentLocation,

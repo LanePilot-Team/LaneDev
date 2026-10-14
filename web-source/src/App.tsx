@@ -64,7 +64,8 @@ export default function App() {
     following, recenter,
   } = useDrive({
     mode, setMode,
-    mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
+    mapRef: core.mapRef, routeRef: planner.routeRef, simulationRouteRef: planner.simulationRouteRef,
+    graphRef: core.graphRef,
     zonesRef: core.zonesRef, speedCamerasRef: core.speedCamerasRef,
     profileRef: planner.profileRef, stopsRef: planner.stopsRef,
     routePolicy: planner.routePolicy,

@@ -550,6 +550,10 @@ body {
 .route-via-remove { margin-top: 7px; padding: 5px 9px; background: #f1f3f6; color: #667386; }
 .route-status { margin: 6px 0 10px; color: #566479; font-size: 12px; }
 .route-status-error { margin: 8px 0 0; }
+.route-status-note {
+  margin-top: 10px; padding: 8px 10px; border-radius: 8px;
+  background: #fff8df; color: #765a00; font-size: 12px; line-height: 1.45;
+}
 .route-add-stop { margin-top: 8px; padding: 8px; }
 .route-preview-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f4; }
 .route-preview-metrics {

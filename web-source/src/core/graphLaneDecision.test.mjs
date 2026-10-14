@@ -80,6 +80,20 @@ test('可靠車道全部不允許右轉時回報 lane-direction', () => {
   assert.equal(result.failure, 'lane-direction')
 })
 
+test('模擬模式可在車道方向限制不符時使用道路連通路線', () => {
+  const graph = new RoadGraph([
+    road(10, [1, 2], [[120, 22], junction], ['through', 'through']),
+    road(20, [2, 3], [junction, [120.001, 21.999]], ['through']),
+  ])
+
+  const result = graph.routeDetailed(start, southGoal, 'car', {
+    allowLaneDirectionFallback: true,
+  })
+
+  assert.ok(result.route)
+  assert.equal(result.failure, undefined)
+})
+
 test('較短路徑的轉向不合法時改走車道方向合法的繞路', () => {
   const merge = [120.001, 21.999]
   const graph = new RoadGraph([

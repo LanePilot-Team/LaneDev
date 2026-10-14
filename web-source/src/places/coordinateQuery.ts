@@ -1,10 +1,10 @@
 export type NavigationPosition = [number, number]
 
-const COORDINATE_PAIR = /^\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*[,，]\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/
+const COORDINATE_QUERY = /^\s*(?:地圖選取位置\s*[·•:：]\s*)?([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*[,，]\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/
 
 /** Parse a coordinate pair and normalize it to the app's [longitude, latitude] order. */
 export function parseCoordinateQuery(input: string): NavigationPosition | null {
-  const match = COORDINATE_PAIR.exec(input)
+  const match = COORDINATE_QUERY.exec(input)
   if (!match) return null
   const first = Number(match[1])
   const second = Number(match[2])

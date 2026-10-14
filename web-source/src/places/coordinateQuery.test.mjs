@@ -10,6 +10,13 @@ test('也接受經度、緯度順序', () => {
   assert.deepEqual(parseCoordinateQuery('120.30120, 22.62730'), [120.3012, 22.6273])
 })
 
+test('可解析地圖選取位置產生的座標標籤', () => {
+  assert.deepEqual(
+    parseCoordinateQuery('地圖選取位置 · 22.71558, 120.32561'),
+    [120.32561, 22.71558],
+  )
+})
+
 test('一般地點名稱不會被誤判為座標', () => {
   assert.equal(parseCoordinateQuery('高雄大學'), null)
 })

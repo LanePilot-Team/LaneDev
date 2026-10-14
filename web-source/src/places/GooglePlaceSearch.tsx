@@ -28,8 +28,14 @@ interface ComponentState {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
-  return 'Google Places 暫時無法載入'
+  const message = error instanceof Error ? error.message.trim() : ''
+  if (/REQUEST_DENIED|not authorized|ApiNotActivated|billing|referer|referrer/i.test(message)) {
+    return 'Google Places 請求被拒絕：請確認已啟用 Maps JavaScript API 與 Places API (New)，且 API Key 的限制允許 WebView。'
+  }
+  if (/could not load|載入器|network|failed to fetch/i.test(message)) {
+    return 'Google Maps 載入失敗：請確認手機網路、API Key 與 Maps JavaScript API 設定。'
+  }
+  return message ? `Google Places 搜尋失敗：${message}` : 'Google Places 暫時無法載入'
 }
 
 export const GooglePlaceSearch = forwardRef<
@@ -41,21 +47,17 @@ export const GooglePlaceSearch = forwardRef<
   onSelect,
   onStateChange,
 }, forwardedRef) {
-  const hostRef = useRef<HTMLDivElement>(null)
   const mountedRef = useRef(false)
-  const initializePromiseRef = useRef<Promise<void> | null>(null)
-  const searchElementRef = useRef<google.maps.places.PlaceSearchElement | null>(null)
-  const requestElementRef = useRef<google.maps.places.PlaceTextSearchRequestElement | null>(null)
+  const initializePromiseRef = useRef<Promise<typeof google.maps.places.Place> | null>(null)
+  const placeClassRef = useRef<typeof google.maps.places.Place | null>(null)
   const submittedQueryRef = useRef('')
-  const cleanupListenersRef = useRef<(() => void) | null>(null)
   const onSelectRef = useRef(onSelect)
   const onStateChangeRef = useRef(onStateChange)
-  const selectableRef = useRef(selectable)
+  const [places, setPlaces] = useState<google.maps.places.Place[]>([])
   const [componentState, setComponentState] = useState<ComponentState>({ status: 'idle' })
 
   onSelectRef.current = onSelect
   onStateChangeRef.current = onStateChange
-  selectableRef.current = selectable
 
   function updateState(status: GooglePlaceSearchState, message?: string) {
     if (!mountedRef.current) return
@@ -63,56 +65,17 @@ export const GooglePlaceSearch = forwardRef<
     onStateChangeRef.current?.(status, message)
   }
 
-  async function initialize() {
-    if (searchElementRef.current && requestElementRef.current) return
+  async function initialize(): Promise<typeof google.maps.places.Place> {
+    if (placeClassRef.current) return placeClassRef.current
     if (initializePromiseRef.current) return initializePromiseRef.current
 
     initializePromiseRef.current = (async () => {
       const library = await loadGooglePlacesLibrary()
-      const host = hostRef.current
-      if (!mountedRef.current || !host) throw new Error('Google 搜尋容器尚未就緒')
-
-      const searchElement = new library.PlaceSearchElement({
-        attributionPosition: 'BOTTOM',
-        orientation: 'VERTICAL',
-        selectable: selectableRef.current,
-        truncationPreferred: true,
-      })
-      const contentConfig = new library.PlaceContentConfigElement()
-      const address = new library.PlaceAddressElement()
-      const attribution = new library.PlaceAttributionElement({
-        lightSchemeColor: 'GRAY',
-        darkSchemeColor: 'WHITE',
-      })
-      const request = new library.PlaceTextSearchRequestElement({
-        maxResultCount: 5,
-      })
-
-      // Keep required attribution and request only the optional address content.
-      contentConfig.append(address, attribution)
-      searchElement.append(contentConfig, request)
-
-      const handleLoad: EventListener = () => updateState('ready')
-      const handleError: EventListener = () => {
-        updateState('error', 'Google Places 搜尋失敗，請稍後重試')
+      if (typeof library.Place?.searchByText !== 'function') {
+        throw new Error('目前的 Google Maps JavaScript API 不支援 Text Search (New)')
       }
-      const handleSelect: EventListener = (event) => {
-        const place = (event as google.maps.places.PlaceSelectEvent).place
-        onSelectRef.current(place, submittedQueryRef.current)
-      }
-
-      searchElement.addEventListener('gmp-load', handleLoad)
-      searchElement.addEventListener('gmp-error', handleError)
-      searchElement.addEventListener('gmp-select', handleSelect)
-      cleanupListenersRef.current = () => {
-        searchElement.removeEventListener('gmp-load', handleLoad)
-        searchElement.removeEventListener('gmp-error', handleError)
-        searchElement.removeEventListener('gmp-select', handleSelect)
-      }
-
-      host.replaceChildren(searchElement)
-      searchElementRef.current = searchElement
-      requestElementRef.current = request
+      placeClassRef.current = library.Place
+      return library.Place
     })().catch((error: unknown) => {
       initializePromiseRef.current = null
       throw error
@@ -131,31 +94,32 @@ export const GooglePlaceSearch = forwardRef<
 
       updateState('loading')
       try {
-        await initialize()
-        const request = requestElementRef.current
-        if (!request) throw new Error('Google 搜尋元件尚未就緒')
-
+        const Place = await initialize()
+        const request: google.maps.places.SearchByTextRequest = {
+          textQuery: submittedQuery,
+          fields: ['id', 'displayName', 'formattedAddress', 'location'],
+          maxResultCount: 5,
+          language: 'zh-TW',
+          region: 'TW',
+        }
         if (center && center.every(Number.isFinite)) {
           request.locationBias = { lng: center[0], lat: center[1] }
-        } else {
-          request.locationBias = null
         }
 
-        // 相同關鍵字也允許由使用者明確重新搜尋。
-        if (request.textQuery === submittedQuery) request.textQuery = null
+        const response = await Place.searchByText(request)
+        if (!mountedRef.current) return
         submittedQueryRef.current = submittedQuery
-        request.textQuery = submittedQuery
+        const nextPlaces = Array.isArray(response.places) ? response.places : []
+        setPlaces(nextPlaces)
+        updateState('ready', nextPlaces.length ? undefined : `找不到符合「${submittedQuery}」的 Google 地點`)
       } catch (error) {
+        setPlaces([])
         updateState('error', errorMessage(error))
       }
     },
     reset() {
       submittedQueryRef.current = ''
-      const request = requestElementRef.current
-      if (request) {
-        request.textQuery = null
-        request.locationBias = null
-      }
+      setPlaces([])
       updateState('idle')
     },
   }))
@@ -164,22 +128,41 @@ export const GooglePlaceSearch = forwardRef<
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      cleanupListenersRef.current?.()
-      cleanupListenersRef.current = null
-      searchElementRef.current = null
-      requestElementRef.current = null
+      placeClassRef.current = null
       initializePromiseRef.current = null
-      hostRef.current?.replaceChildren()
     }
   }, [])
 
-  useEffect(() => {
-    if (searchElementRef.current) searchElementRef.current.selectable = selectable
-  }, [selectable])
-
   return (
     <div className="google-place-search" hidden={!visible}>
-      <div ref={hostRef} className="google-place-search-results" />
+      <div className="google-place-search-results" role="listbox" aria-label="Google Places 搜尋結果">
+        {componentState.status === 'ready' && places.length === 0 && (
+          <div className="place-message">{componentState.message || '找不到符合條件的 Google 地點'}</div>
+        )}
+        {places.map((place, index) => {
+          const name = place.displayName?.trim() || '未命名地點'
+          const address = place.formattedAddress?.trim() || '地址未提供'
+          return (
+            <button
+              type="button"
+              role="option"
+              aria-selected={false}
+              aria-label={`${name}，${address}`}
+              className="place-result"
+              key={`${place.id || 'google-place'}-${index}`}
+              disabled={!selectable}
+              onClick={() => onSelectRef.current(place, submittedQueryRef.current)}
+            >
+              <span className="place-pin" aria-hidden="true">●</span>
+              <span className="place-result-copy">
+                <b>{name}</b>
+                <small className="place-address">{address}</small>
+              </span>
+            </button>
+          )
+        })}
+        {places.length > 0 && <div className="place-attribution">Powered by Google</div>}
+      </div>
       <div className={`google-place-search-status ${componentState.status}`}
         role={componentState.status === 'error' ? 'alert' : 'status'}
         aria-live="polite">

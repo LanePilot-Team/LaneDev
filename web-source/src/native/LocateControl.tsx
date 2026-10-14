@@ -57,12 +57,17 @@ export function LocateControl({ core, loading, navigating }: {
   if (navigating) return null
   return <div className="client-locate">
     {error && <p role="alert">{error}</p>}
-    <button disabled={busy || loading} onClick={locate}>
+    <button
+      type="button"
+      disabled={busy || loading}
+      onClick={locate}
+      aria-label={busy ? '定位中' : '目前位置'}
+      title={busy ? '定位中' : '目前位置'}
+    >
       <svg className="locate-icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="4" />
         <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
       </svg>
-      <span>{busy ? '定位中…' : '目前位置'}</span>
     </button>
   </div>
 }

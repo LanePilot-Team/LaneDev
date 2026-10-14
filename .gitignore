@@ -94,6 +94,7 @@ web-source/dist/
 web-source/*.tsbuildinfo
 web-source/.runtime-build/
 web-source/public/data/runtime/
+web-source/.env.local
 web-source.zip
 
 # The compiled LaneDev assets are deliberately tracked: this repository must

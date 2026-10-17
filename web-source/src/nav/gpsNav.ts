@@ -10,7 +10,8 @@ import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../
 import { surfaceHeightAt } from '../core/elevated3d'
 import type { DriveState } from './drive'
 import type { GpsDisplayFix } from './gpsAnimation'
-import { matchToRoute, smoothBearing, type MatchResult } from './mapMatch'
+import { ACCURACY_TRUST_M, matchToRoute, smoothBearing, type MatchResult } from './mapMatch'
+import { bearing as bearingBetween } from '../core/geo'
 import {
   HIGH_ACCURACY_POSITION_OPTIONS,
   geolocationErrorMessage,
@@ -18,11 +19,26 @@ import {
 } from './geolocation'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
-const OFF_ROUTE_THRESHOLD_M = 60
+const OFF_ROUTE_THRESHOLD_M = 50
 /** 連續這麼多次 GPS fix 都偏離才觸發 reroute（避免單筆抖動誤判，約 1 fix/秒） */
 const REROUTE_AFTER_FIXES = 3
-/** 剛 reroute 完的冷卻時間（毫秒），避免反覆重畫 */
-const REROUTE_COOLDOWN_MS = 10000
+/**
+ * 兩次 reroute 的最短間隔（毫秒），避免反覆重畫。重新規劃會換一個新的 GpsDriver，
+ * 所以時間戳記放在呼叫端傳進來的 RerouteClock，跨 driver 才真的生效。
+ */
+const REROUTE_COOLDOWN_MS = 5000
+/**
+ * 畫面改跟實際定位的門檻（公尺）：原始定位離路線帶超過 max(這個值, 精度 + 10)，
+ * 車和鏡頭就不再貼藍線，改畫在實際位置（跟台北版 mvp 一樣，偏了就看得到自己偏到哪）。
+ * 低於這個值仍貼路線帶——GPS 誤差 10~20m 會把車畫到對向車道。
+ */
+const FREE_ENTER_M = 30
+/** 回到這個距離內才重新貼回路線帶（遲滯，免得在門檻附近來回切換） */
+const FREE_EXIT_M = 18
+/** 偏離時顯示座標的平滑係數（越大越跟手）——只濾掉單筆抖動，不外推 */
+const FREE_POS_ALPHA = 0.6
+/** 偏離時兩筆顯示位置至少差這麼多（公尺）才用位移方向當車頭 */
+const FREE_HEADING_MIN_MOVE_M = 3
 /** 抵達判定：GPS 貼合誤差較大，門檻比模擬駕駛（5m）寬鬆 */
 const ARRIVE_THRESHOLD_M = 25
 /** 「即將抵達」提示範圍（公尺）：HUD 提早換成抵達卡，不要在終點才突然跳出來 */
@@ -40,6 +56,9 @@ const DIRECT_ARRIVE_M = 30
 
 interface WakeLockSentinelLike { release(): Promise<void> }
 
+/** 跨 GpsDriver 共用的 reroute 計時（重新規劃後新 driver 要沿用上一次的時間） */
+export interface RerouteClock { lastTs: number }
+
 /** 路線帶里程 → route 里程（帶的取樣點都帶著自己的 route 里程，線性內插即可） */
 function routeDistAt(band: LaneBandResult, bandCum: number[], bandDist: number): number {
   let i = 1
@@ -53,7 +72,10 @@ export class GpsDriver {
   private watchId: number | null = null
   private wakeLock: WakeLockSentinelLike | null = null
   private offRouteCount = 0
-  private lastRerouteTs = 0
+  /** 目前畫面是否改跟實際定位（偏離路線帶） */
+  private free = false
+  /** 偏離時平滑後的顯示座標 */
+  private freePos: [number, number] | null = null
   private lastFixTs = 0
   private lastSpeedMps = 0
   private lastFixPos: [number, number] | null = null
@@ -73,6 +95,7 @@ export class GpsDriver {
     /** 連續偏離超過門檻時呼叫，帶目前定位，App 負責重新規劃 */
     private onOffRoute: (pos: [number, number]) => void,
     private onError: (msg: string) => void,
+    private rerouteClock: RerouteClock = { lastTs: 0 },
   ) {
     this.band = laneBand(route)
     this.bandCum = cumulative(this.band.coords)
@@ -119,6 +142,7 @@ export class GpsDriver {
       elapsedS,
       speedMps: this.lastSpeedMps,
     })
+    const prevRaw = this.lastFixPos
     this.lastFixTs = now
     this.lastFixPos = here
     this.lastSpeedMps = speedMps ?? this.lastSpeedMps
@@ -131,19 +155,28 @@ export class GpsDriver {
       return
     }
 
+    const accuracyM = Number.isFinite(accuracy) ? accuracy : null
+    const speedKmh = (speedMps ?? 0) * 3.6
+    const enterM = Math.max(FREE_ENTER_M, (accuracyM ?? 0) + 10)
+    this.free = this.free ? match.offRouteM > FREE_EXIT_M : match.offRouteM > enterM
+
     if (match.offRouteM > OFF_ROUTE_THRESHOLD_M) {
       this.offRouteCount += 1
       if (this.offRouteCount >= REROUTE_AFTER_FIXES &&
-        now - this.lastRerouteTs > REROUTE_COOLDOWN_MS) {
-        this.lastRerouteTs = now
+        now - this.rerouteClock.lastTs > REROUTE_COOLDOWN_MS) {
+        this.rerouteClock.lastTs = now
+        this.emitFree(here, prevRaw, speedKmh, accuracyM, now)
         this.onOffRoute(here)
+        return
       }
-      return // 偏離路線時不前進進度，避免貼合點亂跳
+    } else {
+      this.offRouteCount = 0
     }
-    this.offRouteCount = 0
+    // 偏離路線帶：不推進路線進度（貼合點會亂跳），但車和鏡頭跟著實際定位走
+    if (this.free) { this.emitFree(here, prevRaw, speedKmh, accuracyM, now); return }
+    this.freePos = null
     this.match = match
 
-    const speedKmh = (speedMps ?? 0) * 3.6
     // 方位角：貼合可信時用路線帶切線（比裝置 heading 穩得多，低速也不會亂轉），
     // 貼合不可信時 matchToRoute 已經沿用上一筆方位，這裡只再做顯示平滑。
     this.smoothBrg = smoothBearing(this.smoothBrg,
@@ -187,6 +220,51 @@ export class GpsDriver {
       arriving,
       gpsWeak: match.quality === 'weak',
     }, { distanceM: match.distM, timestamp: now, bearing: this.smoothBrg, elevM })
+    if (arrived) {
+      this.finished = true
+      this.stop()
+    }
+  }
+
+  /**
+   * 偏離時的畫面：位置用（輕度平滑的）實際定位，車頭用位移方向；路線進度、下一個動作
+   * 沿用最後一筆貼合狀態，等 reroute 換上新路線再更新。終點常在路線外（停車場、巷內），
+   * 所以直線距離抵達判定在這裡也要做。
+   */
+  private emitFree(
+    here: [number, number], prevRaw: [number, number] | null,
+    speedKmh: number, accuracyM: number | null, now: number,
+  ) {
+    const prev = this.freePos
+    const pos: [number, number] = prev
+      ? [prev[0] + (here[0] - prev[0]) * FREE_POS_ALPHA, prev[1] + (here[1] - prev[1]) * FREE_POS_ALPHA]
+      : here
+    this.freePos = pos
+    // 車頭用原始定位之間的位移方向（不能用「貼合點 → 實際點」，那是橫向的）
+    const moved = !!prevRaw && haversine(prevRaw, here) >= FREE_HEADING_MIN_MOVE_M
+    const heading = moved ? bearingBetween(prevRaw!, here)
+      : speedKmh < 5 ? deviceHeading() ?? this.smoothBrg ?? 0 : this.smoothBrg ?? 0
+    this.smoothBrg = smoothBearing(this.smoothBrg, heading)
+    const arrived = haversine(here, this.destination) < DIRECT_ARRIVE_M
+    const base: DriveState = this.lastState ?? {
+      pos, bearing: this.smoothBrg, speedKmh, traveledM: 0, remainM: this.route.lengthM,
+      remainS: this.route.timeS, next: this.route.maneuvers[0] ?? null,
+      next2: this.route.maneuvers[1] ?? null, nextDistM: this.route.maneuvers[0]?.distM ?? 0,
+      arrived: false,
+    }
+    this.emit({
+      ...base,
+      pos,
+      bearing: this.smoothBrg,
+      speedKmh,
+      elevM: 0,
+      roadLaneGuidance: undefined,
+      arrived,
+      arriving: false,
+      offRoute: !arrived,
+      // 偏離時貼合品質必然是 weak（離帶太遠），訊號弱只看精度本身
+      gpsWeak: accuracyM !== null && accuracyM > ACCURACY_TRUST_M,
+    }, { distanceM: this.match?.distM ?? 0, timestamp: now, bearing: this.smoothBrg, elevM: 0, pos })
     if (arrived) {
       this.finished = true
       this.stop()

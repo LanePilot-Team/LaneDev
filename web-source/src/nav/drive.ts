@@ -22,6 +22,8 @@ export interface DriveState {
   arriving?: boolean
   /** 這筆定位精度不足以分辨車道／方向（只有 GPS 導航會設）：HUD 標示訊號弱 */
   gpsWeak?: boolean
+  /** 已偏離路線帶（只有 GPS 導航會設）：車畫在實際定位上，路線進度暫停；離得夠遠會自動重新規劃 */
+  offRoute?: boolean
   /** 目前所在道路名（span.road）——HUD 底部列顯示；detour 暫時路線可能沒有 */
   roadName?: string
   /** 目前行向的車道數/轉向真值——HUD 車道列隨所在路段即時更新 */

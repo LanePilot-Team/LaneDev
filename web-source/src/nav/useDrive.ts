@@ -14,7 +14,7 @@ import {
 import { activeElevatedLayer } from '../core/elevated3d'
 import type { DriveState } from './drive'
 import { clientState, ensureLocation, nativeCommand } from '../native/client'
-import { GpsDriver } from './gpsNav'
+import { GpsDriver, type RerouteClock } from './gpsNav'
 import { GpsAnimation } from './gpsAnimation'
 import { VehicleModelLayer } from '../core/models3d'
 import { angleDelta, cumulative } from '../core/geo'
@@ -101,6 +101,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const sessionRef = useRef(0)
   const stopVisualRef = useRef<(() => void) | null>(null)
   const displayRef = useRef<{ pos: [number, number]; bearing: number; elevM: number } | null>(null)
+  /** reroute 冷卻計時：重新規劃會換新的 GpsDriver，計時要放在這裡才跨 driver 生效 */
+  const rerouteClockRef = useRef<RerouteClock>({ lastTs: 0 })
   const cameraResumeAtRef = useRef(0)
   useEffect(() => {
     const onZoom = () => {
@@ -275,7 +277,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
     stopVisualRef.current?.()
+    // 重新規劃接續時，從上一條路線最後畫在畫面上的位置補間到新路線，車不瞬移
+    const lastDisplay = resume ? displayRef.current : null
     displayRef.current = null
+    if (!resume) rerouteClockRef.current = { lastTs: 0 }
     let animation: GpsAnimation
     let frame = 0
     let stopped = false
@@ -323,8 +328,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       },
       (pos) => rerouteFrom(pos),
       (msg) => { freeze(); setGpsMsg(msg) },
+      rerouteClockRef.current,
     )
     animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum)
+    if (lastDisplay) animation.seed(lastDisplay.pos, lastDisplay.bearing, lastDisplay.elevM)
     gpsDriverRef.current = gps
     gps.start()
   }

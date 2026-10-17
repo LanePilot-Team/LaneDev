@@ -212,7 +212,8 @@ export function DriveHUD({
 
       {/* ── GPS 精度不足：位置還在畫，但先講清楚它現在不準 ── */}
       {gpsMsg && <div role="alert" className="gps-weak">{gpsMsg}</div>}
-      {!gpsMsg && drive.gpsWeak && <div className="gps-weak">GPS 訊號較弱，位置可能不準</div>}
+      {!gpsMsg && drive.offRoute && <div className="gps-weak">已偏離路線</div>}
+      {!gpsMsg && !drive.offRoute && drive.gpsWeak && <div className="gps-weak">GPS 訊號較弱，位置可能不準</div>}
 
       {/* ── 測速照相提示 ── */}
       {cameraAlert && <SpeedCameraCard alert={cameraAlert} />}

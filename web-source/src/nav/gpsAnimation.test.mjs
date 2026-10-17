@@ -60,3 +60,43 @@ test('stationary fixes do not create a perpetual render loop', () => {
   a.push(fix(5, 2000), 1000)
   assert.equal(a.sample(1016).moving, false)
 })
+
+test('off-route fixes interpolate straight between real positions, not along the route', () => {
+  const a = new GpsAnimation(coords, cum)
+  a.push(fix(0, 1000), 0)
+  const off = [120.3, 22.70005]
+  a.push({ ...fix(0, 2000), pos: off }, 1000)
+  const mid = a.sample(1500)
+  assert.ok(Math.abs(mid.pos[1] - 22.700025) < 1e-9)
+  assert.equal(mid.moving, true)
+  assert.deepEqual(a.sample(5000).pos, off)
+  // 停在路線外不會一直重畫
+  a.push({ ...fix(0, 3000), pos: off }, 5000)
+  assert.equal(a.sample(5016).moving, false)
+})
+
+test('rejoining the route blends from the off-route position instead of jumping', () => {
+  const a = new GpsAnimation(coords, cum)
+  const off = [120.30005, 22.70004]
+  a.push({ ...fix(0, 1000), pos: off }, 0)
+  a.push(fix(5, 2000), 1000)
+  assert.deepEqual(a.sample(1000).pos, off)
+  assert.ok(a.sample(1500).pos[1] > coords[0][1])
+})
+
+test('seed blends from the previous route display position on reroute', () => {
+  const a = new GpsAnimation(coords, cum)
+  const last = [120.29995, 22.70002]
+  a.seed(last, 90, 0)
+  a.push(fix(0, 5000), 100)
+  assert.deepEqual(a.sample(100).pos, last)
+  assert.equal(a.sample(400).moving, true)
+  assert.deepEqual(a.sample(800).pos, coords[0])
+})
+
+test('off-route jump beyond 120 m snaps instead of animating across the city', () => {
+  const a = new GpsAnimation(coords, cum)
+  a.push({ ...fix(0, 1000), pos: [120.3, 22.7] }, 0)
+  a.push({ ...fix(0, 2000), pos: [120.31, 22.7] }, 1000)
+  assert.deepEqual(a.sample(1000).pos, [120.31, 22.7])
+})

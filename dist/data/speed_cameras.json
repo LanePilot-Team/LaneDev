@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-11T06:42:43.163Z",
+  "source": {
+    "dataset": "測速執法設置點（data.gov.tw dataset 7320）",
+    "agency": "內政部警政署",
+    "license": "政府資料開放授權條款第 1 版",
+    "licenseUrl": "https://data.gov.tw/license",
+    "url": "https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/EA5E6FCD-B82D-43B7-A5CF-E9893253187E/resource/6D874102-9EB0-4C64-A64C-87A1ACE1D573/download",
+    "fetchedAt": "2026-08-11T06:42:43.111Z"
+  },
+  "districts": [
+    "楠梓區",
+    "左營區"
+  ],
+  "cameras": [
+    {
+      "id": "npa:dff4f2c66eb7",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.30761,
+        22.68351
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "大中高架道路文川匝道口",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "東向西",
+      "headings": [
+        270
+      ],
+      "speedLimitKph": 60
+    },
+    {
+      "id": "npa:be7ea5c62bc3",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.30621,
+        22.684856
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "大中高架道路華夏匝道口",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "西向東",
+      "headings": [
+        90
+      ],
+      "speedLimitKph": 60
+    },
+    {
+      "id": "npa:879325940380",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.28896,
+        22.669052
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "左營高架橋(中華陸橋)往北下橋處",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "南向北",
+      "headings": [
+        0
+      ],
+      "speedLimitKph": 40
+    },
+    {
+      "id": "npa:48755854dad0",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.31906,
+        22.679394
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "左營區民族一路/大中一路口",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "北向南",
+      "headings": [
+        180
+      ],
+      "speedLimitKph": 60
+    },
+    {
+      "id": "npa:c79b56c857eb",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.28276,
+        22.678333
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "左營區先鋒路293號對面",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "南向北",
+      "headings": [
+        0
+      ],
+      "speedLimitKph": 40
+    },
+    {
+      "id": "npa:baec3789eba7",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.29237,
+        22.702114
+      ],
+      "cityName": "高雄市",
+      "districtName": "左營區",
+      "address": "左營區軍校路國軍高雄總醫院左營分院前",
+      "jurisdiction": "高雄市政府警察局 / 左營分局",
+      "directionText": "北向南",
+      "headings": [
+        180
+      ],
+      "speedLimitKph": 50
+    },
+    {
+      "id": "npa:f7e9ebc638c5",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.325356,
+        22.717821
+      ],
+      "cityName": "高雄市",
+      "districtName": "楠梓區",
+      "address": "高楠公路1015-6號前",
+      "jurisdiction": "高雄市政府警察局 / 楠梓分局",
+      "directionText": "南向北",
+      "headings": [
+        0
+      ],
+      "speedLimitKph": 60
+    },
+    {
+      "id": "npa:f495be3bb9c3",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.320145,
+        22.732939
+      ],
+      "cityName": "高雄市",
+      "districtName": "楠梓區",
+      "address": "高楠公路與德民路口",
+      "jurisdiction": "高雄市政府警察局 / 楠梓分局",
+      "directionText": "南向北",
+      "headings": [
+        0
+      ],
+      "speedLimitKph": 60
+    },
+    {
+      "id": "npa:20a10c1164af",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.31293,
+        22.721043
+      ],
+      "cityName": "高雄市",
+      "districtName": "楠梓區",
+      "address": "楠梓區加昌路/瑞屏路",
+      "jurisdiction": "高雄市政府警察局 / 楠梓分局",
+      "directionText": "東向西",
+      "headings": [
+        270
+      ],
+      "speedLimitKph": 50
+    },
+    {
+      "id": "npa:7babd649dca9",
+      "sourceDataset": "npa:7320",
+      "enforcementType": "speed_camera",
+      "pos": [
+        120.27692,
+        22.723606
+      ],
+      "cityName": "高雄市",
+      "districtName": "楠梓區",
+      "address": "德中路與大學二十九路口(向南)",
+      "jurisdiction": "高雄市政府警察局 / 楠梓分局",
+      "directionText": "北向南",
+      "headings": [
+        180
+      ],
+      "speedLimitKph": 60
+    }
+  ]
+}

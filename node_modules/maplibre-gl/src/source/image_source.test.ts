@@ -1,0 +1,366 @@
+import {describe, beforeEach, test, expect, vi} from 'vitest';
+import {ImageSource} from './image_source';
+import {Evented} from '../util/evented';
+import {type IReadonlyTransform} from '../geo/transform_interface';
+import {extend, MAX_TILE_ZOOM} from '../util/util';
+import {type FakeServer, fakeServer} from 'nise';
+import {type RequestManager} from '../util/request_manager';
+import {sleep, stubAjaxGetImage, waitForEvent} from '../util/test/util';
+import {Tile} from '../tile/tile';
+import {OverscaledTileID} from '../tile/tile_id';
+import {type Texture} from '../webgl/texture';
+import type {ImageSourceSpecification} from '@maplibre/maplibre-gl-style-spec';
+import {MercatorTransform} from '../geo/projection/mercator_transform';
+
+function createSource(options) {
+    options = extend({
+        coordinates: [[0, 0], [1, 0], [1, 1], [0, 1]]
+    }, options);
+
+    return new ImageSource('id', options, {} as any, options.eventedParent);
+}
+
+class StubMap extends Evented {
+    transform: IReadonlyTransform;
+    painter: any;
+    _requestManager: RequestManager;
+
+    constructor() {
+        super();
+        this.transform = new MercatorTransform();
+        this._requestManager = {
+            transformRequest: (url) => {
+                return {url};
+            }
+        } as any as RequestManager;
+        this.painter = {
+            context: {
+                gl: {}
+            }
+        };
+    }
+}
+
+describe('ImageSource', () => {
+    stubAjaxGetImage(undefined);
+    let server: FakeServer;
+
+    beforeEach(() => {
+        global.fetch = null;
+        server = fakeServer.create();
+        server.respondWith(new ArrayBuffer(1));
+        server.respondWith('/missing-image.png', [404, {}, '']);
+    });
+
+    test('constructor', () => {
+        const source = createSource({url: '/image.png'});
+
+        expect(source.minzoom).toBe(0);
+        expect(source.maxzoom).toBe(22);
+        expect(source.tileSize).toBe(512);
+    });
+
+    test('fires dataloading event', async () => {
+        const source = createSource({url: '/image.png'});
+        source.on('dataloading', (e) => {
+            expect(e.dataType).toBe('source');
+        });
+        source.onAdd(new StubMap() as any);
+        await sleep(0);
+        server.respond();
+        await sleep(0);
+        expect(source.image).toBeTruthy();
+    });
+
+    test('transforms url request', () => {
+        const source = createSource({url: '/image.png'});
+        const map = new StubMap() as any;
+        const spy = vi.spyOn(map._requestManager, 'transformRequest');
+        source.onAdd(map);
+        server.respond();
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0]).toBe('/image.png');
+        expect(spy.mock.calls[0][1]).toBe('Image');
+    });
+
+    test('can asynchronously transform request', async () => {
+        const source = createSource({url: '/image.png'});
+        const map = new StubMap() as any;
+        map._requestManager = {
+            transformRequest: async (url) => ({
+                url,
+                headers: {Authorization: 'Bearer token'}
+            })
+        };
+        const promise = source.once('data');
+        source.onAdd(map);
+        await sleep(0);
+        server.respond();
+        await promise;
+        expect(server.requests[0].url).toBe('/image.png');
+        expect(server.requests[0].requestHeaders['Authorization']).toBe('Bearer token');
+    });
+
+    test('updates url from updateImage', () => {
+        const source = createSource({url: '/image.png'});
+        const map = new StubMap() as any;
+        const spy = vi.spyOn(map._requestManager, 'transformRequest');
+        source.onAdd(map);
+        server.respond();
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0]).toBe('/image.png');
+        expect(spy.mock.calls[0][1]).toBe('Image');
+        source.updateImage({url: '/image2.png'});
+        server.respond();
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect(spy.mock.calls[1][0]).toBe('/image2.png');
+        expect(spy.mock.calls[1][1]).toBe('Image');
+    });
+
+    test('sets coordinates', () => {
+        const source = createSource({url: '/image.png'});
+        const map = new StubMap() as any;
+        source.onAdd(map);
+        server.respond();
+        const beforeSerialized = source.serialize();
+        expect(beforeSerialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
+        source.setCoordinates([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
+        const afterSerialized = source.serialize();
+        expect(afterSerialized.coordinates).toEqual([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
+    });
+
+    test('sets coordinates via updateImage', async () => {
+        const source = createSource({url: '/image.png'});
+        const map = new StubMap() as any;
+        source.onAdd(map);
+        server.respond();
+        const beforeSerialized = source.serialize();
+        expect(beforeSerialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
+        source.updateImage({
+            url: '/image2.png',
+            coordinates: [[0, 0], [-1, 0], [-1, -1], [0, -1]]
+        });
+        await sleep(0);
+        server.respond();
+        await sleep(0);
+        const afterSerialized = source.serialize();
+        expect(afterSerialized.coordinates).toEqual([[0, 0], [-1, 0], [-1, -1], [0, -1]]);
+    });
+
+    test('fires data event when content is loaded', async () => {
+        const source = createSource({url: '/image.png'});
+        const promise = waitForEvent(source, 'data', (e) => e.dataType === 'source' && e.sourceDataType === 'content');
+        source.onAdd(new StubMap() as any);
+        await sleep(0);
+        server.respond();
+        await promise;
+        expect(typeof source.tileID == 'object').toBeTruthy();
+    });
+
+    test('fires data event when metadata is loaded', async () => {
+        const source = createSource({url: '/image.png'});
+        const promise = waitForEvent(source, 'data', (e) => e.dataType === 'source' && e.sourceDataType === 'metadata');
+        source.onAdd(new StubMap() as any);
+        await sleep(0);
+        server.respond();
+        await expect(promise).resolves.toBeDefined();
+    });
+
+    test('fires idle event on prepare call when there is at least one not loaded tile', async () => {
+        const source = createSource({url: '/image.png'});
+        const tile = new Tile(new OverscaledTileID(1, 0, 1, 0, 0), 512);
+        const promise = waitForEvent(source, 'data', (e) => e.dataType === 'source' && e.sourceDataType === 'idle');
+        source.onAdd(new StubMap() as any);
+        server.respond();
+
+        source.tiles[String(tile.tileID.wrap)] = tile;
+        source.image = new ImageBitmap();
+        // assign dummies directly so we don't need to stub the gl things
+        source.texture = {} as Texture;
+        source.prepare();
+        await promise;
+        expect(tile.state).toBe('loaded');
+    });
+
+    test('serialize url and coordinates', () => {
+        const source = createSource({url: '/image.png'});
+
+        const serialized = source.serialize() as ImageSourceSpecification;
+        expect(serialized.type).toBe('image');
+        expect(serialized.url).toBe('/image.png');
+        expect(serialized.coordinates).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
+    });
+
+    test('allows using updateImage before initial image is loaded', async () => {
+        const map = new StubMap() as any;
+        const source = createSource({url: '/image.png', eventedParent: map});
+
+        // Suppress errors because we're aborting when updating.
+        map.on('error', () => {});
+        source.onAdd(map);
+        expect(source.image).toBeUndefined();
+        source.updateImage({url: '/image2.png'});
+        await sleep(0);
+        server.respond();
+        await sleep(10);
+
+        expect(source.image).toBeTruthy();
+    });
+
+    test('cancels request if updateImage is used', async () => {
+        const map = new StubMap() as any;
+        const source = createSource({url: '/image.png', eventedParent: map});
+
+        // Suppress errors because we're aborting.
+        map.on('error', () => {});
+        source.onAdd(map);
+        await sleep(0);
+
+        const spy = vi.spyOn(server.requests[0] as any, 'abort');
+
+        source.updateImage({url: '/image2.png'});
+        expect(spy).toHaveBeenCalled();
+    });
+
+    test('marks the source as loaded when the request has received a response', async () => {
+        const map = new StubMap() as any;
+        const source = createSource({url: '/image.png', eventedParent: map});
+
+        expect(source.loaded()).toBe(false);
+        source.onAdd(map);
+        await sleep(0);
+        server.respond();
+        await sleep(0);
+        expect(source.loaded()).toBe(true);
+
+        const missingImagesource = createSource({url: '/missing-image.png', eventedParent: map});
+
+        // Suppress errors as we're loading a missing image.
+        map.on('error', () => {});
+
+        expect(missingImagesource.loaded()).toBe(false);
+        missingImagesource.onAdd(map);
+        await sleep(0);
+        server.respond();
+        await sleep(0);
+
+        expect(missingImagesource.loaded()).toBe(true);
+    });
+
+    test('does not throw when updateImage is called while a request is pending', async () => {
+        const map = new StubMap() as any;
+        const source = createSource({url: '/image.png', eventedParent: map});
+
+        const errorHandler = vi.fn();
+        source.on('error', errorHandler);
+
+        source.onAdd(map);
+        source.updateImage({url: '/image2.png'});
+
+        await sleep(0);
+
+        expect(errorHandler).not.toHaveBeenCalled();
+    });
+
+    describe('terrainTileRanges', () => {
+        test('sets tile ranges for all zoom levels', () => {
+            const source = createSource({url: '/image.png'});
+            const map = new StubMap() as any;
+            source.onAdd(map);
+            server.respond();
+            source.setCoordinates([[-10, 10], [10, 10], [10, -10], [-10, -10]]);
+
+            for (let z = 0; z <= MAX_TILE_ZOOM; z++) {
+                expect(source.terrainTileRanges[z]).toBeDefined();
+            }
+        });
+
+        test('calculates tile ranges properly', () => {
+            const source = createSource({url: '/image.png'});
+            const map = new StubMap() as any;
+            source.onAdd(map);
+            server.respond();
+            source.setCoordinates([[11.39585,47.30074],[11.46585,47.30074],[11.46585,47.25074],[11.39585,47.25074]]);
+            expect(source.terrainTileRanges[9]).toEqual({
+                minWrap: 0,
+                maxWrap: 0,
+                minTileXWrapped: 272,
+                maxTileXWrapped: 272,
+                minTileY: 179,
+                maxTileY: 179
+            });
+            expect(source.terrainTileRanges[10]).toEqual({
+                minWrap: 0,
+                maxWrap: 0,
+                minTileXWrapped: 544,
+                maxTileXWrapped: 544,
+                minTileY: 358,
+                maxTileY: 359
+            });
+            expect(source.terrainTileRanges[11]).toEqual({
+                minWrap: 0,
+                maxWrap: 0,
+                minTileXWrapped: 1088,
+                maxTileXWrapped: 1089,
+                minTileY: 717,
+                maxTileY: 718
+            });
+            expect(source.terrainTileRanges[12]).toEqual({
+                minWrap: 0,
+                maxWrap: 0,
+                minTileXWrapped: 2177,
+                maxTileXWrapped: 2178,
+                minTileY: 1435,
+                maxTileY: 1436
+            });
+        });
+
+        test('calculates tile ranges for an image exceeds the world bounds - east', () => {
+            const source = createSource({url: '/image.png'});
+            const map = new StubMap() as any;
+            source.onAdd(map);
+            server.respond();
+            source.setCoordinates([[-180, 60], [270, 60], [270, -60], [-180, -60]]);
+            expect(source.terrainTileRanges[0]).toEqual({
+                minWrap: 0,
+                maxWrap: 1,
+                minTileXWrapped: 0,
+                maxTileXWrapped: 0,
+                minTileY: 0,
+                maxTileY: 0
+            });
+            expect(source.terrainTileRanges[1]).toEqual({
+                minWrap: 0,
+                maxWrap: 1,
+                minTileXWrapped: 0,
+                maxTileXWrapped: 0,
+                minTileY: 0,
+                maxTileY: 1
+            });
+        });
+
+        test('calculates tile ranges for an image exceeds the world bounds - west', () => {
+            const source = createSource({url: '/image.png'});
+            const map = new StubMap() as any;
+            source.onAdd(map);
+            server.respond();
+            source.setCoordinates([[120, 60], [-270, 60], [-270, -60], [120, -60]]);
+            expect(source.terrainTileRanges[0]).toEqual({
+                minWrap: -1,
+                maxWrap: 0,
+                minTileXWrapped: 0,
+                maxTileXWrapped: 0,
+                minTileY: 0,
+                maxTileY: 0
+            });
+            expect(source.terrainTileRanges[1]).toEqual({
+                minWrap: -1,
+                maxWrap: 0,
+                minTileXWrapped: 1,
+                maxTileXWrapped: 1,
+                minTileY: 0,
+                maxTileY: 1
+            });
+        });
+    });
+});

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "mergeGroups": [
+    {
+      "id": "place:thsr-zuoying",
+      "name": "高鐵左營站",
+      "category": "transport",
+      "position": [120.3076893, 22.6870379],
+      "priority": 100,
+      "members": [
+        "osm:node:1088684569",
+        "osm:node:254539304",
+        "osm:node:3860820634",
+        "osm:node:3933501988",
+        "osm:node:6640087287",
+        "osm:node:6640087288",
+        "osm:node:6640087289",
+        "osm:node:6640087290",
+        "osm:node:6640087291",
+        "osm:node:8270288527",
+        "osm:relation:1574535",
+        "tdx:attraction:Attraction_397000000A_001029",
+        "tdx:bus-station:2777"
+      ]
+    },
+    {
+      "id": "place:krtc-zuoying",
+      "name": "捷運左營站",
+      "category": "transport",
+      "position": [120.308887, 22.688376],
+      "priority": 100,
+      "members": [
+        "osm:node:4580663531",
+        "osm:relation:14136383",
+        "tdx:krtc-station:R16"
+      ]
+    }
+  ],
+  "keepSeparate": [
+    ["osm:relation:1574535", "tdx:krtc-station:R16"],
+    ["osm:relation:1574535", "osm:relation:1574533"],
+    ["tdx:krtc-station:R16", "osm:relation:1574533"]
+  ],
+  "patches": [
+    {
+      "matchId": "osm:relation:1574533",
+      "hidden": true
+    }
+  ]
+}

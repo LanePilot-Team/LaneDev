@@ -1,0 +1,111 @@
+import { decodeVarintInt32 } from "../../decoding/integerDecodingUtils";
+import { columnTypeHasChildren, columnTypeHasName, decodeColumnType } from "./typeMap";
+const textDecoder = new TextDecoder();
+const SUPPORTED_COLUMN_TYPES = "0-3(ID), 4(GEOMETRY), 10-29(scalars), 30(STRUCT)";
+const SUPPORTED_FIELD_TYPES = "10-29(scalars), 30(STRUCT)";
+/**
+ * Decodes a length-prefixed UTF-8 string.
+ * Layout: [len: varint32][bytes: len]
+ */
+function decodeString(src, offset) {
+    const length = decodeVarintInt32(src, offset, 1)[0];
+    if (length === 0) {
+        return "";
+    }
+    const start = offset.get();
+    const end = start + length;
+    const view = src.subarray(start, end);
+    offset.add(length);
+    return textDecoder.decode(view);
+}
+/**
+ * Converts a Column to a Field.
+ * Used when decoding Field metadata which has the same format as Column.
+ */
+function columnToField(column) {
+    return {
+        name: column.name,
+        nullable: column.nullable,
+        scalarField: column.scalarType,
+        complexField: column.complexType,
+        type: column.type === "scalarType" ? "scalarField" : "complexField",
+    };
+}
+/**
+ * Decodes a Field used as part of complex types (STRUCT children).
+ */
+export function decodeField(src, offset) {
+    const typeCode = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+    if (typeCode < 10 || typeCode > 30) {
+        throw new Error(`Unsupported field type code ${typeCode}. Supported: ${SUPPORTED_FIELD_TYPES}`);
+    }
+    const column = decodeColumnType(typeCode);
+    if (columnTypeHasName(typeCode)) {
+        column.name = decodeString(src, offset);
+    }
+    if (columnTypeHasChildren(typeCode)) {
+        const childCount = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+        column.complexType.children = new Array(childCount);
+        for (let i = 0; i < childCount; i++) {
+            column.complexType.children[i] = decodeField(src, offset);
+        }
+    }
+    return columnToField(column);
+}
+/**
+ * The typeCode encodes the column type, nullable flag, and whether it has name/children.
+ */
+function decodeColumn(src, offset) {
+    const typeCode = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+    const column = decodeColumnType(typeCode);
+    if (!column) {
+        throw new Error(`Unsupported column type code ${typeCode}. Supported: ${SUPPORTED_COLUMN_TYPES}`);
+    }
+    if (columnTypeHasName(typeCode)) {
+        column.name = decodeString(src, offset);
+    }
+    else {
+        // ID and GEOMETRY columns have implicit names
+        if (typeCode >= 0 && typeCode <= 3) {
+            column.name = "id";
+        }
+        else if (typeCode === 4) {
+            column.name = "geometry";
+        }
+    }
+    if (columnTypeHasChildren(typeCode)) {
+        // Only STRUCT (typeCode 30) has children
+        const childCount = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+        const complexCol = column.complexType;
+        complexCol.children = new Array(childCount);
+        for (let i = 0; i < childCount; i++) {
+            complexCol.children[i] = decodeField(src, offset);
+        }
+    }
+    return column;
+}
+/**
+ * Top-level decoder for embedded tileset metadata.
+ * Reads exactly ONE FeatureTableSchema from the stream.
+ *
+ * @param bytes The byte array containing the metadata
+ * @param offset The current offset in the byte array (will be advanced)
+ */
+export function decodeEmbeddedTileSetMetadata(bytes, offset) {
+    const meta = {};
+    meta.featureTables = [];
+    const table = {};
+    table.name = decodeString(bytes, offset);
+    if (table.name.length === 0) {
+        throw new Error("Missing layer name");
+    }
+    const extent = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
+    const columnCount = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
+    table.columns = new Array(columnCount);
+    for (let j = 0; j < columnCount; j++) {
+        table.columns[j] = decodeColumn(bytes, offset);
+    }
+    meta.featureTables.push(table);
+    return [meta, extent];
+}
+//# sourceMappingURL=embeddedTilesetMetadataDecoder.js.map

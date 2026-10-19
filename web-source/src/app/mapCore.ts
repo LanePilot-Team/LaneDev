@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type RefObject } from 'react'
-import maplibregl, { Map as MLMap, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
+import maplibregl, { AttributionControl, Map as MLMap, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle'
@@ -24,6 +24,32 @@ import { loadRuntimeData, runtimeAsset } from '../core/runtimeData'
 
 export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
 export const EMPTY_FC = { type: 'FeatureCollection', features: [] } as const
+
+function formatAttributionLines(map: MLMap) {
+  const inner = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-attrib-inner')
+  if (!inner || typeof MutationObserver === 'undefined') return
+
+  const format = () => {
+    const children = Array.from(inner.children)
+    if (children.length > 0 && children.every(child => child.classList.contains('lanedev-attribution-line'))) return
+
+    const html = inner.innerHTML.trim()
+    if (!html) return
+    const parts = html.split(' | ').map(part => part.trim()).filter(Boolean)
+    inner.replaceChildren(...parts.map(part => {
+      const line = document.createElement('span')
+      line.className = 'lanedev-attribution-line'
+      line.innerHTML = part.replace('內政部警政署', '內政部警政署<br />')
+      return line
+    }))
+  }
+
+  format()
+  const observer = new MutationObserver(format)
+  observer.observe(inner, { childList: true, characterData: true, subtree: true })
+  map.once('remove', () => observer.disconnect())
+}
+
 async function loadSpeedCameraDataset(): Promise<SpeedCameraDataset> {
   const res = await fetch(asset('/data/speed_cameras.json'))
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -242,10 +268,7 @@ export function useMapCore(
       // 內顯效能：把渲染像素密度上限鎖在 1.5×（高 DPI 螢幕的畫布像素數會翻倍以上）
       pixelRatio: Math.min(window.devicePixelRatio, 1.5),
       fadeDuration: 0, // 符號淡入淡出動畫關掉，省連續重繪
-      attributionControl: {
-        compact: true,
-        customAttribution: '© OpenStreetMap contributors',
-      },
+      attributionControl: false,
       // 效能：MSAA 與 preserveDrawingBuffer 在內顯上很貴，只在 ?screenshot 時開
       canvasContextAttributes: false
         ? { antialias: true, preserveDrawingBuffer: true }
@@ -253,6 +276,11 @@ export function useMapCore(
       // 所有字形本機繪製，不等待外部字型服務。
       localIdeographFontFamily: '"Microsoft JhengHei", "PingFang TC", sans-serif',
     })
+    map.addControl(new AttributionControl({
+      compact: true,
+      customAttribution: '© OpenStreetMap contributors',
+    }), 'bottom-left')
+    formatAttributionLines(map)
     mapRef.current = map
     map.touchZoomRotate.enableRotation()
     // 記錄縮放手勢時間：jumpTo 內部會 stop() 掉進行中的手勢動畫（handlers.stop），

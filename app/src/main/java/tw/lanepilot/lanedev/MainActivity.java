@@ -14,6 +14,12 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -91,6 +97,10 @@ public class MainActivity extends AppCompatActivity {
                     return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
                             java.util.Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
                 }
+                if (APP_HOST.equals(url.getHost()) && "GET".equals(request.getMethod())
+                        && "/assets/public/index.html".equals(url.getPath())) {
+                    return appIndexResponse();
+                }
                 return assetLoader.shouldInterceptRequest(url);
             }
 
@@ -134,6 +144,30 @@ public class MainActivity extends AppCompatActivity {
                 requestLocationPermission();
             }
         });
+    }
+
+    /**
+     * The bundled web client keeps a public placeholder in Git. The local
+     * Android build supplies the restricted demo key through local.properties
+     * and replaces it only while serving index.html to this WebView.
+     */
+    private WebResourceResponse appIndexResponse() {
+        try (InputStream input = getAssets().open("public/index.html")) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            String html = new String(output.toByteArray(), StandardCharsets.UTF_8)
+                    .replace("%VITE_GOOGLE_MAPS_API_KEY%", BuildConfig.GOOGLE_MAPS_API_KEY);
+            return new WebResourceResponse(
+                    "text/html", "UTF-8",
+                    new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8))
+            );
+        } catch (IOException error) {
+            return new WebResourceResponse("text/plain", "UTF-8", 500, "Asset unavailable",
+                    java.util.Collections.emptyMap(),
+                    new ByteArrayInputStream("Unable to load app shell".getBytes(StandardCharsets.UTF_8)));
+        }
     }
 
     void requestLocationPermission() {

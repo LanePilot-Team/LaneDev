@@ -1,22 +1,38 @@
-.map-actions { position: absolute; z-index: 30; right: max(12px, env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; max-width: calc(100% - 24px); pointer-events: none; }
+.map-actions { position: absolute; z-index: 30; right: var(--map-action-right); bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: var(--map-action-gap); max-width: calc(100% - 24px); pointer-events: none; }
 .map-actions.navigating { bottom: calc(112px + env(safe-area-inset-bottom)); }
 .map-actions > * { pointer-events: auto; }
 .map-actions .recenter-btn, .map-actions .client-locate { position: static; }
-.client-settings { max-width: min(320px, calc(100vw - 24px)); background: #fff; color: #16304a; border-radius: 12px; box-shadow: 0 2px 12px #0003; }
-.client-settings summary { display: flex; align-items: center; gap: 7px; padding: 12px 16px; cursor: pointer; font-weight: 700; background: #1559a0; color: #fff; border-radius: 12px; list-style: none; }
-.client-settings summary::-webkit-details-marker { display: none; }
-.client-settings summary:focus-visible { outline: 3px solid #f8b936; outline-offset: 2px; }
-.client-settings[open] summary { background: #103e70; border-radius: 12px 12px 0 0; }
-.settings-expand, .settings-collapse { margin-left: auto; font-size: 12px; }
-.settings-collapse, .client-settings[open] .settings-expand { display: none; }
-.client-settings[open] .settings-collapse { display: inline; }
-.client-settings-body { padding: 12px 16px 16px; max-height: min(45dvh, calc(100dvh - 260px)); overflow-y: auto; }
-.client-settings label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.map-actions .client-locate { width: var(--map-action-size); box-sizing: border-box; }
+.map-actions .client-settings > summary, .map-actions .client-locate button {
+  width: var(--map-action-size); height: var(--map-action-size); box-sizing: border-box; justify-content: center;
+  padding: 0; border-radius: 12px;
+}
+.map-actions .client-settings > summary { margin-left: auto; }
+.client-settings { display: flex; flex-direction: column; max-width: min(320px, calc(100vw - 24px)); background: #fff; color: #16304a; border-radius: 12px; box-shadow: 0 2px 12px #0003; }
+.client-settings > summary { order: 2; display: flex; align-items: center; gap: 7px; padding: 12px 16px; cursor: pointer; font-weight: 700; background: #1559a0; color: #fff; border-radius: 12px; list-style: none; }
+.client-settings > summary::-webkit-details-marker, .settings-subsection > summary::-webkit-details-marker { display: none; }
+.client-settings > summary:focus-visible, .settings-subsection > summary:focus-visible { outline: 3px solid #f8b936; outline-offset: 2px; }
+.client-settings[open] { gap: 10px; background: transparent; box-shadow: none; }
+.client-settings[open] > summary { background: #103e70; border-radius: 12px; box-shadow: 0 2px 12px #0003; }
+.settings-icon { font-size: 21px; line-height: 1; }
+.client-settings-body { order: 1; padding: 12px 16px 16px; max-height: min(45dvh, calc(100dvh - 260px)); overflow-y: auto; background: #fff; border-radius: 12px; }
+.settings-section + .settings-section { border-top: 1px solid #e5ebf2; }
+.settings-section h3 { margin: 0 0 10px; color: #16304a; font-size: 14px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; }
+.settings-row + .settings-row { margin-top: 4px; }
 .client-settings button, .client-settings select { padding: 10px; border-radius: 8px; border: 1px solid #ccd6df; background: #f3f7fc; color: #16304a; margin: 3px; }
-.client-settings p { font-size: 13px; line-height: 1.5; }
+.settings-subsection { padding-top: 11px; }
+.settings-subsection > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; cursor: pointer; font-weight: 700; list-style: none; }
+.settings-subsection > summary::after { content: '▾'; color: #6b7b8e; font-size: 13px; }
+.settings-subsection[open] > summary::after { content: '▴'; }
+.settings-subsection-body { padding: 6px 0 2px; }
+.settings-status { margin: 4px 0 8px; font-size: 12.5px; line-height: 1.5; color: #566479; }
+.settings-actions { display: flex; flex-wrap: wrap; margin: -3px; }
+.settings-actions button { flex: 1 1 120px; }
 .client-locate { position: absolute; right: 12px; bottom: 76px; z-index: 29; max-width: min(300px, calc(100vw - 24px)); }
-.client-locate button { padding: 12px 16px; border: 0; border-radius: 10px; background: white; color: #16304a; box-shadow: 0 2px 12px #0003; float: right; }
-.client-locate p { background: white; padding: 12px; border-radius: 10px; color: #b42318; }
+.client-locate button { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: 12px; background: white; color: #16304a; box-shadow: 0 2px 12px #0003; float: right; }
+.client-locate .locate-icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.client-locate p { position: absolute; right: 0; bottom: 56px; width: max-content; max-width: min(260px, calc(100vw - 24px)); background: white; padding: 12px; border-radius: 10px; color: #b42318; }
 .client-location-marker { font-size: 24px; color: #1976d2; text-shadow: 0 0 3px white; }
 /* Position and heading are deliberately separate visual elements. */
 .client-location-marker { width: 84px; height: 84px; pointer-events: none; }
@@ -52,3 +68,23 @@
 .route-search-panel .sp-head { justify-content: space-between; }
 .route-search-panel .place-address { overflow-wrap: anywhere; }
 .place-result .place-address { font-size: 14px; color: #24303f; }
+@media (max-width: 600px) {
+  .app[data-mode="pick"] .map-actions {
+    top: auto;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  .side-panel.route-preview-card {
+    left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top)); bottom: auto;
+    width: auto; max-width: none; height: auto; max-height: min(52dvh, 480px);
+    overflow: hidden;
+    overscroll-behavior: contain; border-radius: 20px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .side-panel.route-preview-card.route-steps-open,
+  .side-panel.route-preview-card.route-steps-closed {
+    height: min(416px, calc(100dvh - 24px)); max-height: min(416px, calc(100dvh - 24px));
+  }
+  .side-panel.route-preview-card.is-searching {
+    height: auto; max-height: calc(100dvh - 96px); overflow-y: auto; overflow-x: hidden;
+  }
+  .side-panel.route-preview-card.is-searching .route-preview-secondary { overflow: visible; }
+}

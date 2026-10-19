@@ -194,7 +194,17 @@ final class NativeServices implements SensorEventListener {
                 Intent install = new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
                 if (tts != null && tts.getDefaultEngine() != null) install.setPackage(tts.getDefaultEngine());
                 open(install); break;
-            case "ttsRefresh": stopSpeech(); initializeSpeech(); break;
+            case "ttsRefresh":
+                stopSpeech();
+                if (initializing) {
+                    ttsStatus = "中文語音仍在初始化，請稍候…";
+                    status();
+                } else {
+                    ttsStatus = "正在重新檢查中文語音…";
+                    status();
+                    initializeSpeech();
+                }
+                break;
             case "ttsTest":
                 stopSpeech();
                 if (!ready || refreshSpeechOnResume) { refreshSpeechOnResume = false; initializeSpeech(); }

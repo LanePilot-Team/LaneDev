@@ -11,6 +11,7 @@ import android.location.Address;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.os.Build;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -108,9 +109,15 @@ final class NativeServices implements SensorEventListener {
                         ? "缺少中文語音資料，請按下載中文語音"
                         : "目前引擎不支援中文，請在系統設定選擇支援中文的語音引擎";
                 }
-                tts.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                AudioAttributes.Builder audioAttributes = new AudioAttributes.Builder()
+                    // Demo 需要讓手機內建螢幕錄影擷取導航語音；導航 usage 會被
+                    // Android Playback Capture 排除，即使外放與耳機播放正常。
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    audioAttributes.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_ALL);
+                }
+                tts.setAudioAttributes(audioAttributes.build());
                 tts.setSpeechRate(0.95f);
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override public void onStart(String id) {

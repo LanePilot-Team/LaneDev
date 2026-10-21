@@ -39,6 +39,11 @@ const FREE_EXIT_M = 18
 const FREE_POS_ALPHA = 0.6
 /** 偏離時兩筆顯示位置至少差這麼多（公尺）才用位移方向當車頭 */
 const FREE_HEADING_MIN_MOVE_M = 3
+/**
+ * 低於這個速度（km/h）視為停車，車頭鎖住不轉。車輛不會原地轉向（龍頭轉了也要往前走才會轉），
+ * 停下時 GPS 漂移的位移方向與手機羅盤（直立車架上的方位角不穩、會被車體磁場帶偏）都只會讓車頭亂轉。
+ */
+const HEADING_HOLD_KMH = 3
 /** 抵達判定：GPS 貼合誤差較大，門檻比模擬駕駛（5m）寬鬆 */
 const ARRIVE_THRESHOLD_M = 25
 /** 「即將抵達」提示範圍（公尺）：HUD 提早換成抵達卡，不要在終點才突然跳出來 */
@@ -179,8 +184,10 @@ export class GpsDriver {
 
     // 方位角：貼合可信時用路線帶切線（比裝置 heading 穩得多，低速也不會亂轉），
     // 貼合不可信時 matchToRoute 已經沿用上一筆方位，這裡只再做顯示平滑。
-    this.smoothBrg = smoothBearing(this.smoothBrg,
-      speedKmh < 5 ? deviceHeading() ?? match.bearing : match.bearing)
+    // 停車時鎖住車頭：貼合點在路口附近抖動會讓切線跳到橫向路段。
+    if (this.smoothBrg === null || speedKmh >= HEADING_HOLD_KMH) {
+      this.smoothBrg = smoothBearing(this.smoothBrg, match.bearing)
+    }
 
     const traveledM = routeDistAt(this.band, this.bandCum, match.distM)
     const ni = this.route.maneuvers.findIndex((m) => m.distM > traveledM + 1)
@@ -240,11 +247,14 @@ export class GpsDriver {
       ? [prev[0] + (here[0] - prev[0]) * FREE_POS_ALPHA, prev[1] + (here[1] - prev[1]) * FREE_POS_ALPHA]
       : here
     this.freePos = pos
-    // 車頭用原始定位之間的位移方向（不能用「貼合點 → 實際點」，那是橫向的）
+    // 車頭用原始定位之間的位移方向（不能用「貼合點 → 實際點」，那是橫向的）；
+    // 停車時的位移只是 GPS 漂移，車頭鎖住。羅盤只在還沒有任何方位時當初值。
     const moved = !!prevRaw && haversine(prevRaw, here) >= FREE_HEADING_MIN_MOVE_M
-    const heading = moved ? bearingBetween(prevRaw!, here)
-      : speedKmh < 5 ? deviceHeading() ?? this.smoothBrg ?? 0 : this.smoothBrg ?? 0
-    this.smoothBrg = smoothBearing(this.smoothBrg, heading)
+    if (moved && speedKmh >= HEADING_HOLD_KMH) {
+      this.smoothBrg = smoothBearing(this.smoothBrg, bearingBetween(prevRaw!, here))
+    } else if (this.smoothBrg === null) {
+      this.smoothBrg = deviceHeading() ?? 0
+    }
     const arrived = haversine(here, this.destination) < DIRECT_ARRIVE_M
     const base: DriveState = this.lastState ?? {
       pos, bearing: this.smoothBrg, speedKmh, traveledM: 0, remainM: this.route.lengthM,

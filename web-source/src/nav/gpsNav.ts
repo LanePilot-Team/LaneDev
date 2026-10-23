@@ -54,7 +54,8 @@ const ARRIVING_THRESHOLD_M = 150
  *   a) 人已經停在終點附近一段時間 → 算抵達
  *   b) 原始定位直線距離離終點夠近 → 算抵達（不管路線里程走到哪）
  */
-const STOP_ARRIVE_M = 70
+// 停車保底只在「最後一段、且剩不到 35m」才生效：原本 70m 會把終點前路口的紅燈停等誤判成抵達
+const STOP_ARRIVE_M = 35
 const STOP_SPEED_KMH = 3
 const STOP_HOLD_MS = 6000
 const DIRECT_ARRIVE_M = 30
@@ -197,7 +198,8 @@ export class GpsDriver {
     const directToDestM = haversine(here, this.destination)
 
     // 停在終點附近夠久 → 視同抵達（GPS 推不到路線盡頭時的保底）
-    if (remainM < STOP_ARRIVE_M && speedKmh < STOP_SPEED_KMH) {
+    const lastLeg = !next || next.kind === 'arrive'
+    if (lastLeg && remainM < STOP_ARRIVE_M && speedKmh < STOP_SPEED_KMH) {
       if (!this.stoppedNearDestSince) this.stoppedNearDestSince = now
     } else {
       this.stoppedNearDestSince = 0

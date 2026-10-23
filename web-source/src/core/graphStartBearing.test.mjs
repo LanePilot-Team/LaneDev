@@ -40,3 +40,13 @@ test('給起點方位時依車頭方向選行向，不被 GPS 誤差帶到對向
   assert.ok(Math.abs(angleDelta(firstBearing(route), 90)) < 45)
   assert.ok(route.lengthM < 120, `直接東行約 92 m，實得 ${route.lengthM}`)
 })
+
+test('多停靠點路線記錄停靠點里程，偏航重規劃據此判斷哪些已經過', async () => {
+  const { mergeRoutes } = await import('./graph.ts')
+  const a = graph.routeDetailed([120.0005, 21.99997], [120.002, 21.99997], 'car', {}, 90).route
+  const b = graph.routeDetailed([120.002, 21.99997], [120.0035, 21.99997], 'car', {}, 90).route
+  assert.ok(a && b)
+  const merged = mergeRoutes([a, b])
+  assert.deepEqual(merged.viaDistM, [a.lengthM])
+  assert.ok(Math.abs(merged.lengthM - a.lengthM - b.lengthM) < 1)
+})

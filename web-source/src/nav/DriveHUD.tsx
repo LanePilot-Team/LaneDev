@@ -1,5 +1,5 @@
-// 導航 HUD（高德式）：頂部指引看板、車道列、速度圓標、底部資訊列、路口決策按鈕。
-// guidanceText / ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
+// 導航 HUD（高德式）：頂部指引看板、車道列、速度圓標、測速提示、底部資訊列。
+// ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
 import type { Maneuver, Profile } from '../core/graph'
 import type { DriveState } from './drive'
 import { useClientState } from '../native/client'
@@ -166,28 +166,27 @@ export function RecenterButton({ onClick }: { onClick: () => void }) {
 }
 
 
-/** 導航中（drive 模式）的整組 HUD：看板、速度、決策按鈕、底部列；GPS 未定位時顯示過渡列 */
+/** 導航中（drive 模式）的整組 HUD：看板、速度、測速提示、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
-  drive, twoStage, profile, gpsMsg, cameraAlert,
+  drive, twoStage, profile, gpsMsg, canRetry, cameraAlert,
   destinationName,
-  onEnd,
+  onEnd, onRetry,
 }: {
   drive: DriveState | null
   twoStage: boolean
   profile: Profile
   gpsMsg: string | null
+  /** 還沒開始導航就失敗（定位授權／GPS）：顯示「重試」，「結束」則只退回規劃不清路線 */
+  canRetry: boolean
   /** 目的地名稱（有選地點才有）——抵達卡與收尾語音都用它 */
   destinationName?: string
   /** 測速照相提示（沒有就不顯示卡片） */
   cameraAlert: SpeedCameraAlert | null
   onEnd: () => void
-  /** 模擬到達後的「再跑一次」；GPS 導航不傳（不顯示按鈕） */
+  onRetry: () => void
 }) {
   const { voice } = useClientState()
   useSpeechGuidance({ drive, profile, twoStage, destinationName, enabled: voice })
-
-  // 換車道按鈕只在桌面顯示（跟鍵盤變速一樣不給手機用，觸控版另外設計）
-  const isDesktop = typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches
 
   // ── GPS 導航還沒收到第一筆定位（或定位失敗）時的過渡畫面 ──
   if (!drive) {
@@ -196,6 +195,7 @@ export function DriveHUD({
         <div className="bottom-bar">
           <button className="end-btn" onClick={onEnd}>✕ 結束</button>
           <div className="trip"><b>{gpsMsg ?? '準備中…'}</b></div>
+          {canRetry && <button className="end-btn" onClick={onRetry}>重試</button>}
         </div>
       </>
     )

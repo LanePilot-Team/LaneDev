@@ -204,6 +204,9 @@ export interface RouteResult {
    * 別人的出口專用道/匯入道上。
    */
   weaves: number[]
+  /** 多停靠點路線：每個中途停靠點所在的路線里程（mergeRoutes 填；單段路線為空/缺）。
+   * 偏航重規劃用它判斷哪些停靠點已經過，剩下的要照順序繞經。 */
+  viaDistM?: number[]
 }
 
 /**
@@ -1960,7 +1963,9 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const weaves = [...legs[0].weaves]
   let distOff = legs[0].lengthM
   let timeS = legs[0].timeS
+  const viaDistM: number[] = []
   for (let i = 1; i < legs.length; i++) {
+    viaDistM.push(distOff)
     const L = legs[i]
     if (haversine(coords[coords.length - 1], L.coords[0]) > 0.5) coords.push(L.coords[0])
     const base = coords.length - 1
@@ -1976,7 +1981,7 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const arrive = last.maneuvers[last.maneuvers.length - 1]
   maneuvers.push({ ...arrive, distM: distOff - last.lengthM + arrive.distM })
   const cum = cumulative(coords)
-  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans, diverges, weaves }
+  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans, diverges, weaves, viaDistM }
 }
 
 /** 相鄰轉向合併門檻：錯位路口/巷弄接駁的兩個轉向點通常在 20m 內 */

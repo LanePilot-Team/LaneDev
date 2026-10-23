@@ -7,6 +7,7 @@ import {
   RoadGraph,
   laneBand,
   laneChoiceAreas,
+  mergeRoutes,
   type LaneRoutePolicy,
   type RouteResult,
   type Profile,
@@ -73,6 +74,8 @@ export interface UseDriveParams {
 export interface UseDriveResult {
   drive: DriveState | null
   gpsMsg: string | null
+  /** 尚未開始導航就失敗（定位授權／GPS 錯誤），HUD 顯示「重試」 */
+  canRetry: boolean
   /** 目前該顯示的測速照相提示（沒有就是 null） */
   cameraAlert: SpeedCameraAlert | null
   startGpsNav: () => void
@@ -93,6 +96,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   if (!voiceRef.current) voiceRef.current = new SpeedCameraVoice()
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [gpsMsg, setGpsMsg] = useState<string | null>(null)
+  const [canRetry, setCanRetry] = useState(false)
+  /** 偏航重規劃失敗的訊息：要撐到重規劃成功或回到路線上，不能被下一筆定位清掉 */
+  const rerouteErrorRef = useRef<string | null>(null)
   const [cameraAlert, setCameraAlert] = useState<SpeedCameraAlert | null>(null)
   // 鏡頭跟隨開關。ref 給每幀的跟隨迴圈讀（state 在 callback 內是舊值），state 給按鈕重繪。
   const [following, setFollowing] = useState(true)
@@ -241,7 +247,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     stopVisualRef.current?.()
     stopVisualRef.current = null
     displayRef.current = null
+    rerouteErrorRef.current = null
     setGpsMsg(null)
+    setCanRetry(false)
     setDrive(null)
     lastDriveRef.current = null
     setFollow(true) // 下一趟導航從「跟隨」開始
@@ -322,12 +330,14 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
         if (!fix || s.gpsWeak || document.hidden) freeze()
         else if (animation.push(fix, performance.now()) && !frame) frame = requestAnimationFrame(drawFrame)
-        setGpsMsg(null)
+        if (!s.offRoute) rerouteErrorRef.current = null
+        setGpsMsg(rerouteErrorRef.current)
+        setCanRetry(false)
         setDrive(s)
         updateSpeedCameraAlert(s)
       },
       (pos, bearing) => rerouteFrom(pos, bearing),
-      (msg) => { freeze(); setGpsMsg(msg) },
+      (msg) => { freeze(); setGpsMsg(msg); if (!lastDriveRef.current) setCanRetry(true) },
       rerouteClockRef.current,
     )
     animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum)
@@ -336,38 +346,66 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     gps.start()
   }
 
-  /** 重新規劃：從目前（可能已偏離）位置到終點重算路線並接續導航。共用給鍵盤橫移/路口決策/GPS 離線等各種偏離觸發情境。 */
   /** 對外的「開始導航」入口——包一層是為了不把 click 事件物件當成 resume 參數 */
   async function startGpsNav() {
     const session = ++sessionRef.current
     p.setMode('drive')
     setDrive(null)
+    setCanRetry(false)
     setGpsMsg('正在確認定位權限…')
     try {
       await ensureLocation()
       if (session === sessionRef.current) runGpsNav(false)
     } catch (e) {
-      if (session === sessionRef.current) setGpsMsg(e instanceof Error ? e.message : '無法啟動定位')
+      if (session === sessionRef.current) {
+        setGpsMsg(e instanceof Error ? e.message : '無法啟動定位')
+        setCanRetry(true)
+      }
     }
   }
 
+  /**
+   * 還沒經過的停靠點：路線記錄了每個中途停靠點的里程（viaDistM），
+   * 目前進度之後的停靠點都要照原順序繞經，最後才是終點。
+   */
+  function remainingTargets(): [number, number][] {
+    const stops = p.stopsRef.current
+    const to = stops[stops.length - 1]?.pos
+    if (!to) return []
+    const vias = stops.slice(1, -1)
+    const viaDistM = p.routeRef.current?.viaDistM ?? []
+    const traveledM = lastDriveRef.current?.traveledM ?? 0
+    const pending = vias.filter((stop, i) =>
+      !!stop.pos && (viaDistM[i] === undefined || viaDistM[i] > traveledM + 1))
+    return [...pending.map((stop) => stop.pos!), to]
+  }
+
+  /** 偏航重規劃：從目前（已偏離）位置依序繞經未到的停靠點，再到終點，並以 GPS 接續導航。 */
   function rerouteFrom(pos: [number, number], bearing: number | null) {
-    const to = p.stopsRef.current[p.stopsRef.current.length - 1]?.pos
+    const targets = remainingTargets()
     const g = p.graphRef.current
-    if (!to || !g) return
-    const result = g.routeDetailed(pos, to, p.profileRef.current, p.routePolicy, bearing ?? undefined)
-    const route = result.route
-    if (!route) {
-      setGpsMsg(routeFailureText(result.failure, 1))
-      return
+    if (targets.length === 0 || !g) return
+    const legs: RouteResult[] = []
+    let from = pos
+    for (let i = 0; i < targets.length; i++) {
+      const result = g.routeDetailed(from, targets[i], p.profileRef.current, p.routePolicy,
+        i === 0 ? bearing ?? undefined : undefined)
+      if (!result.route) {
+        rerouteErrorRef.current = routeFailureText(result.failure, i + 1)
+        setGpsMsg(rerouteErrorRef.current)
+        return
+      }
+      legs.push(result.route)
+      from = targets[i]
     }
+    const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
+    rerouteErrorRef.current = null
     setGpsMsg(null)
     p.annotateTwoStage(route)
     p.routeRef.current = route
     drawRouteLine(route)
-    // 目前是 GPS 導航中就繼續用 GPS 接續，否則走模擬（鍵盤橫移/路口決策都是模擬觸發）
     if (gpsDriverRef.current) runGpsNav(true)
   }
 
-  return { drive, gpsMsg, cameraAlert, startGpsNav, stopAllDrivers, following, recenter }
+  return { drive, gpsMsg, canRetry, cameraAlert, startGpsNav, stopAllDrivers, following, recenter }
 }

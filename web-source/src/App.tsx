@@ -53,7 +53,7 @@ export default function App() {
     })
   const planner = usePlanner(core)
   const {
-    drive, gpsMsg, cameraAlert,
+    drive, gpsMsg, canRetry, cameraAlert,
     startGpsNav, stopAllDrivers,
     following, recenter,
   } = useDrive({
@@ -102,13 +102,24 @@ export default function App() {
     setSelectedDestination(null)
   }
 
+  /** 導航還沒真正開始（定位失敗）就按結束：退回規劃畫面、保留路線，讓使用者處理權限後再開始 */
+  function cancelDriveStart() {
+    stopAllDrivers()
+    restoreBrowseMap()
+    setMode('pick')
+  }
+
+  function restoreBrowseMap() {
+    core.mapRef.current?.setLayoutProperty('oneway-arrow', 'visibility', 'visible')
+    core.mapRef.current?.setLayoutProperty('road-label', 'visibility', 'visible')
+    core.mapRef.current?.easeTo({ pitch: 0, bearing: 0, padding: { top: 0 } })
+  }
+
   function endDrive() {
     planner.clearAllRoute() // 內部已呼叫 stopAllDrivers()
     clearDestinationSelection()
     setMode('browse')
-    core.mapRef.current?.setLayoutProperty('oneway-arrow', 'visibility', 'visible')
-    core.mapRef.current?.setLayoutProperty('road-label', 'visibility', 'visible')
-    core.mapRef.current?.easeTo({ pitch: 0, bearing: 0, padding: { top: 0 } })
+    restoreBrowseMap()
   }
 
   function switchMode(m: Mode) {
@@ -173,9 +184,11 @@ export default function App() {
         <DriveHUD
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg}
+          canRetry={canRetry}
           cameraAlert={cameraAlert}
           destinationName={destinationName}
-          onEnd={endDrive}
+          onEnd={!drive && canRetry ? cancelDriveStart : endDrive}
+          onRetry={startGpsNav}
         />
       )}
 

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('assembleDebug', 'assembleRelease', 'testDebugUnitTest', 'clean')]
     [string]$Task = 'assembleDebug'
 )

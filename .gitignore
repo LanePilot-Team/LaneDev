@@ -99,3 +99,9 @@ web-source.zip
 
 # The compiled LaneDev assets are deliberately tracked: this repository must
 # build without the web source repository, Node.js, Vite, or Capacitor.
+
+# 誤追蹤過的本機產物：依賴請在 web-source 執行 npm ci；網頁建置輸出在 web-source/dist
+/node_modules/
+/dist/
+.gstack/
+*.tsbuildinfo

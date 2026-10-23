@@ -66,16 +66,41 @@
 - Android：manifest 宣告未使用的 `FileProvider`；Java 端只有範本測試。
 - 方向感測器輸出磁北，未做磁偏角修正（高雄約 4° 以內，影響小）。
 
+## 修復過程中新發現
+
+- **L9 路線車道判定認不出「機車左轉專用」**：`graph.ts` laneTransitionPlan 比對字串寫成「機慢車左轉專用道」，
+  資料（5 筆）與其他程式都是「機車左轉專用」。機車在這類路口左轉被判違規而繞路
+  （實測後昌路 way 23683301：繞 1,875 m → 修正後直接左轉 111 m）。
+- **T1 `tools/*.ps1` 是無 BOM 的 UTF-8**：Windows PowerShell 5.1 以系統碼頁（Big5）讀取，中文字串變亂碼，
+  `import-web-assets.ps1` 直接解析失敗、`gradle.ps1` 錯誤訊息亂碼。
+
 ## 修復狀態
 
-| 編號 | 狀態 |
-|---|---|
-| S1 | 待修 |
-| S2 | 待修 |
-| S3 | 待修 |
-| S4 | 待修 |
-| S5 | 待修 |
-| L1–L8 | 待修 |
-| 死碼 | 待修 |
-| 測試 | 待修 |
-| repo 整理 | 待修 |
+| 編號 | 狀態 | 說明 |
+|---|---|---|
+| S1 | ✅ 已修 | `routeDetailed` 新增 `startBearing`，偏航重規劃傳 GPS 平滑方位。真實路網 600 點重測：起步方向錯誤 40–46% → 0–1.7%（剩餘為誤差大到落在別條路） |
+| S2 | ⚠️ 部分 | binary heap、放寬可達預檢（真正不連通時免掃全圖）、跨查詢轉向判定快取。120 條路線結果逐條與舊版相同；重規劃情境快約 1.3–3 倍。根因是啟發函式以 90 km/h 估、幾乎掃全圖，要徹底解決需把路線計算移到 Web Worker（架構變更，待決定） |
+| S3 | ✅ 已修 | 停車保底抵達改為「最後一段 + 剩 35 m 內」 |
+| S4 | ✅ 已修 | 倒退超過 30 m（大於貼合容許的 25 m）才視為換路線 |
+| S5 | ✅ 已修 | near/now 轉向與抵達語音 priority → 原生 QUEUE_FLUSH 且不受上限丟棄；重規劃只清測速紀錄不 stopSpeech。**本機無 Android SDK，Java 未經 Gradle 編譯驗證** |
+| L1 | ✅ 已修 | 新增 `bannerActionText`，看板與語音同一套判斷 |
+| L2 | ✅ 已修 | 新增 `thenText`，看板與語音共用 |
+| L3 | ✅ 已修 | 重規劃失敗訊息保留到成功或回到路線上 |
+| L4 | ✅ 已修 | 尚未取得定位前失敗：顯示「重試」，「結束」退回規劃且保留路線 |
+| L5 | ✅ 已修 | `mergeRoutes` 記錄 `viaDistM`，重規劃依序繞經未到的停靠點 |
+| L6 | ⏸ 未修 | 邊成本模型（maxspeed、路口延遲）會改變路線結果，需另行討論與驗證 |
+| L7 | ⏸ 不改 | 重新評估：主執行緒本來就需要建築資料做遮擋判斷，worker 載入是為了不讓繪圖解析卡主執行緒，多的只是一次本機檔案讀取 |
+| L8 | ✅ 已修 | 新增 `useClientValue` selector；HUD 只訂閱語音開關，定位標記直接改 DOM |
+| L9 | ✅ 已修 | 共用常數 `MOTO_LEFT_TURN_MARK`；專用道左轉車道定位靠外側，回報 twoStage 仍為真實值 |
+| 死碼 | ✅ 已修 | 刪除 edit/、importFlow、editorMerge、mergedJunctions、roadMergeReload、transit、模擬 Driver；MapCore 精簡為唯讀介面；開 `noUnusedLocals` |
+| 測試 | ✅ 已修 | 相對 import 統一帶副檔名；`npm test` 改跑全部（274 項全過；刪除的是編輯器專屬測試） |
+| repo 整理 | ⚠️ 部分 | 根目錄 node_modules／dist／.gstack／tsbuildinfo 已停止追蹤並加入 .gitignore；**歷史紀錄仍含這些檔案**，要瘦身需改寫遠端歷史，由使用者決定 |
+| T1 | ✅ 已修 | `tools/*.ps1` 加 UTF-8 BOM |
+| FileProvider／磁偏角 | ⏸ 未修 | 無法在本機編譯 Android，未動 manifest |
+
+## 驗證
+
+- `npm ci --ignore-scripts`、`npm test`（274/274）、`npm run build`（含建置期 24 組路線還原比對）通過。
+- 預計算道路／待轉區／導航資料檔的內容雜湊與修改前完全相同；官方資料保留原始位元組（匯入時產生的換行差異已還原）。
+- `tools/import-web-assets.ps1` 匯入成功。
+- 未驗證：Gradle `assembleDebug`／`testDebugUnitTest`（本機無 Android SDK）、實機 GPS 導航與語音。

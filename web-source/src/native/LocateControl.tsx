@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Marker } from 'maplibre-gl'
 import type { MapCore } from '../app/mapCore'
 import { requestCurrentPosition } from '../nav/geolocation'
-import { deviceHeading, useClientState } from './client'
+import { deviceHeading, subscribeClientState } from './client'
 
 export function LocateControl({ core, loading, navigating }: {
   core: MapCore; loading: boolean; navigating: boolean
 }) {
-  const { heading, headingAt } = useClientState()
   const marker = useRef<Marker | null>(null)
   const sequence = useRef(0)
   const [busy, setBusy] = useState(false)
@@ -29,10 +28,12 @@ export function LocateControl({ core, loading, navigating }: {
           ? '目前位置；朝向暫不可用' : `目前位置；面向 ${Math.round(current)} 度，扇形為朝向`)
       }
     }
+    // 直接改 marker DOM，不經 React 重繪；1 秒計時負責把過期（>3s）的方向隱藏
     update()
+    const unsubscribe = subscribeClientState(update)
     const timer = setInterval(update, 1000)
-    return () => clearInterval(timer)
-  }, [heading, headingAt])
+    return () => { unsubscribe(); clearInterval(timer) }
+  }, [])
   async function locate() {
     const id = ++sequence.current
     setBusy(true); setError('')

@@ -2,7 +2,7 @@
 // ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
 import type { Maneuver, Profile } from '../core/graph'
 import type { DriveState } from './drive'
-import { useClientState } from '../native/client'
+import { useClientValue } from '../native/client'
 import { arrivalTimestamp } from './arrivalEstimate'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
 import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
@@ -185,7 +185,7 @@ export function DriveHUD({
   onEnd: () => void
   onRetry: () => void
 }) {
-  const { voice } = useClientState()
+  const voice = useClientValue((s) => s.voice)
   useSpeechGuidance({ drive, profile, twoStage, destinationName, enabled: voice })
 
   // ── GPS 導航還沒收到第一筆定位（或定位失敗）時的過渡畫面 ──

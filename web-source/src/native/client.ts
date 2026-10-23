@@ -31,8 +31,19 @@ function publish(patch: Partial<typeof state>) {
   listeners.forEach(fn => fn())
 }
 export function clientState() { return state }
+export function subscribeClientState(fn: () => void) {
+  listeners.add(fn)
+  return () => { listeners.delete(fn) }
+}
 export function useClientState() {
-  return useSyncExternalStore(fn => { listeners.add(fn); return () => { listeners.delete(fn) } }, clientState)
+  return useSyncExternalStore(subscribeClientState, clientState)
+}
+/**
+ * 只訂閱單一欄位：羅盤每 200ms 推一次方向，訂閱整包狀態的元件（導航 HUD）會跟著每秒重繪 5 次。
+ * selector 必須回傳原始值或穩定參考。
+ */
+export function useClientValue<T>(select: (s: typeof state) => T): T {
+  return useSyncExternalStore(subscribeClientState, () => select(state))
 }
 export function setVoice(voice: boolean) {
   publish({ voice })

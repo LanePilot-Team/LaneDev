@@ -2,10 +2,10 @@ import { angleDelta, bearing, haversine } from './geo.ts'
 import {
   applyCenterIslandJoins, CENTER_ISLAND_JOINS, type CenterIslandJoinSpec,
 } from './centerIslandJoins.ts'
-import type { EnhancementRecord } from './enhancements'
+import type { EnhancementRecord } from './enhancements.ts'
 import type {
   OneSideEntryAccess, RoadFeature, RoadMergeApproachPolicy, RoadProps,
-} from './roads'
+} from './roads.ts'
 
 export interface ResolvedRoadMerge {
   mergeKey: string

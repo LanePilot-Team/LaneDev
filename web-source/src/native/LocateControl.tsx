@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Marker } from 'maplibre-gl'
-import type { MapCore } from '../app/mapCore'
-import { requestCurrentPosition } from '../nav/geolocation'
-import { deviceHeading, subscribeClientState } from './client'
+import type { MapCore } from '../app/mapCore.ts'
+import { requestCurrentPosition } from '../nav/geolocation.ts'
+import { deviceHeading, subscribeClientState } from './client.ts'
 
 export function LocateControl({ core, loading, navigating }: {
   core: MapCore; loading: boolean; navigating: boolean

@@ -1,5 +1,5 @@
-import { BuildingOcclusion } from './buildingOcclusion'
-import { activeElevatedLayer } from './elevated3d'
+import { BuildingOcclusion } from './buildingOcclusion.ts'
+import { activeElevatedLayer } from './elevated3d.ts'
 import type { Map as MLMap } from 'maplibre-gl'
 
 export class NavigationOcclusion extends BuildingOcclusion {

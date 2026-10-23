@@ -1,7 +1,7 @@
 import type {
   Feature, FeatureCollection, GeoJsonProperties, Geometry, LineString, MultiPolygon, Polygon,
 } from 'geojson'
-import { cumulative, haversine, pointAlong } from './geo'
+import { cumulative, haversine, pointAlong } from './geo.ts'
 
 type GroundGeometry = Geometry | Polygon | MultiPolygon
 

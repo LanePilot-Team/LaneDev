@@ -1,20 +1,20 @@
 // 導航 HUD（高德式）：頂部指引看板、車道列、速度圓標、測速提示、底部資訊列。
 // ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
-import type { Maneuver, Profile } from '../core/graph'
-import type { DriveState } from './drive'
-import { useClientValue } from '../native/client'
-import { arrivalTimestamp } from './arrivalEstimate'
-import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView'
-import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
-import { ENFORCEMENT_LABEL, type SpeedCameraAlert } from '../core/speedCameras'
+import type { Maneuver, Profile } from '../core/graph.ts'
+import type { DriveState } from './drive.ts'
+import { useClientValue } from '../native/client.ts'
+import { arrivalTimestamp } from './arrivalEstimate.ts'
+import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView.tsx'
+import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview.ts'
+import { ENFORCEMENT_LABEL, type SpeedCameraAlert } from '../core/speedCameras.ts'
 import {
   PASS_THRESHOLD,
   bannerActionText,
   formatDistanceText,
   getGuidancePhase,
   thenText,
-} from './speechGuidance'
-import { useSpeechGuidance } from './useSpeechGuidance'
+} from './speechGuidance.ts'
+import { useSpeechGuidance } from './useSpeechGuidance.ts'
 
 export function TopBanner({ drive, twoStage, profile }: {
   drive: DriveState; twoStage: boolean; profile: Profile

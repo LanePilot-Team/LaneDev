@@ -1,11 +1,11 @@
 import type { Feature, FeatureCollection } from 'geojson'
-import { angleDelta, cumulative, haversine, pointAlong, LANE_WIDTH_M } from './geo'
-import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads'
-import { offsetAt, type RightLane, type TurnBay } from './turnbays'
+import { angleDelta, cumulative, haversine, pointAlong, LANE_WIDTH_M } from './geo.ts'
+import { laneSpanM, MOTO_LANE_M, type LaneMark } from './roads.ts'
+import { offsetAt, type RightLane, type TurnBay } from './turnbays.ts'
 import {
   freeIntervals, indexObstacles, projectNearbyObstacles, type GroundObstacle,
-} from './groundAvoid'
-import type { RoadGraph } from './graph'
+} from './groundAvoid.ts'
+import type { RoadGraph } from './graph.ts'
 
 /** 舊名保留：路面文字的避讓輸入就是共用的 GroundObstacle。 */
 export type RoadTextObstacle = GroundObstacle

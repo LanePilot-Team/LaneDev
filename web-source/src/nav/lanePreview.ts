@@ -255,5 +255,5 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
       : undefined,
   }
 }
-import type { LaneGuidanceSource } from '../core/laneGuidance'
-import type { LaneDecision } from '../core/laneDecision'
+import type { LaneGuidanceSource } from '../core/laneGuidance.ts'
+import type { LaneDecision } from '../core/laneDecision.ts'

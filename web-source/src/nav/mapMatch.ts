@@ -9,7 +9,7 @@
 //   3. 進度只准前進（單調 max）：每一筆往前抖的雜訊都會永久推進里程，誤差只累加不歸還，
 //      走越久偏越多——這就是「剛開始還行，越走越偏」。
 // 這裡改成「上一筆里程附近的視窗內找最近點」，並允許有限度的後退，誤差就不會累積。
-import { COS_LAT, angleDelta, bearing } from '../core/geo'
+import { COS_LAT, angleDelta, bearing } from '../core/geo.ts'
 
 /** 精度好過這個值才敢完全相信這筆定位（公尺）——都市峽谷常在 10~30m */
 export const ACCURACY_TRUST_M = 35

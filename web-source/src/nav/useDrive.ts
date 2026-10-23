@@ -11,24 +11,24 @@ import {
   type LaneRoutePolicy,
   type RouteResult,
   type Profile,
-} from '../core/graph'
-import { activeElevatedLayer } from '../core/elevated3d'
-import type { DriveState } from './drive'
-import { clientState, ensureLocation, nativeCommand } from '../native/client'
-import { GpsDriver, type RerouteClock } from './gpsNav'
-import { GpsAnimation } from './gpsAnimation'
-import { VehicleModelLayer } from '../core/models3d'
-import { angleDelta, cumulative } from '../core/geo'
-import type { Mode } from '../app/mapCore'
-import type { Stop } from '../plan/usePlanner'
-import { activeNavigationOcclusion } from '../core/occlusion'
-import { isZoneEnabled, type Zone } from '../core/zones'
-import { routeFailureText } from '../plan/routeFailure'
+} from '../core/graph.ts'
+import { activeElevatedLayer } from '../core/elevated3d.ts'
+import type { DriveState } from './drive.ts'
+import { clientState, ensureLocation, nativeCommand } from '../native/client.ts'
+import { GpsDriver, type RerouteClock } from './gpsNav.ts'
+import { GpsAnimation } from './gpsAnimation.ts'
+import { VehicleModelLayer } from '../core/models3d.ts'
+import { angleDelta, cumulative } from '../core/geo.ts'
+import type { Mode } from '../app/mapCore.ts'
+import type { Stop } from '../plan/usePlanner.ts'
+import { activeNavigationOcclusion } from '../core/occlusion.ts'
+import { isZoneEnabled, type Zone } from '../core/zones.ts'
+import { routeFailureText } from '../plan/routeFailure.ts'
 import {
   matchCamerasToRoute, speedCameraAlertAt, speedCameraAnnouncement,
   type RouteCamera, type SpeedCamera, type SpeedCameraAlert,
-} from '../core/speedCameras'
-import { SpeedCameraVoice } from './speedCameraVoice'
+} from '../core/speedCameras.ts'
+import { SpeedCameraVoice } from './speedCameraVoice.ts'
 
 /** 接近待轉區時的高亮距離。 */
 const ZONE_HIGHLIGHT_RANGE_M = 160

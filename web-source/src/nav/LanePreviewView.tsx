@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { LaneArrowKind, LanePreviewAction, LanePreviewModel } from './lanePreview'
+import type { LaneArrowKind, LanePreviewAction, LanePreviewModel } from './lanePreview.ts'
 import twoStageWaitSign from './assets/lane-guidance/two-stage-wait-sign.png'
 
 const ARROW_LABEL: Record<LaneArrowKind, string> = {

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { nativeCommand, setVoice, setZoom, useClientState } from './client'
+import { nativeCommand, setVoice, setZoom, useClientState } from './client.ts'
 import './client.css'
 
 export function ClientSettings({ navigating }: { navigating: boolean }) {

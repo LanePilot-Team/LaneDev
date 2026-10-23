@@ -1,5 +1,5 @@
 import type { Map as MLMap, MapGeoJSONFeature, Point } from 'maplibre-gl'
-import type { RoadFeature } from '../core/roads'
+import type { RoadFeature } from '../core/roads.ts'
 import { haversine } from '../core/geo.ts'
 
 const NEAR_PX = 4

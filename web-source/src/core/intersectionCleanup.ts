@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, LineString } from 'geojson'
-import { haversine } from './geo'
-import type { RoadFeature } from './roads'
+import { haversine } from './geo.ts'
+import type { RoadFeature } from './roads.ts'
 
 export const CLEAN_INTERSECTIONS = [
   {

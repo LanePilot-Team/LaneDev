@@ -5,22 +5,22 @@ import maplibregl from 'maplibre-gl'
 import {
   mergeRoutes, laneBand, laneChoiceAreas,
   type RouteResult, type Maneuver, type Profile, type LaneRoutePolicy,
-} from '../core/graph'
-import { activeElevatedLayer } from '../core/elevated3d'
-import { annotateBays, annotateRightLanes } from '../core/turnbays'
-import { angleDelta, haversine } from '../core/geo'
-import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore'
-import { isZoneEnabled } from '../core/zones'
-import { routeFailureText } from './routeFailure'
+} from '../core/graph.ts'
+import { activeElevatedLayer } from '../core/elevated3d.ts'
+import { annotateBays, annotateRightLanes } from '../core/turnbays.ts'
+import { angleDelta, haversine } from '../core/geo.ts'
+import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore.ts'
+import { isZoneEnabled } from '../core/zones.ts'
+import { routeFailureText } from './routeFailure.ts'
 import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
 import {
   createPlaceRouteStops, withCurrentStart,
   firstUnsetStopId,
   type RouteDestination,
   type Stop,
-} from './placeRoute'
+} from './placeRoute.ts'
 
-export type { RouteDestination, RouteStart, Stop } from './placeRoute'
+export type { RouteDestination, RouteStart, Stop } from './placeRoute.ts'
 
 
 export interface Planner {

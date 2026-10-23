@@ -5,8 +5,8 @@
 // float32 精度問題）。場景軸向：x=東、y=上、z=南（模型面朝 -z=北，yaw=-bearing）。
 import * as THREE from 'three'
 import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplibre-gl'
-import { NANZI_CENTER } from './geo'
-import type { PlacedVehicle } from './vehicles'
+import { NANZI_CENTER } from './geo.ts'
+import type { PlacedVehicle } from './vehicles.ts'
 
 const CAR_COLORS = [0x2f66e5, 0xd33f49, 0x3aa17e, 0xe0a63c, 0x6b7280]
 

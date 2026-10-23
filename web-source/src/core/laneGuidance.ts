@@ -1,4 +1,4 @@
-import type { DropRemap } from './couplet'
+import type { DropRemap } from './couplet.ts'
 
 export type LaneDirection = 'forward' | 'backward'
 export type LaneGuidanceScope =

@@ -2,12 +2,12 @@
 // 對回路網圖的左轉配對，位置交給 planZone（停止線對齊）。
 // 三個使用方共用同一套：importFlow（手動匯入）、mapCore（啟動自動吃入）、
 // scripts/import_audit.ts（離線稽核）——稽核工具必須與 app 走同一條 code path。
-import type { AnnotationRecord } from './importmap'
-import type { RoadFeature } from './roads'
-import type { RoadGraph, TurnOption } from './graph'
-import type { DropRemap } from './couplet'
-import { makeZoneCtx, planZone, type Zone } from './zones'
-import { angleDelta, bearing as geoBearing, haversine } from './geo'
+import type { AnnotationRecord } from './importmap.ts'
+import type { RoadFeature } from './roads.ts'
+import type { RoadGraph, TurnOption } from './graph.ts'
+import type { DropRemap } from './couplet.ts'
+import { makeZoneCtx, planZone, type Zone } from './zones.ts'
+import { angleDelta, bearing as geoBearing, haversine } from './geo.ts'
 import { laneBaseZoneCandidates, type LaneBaseIndex } from './laneBase.ts'
 
 /** 底圖前處理「之前」的原始 way 幾何（載入時反轉 oneway=-1 之後）。

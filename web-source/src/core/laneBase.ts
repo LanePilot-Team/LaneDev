@@ -1,5 +1,5 @@
-import type { DropRemap } from './couplet'
-import type { MovementRule } from './importmap'
+import type { DropRemap } from './couplet.ts'
+import type { MovementRule } from './importmap.ts'
 import {
   isLaneDirection,
   type LaneDirection,

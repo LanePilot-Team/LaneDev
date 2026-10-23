@@ -2,8 +2,8 @@
 //
 // 去重是這裡的重點：狀態機每 160ms 就會算出一次同樣的提示，若不記住講過什麼，
 // 同一句會被重複觸發到蓋掉自己。key 由 core/speedCameras 產生（相機 id + 階段）。
-import type { SpeedCameraAnnouncement } from '../core/speedCameras'
-import { speak, stopSpeech } from '../native/client'
+import type { SpeedCameraAnnouncement } from '../core/speedCameras.ts'
+import { speak, stopSpeech } from '../native/client.ts'
 
 export class SpeedCameraVoice {
   private spoken = new Set<string>()

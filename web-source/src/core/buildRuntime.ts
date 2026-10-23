@@ -1,48 +1,48 @@
 import type { Feature, FeatureCollection, Polygon, Position } from 'geojson'
-import { asset } from './asset'
+import { asset } from './asset.ts'
 import {
   buildDividers, buildRoadSurfaces, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
-} from './roads'
-import { prepareBaseRoads } from './pipeline'
-import type { DropRemap } from './couplet'
-import { parseImported } from './importmap'
-import { RoadGraph } from './graph'
+} from './roads.ts'
+import { prepareBaseRoads } from './pipeline.ts'
+import type { DropRemap } from './couplet.ts'
+import { parseImported } from './importmap.ts'
+import { RoadGraph } from './graph.ts'
 import {
   loadDeletedZoneIds, loadZones, zonesToGeoJSON, type Zone,
-} from './zones'
+} from './zones.ts'
 import {
   loadJournal, foldJournal, applyToRoads, remapJournalNodes, type EnhancementRecord,
-} from './enhancements'
+} from './enhancements.ts'
 import {
   buildRoadMergeViews,
-} from './roadMerge'
+} from './roadMerge.ts'
 import {
   buildRawWays, overlayWaitingZones, zonesFromLaneBase,
   type RawWay,
-} from './zoneimport'
-import { newRoadsFromFolded } from './newroads'
+} from './zoneimport.ts'
+import { newRoadsFromFolded } from './newroads.ts'
 import {
   buildTurnBays, buildChannelization, buildLaneArrows, buildRightLanes, buildStopLines,
   buildSpecifiedWhiteMotoHatch,
   buildLeftTurnWaitingAreas,
   buildMotoBoxes, buildMotoLaneEntryIcons, buildUnusedLaneGores, baysToGeoJSON,
   type TurnBay, type RightLane, type MotoBox,
-} from './turnbays'
-import { buildRoadLabelLines, buildRoadTexts, roadTextObstacles } from './roadtext'
+} from './turnbays.ts'
+import { buildRoadLabelLines, buildRoadTexts, roadTextObstacles } from './roadtext.ts'
 import {
   buildMedians, buildCenterIslands, buildMotoSepIslands, buildTwinIslands, mediansToGeoJSON,
-} from './medians'
-import { buildElevation } from './elevation'
-import { haversine } from './geo'
-import { cleanIntersectionFeatures, roadsWithCleanupFlags } from './intersectionCleanup'
-import { groundMarkingPolygons } from './groundMarkings'
+} from './medians.ts'
+import { buildElevation } from './elevation.ts'
+import { haversine } from './geo.ts'
+import { cleanIntersectionFeatures, roadsWithCleanupFlags } from './intersectionCleanup.ts'
+import { groundMarkingPolygons } from './groundMarkings.ts'
 import {
   loadStaticRoadDatabase, staticAnnotations, staticSegments,
-} from './staticDatabase'
+} from './staticDatabase.ts'
 import {
   applyLaneBaseToRoads, buildLaneBaseIndex, extractLaneBase, remapLaneBase,
   type LaneBaseApplyReport, type LaneBaseIndex, type LaneBaseRecord,
-} from './laneBase'
+} from './laneBase.ts'
 
 
 const cell = <T>(current: T) => ({ current })

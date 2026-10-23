@@ -2,25 +2,25 @@
 // 功能實作都在 app/（地圖核心、匯入）、plan/（規劃）、nav/（導航）、browse/（瀏覽）、
 // edit/（編輯，LaneDev 專屬）——除 edit/ 外皆與 LaneNav 共用（npm run sync-lanenav 鏡像）。
 import { useEffect, useRef, useState } from 'react'
-import { useMapCore, type Mode } from './app/mapCore'
+import { useMapCore, type Mode } from './app/mapCore.ts'
 
-import { usePlanner } from './plan/usePlanner'
-import { PlanPanel } from './plan/PlanPanel'
-import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard'
-import { useDrive } from './nav/useDrive'
-import { DriveHUD, RecenterButton } from './nav/DriveHUD'
-import { ClientSettings } from './native/ClientSettings'
-import { LocateControl } from './native/LocateControl'
-import { PlaceSearch } from './places/PlaceSearch'
+import { usePlanner } from './plan/usePlanner.ts'
+import { PlanPanel } from './plan/PlanPanel.tsx'
+import { queryRoadInfoAt, RoadInfoCard } from './browse/RoadInfoCard.tsx'
+import { useDrive } from './nav/useDrive.ts'
+import { DriveHUD, RecenterButton } from './nav/DriveHUD.tsx'
+import { ClientSettings } from './native/ClientSettings.tsx'
+import { LocateControl } from './native/LocateControl.tsx'
+import { PlaceSearch } from './places/PlaceSearch.tsx'
 import {
   POI_LAYER_IDS,
   placeFromPoiFeature,
-} from './places/places'
+} from './places/places.ts'
 import {
   destinationLabel,
   localDestination,
   type DestinationSelection,
-} from './places/destination'
+} from './places/destination.ts'
 
 import './App.css'
 

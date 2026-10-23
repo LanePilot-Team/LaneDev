@@ -6,10 +6,10 @@
 //（不自己湊常數——踩過的坑）、共用 MapLibre 的 WebGL context、antialias 一律關。
 import * as THREE from 'three'
 import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplibre-gl'
-import { NANZI_CENTER, pointAlong, cumulative, bearing, COS_LAT, LANE_WIDTH_M } from './geo'
-import { MOTO_LANE_M, type RoadFeature } from './roads'
-import { activeElevation, blockKeyOf, type ElevationModel } from './elevation'
-import { spanAtDist, type RouteResult, type LaneBandResult, type LaneChoiceArea } from './graph'
+import { NANZI_CENTER, pointAlong, cumulative, bearing, COS_LAT, LANE_WIDTH_M } from './geo.ts'
+import { MOTO_LANE_M, type RoadFeature } from './roads.ts'
+import { activeElevation, blockKeyOf, type ElevationModel } from './elevation.ts'
+import { spanAtDist, type RouteResult, type LaneBandResult, type LaneChoiceArea } from './graph.ts'
 
 /** 取樣間距（公尺）：橋面/護欄沿中心線的斷面密度（爬升段的平滑度來源） */
 const STEP_M = 8

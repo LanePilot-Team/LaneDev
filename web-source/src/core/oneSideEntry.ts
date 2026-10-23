@@ -1,5 +1,5 @@
 // 捏合接點的單向進入規則（純函式，只有型別相依，可單獨測試）。
-import type { RoadFeature } from './roads'
+import type { RoadFeature } from './roads.ts'
 
 const roadBlockKey = (road: RoadFeature) =>
   `way/${road.properties.osm_id}@b/${road.properties.blockNode}`

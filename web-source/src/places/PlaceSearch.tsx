@@ -1,23 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { PlaceAddress } from './PlaceAddress'
-import { asset } from '../core/asset'
-import type { MapCore } from '../app/mapCore'
+import { PlaceAddress } from './PlaceAddress.tsx'
+import { asset } from '../core/asset.ts'
+import type { MapCore } from '../app/mapCore.ts'
 import {
   GooglePlaceSearch,
   type GooglePlaceSearchHandle,
   type GooglePlaceSearchState,
-} from './GooglePlaceSearch'
+} from './GooglePlaceSearch.tsx'
 import {
   searchPlaces,
   type PlaceDatabase,
   type PlaceRecord,
-} from './places'
+} from './places.ts'
 import {
   destinationLabel,
   googleDestination,
   localDestination,
   type DestinationSelection,
-} from './destination'
+} from './destination.ts'
 
 type SearchProvider = 'local' | 'google'
 

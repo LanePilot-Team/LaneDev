@@ -1,4 +1,4 @@
-import type { DestinationProvider } from '../places/destination'
+import type { DestinationProvider } from '../places/destination.ts'
 
 export interface Stop {
   id: number

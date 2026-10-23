@@ -1,11 +1,11 @@
-import { requestCurrentPosition } from '../nav/geolocation'
+import { requestCurrentPosition } from '../nav/geolocation.ts'
 import { useRef, useState, useEffect } from 'react'
-import { ManeuverList } from './ManeuverList'
-import type { Planner } from './usePlanner'
-import type { MapCore } from '../app/mapCore'
-import { PlaceSearch } from '../places/PlaceSearch'
-import { PlaceAddress } from '../places/PlaceAddress'
-import { destinationLabel, type DestinationSelection } from '../places/destination'
+import { ManeuverList } from './ManeuverList.tsx'
+import type { Planner } from './usePlanner.ts'
+import type { MapCore } from '../app/mapCore.ts'
+import { PlaceSearch } from '../places/PlaceSearch.tsx'
+import { PlaceAddress } from '../places/PlaceAddress.tsx'
+import { destinationLabel, type DestinationSelection } from '../places/destination.ts'
 
 export function PlanPanel({ core, planner, onClose, startGpsNav }: {
   core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void

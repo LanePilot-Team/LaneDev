@@ -11,7 +11,7 @@
 // 這裡改用鄰近比對，而且**只作用在導航圖上**：回傳一份節點別名表，讓 RoadGraph
 // 把「主線的負節點」與「側街的端點」視為同一個路口。靜態 node_refs 一個字都不動，
 // 所以捏合的視覺連續、區塊鍵、既有覆寫全部不受影響。
-import type { RoadFeature } from './roads'
+import type { RoadFeature } from './roads.ts'
 
 // 刻意不 import ./geo：那是 value import，node --test 的 strip-only 型別剝除無法
 // 解析無副檔名的相對路徑，整個模組就測不到。這裡只需要一個平面近似距離。

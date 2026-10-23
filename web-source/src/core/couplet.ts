@@ -4,8 +4,8 @@
 //   中心線 = 兩線中點；保留 keep 組的 node id；drop 組上的路口 node 移植到
 //   中心線上（其他道路引用同一 node id，座標跟著更新 → 交叉路自動接上）。
 // 這也是未來全台分離幹道正規化的雛型（設計文件 §5 開放問題）。
-import { bearing, angleDelta, COS_LAT } from './geo'
-import { computeDerived, type RoadFeature } from './roads'
+import { bearing, angleDelta, COS_LAT } from './geo.ts'
+import { computeDerived, type RoadFeature } from './roads.ts'
 
 const KX = 111320 * COS_LAT
 const KY = 110540

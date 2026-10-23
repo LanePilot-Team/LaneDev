@@ -2,36 +2,36 @@
 // 狀態、地圖點擊分派與 journal 寫入。
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GeoJSONSource, Map as MLMap, MapMouseEvent } from 'maplibre-gl'
-import { RoadGraph, type Profile, type TurnOption } from '../core/graph'
+import { RoadGraph, type Profile, type TurnOption } from '../core/graph.ts'
 import {
   appendRecord, appendRecords, applyToRoads, foldJournal, getAuthor, type EnhancementRecord,
-} from '../core/enhancements'
+} from '../core/enhancements.ts'
 import {
   activeMergeForRoad, applyRoadMergeAfterSave, planRoadMergeSeamUndo, previewRoadMerge,
   roadMergeComponentBlockKeys, roadMergeEditableRoads, roadMergeEditDrafts,
   roadMergeMotoBoxTargets, roadMergeRenderCarrier,
   type RoadMergeReplayRow,
-} from '../core/roadMerge'
-import { materializeJournalRecords } from '../core/journalBatch'
-import { flushStaticEditorSave } from '../core/staticDatabase'
-import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads'
+} from '../core/roadMerge.ts'
+import { materializeJournalRecords } from '../core/journalBatch.ts'
+import { flushStaticEditorSave } from '../core/staticDatabase.ts'
+import { newRoadsFromFolded, nextNewRoadIds } from '../core/newroads.ts'
 import {
   groundMoves, makeMotoBoxSlot, motoBoxApproachPolicy, motoBoxClampRange,
   motoBoxEditorLimits, motoBoxInitialRange, motoBoxSaveFields, stopLineEdges,
   type MotoBoxApproachPolicy,
-} from '../core/turnbays'
-import { haversine, bearing as geoBearing } from '../core/geo'
-import type { PlacedVehicle } from '../core/vehicles'
-import type { MapCore, Mode } from '../app/mapCore'
+} from '../core/turnbays.ts'
+import { haversine, bearing as geoBearing } from '../core/geo.ts'
+import type { PlacedVehicle } from '../core/vehicles.ts'
+import type { MapCore, Mode } from '../app/mapCore.ts'
 import {
   buildDividers, buildRoadSurfaces, computeDerived, type LaneMark, type RoadFeature,
-} from '../core/roads'
-import { groundMarkingPolygons } from '../core/groundMarkings'
+} from '../core/roads.ts'
+import { groundMarkingPolygons } from '../core/groundMarkings.ts'
 import {
   collectStackedRoads, describeStackRoad, nextStackIndex, stackKeyOf, EMPTY_CURSOR,
   type StackCursor, type StackPick,
-} from './stackPick'
-import { reportRoadEditSave } from './roadSaveFeedback'
+} from './stackPick.ts'
+import { reportRoadEditSave } from './roadSaveFeedback.ts'
 
 export type EditTool = 'lane' | 'zone' | 'bay' | 'vehicle' | 'road'
 

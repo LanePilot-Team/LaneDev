@@ -5,14 +5,14 @@
 //   - journal   = 歷程原文，可追溯「誰、何時、把什麼改成什麼」，可 rebase 到新版 OSM
 //   - latest    = 折疊後的目前值，渲染與導航吃這份
 // 匯出檔同時含兩者 + 待轉區，之後轉 LanePilot schema 只是欄位映射。
-import { computeDerived, type RoadFeature } from './roads'
-import { angleDelta, bearing, haversine } from './geo'
-import type { Zone } from './zones'
-import { humanWaitingZones } from './zoneimport'
-import type { PlacedVehicle } from './vehicles'
-import type { TurnBay, RightLane } from './turnbays'
-import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase'
-import { appendJournalRecords, type EnhancementRecordDraft } from './journalBatch'
+import { computeDerived, type RoadFeature } from './roads.ts'
+import { angleDelta, bearing, haversine } from './geo.ts'
+import type { Zone } from './zones.ts'
+import { humanWaitingZones } from './zoneimport.ts'
+import type { PlacedVehicle } from './vehicles.ts'
+import type { TurnBay, RightLane } from './turnbays.ts'
+import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase.ts'
+import { appendJournalRecords, type EnhancementRecordDraft } from './journalBatch.ts'
 
 export interface EnhancementRecord {
   seq: number

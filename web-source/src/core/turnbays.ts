@@ -8,18 +8,18 @@
 // （present:0 = 實地確認沒有）。標線顏色規則：分隔對向 = 黃、分隔同向 = 白。
 import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
 import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
-import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo'
-import { laneSpanM, MOTO_LANE_M, type LaneMark, type RoadFeature } from './roads'
-import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph'
-import type { EnhancementRecord } from './enhancements'
-import { guidanceForRoadDirection } from './laneBase'
-import { indexObstacles, projectNearbyObstacles } from './groundAvoid'
+import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo.ts'
+import { laneSpanM, MOTO_LANE_M, type LaneMark, type RoadFeature } from './roads.ts'
+import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph.ts'
+import type { EnhancementRecord } from './enhancements.ts'
+import { guidanceForRoadDirection } from './laneBase.ts'
+import { indexObstacles, projectNearbyObstacles } from './groundAvoid.ts'
 import {
   buildCappedTriangleRange,
   buildHatchDistances,
   singleBayUnusedSideOffsets,
   TAIWAN_YELLOW_HATCH_V1,
-} from './channelizationStyle'
+} from './channelizationStyle.ts'
 
 // 生成範圍（2026-07-15 起不再限路名）：所有 couplet 合併、中央帶為槽化的路段。
 // 「查不到就假設有」政策跟著放大到全部合併路——實地沒有的 bay 用面板關（present:0）。

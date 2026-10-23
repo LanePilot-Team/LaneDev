@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { loadGooglePlacesLibrary } from './googleMapsLoader'
+import { loadGooglePlacesLibrary } from './googleMapsLoader.ts'
 
 export type GooglePlaceSearchState = 'idle' | 'loading' | 'ready' | 'error'
 

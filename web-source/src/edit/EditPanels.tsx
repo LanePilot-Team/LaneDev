@@ -1,23 +1,23 @@
 // 編輯模式 UI（LaneDev 專屬）：工具切換提示列 + 車道/待轉區/偏心道/車輛四個側面板。
 import { useSyncExternalStore } from 'react'
-import type { Profile } from '../core/graph'
-import { exportEnhancements, getAuthor, setAuthor, stampAuthor } from '../core/enhancements'
-import { makeZoneCtx, markZoneDeleted, planZone } from '../core/zones'
-import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays'
-import { angleDelta, offsetMeters } from '../core/geo'
-import type { PlacedVehicle } from '../core/vehicles'
-import type { MapCore } from '../app/mapCore'
-import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext'
-import type { LaneMark } from '../core/roads'
+import type { Profile } from '../core/graph.ts'
+import { exportEnhancements, getAuthor, setAuthor, stampAuthor } from '../core/enhancements.ts'
+import { makeZoneCtx, markZoneDeleted, planZone } from '../core/zones.ts'
+import { bayCandidatesAt, rightLaneCandidatesAt } from '../core/turnbays.ts'
+import { angleDelta, offsetMeters } from '../core/geo.ts'
+import type { PlacedVehicle } from '../core/vehicles.ts'
+import type { MapCore } from '../app/mapCore.ts'
+import { CAR_LANE_MARKS, MOTO_LANE_MARKS } from '../core/roadtext.ts'
+import type { LaneMark } from '../core/roads.ts'
 import {
   flushStaticEditorSave, getStaticSaveSnapshot, subscribeStaticSaveState,
-} from '../core/staticDatabase'
+} from '../core/staticDatabase.ts'
 import {
   clampMotoBoxRange, compassOf, motoBoxPanelLimits,
   resizeLaneMarks, resizeTurnLanes, resizeMotoTurnLanes,
   TURN_CYCLE, TURN_EDIT_GLYPH, BAY_TURN_CYCLE, BAY_TURN_GLYPH, type Editor,
-} from './useEditor'
-import { formatTaiwanHistoryTime } from './timeFormat'
+} from './useEditor.ts'
+import { formatTaiwanHistoryTime } from './timeFormat.ts'
 
 const resizeDirectionMarks = (
   marks: (LaneMark | null)[], oldCars: number, newCars: number, moto: boolean | number,

@@ -1,7 +1,7 @@
 // 檔案 editor 與瀏覽器備援的合併規則（純函式，無副作用，可單獨測試）。
-import type { EnhancementRecord } from './enhancements'
-import type { StaticEditorState } from './staticDatabase'
-import type { Zone } from './zones'
+import type { EnhancementRecord } from './enhancements.ts'
+import type { StaticEditorState } from './staticDatabase.ts'
+import type { Zone } from './zones.ts'
 
 /**
  * 紀錄的內容指紋。seq 會在遷移時整批重編，ts+作者+目標+欄位值才是穩定身分；

@@ -1,8 +1,8 @@
 // Base Layer 人工修正（組員實地回報，OSM 資料落後現況）。載入時最先套用，
 // 在 couplet 合併之前——改名會影響合併 scope（右昌大橋改名後才會併進藍昌路）。
 // ⚠ 這些修正掛在 OSM way id / name 上：LanePilot 換新 PBF 快照後要重新驗證。
-import { COS_LAT, cumulative } from './geo'
-import { computeDerived, type RoadFeature } from './roads'
+import { COS_LAT, cumulative } from './geo.ts'
+import { computeDerived, type RoadFeature } from './roads.ts'
 
 /** 路名修正（2026-07-15 組員回報：實地路牌已全面改名） */
 const RENAMES: Record<string, string> = {

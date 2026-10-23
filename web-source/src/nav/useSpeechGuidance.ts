@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { speak, stopSpeech } from '../native/client'
-import type { Profile } from '../core/graph'
-import type { DriveState } from './drive'
+import { speak, stopSpeech } from '../native/client.ts'
+import type { Profile } from '../core/graph.ts'
+import type { DriveState } from './drive.ts'
 import {
   arrivalAnnouncement,
   arrivingAnnouncement,
@@ -9,7 +9,7 @@ import {
   maneuverSpeechKey,
   speechStage,
   type SpeechStage,
-} from './speechGuidance'
+} from './speechGuidance.ts'
 
 export interface UseSpeechGuidanceArgs {
   enabled: boolean

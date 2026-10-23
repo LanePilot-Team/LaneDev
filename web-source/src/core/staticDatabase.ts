@@ -1,6 +1,6 @@
-import { asset } from './asset'
-import type { EnhancementRecord } from './enhancements'
-import type { Zone } from './zones'
+import { asset } from './asset.ts'
+import type { EnhancementRecord } from './enhancements.ts'
+import type { Zone } from './zones.ts'
 export interface StaticEditorState {
   updated_at: string
   journal: EnhancementRecord[]

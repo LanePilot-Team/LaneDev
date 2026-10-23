@@ -5,12 +5,12 @@
 import type { Feature, FeatureCollection } from 'geojson'
 import {
   angleDelta, bearing, cumulative, offsetMeters, pointAlong, skewFromCross,
-} from './geo'
-import { laneSpanM } from './roads'
-import type { RoadGraph, ScopeEdge, TurnOption } from './graph'
+} from './geo.ts'
+import { laneSpanM } from './roads.ts'
+import type { RoadGraph, ScopeEdge, TurnOption } from './graph.ts'
 import {
   hasStaticRoadDatabase, staticDeletedZoneIds, staticZones, updateStaticEditor,
-} from './staticDatabase'
+} from './staticDatabase.ts'
 
 export interface Zone {
   id: string

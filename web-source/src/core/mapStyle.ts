@@ -1,9 +1,9 @@
 // 高德導航風格：淺色底、深藍灰路面、白色車道線、藍色路線帶。
 // 車道級圖層 (minzoom 15) 全部用真實公尺寬，縮放時比例不變。
 import type { StyleSpecification, ExpressionSpecification } from 'maplibre-gl'
-import { widthMeters, pxPerMeter } from './geo'
-import { asset } from './asset'
-import { GROUND_RULES } from './roadtext'
+import { widthMeters, pxPerMeter } from './geo.ts'
+import { asset } from './asset.ts'
+import { GROUND_RULES } from './roadtext.ts'
 
 export const C = {
   bg: '#e9edf2',

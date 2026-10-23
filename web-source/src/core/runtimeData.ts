@@ -1,6 +1,6 @@
-import { asset } from './asset'
-import { runtimeReviver, RUNTIME_FORMAT } from './runtimeCodec'
-import type { buildClientRuntime } from './buildRuntime'
+import { asset } from './asset.ts'
+import { runtimeReviver, RUNTIME_FORMAT } from './runtimeCodec.ts'
+import type { buildClientRuntime } from './buildRuntime.ts'
 
 export type RuntimeNavigation = Awaited<ReturnType<typeof buildClientRuntime>>['navigation']
 export interface RuntimeManifest {

@@ -8,11 +8,11 @@
 // Case A（單一雙向 way 上的島 + 封閉節點轉向限制）待後續。
 import type { Feature, FeatureCollection } from 'geojson'
 import { buffer, difference, featureCollection, lineString, polygon } from '@turf/turf'
-import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT, LANE_WIDTH_M } from './geo'
-import { laneSpanM, manualMarkingSetbackM, type RoadFeature } from './roads'
-import type { RoadGraph } from './graph'
-import type { EnhancementRecord } from './enhancements'
-import { offsetAt, subtract, type TurnBay } from './turnbays'
+import { bearing, angleDelta, cumulative, pointAlong, offsetMeters, COS_LAT, LANE_WIDTH_M } from './geo.ts'
+import { laneSpanM, manualMarkingSetbackM, type RoadFeature } from './roads.ts'
+import type { RoadGraph } from './graph.ts'
+import type { EnhancementRecord } from './enhancements.ts'
+import { offsetAt, subtract, type TurnBay } from './turnbays.ts'
 
 /** 實驗範圍：先在大學南路驗證（Case B 自動推導對所有分離幹道通用，驗證後放大） */
 export const MEDIAN_SCOPE_ROADS = new Set(['大學南路'])

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { nativeCommand } from '../native/client'
-import type { PlaceRecord } from './places'
+import { nativeCommand } from '../native/client.ts'
+import type { PlaceRecord } from './places.ts'
 
 const cache = new Map<string, Promise<string>>()
 let running = 0

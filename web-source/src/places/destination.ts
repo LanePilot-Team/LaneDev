@@ -1,4 +1,4 @@
-import type { PlaceRecord } from './places'
+import type { PlaceRecord } from './places.ts'
 
 export type DestinationProvider = 'local' | 'google-ui-kit'
 

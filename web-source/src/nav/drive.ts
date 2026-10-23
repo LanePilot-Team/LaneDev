@@ -1,10 +1,10 @@
 // 模擬行駛：沿路線等速前進，回報位置/方位/導航資訊給 App 更新鏡頭與 HUD。
 // 車直接沿「藍線」（laneOffsetCoords 的車道偏移路線帶）行駛——與畫面上的路線帶
 // 用同一份幾何，變道/轉彎過程都精確貼在藍線上，不再另做一套偏移平滑。
-import { pointAlong, angleDelta, offsetMeters, cumulative, LANE_WIDTH_M } from '../core/geo'
-import { laneBand, spanAtDist, type LaneBandResult, type RouteResult, type Maneuver } from '../core/graph'
-import { surfaceHeightAt } from '../core/elevated3d'
-import type { ResolvedLaneGuidance } from '../core/laneGuidance'
+import { pointAlong, angleDelta, offsetMeters, cumulative, LANE_WIDTH_M } from '../core/geo.ts'
+import { laneBand, spanAtDist, type LaneBandResult, type RouteResult, type Maneuver } from '../core/graph.ts'
+import { surfaceHeightAt } from '../core/elevated3d.ts'
+import type { ResolvedLaneGuidance } from '../core/laneGuidance.ts'
 
 export interface DriveState {
   pos: [number, number]

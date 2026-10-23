@@ -3,20 +3,20 @@
 //
 // 貼合對象是「路線帶」（laneBand）而不是路網中心線——畫面上的藍線就是這條帶，
 // 車貼在帶上才會跟藍線重合；貼中心線的話車會固定偏一個車道寬。
-import { deviceHeading } from '../native/client'
-import { remainingRouteSeconds } from './arrivalEstimate'
-import { cumulative, haversine } from '../core/geo'
-import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph'
-import { surfaceHeightAt } from '../core/elevated3d'
-import type { DriveState } from './drive'
-import type { GpsDisplayFix } from './gpsAnimation'
-import { ACCURACY_TRUST_M, matchToRoute, smoothBearing, type MatchResult } from './mapMatch'
-import { bearing as bearingBetween } from '../core/geo'
+import { deviceHeading } from '../native/client.ts'
+import { remainingRouteSeconds } from './arrivalEstimate.ts'
+import { cumulative, haversine } from '../core/geo.ts'
+import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph.ts'
+import { surfaceHeightAt } from '../core/elevated3d.ts'
+import type { DriveState } from './drive.ts'
+import type { GpsDisplayFix } from './gpsAnimation.ts'
+import { ACCURACY_TRUST_M, matchToRoute, smoothBearing, type MatchResult } from './mapMatch.ts'
+import { bearing as bearingBetween } from '../core/geo.ts'
 import {
   HIGH_ACCURACY_POSITION_OPTIONS,
   geolocationErrorMessage,
   geolocationUnavailableMessage,
-} from './geolocation'
+} from './geolocation.ts'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
 const OFF_ROUTE_THRESHOLD_M = 50

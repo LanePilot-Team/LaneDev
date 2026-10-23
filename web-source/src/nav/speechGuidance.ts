@@ -1,4 +1,4 @@
-import type { Maneuver, Profile } from '../core/graph'
+import type { Maneuver, Profile } from '../core/graph.ts'
 
 // HUD 與語音共用的距離分階段提醒：250m 預備切車道 → 60m 動作 → 25m 內顯示「現在」。
 export const FAR_THRESHOLD = 250

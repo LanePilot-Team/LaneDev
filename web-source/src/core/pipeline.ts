@@ -4,12 +4,12 @@
 import {
   mergeCouplets, absorbSideWays, applyLantianSections,
   type DropRemap, type CoupletSection,
-} from './couplet'
-import { applyFixups, collapseKnownIntersections, hugSideLanes, REMOVED_WAY_IDS } from './fixups'
+} from './couplet.ts'
+import { applyFixups, collapseKnownIntersections, hugSideLanes, REMOVED_WAY_IDS } from './fixups.ts'
 import {
   collapseShortDeadEnds, removeUnnamedShortSpurs, splitAtIntersections, type RoadFeature,
-} from './roads'
-import { isElevated } from './elevation'
+} from './roads.ts'
+import { isElevated } from './elevation.ts'
 
 /** 自訂斷面的路（下方逐條呼叫），泛用同名合併要跳過。
  * 高楠公路：只顯式併陸橋本體兩 way（見 GAONAN_BRIDGE_IDS）——地面段有

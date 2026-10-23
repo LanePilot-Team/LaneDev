@@ -1,9 +1,9 @@
 // 轉彎步驟清單：路線規劃完成後在側面板逐步列出指引（沒進導航模式也能看懂整條路線）。
 // 文字與箭頭直接重用導航 HUD 的 guidanceText / ManeuverArrow，不另寫一份文案；
 // 兩段式左轉項目用黃底（與導航看板的待轉提醒同色系）。
-import type { Profile, RouteResult } from '../core/graph'
-import { ManeuverArrow } from '../nav/DriveHUD'
-import { guidanceText } from '../nav/speechGuidance'
+import type { Profile, RouteResult } from '../core/graph.ts'
+import { ManeuverArrow } from '../nav/DriveHUD.tsx'
+import { guidanceText } from '../nav/speechGuidance.ts'
 
 function fmtDist(m: number): string {
   if (m >= 1000) return `${(m / 1000).toFixed(1)} 公里`

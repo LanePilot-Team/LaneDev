@@ -1,6 +1,6 @@
 // Build-only SSR entry; no application import is allowed.
-export { buildClientRuntime } from './buildRuntime'
-export { runtimeReplacer, runtimeReviver, RUNTIME_FORMAT } from './runtimeCodec'
-export { RoadGraph } from './graph'
-export { ElevationModel } from './elevation'
-export { buildStyle } from './mapStyle'
+export { buildClientRuntime } from './buildRuntime.ts'
+export { runtimeReplacer, runtimeReviver, RUNTIME_FORMAT } from './runtimeCodec.ts'
+export { RoadGraph } from './graph.ts'
+export { ElevationModel } from './elevation.ts'
+export { buildStyle } from './mapStyle.ts'

@@ -22,6 +22,8 @@ const SPEED_KMH: Record<string, number> = {
   motorway_link: 50, trunk_link: 40, primary_link: 40, secondary_link: 40, tertiary_link: 40,
 }
 const MAX_SPEED_MS = 90 / 3.6
+/** 路面文字「機車左轉專用」（roadtext 清單同一字串）：機車在最外側專用道直接左轉，不是兩段式 */
+const MOTO_LEFT_TURN_MARK = '機車左轉專用'
 
 export type Profile = 'car' | 'moto'
 
@@ -1397,7 +1399,7 @@ export class RoadGraph {
     const guidance = guidanceForRoadDirection(incoming.road, incoming.back)
     const incomingMarks = incoming.back ? p.laneMarksB : p.laneMarksF
     const motoLeftTurnLane = profile === 'moto' && (incomingMarks?.some(
-      (mark) => mark?.text.trim() === '機慢車左轉專用道') ?? false)
+      (mark) => mark?.text.trim() === MOTO_LEFT_TURN_MARK) ?? false)
     const twoStage = profile === 'moto' && kind !== null
       ? policy.isTwoStage?.({
         nodeId,
@@ -1422,7 +1424,9 @@ export class RoadGraph {
       currentLaneIndex,
       availableM: incoming.lengthM,
       speedKmh: Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30,
-      twoStage,
+      // 機車左轉專用道在最外側：車道定位與兩段式相同（靠外側、不需切到內側左轉道），
+      // 但它是直接左轉，回報給導航的 twoStage 仍維持真實值。
+      twoStage: twoStage || (motoLeftTurnLane && action !== 'through' && action !== 'right'),
     })
     const outgoingProps = outgoing.road.properties
     const outgoingLaneCount = Math.max(1,
@@ -1438,7 +1442,7 @@ export class RoadGraph {
       entryLaneIndex = outgoingLaneCount - 1
     }
     return {
-      decision: { ...decision, postTurnLaneIndex: entryLaneIndex },
+      decision: { ...decision, twoStage, postTurnLaneIndex: entryLaneIndex },
       entryLaneIndex,
     }
   }
@@ -2045,7 +2049,7 @@ function buildManeuvers(
           approachWayId: roadProps.osm_id,
           approachDirection: prev.back ? 'backward' : 'forward',
           motoLeftTurnLane: profile === 'moto' && (incomingMarks?.some(
-            (mark) => mark?.text.trim() === '機車左轉專用') ?? false),
+            (mark) => mark?.text.trim() === MOTO_LEFT_TURN_MARK) ?? false),
           // HUD 車道格：取「進入行向」的車道數與轉向（逆向邊用 backward 組）
           lanesForward: roadLaneCount,
           turnLanes: osmMovements,

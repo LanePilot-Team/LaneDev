@@ -1,5 +1,5 @@
 import type {
-  Feature, FeatureCollection, GeoJsonProperties, Geometry, LineString, MultiPolygon, Polygon,
+  Feature, FeatureCollection, GeoJsonProperties, Geometry, MultiPolygon, Polygon,
 } from 'geojson'
 import { cumulative, haversine, pointAlong } from './geo.ts'
 

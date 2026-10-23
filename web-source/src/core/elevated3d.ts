@@ -6,7 +6,7 @@
 //（不自己湊常數——踩過的坑）、共用 MapLibre 的 WebGL context、antialias 一律關。
 import * as THREE from 'three'
 import maplibregl, { type Map as MLMap, type CustomLayerInterface } from 'maplibre-gl'
-import { NANZI_CENTER, pointAlong, cumulative, bearing, COS_LAT, LANE_WIDTH_M } from './geo.ts'
+import { NANZI_CENTER, pointAlong, cumulative, COS_LAT, LANE_WIDTH_M } from './geo.ts'
 import { MOTO_LANE_M, type RoadFeature } from './roads.ts'
 import { activeElevation, blockKeyOf, type ElevationModel } from './elevation.ts'
 import { spanAtDist, type RouteResult, type LaneBandResult, type LaneChoiceArea } from './graph.ts'

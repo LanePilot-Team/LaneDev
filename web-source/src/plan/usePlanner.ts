@@ -1,5 +1,5 @@
 // 路線規劃：起點/停靠點/終點狀態、A* 呼叫與路線繪製、車種（汽/機車）、
-// 兩段式左轉/偏心道旗標標註。LaneDev / LaneNav 共用。
+// 兩段式左轉/偏心道旗標標註。
 import { useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 import {

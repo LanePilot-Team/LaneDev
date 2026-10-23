@@ -10,7 +10,7 @@
 //
 // 物化 = 轉成與 shard 相同欄位丟回 roadsFromGeoJSON：屬性正規化、車道預設值、
 // 斷面計算全部與 Base Layer 共用，畫完即可用車道工具編輯。
-import type { Feature, FeatureCollection, LineString } from 'geojson'
+import type { Feature, LineString } from 'geojson'
 import { roadsFromGeoJSON, type RoadFeature } from './roads.ts'
 import type { EnhancementRecord } from './enhancements.ts'
 

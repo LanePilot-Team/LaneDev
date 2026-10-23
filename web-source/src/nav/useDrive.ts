@@ -13,12 +13,12 @@ import {
   type Profile,
 } from '../core/graph.ts'
 import { activeElevatedLayer } from '../core/elevated3d.ts'
-import type { DriveState } from './drive.ts'
+import type { DriveState } from './driveState.ts'
 import { clientState, ensureLocation, nativeCommand } from '../native/client.ts'
 import { GpsDriver, type RerouteClock } from './gpsNav.ts'
 import { GpsAnimation } from './gpsAnimation.ts'
 import { VehicleModelLayer } from '../core/models3d.ts'
-import { angleDelta, cumulative } from '../core/geo.ts'
+import { angleDelta } from '../core/geo.ts'
 import type { Mode } from '../app/mapCore.ts'
 import type { Stop } from '../plan/usePlanner.ts'
 import { activeNavigationOcclusion } from '../core/occlusion.ts'
@@ -208,7 +208,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   /**
    * 換路線時重算「這趟會遇到的測速照相」。方向過濾在這裡就做掉（比對路線在該點的
    * 行向與相機拍攝方向），所以導航中每幀只要比里程，不用再算幾何。
-   * reroute／路口決策的暫時路線也走這裡——不重算的話會拿舊路線的里程去對新路線。
+   * 偏航重規劃換路線時也走這裡——不重算的話會拿舊路線的里程去對新路線。
    */
   function armSpeedCameras(route: RouteResult) {
     const cameras = p.speedCamerasRef.current

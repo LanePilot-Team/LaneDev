@@ -1388,7 +1388,6 @@ export class RoadGraph {
       incomingCoords[incomingCoords.length - 2],
       incomingCoords[incomingCoords.length - 1],
     )
-    const outgoingBearing = bearing(outgoing.coords[0], outgoing.coords[1])
     const classifiedKind = classifyEdgeTransition(incoming, outgoing)
     const kind = classifiedKind === 'arrive' ? null : classifiedKind
     const action: LaneAction = kind === 'left' || kind === 'slight-left'
@@ -1811,7 +1810,6 @@ export function laneBand(route: RouteResult): LaneBandResult {
   let passOff: number | null = null // 通過分流點當下的偏移（下游續接用）
   for (let k = 0; k < samples.length; k++) {
     const d = samples[k]
-    const { pos, brg } = at[k]
     const span = route.spans[sidx[k]]
     let off = span ? cruises[k] : 0
     if (span) {

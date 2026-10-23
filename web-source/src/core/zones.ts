@@ -8,9 +8,7 @@ import {
 } from './geo.ts'
 import { laneSpanM } from './roads.ts'
 import type { RoadGraph, ScopeEdge, TurnOption } from './graph.ts'
-import {
-  hasStaticRoadDatabase, staticDeletedZoneIds, staticZones, updateStaticEditor,
-} from './staticDatabase.ts'
+import { staticDeletedZoneIds, staticZones } from './staticDatabase.ts'
 
 export interface Zone {
   id: string
@@ -42,8 +40,6 @@ export function isZoneEnabled(zone: Zone): boolean {
   return zone.visible !== false
 }
 
-const STORAGE_KEY = 'navsim-zones-v2' // v1 是自由放置的舊格式，直接棄用
-const DELETED_STORAGE_KEY = 'navsim-zones-deleted-v1'
 
 export function loadZones(): Zone[] {
   return staticZones().filter(z => z.intersectionId && z.from).map(z => ({ ...z, visible: z.visible !== false }))

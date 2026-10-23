@@ -1,5 +1,5 @@
-// 真 GPS 導航：watchPosition + 路線帶貼合（nav/mapMatch）算出離線距離與沿線進度，
-// 輸出跟模擬 Driver 一樣的 DriveState 形狀，讓 App.tsx 的 HUD/車模/鏡頭邏輯兩種模式共用。
+// GPS 導航：watchPosition + 路線帶貼合（nav/mapMatch）算出離線距離與沿線進度，
+// 輸出 DriveState 給 HUD／語音／車模／鏡頭共用。
 //
 // 貼合對象是「路線帶」（laneBand）而不是路網中心線——畫面上的藍線就是這條帶，
 // 車貼在帶上才會跟藍線重合；貼中心線的話車會固定偏一個車道寬。
@@ -8,7 +8,7 @@ import { remainingRouteSeconds } from './arrivalEstimate.ts'
 import { cumulative, haversine } from '../core/geo.ts'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph.ts'
 import { surfaceHeightAt } from '../core/elevated3d.ts'
-import type { DriveState } from './drive.ts'
+import type { DriveState } from './driveState.ts'
 import type { GpsDisplayFix } from './gpsAnimation.ts'
 import { ACCURACY_TRUST_M, matchToRoute, smoothBearing, type MatchResult } from './mapMatch.ts'
 import { bearing as bearingBetween } from '../core/geo.ts'
@@ -44,7 +44,7 @@ const FREE_HEADING_MIN_MOVE_M = 3
  * 停下時 GPS 漂移的位移方向與手機羅盤（直立車架上的方位角不穩、會被車體磁場帶偏）都只會讓車頭亂轉。
  */
 const HEADING_HOLD_KMH = 3
-/** 抵達判定：GPS 貼合誤差較大，門檻比模擬駕駛（5m）寬鬆 */
+/** 抵達判定：GPS 貼合誤差較大，門檻放寬到 25m */
 const ARRIVE_THRESHOLD_M = 25
 /** 「即將抵達」提示範圍（公尺）：HUD 提早換成抵達卡，不要在終點才突然跳出來 */
 const ARRIVING_THRESHOLD_M = 150
@@ -210,7 +210,7 @@ export class GpsDriver {
 
     const span = spanAtDist(this.route, traveledM)
     const rp = span?.road?.properties
-    // 高架高度：與模擬駕駛同一套（span 路段身分 + 橋面高度）
+    // 高架高度：用 span 的路段身分查橋面高度（不可用純位置查，平面路從橋下穿過會誤抬）
     const elevM = span?.road ? surfaceHeightAt(span.road, match.pos) : 0
     this.emit({
       roadName: rp?.name,

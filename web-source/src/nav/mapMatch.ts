@@ -148,7 +148,7 @@ export function matchToRoute(input: MatchInput): MatchResult {
 
 /**
  * 顯示用方位角平滑：GPS 的切線方位在取樣點交界會跳，直接餵給鏡頭會甩頭。
- * 與模擬駕駛（drive.ts）同一種做法，只是這裡以「每筆定位」為步長。
+ * 以「每筆定位」為步長做指數平滑。
  */
 export function smoothBearing(prev: number | null, next: number, alpha = 0.45): number {
   if (prev === null) return next

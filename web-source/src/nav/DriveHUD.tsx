@@ -1,7 +1,7 @@
 // 導航 HUD（高德式）：頂部指引看板、車道列、速度圓標、測速提示、底部資訊列。
 // ManeuverArrow 也給規劃側的轉彎步驟清單（plan/ManeuverList）重用。
 import type { Maneuver, Profile } from '../core/graph.ts'
-import type { DriveState } from './drive.ts'
+import type { DriveState } from './driveState.ts'
 import { useClientValue } from '../native/client.ts'
 import { arrivalTimestamp } from './arrivalEstimate.ts'
 import { LanePreviewPanel, TwoStageWaitSign } from './LanePreviewView.tsx'
@@ -222,7 +222,7 @@ export function DriveHUD({
         <div className="speed-unit">km/h</div>
       </div>
 
-      {/* ── 路口決策 + 底部資訊列 ── */}
+      {/* ── 底部資訊列 ── */}
       <div className="bottom-bar">
         <button className="end-btn" onClick={onEnd}>{drive.arrived ? '✓ 完成' : '✕ 結束'}</button>
         <div className="trip">

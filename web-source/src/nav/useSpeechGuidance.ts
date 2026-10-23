@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { speak, stopSpeech } from '../native/client.ts'
 import type { Profile } from '../core/graph.ts'
-import type { DriveState } from './drive.ts'
+import type { DriveState } from './driveState.ts'
 import {
   arrivalAnnouncement,
   arrivingAnnouncement,

@@ -11,7 +11,7 @@ import type { Zone } from './zones.ts'
 import { humanWaitingZones } from './zoneimport.ts'
 import type { PlacedVehicle } from './vehicles.ts'
 import type { TurnBay, RightLane } from './turnbays.ts'
-import { hasStaticRoadDatabase, staticJournal, updateStaticEditor } from './staticDatabase.ts'
+import { staticJournal } from './staticDatabase.ts'
 import { appendJournalRecords, type EnhancementRecordDraft } from './journalBatch.ts'
 
 export interface EnhancementRecord {
@@ -40,7 +40,6 @@ export interface EnhancementRecord {
   fields?: Record<string, string | number>
 }
 
-const JOURNAL_KEY = 'navsim-journal-v1'
 const AUTHOR_KEY = 'navsim-author'
 
 export function getAuthor(): string {
@@ -61,13 +60,7 @@ export function stampAuthor(
   queueJournalPersistence(next)
   return next
 }
-let pendingJournal: EnhancementRecord[] | null = null
-let journalFlushQueued = false
-
-/**
- * 一次儲存可能連續追加多筆紀錄；等本輪同步工作結束後，只持久化最後版本，
- * 避免每一筆都重新序列化完整 journal 與靜態 editor database。
- */
+/** Android 用戶端的 journal 只來自內建靜態資料，任何寫入都是錯誤。 */
 function queueJournalPersistence(_journal: EnhancementRecord[]) {
   throw new Error('App 不允許修改道路資料')
 }

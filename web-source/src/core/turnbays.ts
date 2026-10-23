@@ -7,7 +7,7 @@
 // 「查不到就假設每個左轉點都有」：預設生成（source=default），journal 只記覆寫
 // （present:0 = 實地確認沒有）。標線顏色規則：分隔對向 = 黃、分隔同向 = 白。
 import { buffer, featureCollection, intersect, lineString, polygon } from '@turf/turf'
-import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson'
+import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import { angleDelta, bearing, cumulative, haversine, offsetMeters, pointAlong, skewFromCross, LANE_WIDTH_M } from './geo.ts'
 import { laneSpanM, MOTO_LANE_M, type LaneMark, type RoadFeature } from './roads.ts'
 import type { RoadGraph, BayAnchor, ScopeEdge, RouteResult } from './graph.ts'
@@ -446,15 +446,6 @@ function makeBay(
     // ── 中央帶偏心道：bay = 中央車道本身（藍田路實驗主場）──
     const dv = 0 // 雙向道路中央分向基準固定在 OSM 軸
     const c = p.centerM / 2
-    // 漸變段：雙黃線從自己車道側（dv+c）斜切到對向側（dv−c）——「慢慢雙黃線斜對切」
-    const taperDs = sampleDs(d0, bayStart, 3)
-    const diagonal = (gap: number) => taperDs.map((d) => {
-      const t = Math.max(0, Math.min(1, (d - d0) / Math.max(1e-6, bayStart - d0)))
-      // 單端偏心道用 smoothstep 進出漸變段，避免直線折角；雙端 S 型仍由
-      // buildChannelization 統一生成。
-      const smoothT = t * t * (3 - 2 * t)
-      return offsetAt(a.coords, cum, d, dv + c - smoothT * 2 * c + gap)
-    })
     // 儲車段右界（與同向直行道分隔）＝白線；末端裁到停止線斜線
     const endW = Math.min(total, Math.max(bayStart + 2, end + sk * (dv + c)))
     const whiteDs = sampleDs(bayStart, endW, 4)
@@ -1199,7 +1190,6 @@ export function buildLaneArrows(
     const hasExplicit = !!explicit?.some(Boolean)
     const motoTlRaw = (p.oneway === 'yes' || !e.back) ? p.motoTurnLanesF : p.motoTurnLanesB
     const hasExplicitMoto = !!motoTlRaw?.slice(0, motoCount).map(canonTurn).some(Boolean)
-    const moto = motoCount > 0
     const hasMotoLeftLane = motoCount === 1 &&
       laneMarks?.[lanes]?.text.trim() === '機車左轉專用'
     // 非實驗範圍：實際幹道／集散道用路口拓撲推薦值（下方 kinds 分支）；

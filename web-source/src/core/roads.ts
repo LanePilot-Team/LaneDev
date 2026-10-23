@@ -12,7 +12,6 @@ import {
 
 export const MOTO_LANE_M = 2.2
 /** 路面多邊形比車道斷面多出的寬度（casing 外框／surface 鋪面） */
-const CASING_EXTRA_M = 2.4
 const SURFACE_EXTRA_M = 0.8
 
 export interface LaneMark {

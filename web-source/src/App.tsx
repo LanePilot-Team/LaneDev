@@ -1,7 +1,7 @@
-// LaneDev（開發版）App：模式機 + 點擊分派 + 畫面組裝。
-// 功能實作都在 app/（地圖核心、匯入）、plan/（規劃）、nav/（導航）、browse/（瀏覽）、
-// edit/（編輯，LaneDev 專屬）——除 edit/ 外皆與 LaneNav 共用（npm run sync-lanenav 鏡像）。
-import { useEffect, useRef, useState } from 'react'
+// LaneDev Android 用戶端 App：模式機（瀏覽／規劃／導航）+ 點擊分派 + 畫面組裝。
+// 功能實作在 app/（地圖核心）、plan/（規劃）、nav/（導航）、browse/（路段資訊）、places/（搜尋）、
+// native/（Android 原生橋接）。道路資料唯讀，沒有編輯功能。
+import { useRef, useState } from 'react'
 import { useMapCore, type Mode } from './app/mapCore.ts'
 
 import { usePlanner } from './plan/usePlanner.ts'
@@ -35,7 +35,7 @@ export default function App() {
 
 
   // ── 點擊分派 ──
-  const { core, loading, loadError, zoneCount, zoneTick, vehicleCount, selectedVehicle } =
+  const { core, loading, loadError, zoneTick } =
     useMapCore(containerRef, (e, map) => {
       const m = modeRef.current
       const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
@@ -128,7 +128,6 @@ export default function App() {
     if (m !== 'browse' || modeRef.current === 'pick') clearDestinationSelection()
     setRoadInfo(null)
     core.refreshZones()
-    core.refreshVehicles()
     setMode(m)
   }
 
@@ -136,7 +135,6 @@ export default function App() {
     clearDestinationSelection()
     setRoadInfo(null)
     core.refreshZones()
-    core.refreshVehicles()
     setMode('pick')
     planner.startPlacePick({
       id: destination.id,

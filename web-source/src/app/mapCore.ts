@@ -4,25 +4,19 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { buildStyle, makeIcons } from '../core/mapStyle.ts'
 import { asset } from '../core/asset.ts'
-import type { RoadFeature } from '../core/roads.ts'
-import type { DropRemap } from '../core/couplet.ts'
 import { RoadGraph } from '../core/graph.ts'
 import { type Zone } from '../core/zones.ts'
-import type { EnhancementRecord } from '../core/enhancements.ts'
-import type { RoadMergeReplayRow, RoadMergeViews } from '../core/roadMerge.ts'
-import type { RawWay } from '../core/zoneimport.ts'
 import { speedCamerasToGeoJson, type SpeedCamera, type SpeedCameraDataset } from '../core/speedCameras.ts'
-import type { TurnBay, RightLane, MotoBox } from '../core/turnbays.ts'
-import type { PlacedVehicle } from '../core/vehicles.ts'
+import type { TurnBay, RightLane } from '../core/turnbays.ts'
 import { VehicleModelLayer } from '../core/models3d.ts'
 import { ElevationModel, setActiveElevation } from '../core/elevation.ts'
-import { ElevatedLayer, setActiveElevatedLayer, surfaceHeightAt } from '../core/elevated3d.ts'
+import { ElevatedLayer, setActiveElevatedLayer } from '../core/elevated3d.ts'
 import { NANZI_CENTER } from '../core/geo.ts'
 import { NavigationOcclusion, setActiveNavigationOcclusion } from '../core/occlusion.ts'
-import { buildLaneBaseIndex, type LaneBaseApplyReport, type LaneBaseIndex, type LaneBaseRecord } from '../core/laneBase.ts'
+import { buildLaneBaseIndex, type LaneBaseIndex } from '../core/laneBase.ts'
 import { loadRuntimeData, runtimeAsset } from '../core/runtimeData.ts'
 
-export type Mode = 'browse' | 'edit' | 'pick' | 'drive'
+export type Mode = 'browse' | 'pick' | 'drive'
 export const EMPTY_FC = { type: 'FeatureCollection', features: [] } as const
 
 function formatAttributionLines(map: MLMap) {
@@ -59,75 +53,35 @@ async function loadSpeedCameraDataset(): Promise<SpeedCameraDataset> {
 }
 
 
+/** 用戶端唯讀：路網、待轉區、偏心道等全部來自建置期預計算資料，執行期不改寫。 */
 export interface MapCore {
   mapRef: RefObject<MLMap | null>
-  /** 尚未套用 Lane Base／人工 journal 的 prepared roads，用於 session 匯入重建。 */
-  preparedRoadsRef: RefObject<RoadFeature[]>
-  roadsRef: RefObject<RoadFeature[]>
-  renderRoadsRef: RefObject<RoadFeature[]>
-  mergeReplayRef: RefObject<RoadMergeReplayRow[]>
   graphRef: RefObject<RoadGraph | null>
   laneBaseIndexRef: RefObject<LaneBaseIndex>
   zonesRef: RefObject<Zone[]>
-  /** 每次 Lane Base 重建所得唯讀待轉區；不寫入 editor persistence。 */
-  baseZonesRef: RefObject<Zone[]>
-  selectedZoneRef: RefObject<string | null>
-  highlightedZoneRef: RefObject<string | null>
-  journalRef: RefObject<EnhancementRecord[]>
   baysRef: RefObject<TurnBay[]>
-  /** 右轉附加車道（journal right_lane 折疊生成，refreshBays 重算） */
+  /** 右轉附加車道（路線標註右轉車道用） */
   rightLanesRef: RefObject<RightLane[]>
-  /** 機車停等格（refreshBays 重算）——編輯面板讀 maxLanes/coveredLanes */
-  motoBoxesRef: RefObject<MotoBox[]>
-  intersectionsRef: RefObject<{ id: number; pos: [number, number] }[]>
-  vehiclesRef: RefObject<PlacedVehicle[]>
   vehicleLayerRef: RefObject<VehicleModelLayer | null>
-  selectedVehicleRef: RefObject<string | null>
   lastGestureRef: RefObject<number>
   /**
    * 使用者自己動了鏡頭（拖曳／旋轉／傾斜）時呼叫。導航跟隨用它來交還鏡頭控制權——
    * 事件註冊在這裡（地圖實例的擁有者），實際「要不要停止跟隨」由 nav/useDrive 決定。
    */
   onUserCameraTakeoverRef: RefObject<(() => void) | null>
-  /** couplet 合併造成的 node id 重映射（原始 OSM node → 合併後 node） */
-  nodeRemapRef: RefObject<Map<number, number>>
-  /** 被合併（drop 側）way → keep way 對照（LanePilot 標註匯入重映射用） */
-  wayRemapRef: RefObject<Map<number, DropRemap>>
-  /** 前處理「之前」的原始 way 幾何快照（標註匯入的進入方位角後援：
-   * couplet/退化清理清掉的 way 在底圖與 wayRemap 都查不到） */
-  rawWaysRef: RefObject<Map<number, RawWay>>
-  /** 測速執法設置點（警政署開放資料，楠梓＋左營）——導航提示與地圖圖層共用 */
+  /** 測速執法設置點（警政署開放資料）——導航提示與地圖圖層共用 */
   speedCamerasRef: RefObject<SpeedCamera[]>
-  /** 測速資料的來源／最後同步時間（授權要求顯名，畫面要能標示） */
-  speedCameraSourceRef: RefObject<SpeedCameraDataset['source'] | null>
-  /** 大眾運輸資料（TDX，楠梓＋左營）；未載入完成前為 null */
   src: (id: string) => GeoJSONSource
-  refreshZones: (persist?: boolean) => void
+  /** 清除待轉區高亮並通知畫面重繪（切換模式時用） */
+  refreshZones: () => void
   setZoneHighlight: (id: string | null) => void
-  refreshBays: () => void
-  refreshVehicles: () => void
-  /** 路面與車道分隔線重繪（journal 覆寫/標註匯入後） */
-  redrawRoads: () => void
-  /** 換 Base Layer：換路網、重建圖、重算 bay（匯入地圖用） */
-  replaceBaseMap: (roads: RoadFeature[]) => boolean
-  /** 以目前 prepared roads 重建 session-only Lane Base，再套用人工 journal。 */
-  replaceSessionLaneBase: (records: LaneBaseRecord[]) => LaneBaseApplyReport
-  /** 純預覽 journal 對捏合視圖的影響，不改動任何 ref。 */
-  previewJournal: (journal: EnhancementRecord[]) => RoadMergeViews | null
-  /** 以目前來源道路和 journal 原子重建導航／繪圖雙視圖。 */
-  refreshRoadMergeViews: (
-    journal?: EnhancementRecord[], preparedView?: RoadMergeViews,
-  ) => boolean
 }
 
 export interface MapCoreState {
   core: MapCore
   loading: boolean
   loadError: string | null
-  zoneCount: number
   zoneTick: number
-  vehicleCount: number
-  selectedVehicle: PlacedVehicle | null
 }
 
 export function useMapCore(
@@ -135,41 +89,23 @@ export function useMapCore(
   onMapClick: (e: MapMouseEvent, map: MLMap) => void,
 ): MapCoreState {
   const mapRef = useRef<MLMap | null>(null)
-  const preparedRoadsRef = useRef<RoadFeature[]>([])
-  const roadsRef = useRef<RoadFeature[]>([])
-  const renderRoadsRef = useRef<RoadFeature[]>([])
-  const mergeReplayRef = useRef<RoadMergeReplayRow[]>([])
   const graphRef = useRef<RoadGraph | null>(null)
   const laneBaseIndexRef = useRef<LaneBaseIndex>(buildLaneBaseIndex([]))
   const zonesRef = useRef<Zone[]>([])
-  const baseZonesRef = useRef<Zone[]>([])
-  const selectedZoneRef = useRef<string | null>(null)
   const highlightedZoneRef = useRef<string | null>(null)
-  const journalRef = useRef<EnhancementRecord[]>([])
   const baysRef = useRef<TurnBay[]>([])
   const rightLanesRef = useRef<RightLane[]>([])
-  const motoBoxesRef = useRef<MotoBox[]>([])
-  const intersectionsRef = useRef<{ id: number; pos: [number, number] }[]>([])
-  const vehiclesRef = useRef<PlacedVehicle[]>([])
   const vehicleLayerRef = useRef<VehicleModelLayer | null>(null)
   const elevatedLayerRef = useRef<ElevatedLayer | null>(null)
-  const selectedVehicleRef = useRef<string | null>(null)
   const lastGestureRef = useRef(0) // 最近一次滾輪/觸控手勢的時間戳（導航跟隨要讓路給縮放）
   const onUserCameraTakeoverRef = useRef<(() => void) | null>(null)
-  const nodeRemapRef = useRef<Map<number, number>>(new Map())
-  const wayRemapRef = useRef<Map<number, DropRemap>>(new Map())
-  const rawWaysRef = useRef<Map<number, RawWay>>(new Map())
   const speedCamerasRef = useRef<SpeedCamera[]>([])
-  const speedCameraSourceRef = useRef<SpeedCameraDataset['source'] | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [zoneCount, setZoneCount] = useState(0)
   const [zoneTick, setZoneTick] = useState(0)
-  const [vehicleCount, setVehicleCount] = useState(0)
-  const [selectedVehicle, setSelectedVehicle] = useState<PlacedVehicle | null>(null)
 
-  // 點擊分派由 App 組裝（LaneNav 沒有 edit 分支）；用 ref 存最新 closure，地圖 handler 只綁一次
+  // 點擊分派由 App 組裝；用 ref 存最新 closure，地圖 handler 只綁一次
   const clickRef = useRef(onMapClick)
   clickRef.current = onMapClick
 
@@ -188,31 +124,10 @@ export function useMapCore(
     }
   }, [])
 
-  const refreshZones = useCallback((_persist = false) => {
+  const refreshZones = useCallback(() => {
     setZoneHighlight(null)
-    setZoneCount(zonesRef.current.length)
     setZoneTick(t => t + 1)
   }, [setZoneHighlight])
-
-  const refreshBays = () => { throw new Error('預計算資料為唯讀') }
-
-  const refreshVehicles = useCallback(() => {
-    // 車輛高度：把位置重新吸附回車道拿到「路段身分」，再問該路段的橋面高度。
-    // 不能用純位置查最近高架——平面路從高架正下方穿過時會誤抬（elevation.ts）。
-    // 吸附用的是放置時同一支 snapToLane，所以既有存檔的車也會被擺回正確高度。
-    const elevOf = (v: PlacedVehicle) => {
-      const snap = graphRef.current?.snapToLane(v.pos, v.type)
-      return snap?.feature ? surfaceHeightAt(snap.feature, v.pos) : 0
-    }
-    vehicleLayerRef.current?.setVehicles(
-      vehiclesRef.current, selectedVehicleRef.current, elevOf)
-    void 0
-    setVehicleCount(vehiclesRef.current.length)
-    setSelectedVehicle(
-      vehiclesRef.current.find((v) => v.id === selectedVehicleRef.current) ?? null)
-  }, [])
-
-  const redrawRoads = () => { throw new Error('預計算資料為唯讀') }
 
   /** 高架高度模型重建（底圖就緒/更換時）：渲染（橋面）與車輛 z 共用同一份 */
   const rebuildElevation = useCallback((data: ReturnType<ElevationModel['snapshot']>) => {
@@ -221,22 +136,12 @@ export function useMapCore(
     elevatedLayerRef.current?.setModel(model)
   }, [])
 
-  const readOnly = (): never => { throw new Error('Android 用戶端不允許修改道路資料') }
-
   const coreRef = useRef<MapCore>(null as never)
   if (!coreRef.current) {
     coreRef.current = {
-      mapRef, preparedRoadsRef, roadsRef, renderRoadsRef, mergeReplayRef,
-      graphRef, laneBaseIndexRef, zonesRef, baseZonesRef, selectedZoneRef, highlightedZoneRef,
-      journalRef, baysRef,
-      rightLanesRef, motoBoxesRef,
-      intersectionsRef, vehiclesRef, vehicleLayerRef, selectedVehicleRef, lastGestureRef,
-      onUserCameraTakeoverRef,
-      nodeRemapRef, wayRemapRef, rawWaysRef,
-      speedCamerasRef, speedCameraSourceRef,
-      src, refreshZones, setZoneHighlight, refreshBays, refreshVehicles,
-      redrawRoads, replaceBaseMap: readOnly, replaceSessionLaneBase: readOnly,
-      previewJournal: () => null, refreshRoadMergeViews: readOnly,
+      mapRef, graphRef, laneBaseIndexRef, zonesRef, baysRef, rightLanesRef,
+      vehicleLayerRef, lastGestureRef, onUserCameraTakeoverRef, speedCamerasRef,
+      src, refreshZones, setZoneHighlight,
     }
   }
 
@@ -269,10 +174,7 @@ export function useMapCore(
       pixelRatio: Math.min(window.devicePixelRatio, 1.5),
       fadeDuration: 0, // 符號淡入淡出動畫關掉，省連續重繪
       attributionControl: false,
-      // 效能：MSAA 與 preserveDrawingBuffer 在內顯上很貴，只在 ?screenshot 時開
-      canvasContextAttributes: false
-        ? { antialias: true, preserveDrawingBuffer: true }
-        : undefined,
+      // 效能：不開 MSAA 與 preserveDrawingBuffer（內顯上很貴）
       // 所有字形本機繪製，不等待外部字型服務。
       localIdeographFontFamily: '"Microsoft JhengHei", "PingFang TC", sans-serif',
     })
@@ -324,7 +226,6 @@ export function useMapCore(
       loadSpeedCameraDataset().then((dataset) => {
         if (disposed) return
         speedCamerasRef.current = dataset.cameras
-        speedCameraSourceRef.current = dataset.source
         src('speedCameras').setData(speedCamerasToGeoJson(dataset.cameras) as never)
         console.info(`測速執法設置點 ${dataset.cameras.length} 筆（${dataset.districts.join('、')}）`
           + `，來源同步時間 ${dataset.source.fetchedAt}`)
@@ -335,17 +236,12 @@ export function useMapCore(
       const { manifest, navigation } = await runtimePromise
       if (disposed) return
       bootMeasure('read-precomputed-navigation')
-      roadsRef.current = navigation.roads
       laneBaseIndexRef.current = navigation.laneBaseIndex
       zoneFeatureIdsRef.current = navigation.zoneFeatureIds
       zonesRef.current = navigation.zones
-      baseZonesRef.current = navigation.zones
       baysRef.current = navigation.bays
       rightLanesRef.current = navigation.rightLanes
-      motoBoxesRef.current = navigation.motoBoxes
       graphRef.current = RoadGraph.fromSnapshot(navigation.graph, navigation.roads)
-      intersectionsRef.current = graphRef.current.intersections()
-      setZoneCount(navigation.zones.length)
       setZoneTick(t => t + 1)
       bootMeasure('hydrate-routing-graph')
       // URL sources are parsed by MapLibre workers, not JSON.parse on the UI thread.
@@ -381,8 +277,6 @@ export function useMapCore(
       vehicleLayerRef.current = vLayer
       map.addLayer(vLayer.asLayer())
       if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__vlayer = vLayer
-      vehiclesRef.current = []
-      refreshVehicles()
       bootMeasure('3d-models')
       await sourcesReady
       if (disposed || abort.signal.aborted) return
@@ -424,6 +318,6 @@ export function useMapCore(
 
   return {
     core: coreRef.current,
-    loading, loadError, zoneCount, zoneTick, vehicleCount, selectedVehicle,
+    loading, loadError, zoneTick,
   }
 }

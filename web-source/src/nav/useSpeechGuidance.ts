@@ -23,6 +23,11 @@ export interface UseSpeechGuidanceArgs {
 const START_KEY = 'start'
 const ARRIVING_KEY = 'arriving'
 const ARRIVAL_KEY = 'arrival'
+/**
+ * 進度倒退超過這個距離才視為換了路線、重新播報。GPS 貼合本身允許倒退 25m（mapMatch
+ * WINDOW_BACK_M），原本 5m 的門檻讓停車抖動就清空已播紀錄，同一句轉向一直重講。
+ */
+const ROUTE_RESET_BACKTRACK_M = 30
 
 export function useSpeechGuidance({
   drive, profile, twoStage, destinationName, enabled,
@@ -40,7 +45,7 @@ export function useSpeechGuidance({
 
     function resetIfProgressMovedBackwards(progressM: number): void {
       const previous = previousProgressRef.current
-      if (previous !== null && progressM + 5 < previous) {
+      if (previous !== null && progressM + ROUTE_RESET_BACKTRACK_M < previous) {
         spokenKeysRef.current.clear()
         sessionStartedRef.current = false
       }

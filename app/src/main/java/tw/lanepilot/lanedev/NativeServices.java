@@ -155,18 +155,26 @@ final class NativeServices implements SensorEventListener {
         });
     }
 
-    private void speak(String text) {
+    private void speak(String text) { speak(text, false); }
+
+    /**
+     * priority：迫近的轉向／抵達指示。清掉排隊中的舊句子（多半是過時的距離或測速提示）
+     * 直接播，也不受排隊上限影響——原本佇列滿 3 句時被丟掉的正是最緊急的「現在右轉」。
+     */
+    private void speak(String text, boolean priority) {
         if (text.isBlank() || text.length() > 1000 || !resumed) return;
         if (!ready) {
             pendingSpeech = text; pendingSpeechAt = SystemClock.elapsedRealtime();
             initializeSpeech(); status(); return;
         }
-        if (queuedSpeech >= 3) return; // Avoid reading stale distances after a long queue.
+        if (!priority && queuedSpeech >= 3) return; // Avoid reading stale distances after a long queue.
+        if (priority) queuedSpeech = 0;
         Bundle parameters = new Bundle();
         parameters.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
         audioBytes = 0;
         speechStatus = "已送出語音，等待引擎播放";
-        int result = tts.speak(text, TextToSpeech.QUEUE_ADD, parameters, "nav-" + System.nanoTime());
+        int result = tts.speak(text, priority ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD,
+                parameters, "nav-" + System.nanoTime());
         status();
         if (result == TextToSpeech.SUCCESS) queuedSpeech++;
         else { ttsStatus = "語音播放失敗，請檢查手機語音設定"; status(); }
@@ -175,7 +183,7 @@ final class NativeServices implements SensorEventListener {
     private void handle(JSONObject command) {
         switch (command.optString("type")) {
             case "status": status(); break;
-            case "speak": speak(command.optString("text")); break;
+            case "speak": speak(command.optString("text"), command.optBoolean("priority")); break;
             case "stopSpeech": stopSpeech(); break;
             case "requestLocation":
                 locationRequests.add(command.optString("id"));

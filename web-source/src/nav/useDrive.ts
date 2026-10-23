@@ -209,7 +209,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     routeCamerasRef.current = cameras.length
       ? matchCamerasToRoute(cameras, route.coords, route.cum)
       : []
-    voiceRef.current.reset()
+    voiceRef.current.forget()
     setCameraAlert(null)
     if (import.meta.env.DEV && routeCamerasRef.current.length) {
       console.info('本趟測速照相：', routeCamerasRef.current.map((rc) =>

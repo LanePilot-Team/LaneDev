@@ -52,11 +52,13 @@ export function useSpeechGuidance({
       previousProgressRef.current = progressM
     }
 
-    function speakOnce(key: string, text: string): void {
+    function speakOnce(key: string, text: string, priority = false): void {
       if (spokenKeysRef.current.has(key)) return
       spokenKeysRef.current.add(key)
-      speak(text)
+      speak(text, priority)
     }
+    // 迫近（near/now）的轉向與抵達要插隊，不能排在測速提示或過時的遠距預告後面
+    const urgent = (stage: SpeechStage | null) => stage === 'near' || stage === 'now'
 
     if (!enabled) { stopSpeech(); return }
     if (!drive) {
@@ -72,7 +74,7 @@ export function useSpeechGuidance({
       if (drive.arrived) {
         spokenKeysRef.current.add(START_KEY)
         spokenKeysRef.current.add(ARRIVAL_KEY)
-        speak(arrivalAnnouncement(destinationName))
+        speak(arrivalAnnouncement(destinationName), true)
         return
       }
       if (!drive.next || !stage) {
@@ -91,12 +93,12 @@ export function useSpeechGuidance({
       })
       spokenKeysRef.current.add(START_KEY)
       spokenKeysRef.current.add(key)
-      speak(announcement)
+      speak(announcement, urgent(stage))
       return
     }
 
     if (drive.arrived) {
-      speakOnce(ARRIVAL_KEY, arrivalAnnouncement(destinationName))
+      speakOnce(ARRIVAL_KEY, arrivalAnnouncement(destinationName), true)
       return
     }
 
@@ -117,7 +119,7 @@ export function useSpeechGuidance({
       profile,
       twoStage,
       stage,
-    }))
+    }), urgent(stage))
   }, [drive, profile, twoStage, destinationName, enabled])
 
   useEffect(() => () => { stopSpeech() }, [])

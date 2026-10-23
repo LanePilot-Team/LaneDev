@@ -1002,8 +1002,16 @@ export class RoadGraph {
     toP: [number, number],
     profile: Profile = 'car',
     policy: LaneRoutePolicy = {},
+    /** 起點的行進方位（度）。有值時起點行向取與它最接近者，而不是離點較近的車道——
+     * GPS 誤差 5~15m 就足以讓「最近車道」落到對向（實測雙向道約四成），偏航重規劃必須傳。 */
+    startBearing?: number,
   ): RouteSearchResult {
-    const sA = this.projectToDirectedLane(fromP, profile)
+    const startCandidates = this.projectToDirectedLanes(fromP, profile)
+    const sA = startBearing !== undefined && Number.isFinite(startBearing)
+      ? startCandidates.reduce<DirectedLaneProjection | null>((best, c) =>
+        !best || Math.abs(angleDelta(c.bearing, startBearing))
+          < Math.abs(angleDelta(best.bearing, startBearing)) ? c : best, null)
+      : startCandidates[0] ?? null
     const projectedGoals = this.projectToDirectedLanes(toP, profile)
     if (!sA || projectedGoals.length === 0) {
       return { route: null, failure: 'no-projection' }

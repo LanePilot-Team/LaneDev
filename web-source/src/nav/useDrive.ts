@@ -326,7 +326,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         setDrive(s)
         updateSpeedCameraAlert(s)
       },
-      (pos) => rerouteFrom(pos),
+      (pos, bearing) => rerouteFrom(pos, bearing),
       (msg) => { freeze(); setGpsMsg(msg) },
       rerouteClockRef.current,
     )
@@ -351,11 +351,11 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     }
   }
 
-  function rerouteFrom(pos: [number, number]) {
+  function rerouteFrom(pos: [number, number], bearing: number | null) {
     const to = p.stopsRef.current[p.stopsRef.current.length - 1]?.pos
     const g = p.graphRef.current
     if (!to || !g) return
-    const result = g.routeDetailed(pos, to, p.profileRef.current, p.routePolicy)
+    const result = g.routeDetailed(pos, to, p.profileRef.current, p.routePolicy, bearing ?? undefined)
     const route = result.route
     if (!route) {
       setGpsMsg(routeFailureText(result.failure, 1))

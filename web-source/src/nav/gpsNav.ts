@@ -97,8 +97,8 @@ export class GpsDriver {
   constructor(
     private route: RouteResult,
     private onTick: (s: DriveState, fix?: GpsDisplayFix) => void,
-    /** 連續偏離超過門檻時呼叫，帶目前定位，App 負責重新規劃 */
-    private onOffRoute: (pos: [number, number]) => void,
+    /** 連續偏離超過門檻時呼叫，帶目前定位與行進方位（未知為 null），App 負責重新規劃 */
+    private onOffRoute: (pos: [number, number], bearing: number | null) => void,
     private onError: (msg: string) => void,
     private rerouteClock: RerouteClock = { lastTs: 0 },
   ) {
@@ -171,7 +171,7 @@ export class GpsDriver {
         now - this.rerouteClock.lastTs > REROUTE_COOLDOWN_MS) {
         this.rerouteClock.lastTs = now
         this.emitFree(here, prevRaw, speedKmh, accuracyM, now)
-        this.onOffRoute(here)
+        this.onOffRoute(here, this.smoothBrg)
         return
       }
     } else {

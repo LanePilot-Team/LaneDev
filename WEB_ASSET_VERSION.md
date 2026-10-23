@@ -4,7 +4,7 @@
 - Original source commit: `64a1fd8`
 - Client source: `web-source/` in this same Git working directory
 - Build: `npm run build` (relative Vite base + client packaging checks)
-- Client revision date: 2026-09-07 (Asia/Taipei)
+- Client revision date: 2026-10-23 (Asia/Taipei)
 - Android assets: `app/src/main/assets/public`
 - JavaScript checksums: generated `client-policy.json`
 

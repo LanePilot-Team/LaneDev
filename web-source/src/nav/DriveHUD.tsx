@@ -9,10 +9,10 @@ import { buildLanePreview, selectLanePreviewGuidance } from './lanePreview'
 import { ENFORCEMENT_LABEL, type SpeedCameraAlert } from '../core/speedCameras'
 import {
   PASS_THRESHOLD,
-  THEN_VERB,
+  bannerActionText,
   formatDistanceText,
   getGuidancePhase,
-  guidanceText,
+  thenText,
 } from './speechGuidance'
 import { useSpeechGuidance } from './useSpeechGuidance'
 
@@ -23,6 +23,7 @@ export function TopBanner({ drive, twoStage, profile }: {
   if (!m) return null
   const dist = drive.nextDistM
   const phase = getGuidancePhase(dist)
+  const then = thenText(m, drive.next2)
   const distText = dist < PASS_THRESHOLD ? '現在' : formatDistanceText(dist)
   // 抵達自成一色（綠）：從「下一個動作是抵達」起看板就轉綠，收尾不是在終點才突然發生
   const tone = m.kind === 'arrive' ? 'arrive'
@@ -33,7 +34,6 @@ export function TopBanner({ drive, twoStage, profile }: {
     maneuver: m.laneGuidance,
     preparationM: m.laneDecision?.preparationM,
   })
-  const bay = !twoStage && m.bayOffM !== undefined // 偏心左轉道（兩段式不進 bay）
   const lanePreview = buildLanePreview({
     laneCount: guidance?.laneCount,
     turnLanes: guidance?.laneMovements,
@@ -49,11 +49,9 @@ export function TopBanner({ drive, twoStage, profile }: {
         <ManeuverArrow kind={twoStage ? 'two-stage' : m.kind} />
         <div className="banner-dist">
           <b>{distText}</b>
-          <span>{twoStage ? '兩段式左轉' : m.kind === 'arrive' ? '抵達目的地' : THEN_VERB[m.kind]}</span>
+          <span>{bannerActionText(m, profile, twoStage)}</span>
           {/* 下一個動作距離很近時預告，避免連續轉向來不及反應 */}
-          {drive.next2 && drive.next2.kind !== 'arrive' && drive.next2.distM - m.distM < 60 && (
-            <span className="banner-then">隨後{THEN_VERB[drive.next2.kind]}</span>
-          )}
+          {then && <span className="banner-then">{then}</span>}
         </div>
         {lanePreview.showTwoStageSign && <TwoStageWaitSign />}
       </div>

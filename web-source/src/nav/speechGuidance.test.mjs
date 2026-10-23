@@ -119,3 +119,23 @@ test('turn announcements remain concise across stages and maneuver types', () =>
     }
   }
 })
+
+test('看板主動作與語音一致：機車專用左轉道、兩段式、偏心道都要講明', async () => {
+  const { bannerActionText } = await import('./speechGuidance.ts')
+  const left = { distM: 100, kind: 'left' }
+  assert.equal(bannerActionText({ ...left, motoLeftTurnLane: true }, 'moto', false), '機車左轉道左轉')
+  assert.equal(bannerActionText({ ...left, motoLeftTurnLane: true }, 'car', false), '左轉')
+  assert.equal(bannerActionText(left, 'moto', true), '兩段式左轉')
+  assert.equal(bannerActionText({ ...left, bayOffM: -3 }, 'car', false), '左轉道左轉')
+  assert.equal(bannerActionText({ distM: 100, kind: 'arrive' }, 'car', false), '抵達目的地')
+})
+
+test('隨後預告：兩段式要講明，且下一動作必須在後且 60m 內', async () => {
+  const { thenText } = await import('./speechGuidance.ts')
+  const m = { distM: 100, kind: 'right' }
+  assert.equal(thenText(m, { distM: 140, kind: 'left', twoStage: true }), '隨後兩段式左轉')
+  assert.equal(thenText(m, { distM: 140, kind: 'left' }), '隨後左轉')
+  assert.equal(thenText(m, { distM: 170, kind: 'left' }), null)
+  assert.equal(thenText(m, { distM: 90, kind: 'left' }), null)
+  assert.equal(thenText(m, { distM: 120, kind: 'arrive' }), null)
+})

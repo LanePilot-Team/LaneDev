@@ -77,6 +77,25 @@ export const THEN_VERB: Record<Exclude<Maneuver['kind'], 'arrive'>, string> = {
   'slight-left': '靠左', 'slight-right': '靠右',
 }
 
+/**
+ * 看板主動作短語。與語音同一套判斷：機車專用左轉道、偏心左轉道、兩段式都要講出來，
+ * 不能看板寫「左轉」而語音說「靠右進入機車左轉道」。
+ */
+export function bannerActionText(m: Maneuver, profile: Profile, twoStage: boolean): string {
+  if (m.kind === 'arrive') return '抵達目的地'
+  const leftish = m.kind === 'left' || m.kind === 'slight-left' || m.kind === 'uturn'
+  if (profile === 'moto' && m.motoLeftTurnLane && leftish) return `機車左轉道${THEN_VERB[m.kind]}`
+  if (twoStage) return '兩段式左轉'
+  if (m.bayOffM !== undefined && (m.kind === 'left' || m.kind === 'uturn')) return `左轉道${THEN_VERB[m.kind]}`
+  return THEN_VERB[m.kind]
+}
+
+/** 「隨後…」預告：下一個動作緊接在後（< 60m）才顯示；兩段式要講明，與語音一致。 */
+export function thenText(m: Maneuver, next2: Maneuver | null | undefined): string | null {
+  if (!next2 || next2.kind === 'arrive' || next2.distM <= m.distM || next2.distM - m.distM >= 60) return null
+  return `隨後${next2.twoStage ? '兩段式左轉' : THEN_VERB[next2.kind]}`
+}
+
 /** Keep arrival names short; verbose place names remain on screen. */
 export function arrivingAnnouncement(_destinationName?: string): string {
   return '即將抵達目的地'
@@ -118,10 +137,8 @@ export function buildSpeechAnnouncement(args: {
     action = THEN_VERB[maneuver.kind]
   }
   const distance = stage === 'now' ? '現在' : formatDistanceText(distanceM)
-  const subsequent = stage === 'near' && !twoStage && next2 && next2.kind !== 'arrive'
-    && next2.distM > maneuver.distM && next2.distM - maneuver.distM < 60
-    ? `，隨後${next2.twoStage ? '兩段式左轉' : THEN_VERB[next2.kind]}`
-    : ''
+  const then = stage === 'near' && !twoStage ? thenText(maneuver, next2) : null
+  const subsequent = then ? `，${then}` : ''
   const warning = stage === 'near' && maneuver.laneDecision?.shortPreparation
     ? '，勿勉強變道' : ''
   return `${distance}，${action}${warning || subsequent}`

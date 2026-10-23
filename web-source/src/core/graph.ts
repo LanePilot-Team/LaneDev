@@ -397,6 +397,86 @@ export function spanAtDist(route: RouteResult, d: number): RouteResult['spans'][
   return route.spans.find((s) => s.toIdx >= i)
 }
 
+/**
+ * A* 的 open set：binary heap ＋ 惰性刪除。原本用 Map 每輪線性掃描取最小值（O(n²)），
+ * 桌機 6 km 路線就要 1~3 秒、不可達更要 5~10 秒，手機上偏航重規劃會凍住畫面。
+ * 同分時依「該 key 第一次加入的順序」，與原本 Map 迭代順序的取法一致，路線結果不變。
+ */
+class OpenSet {
+  private heap: { key: string; f: number; seq: number }[] = []
+  private current = new Map<string, number>()
+  private seqOf = new Map<string, number>()
+  private nextSeq = 0
+
+  get size() { return this.current.size }
+
+  set(key: string, f: number) {
+    let seq = this.seqOf.get(key)
+    if (seq === undefined) { seq = this.nextSeq++; this.seqOf.set(key, seq) }
+    this.current.set(key, f)
+    const h = this.heap
+    h.push({ key, f, seq })
+    let i = h.length - 1
+    while (i > 0) {
+      const parent = (i - 1) >> 1
+      if (!OpenSet.less(h[i], h[parent])) break
+      ;[h[i], h[parent]] = [h[parent], h[i]]
+      i = parent
+    }
+  }
+
+  pop(): { key: string; f: number } | null {
+    const h = this.heap
+    while (h.length > 0) {
+      const top = h[0]
+      const last = h.pop()!
+      if (h.length > 0) {
+        h[0] = last
+        let i = 0
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1
+          let m = i
+          if (l < h.length && OpenSet.less(h[l], h[m])) m = l
+          if (r < h.length && OpenSet.less(h[r], h[m])) m = r
+          if (m === i) break
+          ;[h[i], h[m]] = [h[m], h[i]]
+          i = m
+        }
+      }
+      // 已被更低成本覆寫或已取出的舊項目直接丟掉
+      if (this.current.get(top.key) !== top.f) continue
+      this.current.delete(top.key)
+      return { key: top.key, f: top.f }
+    }
+    return null
+  }
+
+  private static less(a: { f: number; seq: number }, b: { f: number; seq: number }) {
+    return a.f < b.f || (a.f === b.f && a.seq < b.seq)
+  }
+}
+
+/** 邊物件的流水號：跨查詢快取以「同一個邊物件」為準，避免同名同端點的不同邊互相覆蓋 */
+const edgeSerials = new WeakMap<Edge, number>()
+let nextEdgeSerial = 0
+function edgeSerial(edge: Edge): number {
+  let id = edgeSerials.get(edge)
+  if (id === undefined) { id = nextEdgeSerial++; edgeSerials.set(edge, id) }
+  return id
+}
+
+/** 邊的身分字串（A* 狀態鍵用）；每條邊只組一次字串 */
+const edgeIdentityCache = new WeakMap<Edge, string>()
+function edgeIdentity(edge: Edge): string {
+  let id = edgeIdentityCache.get(edge)
+  if (id === undefined) {
+    id = `${edge.road.properties.navSegmentKey}:${edge.road.properties.blockNode}`
+      + `:${edge.from}>${edge.to}:${edge.back ? 1 : 0}`
+    edgeIdentityCache.set(edge, id)
+  }
+  return id
+}
+
 function makeEdge(
   road: RoadFeature, from: number, to: number,
   coords: [number, number][], back: boolean,
@@ -487,6 +567,12 @@ export class RoadGraph {
   private intersectionIdCache: Set<number> | null = null
   /** 「進入方向被自己的箭頭封死」的判定快取；路網建立後不再改變。 */
   private sealedApproachCache = new Map<string, boolean>()
+  /**
+   * 完整邊之間的轉向判定快取，跨查詢共用（偏航重規劃多半在同一區反覆搜尋）。
+   * 以 policy 物件區分（機車兩段式判定讀待轉區），用戶端路網與待轉區皆唯讀所以不需失效；
+   * 起訖點的半截邊長度隨點選位置而變（影響可變道距離），不進這個快取。
+   */
+  private transitionPlanCache = new WeakMap<LaneRoutePolicy, Map<string, TransitionPlan>>()
   private approachExtensionCache = new Map<string, {
     coords: [number, number][]
     toNode: number
@@ -1023,15 +1109,22 @@ export class RoadGraph {
     // let routing choose the reachable directed projection.  Ordinary divided
     // roads still keep main's strict nearest-side behavior.
     const joinedCenterIsland = !!primaryProps.centerIslandJoinNodes?.length
-    const goals = primaryProps.oneway === 'no'
+    const reachable = this.reachableNodes(sA.edge.to, profile)
+    const goals = (primaryProps.oneway === 'no'
       && (joinedCenterIsland || (
         (primaryProps.centerM || 0) <= 0
         && !primaryProps.roadMergeBarrierNodes?.length
       ))
       ? projectedGoals
-      : [primaryGoal]
+      : [primaryGoal]).filter((goal) => goal.edge === sA.edge || goal.edge === sA.edge.twin
+      || reachable.has(goal.edge.from))
+    // 放寬版（只看車種通行、不看轉向規則）都到不了 → 嚴格搜尋也必然失敗，
+    // 不必讓 A* 掃完整張圖兩輪（不可達原本要 5~10 秒）。
+    if (goals.length === 0) return { route: null, failure: 'unreachable' }
+    let planCache = this.transitionPlanCache.get(policy)
+    if (!planCache) { planCache = new Map(); this.transitionPlanCache.set(policy, planCache) }
     for (const goal of goals) {
-      const result = this.routeToProjection(sA, goal, toP, profile, policy, true)
+      const result = this.routeToProjection(sA, goal, toP, profile, policy, true, planCache)
       if (result) return { route: result }
     }
     for (const goal of goals) {
@@ -1041,6 +1134,21 @@ export class RoadGraph {
     return { route: null, failure: 'unreachable' }
   }
 
+  /** 放寬可達集合：只檢查車種可否通行該邊，不套轉向／分隔島／車道限制（是嚴格搜尋的超集合）。 */
+  private reachableNodes(startNode: number, profile: Profile): Set<number> {
+    const seen = new Set<number>([startNode])
+    const stack = [startNode]
+    while (stack.length > 0) {
+      const node = stack.pop()!
+      for (const e of this.adj.get(node) ?? []) {
+        if (seen.has(e.to) || !edgeAllowed(e.road, e.back, profile)) continue
+        seen.add(e.to)
+        stack.push(e.to)
+      }
+    }
+    return seen
+  }
+
   private routeToProjection(
     sA: DirectedLaneProjection,
     sB: DirectedLaneProjection,
@@ -1048,6 +1156,7 @@ export class RoadGraph {
     profile: Profile,
     policy: LaneRoutePolicy,
     enforceLaneDirection: boolean,
+    planCache = new Map<string, TransitionPlan>(),
   ): RouteResult | null {
 
     // 同一條（順向）邊且順序正確 → 直接一段
@@ -1092,11 +1201,19 @@ export class RoadGraph {
     if (startEntries.length === 0 || goalEntries.length === 0) return null
 
     const goalPos = toP
-    const edgeIdentity = (edge: Edge) =>
-      `${edge.road.properties.navSegmentKey}:${edge.road.properties.blockNode}`
-      + `:${edge.from}>${edge.to}:${edge.back ? 1 : 0}`
     const stateKey = (node: number, incoming: Edge, entryLaneIndex?: number) =>
       `${node}|${edgeIdentity(incoming)}|lane:${entryLaneIndex ?? 'unknown'}`
+    const plan = (incoming: Edge, outgoing: Edge, node: number, laneIndex?: number) => {
+      const full = incoming.from >= 0 && incoming.to >= 0 && outgoing.from >= 0 && outgoing.to >= 0
+      if (!full) return this.laneTransitionPlan(incoming, outgoing, node, profile, policy, laneIndex)
+      const key = `${profile}|${edgeSerial(incoming)}>${edgeSerial(outgoing)}@${node}:${laneIndex ?? 'u'}`
+      let cached = planCache.get(key)
+      if (!cached) {
+        cached = this.laneTransitionPlan(incoming, outgoing, node, profile, policy, laneIndex)
+        planCache.set(key, cached)
+      }
+      return cached
+    }
     const states = new Map<string, {
       node: number
       incoming: Edge
@@ -1109,7 +1226,7 @@ export class RoadGraph {
       transition?: TransitionPlan
     }>()
     const startPart = new Map<string, Edge>()
-    const open = new Map<string, number>()
+    const open = new OpenSet()
     for (const s of startEntries) {
       const key = stateKey(s.node, s.part, undefined)
       if (s.part.timeS < (g.get(key) ?? Infinity)) {
@@ -1129,9 +1246,7 @@ export class RoadGraph {
     } | null = null
 
     while (open.size > 0) {
-      let currentKey = '', curF = Infinity
-      for (const [key, f] of open) if (f < curF) { curF = f; currentKey = key }
-      open.delete(currentKey)
+      const { key: currentKey, f: curF } = open.pop()!
       if (bestGoal && curF >= bestGoal.cost) break
       const current = states.get(currentKey)
       if (!current) continue
@@ -1145,14 +1260,7 @@ export class RoadGraph {
               profile,
             )) continue
           const transition = enforceLaneDirection
-            ? this.laneTransitionPlan(
-              current.incoming,
-              ge.part,
-              current.node,
-              profile,
-              policy,
-              current.entryLaneIndex,
-            )
+            ? plan(current.incoming, ge.part, current.node, current.entryLaneIndex)
             : undefined
           if (enforceLaneDirection && !transition?.decision.allowed) continue
           const total = g.get(currentKey)! + ge.part.timeS
@@ -1171,14 +1279,7 @@ export class RoadGraph {
           profile,
         )) continue
         const transition = enforceLaneDirection
-          ? this.laneTransitionPlan(
-            current.incoming,
-            e,
-            current.node,
-            profile,
-            policy,
-            current.entryLaneIndex,
-          )
+          ? plan(current.incoming, e, current.node, current.entryLaneIndex)
           : undefined
         if (enforceLaneDirection && !transition?.decision.allowed) continue
         const nextKey = stateKey(e.to, e, transition?.entryLaneIndex)

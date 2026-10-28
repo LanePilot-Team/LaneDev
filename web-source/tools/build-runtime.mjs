@@ -29,6 +29,26 @@ globalThis.fetch = async input => {
 const started = performance.now()
 const result = await api.buildClientRuntime()
 globalThis.fetch = realFetch
+// 同一個 OSM node 在每條引用它的路上座標必須一致：couplet 合併改名 node 卻沒搬座標時，
+// 路線在路口從舊位置斜拉出去，藍線整段落在對向車道（德民路×外環西路差 18m）。
+// 自訂路（負 way／node id）接到 OSM 路的方式另有來源，不在此列。
+{
+  const seen = new Map()
+  const drift = []
+  for (const road of result.navigation.roads) {
+    const { nodes, osm_id: id } = road.properties
+    const coords = road.geometry.coordinates
+    if (id < 0 || nodes.length !== coords.length) continue
+    nodes.forEach((node, i) => {
+      if (node < 0) return
+      const first = seen.get(node)
+      if (!first) { seen.set(node, { pos: coords[i], id }); return }
+      const dx = (coords[i][0] - first.pos[0]) * 102700, dy = (coords[i][1] - first.pos[1]) * 110540
+      if (Math.hypot(dx, dy) > 1) drift.push(`node ${node}：way ${first.id} 與 ${id} 差 ${Math.hypot(dx, dy).toFixed(1)}m`)
+    })
+  }
+  assert.deepEqual(drift, [], 'Shared road nodes must have one position')
+}
 const navText = JSON.stringify(result.navigation, api.runtimeReplacer)
 const restored = JSON.parse(navText, api.runtimeReviver)
 const original = new api.RoadGraph(result.navigation.roads)

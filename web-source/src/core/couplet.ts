@@ -449,6 +449,10 @@ export function mergeCouplets(
       (cs[nearIdx][0] - best.hit.pos[0]) * KX, (cs[nearIdx][1] - best.hit.pos[1]) * KY)
     if (nearD < 4) {
       nodeNewPos.set(j, cs[nearIdx])
+      // 下面會把其他道路的 j 改名成 keep node，步驟 4 是用改名後的 id 查新座標；
+      // 只登記 j 的話，keep node 若沒在步驟 2 移動，交叉路端點會留在 drop 側舊位置
+      // （德民路×外環西路差 18m，路線中心線從舊點斜拉，藍線落在對向車道）
+      nodeNewPos.set(nodes[nearIdx], cs[nearIdx])
       if (remapOut) {
         // 先鏈舊映射（多條路依序合併時，前一輪的映射可能指到 j——目標消失鏈就斷）
         for (const [a, b] of remapOut) if (b === j) remapOut.set(a, nodes[nearIdx])
@@ -606,6 +610,7 @@ export function absorbSideWays(
       (cs[nearIdx][0] - best.hit.pos[0]) * KX, (cs[nearIdx][1] - best.hit.pos[1]) * KY)
     if (nearD < 4) {
       nodeNewPos.set(j, cs[nearIdx])
+      nodeNewPos.set(nodes[nearIdx], cs[nearIdx]) // 改名後的 id 也要能查到座標（同 mergeCouplets 步驟 3）
       if (remapOut) {
         for (const [a, b] of remapOut) if (b === j) remapOut.set(a, nodes[nearIdx])
         remapOut.set(j, nodes[nearIdx])

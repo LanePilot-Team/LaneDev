@@ -74,6 +74,19 @@
 - **T1 `tools/*.ps1` 是無 BOM 的 UTF-8**：Windows PowerShell 5.1 以系統碼頁（Big5）讀取，中文字串變亂碼，
   `import-web-assets.ps1` 直接解析失敗、`gradle.ps1` 錯誤訊息亂碼。
 
+## 10/28 實機測試追加
+
+- **S6 路線規劃就畫進對向車道（實測，德民路）**：`couplet.ts` 合併時，交叉路接在 drop 側的路口 node
+  若離 keep 既有頂點 < 4 m，會被改名成 keep node，但新座標只登記在舊 id，座標傳播用改名後的 id 查不到，
+  交叉路端點留在 drop 側舊位置（`mergeCouplets` 步驟 3 與 `absorbSideWays` 同一模式）。
+  全路網 21 個 node 在不同路上座標差 10–27 m，集中在德民路兩側。德民路×外環西路差 18 m：路線中心線從
+  舊點斜拉 212 m，左轉後藍線在中心線左側 −8.8 m（機車 −4.2 m），雙黃線斜切過藍線。與 S1 無關（不需 GPS）。
+- **S7 偏航重規劃後像 GPS 斷線（實測，數十秒無定位）**：重規劃後 `runGpsNav(true)` 會 `clearWatch`
+  再 `new GpsDriver` 重新 `watchPosition`。Android WebView 在所有監聽清掉時關閉定位 provider，
+  重新註冊（高精度）等於冷啟動，手機上數十秒等不到下一筆定位；手動重開 GPS 只會稍微恢復。
+  另外路線搜尋在 GPS callback 內同步執行（桌機偏航起點 p50 356 ms／p90 1.26 s，手機數倍），
+  冷卻用 fix 時間戳記算、不含計算時間，偏離狀態下會「卡幾秒 → 3 筆後又重算」循環。
+
 ## 修復狀態
 
 | 編號 | 狀態 | 說明 |
@@ -97,6 +110,8 @@
 | repo 整理 | ⚠️ 部分 | 根目錄 node_modules／dist／.gstack／tsbuildinfo 已停止追蹤並加入 .gitignore；**歷史紀錄仍含這些檔案**，要瘦身需改寫遠端歷史，由使用者決定 |
 | T1 | ✅ 已修 | `tools/*.ps1` 加 UTF-8 BOM |
 | FileProvider／磁偏角 | ⏸ 未修 | 無法在本機編譯 Android，未動 manifest |
+| S6 | ✅ 已修 | 改名時連 keep node 的座標一起登記（兩處）。錯位 node 21 → 0；德民路左轉後藍線 +1.6 → +4.8 m（機車 +8.5 m）。`build-runtime.mjs` 加建置期檢查：同一 OSM node 各路座標差 > 1 m 即建置失敗 |
+| S7 | ✅ 已修（待實機） | 重規劃改 `GpsDriver.replaceRoute`，定位監聽不中斷；偏離觸發後延 100 ms 才算路線（先畫出跟著實際定位的那一幀）；冷卻從算完起算 = max(5 s, 耗時 × 4)，連續重規劃未回到路線上每次加倍、上限 30 s（`nav/rerouteClock.ts`）。路線計算本身仍在主執行緒（見 S2） |
 
 ## 驗證
 
@@ -104,3 +119,6 @@
 - 預計算道路／待轉區／導航資料檔的內容雜湊與修改前完全相同；官方資料保留原始位元組（匯入時產生的換行差異已還原）。
 - `tools/import-web-assets.ps1` 匯入成功。
 - 未驗證：Gradle `assembleDebug`／`testDebugUnitTest`（本機無 Android SDK）、實機 GPS 導航與語音。
+- 10/28（S6／S7）：`npm test` 277/277、`npm run build` 通過（含新的 node 座標一致性檢查）；預計算路網因 S6
+  重新產生（navigation `913fee5f…` → `4b43897f…`），APK 內導航檔 sha256 與 manifest 一致、錯位 node 0；
+  官方資料保留原始位元組。S7 未經實機驗證。

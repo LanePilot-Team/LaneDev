@@ -17,16 +17,16 @@ import {
   geolocationErrorMessage,
   geolocationUnavailableMessage,
 } from './geolocation.ts'
+import { rerouteReady, type RerouteClock } from './rerouteClock.ts'
+
+export { noteRerouteFinished, type RerouteClock } from './rerouteClock.ts'
 
 /** 離線偵測門檻（公尺）：距離超過這個就算偏離 */
 const OFF_ROUTE_THRESHOLD_M = 50
 /** 連續這麼多次 GPS fix 都偏離才觸發 reroute（避免單筆抖動誤判，約 1 fix/秒） */
 const REROUTE_AFTER_FIXES = 3
-/**
- * 兩次 reroute 的最短間隔（毫秒），避免反覆重畫。重新規劃會換一個新的 GpsDriver，
- * 所以時間戳記放在呼叫端傳進來的 RerouteClock，跨 driver 才真的生效。
- */
-const REROUTE_COOLDOWN_MS = 5000
+/** 觸發偏離後延遲多久才開始算路線（毫秒），讓「跟著實際定位」那一幀先畫出去 */
+const REROUTE_DEFER_MS = 100
 /**
  * 畫面改跟實際定位的門檻（公尺）：原始定位離路線帶超過 max(這個值, 精度 + 10)，
  * 車和鏡頭就不再貼藍線，改畫在實際位置（跟台北版 mvp 一樣，偏了就看得到自己偏到哪）。
@@ -62,9 +62,6 @@ const DIRECT_ARRIVE_M = 30
 
 interface WakeLockSentinelLike { release(): Promise<void> }
 
-/** 跨 GpsDriver 共用的 reroute 計時（重新規劃後新 driver 要沿用上一次的時間） */
-export interface RerouteClock { lastTs: number }
-
 /** 路線帶里程 → route 里程（帶的取樣點都帶著自己的 route 里程，線性內插即可） */
 function routeDistAt(band: LaneBandResult, bandCum: number[], bandDist: number): number {
   let i = 1
@@ -78,6 +75,8 @@ export class GpsDriver {
   private watchId: number | null = null
   private wakeLock: WakeLockSentinelLike | null = null
   private offRouteCount = 0
+  /** 已排程重規劃、還沒開始算：期間進來的定位不再重複觸發 */
+  private reroutePending = false
   /** 目前畫面是否改跟實際定位（偏離路線帶） */
   private free = false
   /** 偏離時平滑後的顯示座標 */
@@ -106,6 +105,21 @@ export class GpsDriver {
     this.band = laneBand(route)
     this.bandCum = cumulative(this.band.coords)
     this.destination = route.coords[route.coords.length - 1]
+  }
+
+  /**
+   * 偏航重規劃換上新路線，定位監聽不中斷。路線進度、抵達計時歸零；車頭、車速、
+   * 偏離顯示狀態沿用（下一筆定位會依新路線帶重新判定）。
+   */
+  replaceRoute(route: RouteResult) {
+    this.route = route
+    this.band = laneBand(route)
+    this.bandCum = cumulative(this.band.coords)
+    this.destination = route.coords[route.coords.length - 1]
+    this.match = null
+    this.offRouteCount = 0
+    this.stoppedNearDestSince = 0
+    this.lastState = null
   }
 
   async start() {
@@ -168,15 +182,23 @@ export class GpsDriver {
 
     if (match.offRouteM > OFF_ROUTE_THRESHOLD_M) {
       this.offRouteCount += 1
-      if (this.offRouteCount >= REROUTE_AFTER_FIXES &&
-        now - this.rerouteClock.lastTs > REROUTE_COOLDOWN_MS) {
-        this.rerouteClock.lastTs = now
+      if (this.offRouteCount >= REROUTE_AFTER_FIXES && !this.reroutePending &&
+        rerouteReady(this.rerouteClock, Date.now())) {
+        this.rerouteClock.lastTs = Date.now()
         this.emitFree(here, prevRaw, speedKmh, accuracyM, now)
-        this.onOffRoute(here, this.smoothBrg)
+        // 先讓這一幀（車跟著實際定位）畫出去再算路線：搜尋會卡住主執行緒數百毫秒到數秒
+        this.reroutePending = true
+        const bearing = this.smoothBrg
+        setTimeout(() => {
+          this.reroutePending = false
+          if (!this.finished) this.onOffRoute(here, bearing)
+        }, REROUTE_DEFER_MS)
         return
       }
     } else {
       this.offRouteCount = 0
+      // 新路線起點本來就在腳下，剛換完一定「在線上」；要在線上撐過整段冷卻才算真的回到路線
+      if (rerouteReady(this.rerouteClock, Date.now())) this.rerouteClock.streak = 0
     }
     // 偏離路線帶：不推進路線進度（貼合點會亂跳），但車和鏡頭跟著實際定位走
     if (this.free) { this.emitFree(here, prevRaw, speedKmh, accuracyM, now); return }

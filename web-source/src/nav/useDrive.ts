@@ -15,7 +15,7 @@ import {
 import { activeElevatedLayer } from '../core/elevated3d.ts'
 import type { DriveState } from './driveState.ts'
 import { clientState, ensureLocation, nativeCommand } from '../native/client.ts'
-import { GpsDriver, type RerouteClock } from './gpsNav.ts'
+import { GpsDriver, noteRerouteFinished, type RerouteClock } from './gpsNav.ts'
 import { GpsAnimation } from './gpsAnimation.ts'
 import { VehicleModelLayer } from '../core/models3d.ts'
 import { angleDelta } from '../core/geo.ts'
@@ -106,8 +106,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
 
   const sessionRef = useRef(0)
   const stopVisualRef = useRef<(() => void) | null>(null)
+  /** 重新規劃換路線時，把車的補間動畫換到新路線帶上（沿用同一個 GpsDriver 與定位監聽） */
+  const rebaseVisualRef = useRef<((path: { coords: [number, number][]; cum: number[] }) => void) | null>(null)
   const displayRef = useRef<{ pos: [number, number]; bearing: number; elevM: number } | null>(null)
-  /** reroute 冷卻計時：重新規劃會換新的 GpsDriver，計時要放在這裡才跨 driver 生效 */
+  /** reroute 冷卻計時：放在這裡，重開導航（新 GpsDriver）時才能整個歸零 */
   const rerouteClockRef = useRef<RerouteClock>({ lastTs: 0 })
   const cameraResumeAtRef = useRef(0)
   useEffect(() => {
@@ -282,6 +284,14 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (followingRef.current) map.jumpTo(navCamera())
     if (!resume) setGpsMsg('取得 GPS 位置中…（手機請允許定位權限）')
     armSpeedCameras(route)
+    // 偏航重規劃：沿用同一個 GpsDriver，只換路線。停掉再重開 watchPosition 會讓 Android
+    // WebView 的定位 provider 冷啟動，手機實測幾十秒等不到下一筆定位（看起來像 GPS 斷線）。
+    const current = resume ? gpsDriverRef.current : null
+    if (current && rebaseVisualRef.current) {
+      current.replaceRoute(route)
+      rebaseVisualRef.current(current.displayPath)
+      return
+    }
     const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
     gpsDriverRef.current?.stop()
     stopVisualRef.current?.()
@@ -319,8 +329,16 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     stopVisualRef.current = () => {
       stopped = true
       freeze()
+      rebaseVisualRef.current = null
       document.removeEventListener('visibilitychange', visibility)
       map.off('resize', resize)
+    }
+    // 從上一條路線最後畫在畫面上的位置補間到新路線，車不瞬移
+    rebaseVisualRef.current = (path) => {
+      const last = displayRef.current
+      freeze()
+      animation = new GpsAnimation(path.coords, path.cum)
+      if (last) animation.seed(last.pos, last.bearing, last.elevM)
     }
     const gps = new GpsDriver(
       route,
@@ -387,10 +405,14 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (targets.length === 0 || !g) return
     const legs: RouteResult[] = []
     let from = pos
+    const started = performance.now()
+    // 路線搜尋在主執行緒同步跑（手機上數秒）：下一次重規劃至少隔開它的數倍時間
+    const settle = () => noteRerouteFinished(rerouteClockRef.current, performance.now() - started, Date.now())
     for (let i = 0; i < targets.length; i++) {
       const result = g.routeDetailed(from, targets[i], p.profileRef.current, p.routePolicy,
         i === 0 ? bearing ?? undefined : undefined)
       if (!result.route) {
+        settle()
         rerouteErrorRef.current = routeFailureText(result.failure, i + 1)
         setGpsMsg(rerouteErrorRef.current)
         return
@@ -398,6 +420,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       legs.push(result.route)
       from = targets[i]
     }
+    settle()
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
     rerouteErrorRef.current = null
     setGpsMsg(null)

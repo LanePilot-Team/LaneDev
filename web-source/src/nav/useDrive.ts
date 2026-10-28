@@ -16,6 +16,7 @@ import { activeElevatedLayer } from '../core/elevated3d.ts'
 import type { DriveState } from './driveState.ts'
 import { clientState, ensureLocation, nativeCommand } from '../native/client.ts'
 import { GpsDriver, noteRerouteFinished, type RerouteClock } from './gpsNav.ts'
+import { gpsLog } from './gpsDebug.ts'
 import { GpsAnimation } from './gpsAnimation.ts'
 import { VehicleModelLayer } from '../core/models3d.ts'
 import { angleDelta } from '../core/geo.ts'
@@ -407,12 +408,17 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     let from = pos
     const started = performance.now()
     // 路線搜尋在主執行緒同步跑（手機上數秒）：下一次重規劃至少隔開它的數倍時間
-    const settle = () => noteRerouteFinished(rerouteClockRef.current, performance.now() - started, Date.now())
+    const settle = (ok: boolean) => {
+      const elapsed = performance.now() - started
+      noteRerouteFinished(rerouteClockRef.current, elapsed, Date.now())
+      gpsLog(ok ? '重規劃完成' : '重規劃失敗', `耗時 ${Math.round(elapsed)} ms  `
+        + `下次最快 ${((rerouteClockRef.current.cooldownMs ?? 0) / 1000).toFixed(0)}s 後`)
+    }
     for (let i = 0; i < targets.length; i++) {
       const result = g.routeDetailed(from, targets[i], p.profileRef.current, p.routePolicy,
         i === 0 ? bearing ?? undefined : undefined)
       if (!result.route) {
-        settle()
+        settle(false)
         rerouteErrorRef.current = routeFailureText(result.failure, i + 1)
         setGpsMsg(rerouteErrorRef.current)
         return
@@ -420,7 +426,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       legs.push(result.route)
       from = targets[i]
     }
-    settle()
+    settle(true)
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]
     rerouteErrorRef.current = null
     setGpsMsg(null)

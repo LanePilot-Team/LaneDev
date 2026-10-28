@@ -18,6 +18,7 @@ import {
   geolocationUnavailableMessage,
 } from './geolocation.ts'
 import { rerouteReady, type RerouteClock } from './rerouteClock.ts'
+import { gpsFixGap, gpsLog } from './gpsDebug.ts'
 
 export { noteRerouteFinished, type RerouteClock } from './rerouteClock.ts'
 
@@ -120,6 +121,7 @@ export class GpsDriver {
     this.offRouteCount = 0
     this.stoppedNearDestSince = 0
     this.lastState = null
+    gpsLog('換上新路線（定位監聽沿用）', `${Math.round(route.lengthM)} m`)
   }
 
   async start() {
@@ -134,9 +136,13 @@ export class GpsDriver {
     if (this.finished) { await this.wakeLock?.release(); this.wakeLock = null; return }
     this.watchId = navigator.geolocation.watchPosition(
       (pos) => this.onFix(pos),
-      (err) => this.onError(geolocationErrorMessage(err)),
+      (err) => {
+        gpsLog('定位錯誤', `code=${err.code} ${err.message}`)
+        this.onError(geolocationErrorMessage(err))
+      },
       HIGH_ACCURACY_POSITION_OPTIONS,
     )
+    gpsLog('watch 開始', `id=${this.watchId}`)
   }
 
   private onFix(pos: GeolocationPosition) {
@@ -144,7 +150,11 @@ export class GpsDriver {
     const { longitude: lon, latitude: lat, speed, accuracy } = pos.coords
     const here: [number, number] = [lon, lat]
     const now = pos.timestamp
-    if (!Number.isFinite(now) || Date.now() - now > 10000 || now <= this.lastFixTs) return
+    const gap = gpsFixGap()
+    if (!Number.isFinite(now) || Date.now() - now > 10000 || now <= this.lastFixTs) {
+      gpsLog('fix 丟棄', `間隔 ${gap}  時間戳記落後 ${((Date.now() - now) / 1000).toFixed(1)}s`)
+      return
+    }
     const elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
 
     // 車速：優先用裝置回報值；沒有就用位移/時間推（低速時 GPS 常回 null）
@@ -169,6 +179,8 @@ export class GpsDriver {
 
     // 精度爛到不可用：不推進度也不判偏離（動了只會亂跳），但畫面要講清楚現在收不到訊號。
     // 已經在跑就原地重送上一筆並標成訊號弱；還沒有第一筆定位就走錯誤列。
+    gpsLog('fix', `間隔 ${gap}  精度 ${Math.round(accuracy)}m  離線 ${Math.round(match.offRouteM)}m  `
+      + `${((speedMps ?? 0) * 3.6).toFixed(0)}km/h  ${match.quality}`)
     if (match.quality === 'lost') {
       if (this.lastState) this.emit({ ...this.lastState, speedKmh: 0, gpsWeak: true })
       else this.onError('GPS 訊號微弱，尚未取得可用定位')
@@ -188,6 +200,7 @@ export class GpsDriver {
         this.emitFree(here, prevRaw, speedKmh, accuracyM, now)
         // 先讓這一幀（車跟著實際定位）畫出去再算路線：搜尋會卡住主執行緒數百毫秒到數秒
         this.reroutePending = true
+        gpsLog('偏離觸發重規劃', `連續 ${this.offRouteCount} 筆離線 > ${OFF_ROUTE_THRESHOLD_M}m`)
         const bearing = this.smoothBrg
         setTimeout(() => {
           this.reroutePending = false
@@ -316,6 +329,7 @@ export class GpsDriver {
     this.finished = true
     if (this.watchId !== null) {
       navigator.geolocation.clearWatch(this.watchId)
+      gpsLog('watch 停止', `id=${this.watchId}`)
       this.watchId = null
     }
     if (this.wakeLock) {

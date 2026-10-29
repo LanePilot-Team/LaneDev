@@ -152,6 +152,33 @@ test('高速跨多車道會延長準備距離', () => {
   assert.ok(result.difficultyS > 0)
 })
 
+test('不換道的直行不計準備距離懲罰，即使路段很短', () => {
+  const result = decide({
+    action: 'through',
+    laneCount: 1,
+    laneMovements: ['through'],
+    currentLaneIndex: 0,
+    availableM: 20,
+    speedKmh: 30,
+  })
+
+  assert.equal(result.laneChanges, 0)
+  assert.equal(result.shortPreparation, false)
+  assert.equal(result.difficultyS, 0)
+})
+
+test('懲罰依實際換道距離計算，不套用 250 m 提示下限', () => {
+  // 30 km/h 換一道實際需約 62.5 m：80 m 足夠、40 m 不足
+  const enough = decide({ speedKmh: 30, currentLaneIndex: 1, availableM: 80 })
+  const tight = decide({ speedKmh: 30, currentLaneIndex: 1, availableM: 40 })
+
+  assert.equal(enough.preparationM, 250)
+  assert.equal(enough.shortPreparation, false)
+  assert.equal(enough.difficultyS, 2)
+  assert.equal(tight.shortPreparation, true)
+  assert.ok(Math.abs(tight.difficultyS - (2 + (62.5 - 40) / (30 / 3.6))) < 1e-9)
+})
+
 test('多條直行右轉混合車道時，右轉優先選最外側', () => {
   const result = decide({
     laneCount: 4,

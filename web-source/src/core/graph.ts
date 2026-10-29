@@ -482,6 +482,9 @@ function edgeIdentity(edge: Edge): string {
   return id
 }
 
+/** 準備距離往回累加的上限；最長準備距離（高速、多次換道）約 400 m */
+const APPROACH_LOOKBACK_M = 600
+
 function makeEdge(
   road: RoadFeature, from: number, to: number,
   coords: [number, number][], back: boolean,
@@ -572,6 +575,8 @@ export class RoadGraph {
   private intersectionIdCache: Set<number> | null = null
   /** 「進入方向被自己的箭頭封死」的判定快取；路網建立後不再改變。 */
   private sealedApproachCache = new Map<string, boolean>()
+  /** 進入邊 → 往回累加到上一個路口的準備距離（路網唯讀，不需失效） */
+  private approachLengthCache = new WeakMap<Edge, number>()
   /**
    * 完整邊之間的轉向判定快取，跨查詢共用（偏航重規劃多半在同一區反覆搜尋）。
    * 以 policy 物件區分（機車兩段式判定讀待轉區），用戶端路網與待轉區皆唯讀所以不需失效；
@@ -1375,6 +1380,38 @@ export class RoadGraph {
     return sealed
   }
 
+  /**
+   * 進入此路口前可用的準備距離：從 incoming 往回沿同一條路累加，直到上一個
+   * 真正路口（路段 ≥3 條）或無唯一前驅為止。路網在共用 OSM 節點處切邊，
+   * 中位數邊長僅約 58 m；只算單一邊會把「兩個 way 的接縫」也當成剛轉進來。
+   */
+  private approachLengthM(incoming: Edge): number {
+    const cached = this.approachLengthCache.get(incoming)
+    if (cached !== undefined) return cached
+    let total = incoming.lengthM
+    let edge = incoming
+    const seen = new Set<Edge>([edge])
+    while (total < APPROACH_LOOKBACK_M && edge.from >= 0 && this.roadArmCount(edge.from) === 2) {
+      // 排除原路折返（同一路段反向）：剩下唯一前驅才算同一條路的延續
+      const prev = (this.adjIn.get(edge.from) ?? []).filter((e) => e !== edge.twin)
+      if (prev.length !== 1 || seen.has(prev[0])) break
+      edge = prev[0]
+      seen.add(edge)
+      total += edge.lengthM
+    }
+    this.approachLengthCache.set(incoming, total)
+    return total
+  }
+
+  /** 節點上的路段數（雙向道的兩個方向算同一條）；平行的兩條路接同兩節點也分開算 */
+  private roadArmCount(nodeId: number): number {
+    const arms = new Set<Edge>()
+    for (const e of [...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]) {
+      arms.add(e.back && e.twin ? e.twin : e)
+    }
+    return arms.size
+  }
+
   private laneTransitionPlan(
     incoming: Edge,
     outgoing: Edge,
@@ -1424,7 +1461,7 @@ export class RoadGraph {
       laneMovements: ignoreMovements ? undefined : guidance.laneMovements,
       guidanceSource: ignoreMovements ? 'inferred' : guidance.source,
       currentLaneIndex,
-      availableM: incoming.lengthM,
+      availableM: this.approachLengthM(incoming),
       speedKmh: Number.parseFloat(p.maxspeed ?? '') || SPEED_KMH[p.highway] || 30,
       // 機車左轉專用道在最外側：車道定位與兩段式相同（靠外側、不需切到內側左轉道），
       // 但它是直接左轉，回報給導航的 twoStage 仍維持真實值。

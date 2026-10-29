@@ -60,10 +60,15 @@ export function parseLaneMovements(value: string): Set<NormalMove> {
   )
 }
 
-export function preparationDistanceM(speedKmh: number, laneChanges: number): number {
+/** 完成換道實際需要的距離：反應 4 秒 + 每換一道 3.5 秒 */
+export function requiredPreparationM(speedKmh: number, laneChanges: number): number {
   const speedMs = Math.max(0, speedKmh) / 3.6
-  const dynamicM = speedMs * (4 + Math.max(1, laneChanges) * 3.5)
-  return Math.max(250, dynamicM)
+  return speedMs * (4 + Math.max(1, laneChanges) * 3.5)
+}
+
+/** 提示距離：至少 250 m 前開始顯示車道（HUD、導航線變換起點用） */
+export function preparationDistanceM(speedKmh: number, laneChanges: number): number {
+  return Math.max(250, requiredPreparationM(speedKmh, laneChanges))
 }
 
 function candidateOrder(
@@ -115,9 +120,15 @@ function allowedResult(
   const availableM = Number.isFinite(input.availableM)
     ? Math.max(0, input.availableM)
     : Number.POSITIVE_INFINITY
-  const shortPreparation = availableM < preparationM
+  // 準備距離只對真正要做事的路口有意義：不換車道的直行不必提前準備，
+  // 若照樣計罰，經過越多短路段（巷口）罰越多，A* 會被推向節點少的 service 巷道。
+  // 成本用實際需要的距離，不用 250 m 的提示下限——否則 30 km/h 巷道換一道
+  // 也要求 250 m，連續轉彎的正常路線會被大量誤罰。
+  const needsPreparation = laneChanges > 0 || input.action !== 'through'
+  const requiredM = requiredPreparationM(input.speedKmh, laneChanges)
+  const shortPreparation = needsPreparation && availableM < requiredM
   const speedMs = Math.max(1, input.speedKmh / 3.6)
-  const deficitS = shortPreparation ? (preparationM - availableM) / speedMs : 0
+  const deficitS = shortPreparation ? (requiredM - availableM) / speedMs : 0
 
   return {
     allowed: true,

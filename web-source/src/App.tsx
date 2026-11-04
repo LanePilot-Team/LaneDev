@@ -12,6 +12,14 @@ import { DriveHUD, RecenterButton } from './nav/DriveHUD.tsx'
 import { ClientSettings } from './native/ClientSettings.tsx'
 import { LocateControl } from './native/LocateControl.tsx'
 import { PlaceSearch } from './places/PlaceSearch.tsx'
+import { lookupAddress } from './places/PlaceAddress.tsx'
+import {
+  SAVED_PLACE_META,
+  cancelSavedPlacePick,
+  savedPlacesState,
+  setSavedPlace,
+  useSavedPlaces,
+} from './places/savedPlaces.ts'
 import {
   POI_LAYER_IDS,
   placeFromPoiFeature,
@@ -32,6 +40,7 @@ export default function App() {
 
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
   const [selectedDestination, setSelectedDestination] = useState<DestinationSelection | null>(null)
+  const savingKind = useSavedPlaces().picking
 
 
   // ── 點擊分派 ──
@@ -39,6 +48,18 @@ export default function App() {
     useMapCore(containerRef, (e, map) => {
       const m = modeRef.current
       const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
+      const savingKind = savedPlacesState().picking
+      if (savingKind && m !== 'drive') {
+        cancelSavedPlacePick()
+        const fallback = `座標 ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`
+        setSavedPlace({ kind: savingKind, address: fallback, position: p })
+        // 有原生反查地址就補上門牌；瀏覽器開發環境沒有，維持座標
+        void lookupAddress(p).then(address => {
+          const current = savedPlacesState().places[savingKind]
+          if (address && current.position === p) setSavedPlace({ ...current, address })
+        })
+        return
+      }
       if (m === 'browse') {
         const placeFeature = map.queryRenderedFeatures(e.point, { layers: [...POI_LAYER_IDS] })[0]
         const place = placeFeature ? placeFromPoiFeature(placeFeature) : null
@@ -161,6 +182,12 @@ export default function App() {
         <LocateControl core={core} loading={loading} navigating={mode === 'drive'} />
         <ClientSettings navigating={mode === 'drive'} />
       </div>
+      {savingKind && mode !== 'drive' && (
+        <div className="saved-place-pick-banner" role="status">
+          <span>點地圖設定「{SAVED_PLACE_META[savingKind].label}」位置</span>
+          <button type="button" onClick={cancelSavedPlacePick}>取消</button>
+        </div>
+      )}
       {loading && <div className="loading" role={loadError ? 'alert' : 'status'}>
         {loadError ? <><p>{loadError}</p><button onClick={() => location.reload()}>重新載入</button></>
           : '載入楠梓＋左營路網中…'}

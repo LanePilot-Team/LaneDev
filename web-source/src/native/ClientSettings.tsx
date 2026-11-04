@@ -1,11 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { nativeCommand, setVoice, setZoom, useClientState } from './client.ts'
+import { SavedPlacesSettings } from './SavedPlacesSettings.tsx'
 import './client.css'
 
 export function ClientSettings({ navigating }: { navigating: boolean }) {
   const state = useClientState()
+  const detailsRef = useRef<HTMLDetailsElement>(null)
   useEffect(() => { nativeCommand('status') }, [])
-  return <details className={`client-settings${navigating ? ' navigating' : ''}`}>
+  return <details ref={detailsRef} className={`client-settings${navigating ? ' navigating' : ''}`}>
     <summary aria-label="設定" title="設定">
       <span className="settings-icon" aria-hidden="true">⚙</span>
     </summary>
@@ -21,6 +23,8 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
           </select>
         </label>
       </section>
+
+      <SavedPlacesSettings onPickOnMap={() => { if (detailsRef.current) detailsRef.current.open = false }} />
 
       <details className="settings-section settings-subsection">
         <summary>語音設定</summary>

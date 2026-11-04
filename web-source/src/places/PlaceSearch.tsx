@@ -18,6 +18,12 @@ import {
   localDestination,
   type DestinationSelection,
 } from './destination.ts'
+import {
+  SAVED_PLACE_KINDS,
+  SAVED_PLACE_META,
+  savedPlaceRecord,
+  useSavedPlaces,
+} from './savedPlaces.ts'
 
 type SearchProvider = 'local' | 'google'
 
@@ -45,6 +51,8 @@ export function PlaceSearch({
   useEffect(() => { if (picker) inputRef.current?.select() }, [picker])
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState(initialQuery)
+  const [focused, setFocused] = useState(picker)
+  const saved = useSavedPlaces()
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [provider, setProvider] = useState<SearchProvider>('local')
   const [googleState, setGoogleState] = useState<GooglePlaceSearchState>('idle')
@@ -160,7 +168,11 @@ export function PlaceSearch({
   const hasQuery = query.trim().length > 0
 
   return (
-    <section className={`place-search${picker ? ' stop-place-search' : ''}`} aria-label={searchLabel}>
+    <section className={`place-search${picker ? ' stop-place-search' : ''}`} aria-label={searchLabel}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
+      }}>
       <form className="place-search-form" onSubmit={submit}>
         <span className="place-search-icon" aria-hidden="true">⌕</span>
         <input
@@ -194,6 +206,23 @@ export function PlaceSearch({
         </button>
       </form>
 
+      {focused && !hasQuery && !resolvedSelected && (
+        <div className="saved-place-shortcuts" role="group" aria-label="常用地點">
+          {SAVED_PLACE_KINDS.map((kind) => {
+            const place = saved.places[kind]
+            const meta = SAVED_PLACE_META[kind]
+            return <button type="button" key={kind} className="saved-place-chip"
+              disabled={mapLoading}
+              onClick={() => { setFocused(false); showPlace(savedPlaceRecord(place)) }}>
+              <span aria-hidden="true">{meta.icon}</span>
+              <span className="saved-place-chip-copy">
+                <b>{meta.label}</b>
+                <small>{place.name || place.address || '未設定地址'}</small>
+              </span>
+            </button>
+          })}
+        </div>
+      )}
       {picker && !hasQuery && <p className="stop-search-help">輸入地點名稱或地址，再選擇搜尋結果。</p>}
       {hasQuery && provider === 'local' && !resolvedSelected && (
         <div className="place-results" role="listbox" aria-label="搜尋結果">

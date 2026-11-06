@@ -61,6 +61,7 @@
 .route-stop > input:focus-visible, .stop-edit-action:focus-visible { outline: 2px solid #1976d2; outline-offset: 2px; }
 .side-panel.route-search-panel.is-searching { max-height: calc(100dvh - 120px); }
 .route-search-panel .stop-place-search .place-results { max-height: min(34vh, 300px); }
+.route-search-panel .route-stop-card.is-editing { padding: 8px 9px; }
 .route-search-panel .sp-summary { flex-wrap: wrap; }
 .route-search-panel .route-stop, .route-search-panel .place-search-form, .route-search-panel .place-results { width: 100%; min-width: 0; box-sizing: border-box; }
 .route-search-panel .sp-vehicle { display: flex; gap: 8px; }

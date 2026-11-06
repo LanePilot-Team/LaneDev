@@ -18,6 +18,11 @@ export interface LaneDecisionInput {
   availableM: number
   speedKmh: number
   twoStage: boolean
+  /**
+   * 這個車種不得使用的車道（例：機車遇到標「禁行機車」的內側車道）。
+   * 這些車道不會成為建議或次要車道；若扣掉之後沒有任何候選，維持原結果。
+   */
+  prohibitedLaneIndices?: number[]
 }
 
 export interface LaneDecision {
@@ -161,6 +166,37 @@ function rejectedResult(laneCount: number, twoStage = false): LaneDecision {
 }
 
 export function resolveLaneDecision(input: LaneDecisionInput): LaneDecision {
+  return excludeProhibited(resolveByMovements(input), input)
+}
+
+/** 從結果扣掉車種禁行車道；建議車道被扣掉時，依動作改選最合理的剩餘車道 */
+function excludeProhibited(base: LaneDecision, input: LaneDecisionInput): LaneDecision {
+  const banned = new Set(input.prohibitedLaneIndices ?? [])
+  if (!banned.size || !base.allowed || base.primaryLaneIndex === undefined) return base
+  const pool = [base.primaryLaneIndex, ...base.secondaryLaneIndices].filter((i) => !banned.has(i))
+  if (!pool.length) return base
+  let primary = base.primaryLaneIndex
+  if (banned.has(primary)) {
+    const outer = (input.profile === 'moto' && input.twoStage) || input.action === 'right'
+    const inner = !outer && (input.action === 'left' || input.action === 'uturn')
+    primary = outer ? Math.max(...pool) : inner ? Math.min(...pool)
+      : pool.reduce((a, b) => Math.abs(b - base.primaryLaneIndex!) < Math.abs(a - base.primaryLaneIndex!) ? b : a)
+  }
+  const laneChanges = input.currentLaneIndex === undefined ? 0 : Math.abs(primary - input.currentLaneIndex)
+  return {
+    ...base,
+    primaryLaneIndex: primary,
+    secondaryLaneIndices: pool.filter((i) => i !== primary).sort((a, b) => a - b),
+    incompatibleLaneIndices: [...new Set([...base.incompatibleLaneIndices, ...banned])]
+      .filter((i) => i >= 0 && i < Math.max(1, Math.floor(Number(input.laneCount)) || 0))
+      .sort((a, b) => a - b),
+    laneChanges,
+    preparationM: laneChanges === base.laneChanges ? base.preparationM
+      : preparationDistanceM(input.speedKmh, laneChanges),
+  }
+}
+
+function resolveByMovements(input: LaneDecisionInput): LaneDecision {
   const laneCountValue = Number(input.laneCount)
   const laneCount = Number.isFinite(laneCountValue) && laneCountValue >= 1
     ? Math.floor(laneCountValue)

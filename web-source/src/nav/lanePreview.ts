@@ -124,6 +124,8 @@ function applyLaneStates(
   action: LanePreviewAction,
   laneDecision: LaneDecision | undefined,
   near: boolean,
+  /** 兩段式：沒有 laneDecision 時建議最外側可直行的車道 */
+  preferOuter = false,
 ): LanePreviewLane[] {
   if (laneDecision && near) {
     const secondary = new Set(laneDecision.secondaryLaneIndices)
@@ -136,7 +138,7 @@ function applyLaneStates(
     })
   }
   const activeIndices = lanes.flatMap((lane, index) => lane.active ? [index] : [])
-  const primary = action === 'right'
+  const primary = action === 'right' || preferOuter
     ? activeIndices.at(-1)
     : activeIndices[0]
   return lanes.map((lane, index) => ({
@@ -224,9 +226,11 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
   const hasReverse = parsed.some((moves) => moves.has('reverse'))
   const lanes = parsed.map((moves, index): LanePreviewLane => {
     if (twoStageNear) {
-      const active = index === count - 1
-      return { arrow: active ? 'through' : arrowFor(moves), active,
-        state: active ? 'primary' : 'inactive',
+      // 兩段式＝先直行：可直行的車道才亮，箭頭照標線畫（不可把右轉專用道改畫成直行）。
+      // 實際建議哪一道交給 laneDecision（已排除禁行機車道、偏好最外側）。
+      const active = moves.has('through')
+      return { arrow: arrowFor(moves), active,
+        state: active ? 'secondary' : 'inactive',
         ...(active ? { highlightedAction: 'through' as const } : {}) }
     }
     const active = immediateAction === 'uturn'
@@ -244,7 +248,7 @@ export function buildLanePreview(input: LanePreviewInput): LanePreviewModel {
 
   return {
     status: 'ready',
-    lanes: applyLaneStates(lanes, immediateAction, input.laneDecision, near),
+    lanes: applyLaneStates(lanes, twoStageNear ? 'through' : immediateAction, input.laneDecision, near, twoStageNear),
     immediateAction,
     inferred,
     truncated,

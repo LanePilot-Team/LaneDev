@@ -189,3 +189,30 @@ test('多條直行右轉混合車道時，右轉優先選最外側', () => {
   assert.equal(result.primaryLaneIndex, 3)
   assert.deepEqual(result.secondaryLaneIndices, [2])
 })
+
+test('moto two-stage skips lanes prohibited to motorcycles (加昌路→瑞屏路)', () => {
+  // 人工標註 left;through|through|through|right，內側兩道「禁行機車」
+  const base = {
+    action: 'left', profile: 'moto', laneCount: 4,
+    laneMovements: ['left;through', 'through', 'through', 'right'],
+    guidanceSource: 'annotation', availableM: 300, speedKmh: 40, twoStage: true,
+  }
+  const plain = resolveLaneDecision(base)
+  assert.equal(plain.primaryLaneIndex, 2)
+  assert.deepEqual(plain.secondaryLaneIndices, [0, 1])
+  const moto = resolveLaneDecision({ ...base, prohibitedLaneIndices: [0, 1] })
+  assert.equal(moto.primaryLaneIndex, 2)
+  assert.deepEqual(moto.secondaryLaneIndices, [])
+  assert.deepEqual(moto.incompatibleLaneIndices, [0, 1, 3])
+})
+
+test('prohibited primary lane falls back to the nearest allowed lane', () => {
+  const d = resolveLaneDecision({
+    action: 'left', profile: 'moto', laneCount: 3,
+    laneMovements: ['left', 'left;through', 'through'],
+    guidanceSource: 'annotation', availableM: 300, speedKmh: 40, twoStage: false,
+    prohibitedLaneIndices: [0],
+  })
+  assert.equal(d.primaryLaneIndex, 1)
+  assert.ok(d.incompatibleLaneIndices.includes(0))
+})

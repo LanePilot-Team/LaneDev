@@ -59,6 +59,16 @@ function motoLegalCarLanes(r: RoadFeature, back: boolean): number[] {
     .filter((k) => marks?.[k]?.text.trim() !== '禁行機車')
 }
 
+/** 機車不得使用的車道 index（導引車道數與路段車道數不一致、或整段沒有合法車道時不判） */
+function motoProhibitedLanes(r: RoadFeature, back: boolean, laneCount: number | undefined): number[] | undefined {
+  const p = r.properties
+  const lanes = p.oneway === 'yes' ? p.lanesForward : back ? p.lanesBackward : p.lanesForward
+  if (!laneCount || laneCount !== lanes) return undefined
+  const legal = new Set(motoLegalCarLanes(r, back))
+  if (!legal.size) return undefined
+  return Array.from({ length: lanes }, (_, k) => k).filter((k) => !legal.has(k))
+}
+
 /** 機車可否行駛（國道、OSM motorcycle=no、方向別自定義禁行機車）。 */
 export function motoAllowed(r: RoadFeature, back: boolean = false): boolean {
   const p = r.properties
@@ -192,6 +202,12 @@ export interface RouteResult {
     offM: number
     leftM: number
     rightM: number
+    /**
+     * 第 1／最後一個汽車車道中心的偏移（與車種無關）。leftM/rightM 是「這個車種可用」的範圍，
+     * 機車遇到內側禁行機車時 leftM 不是第 1 車道——依車道 index 換算位置要用這兩個。
+     */
+    laneFirstM?: number
+    laneLastM?: number
     road?: RoadFeature
     back?: boolean
     laneGuidance?: ResolvedLaneGuidance
@@ -370,8 +386,11 @@ export function laneIndexOffset(
 ): number {
   const count = Math.max(1, span.laneGuidance?.laneCount ?? 1)
   const clamped = Math.max(0, Math.min(count - 1, laneIndex))
-  if (count === 1) return span.leftM
-  return span.leftM + (span.rightM - span.leftM) * clamped / (count - 1)
+  // 用車種無關的車道幾何換算，再夾回這個車種可用的範圍（機車不會被指到禁行機車道）
+  const first = span.laneFirstM ?? span.leftM
+  const last = span.laneLastM ?? span.rightM
+  const raw = count === 1 ? first : first + (last - first) * clamped / (count - 1)
+  return Math.max(Math.min(span.leftM, span.rightM), Math.min(Math.max(span.leftM, span.rightM), raw))
 }
 
 function turnTarget(
@@ -1466,6 +1485,8 @@ export class RoadGraph {
       // 機車左轉專用道在最外側：車道定位與兩段式相同（靠外側、不需切到內側左轉道），
       // 但它是直接左轉，回報給導航的 twoStage 仍維持真實值。
       twoStage: twoStage || (motoLeftTurnLane && action !== 'through' && action !== 'right'),
+      // 機車不得使用的汽車車道（禁行機車標線／逐車道禁行）。車道數與導引一致時才能逐道對應。
+      prohibitedLaneIndices: profile === 'moto' ? motoProhibitedLanes(incoming.road, incoming.back, guidance.laneCount) : undefined,
     })
     const outgoingProps = outgoing.road.properties
     const outgoingLaneCount = Math.max(1,
@@ -1497,11 +1518,14 @@ export class RoadGraph {
     for (const e of edges) {
       coords.push(...e.coords.slice(1))
       const lo = laneOffsets(e, profile)
+      const geo = profile === 'car' ? lo : laneOffsets(e, 'car')
       spans.push({
         toIdx: coords.length - 1,
         offM: lo.cruise,
         leftM: lo.left,
         rightM: lo.right,
+        laneFirstM: geo.left,
+        laneLastM: geo.right,
         road: e.road,
         back: e.back,
         laneGuidance: guidanceForRoadDirection(e.road, e.back),

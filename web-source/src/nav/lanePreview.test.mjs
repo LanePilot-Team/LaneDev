@@ -92,8 +92,11 @@ test('returns no-data when lane count is invalid', () => {
 test('shows two-stage guidance only within 250 metres', () => {
   const near = ready({ twoStage: true, maneuverKind: 'left', distanceM: 250 })
   assert.equal(near.showTwoStageSign, true)
-  assert.deepEqual(near.lanes.map((lane) => lane.active), [false, false, true])
-  assert.deepEqual(near.lanes.map((lane) => lane.arrow), ['through', 'through-right', 'through'])
+  // 兩段式＝先直行：右轉專用道照標線畫右轉、不點亮；建議最外側可直行的車道
+  assert.deepEqual(near.lanes.map((lane) => lane.active), [true, true, false])
+  assert.deepEqual(near.lanes.map((lane) => lane.arrow), ['through', 'through-right', 'right'])
+  assert.deepEqual(near.lanes.map((lane) => lane.state), ['secondary', 'primary', 'inactive'])
+  assert.equal(near.lanes[1].highlightedAction, 'through')
 
   const far = ready({ twoStage: true, maneuverKind: 'left', distanceM: 251 })
   assert.equal(far.showTwoStageSign, false)

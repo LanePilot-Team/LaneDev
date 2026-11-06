@@ -186,6 +186,24 @@ interface DirectedLaneProjection {
   bearing: number
 }
 
+/** 附近有向車道候選（nearbyLanes）：key 是邊的穩定編號，可拿去查 successorKeys */
+export interface LaneCandidate {
+  key: number
+  from: number
+  to: number
+  twinKey: number
+  /** 該方向巡航車道中心的座標 */
+  pos: [number, number]
+  /** 投影處的行進方位（度） */
+  bearing: number
+  /** 定位到車道中心的距離（公尺） */
+  distM: number
+  /** 投影點在這條邊上的里程（公尺，從 from 起算） */
+  alongM: number
+  lengthM: number
+  name?: string
+}
+
 export interface RouteResult {
   coords: [number, number][]
   cum: number[]
@@ -1093,6 +1111,109 @@ export class RoadGraph {
   /** 放置車輛模型用：吸到最近車道中心的精確位置（比較兩個行進方向，取離點擊較近者）。
    * feature = 吸到的路段本身：車輛高度要用「路段身分」查橋面，不能用純位置查
    * （平面路從高架正下方穿過時會誤抬——見 elevation.ts heightAtPos 註解）。 */
+  /** 路段空間索引（格網）：導航中每秒查一次附近道路，不能每次掃全部路段 */
+  private segGrid: Map<string, { key: number; seg: number }[]> | null = null
+  private edgeKeyOf = new Map<Edge, number>()
+  private keyOf(e: Edge): number {
+    if (this.edgeKeyOf.size !== this.edges.length) {
+      this.edgeKeyOf = new Map(this.edges.map((edge, i) => [edge, i]))
+    }
+    return this.edgeKeyOf.get(e) ?? -1
+  }
+  private static readonly GRID_DEG = 0.0005 // 約 50m
+
+  private buildSegGrid() {
+    const grid = new Map<string, { key: number; seg: number }[]>()
+    const g = RoadGraph.GRID_DEG
+    this.edges.forEach((e, key) => {
+      const cs = e.coords
+      for (let i = 0; i < cs.length - 1; i++) {
+        const x0 = Math.floor(Math.min(cs[i][0], cs[i + 1][0]) / g)
+        const x1 = Math.floor(Math.max(cs[i][0], cs[i + 1][0]) / g)
+        const y0 = Math.floor(Math.min(cs[i][1], cs[i + 1][1]) / g)
+        const y1 = Math.floor(Math.max(cs[i][1], cs[i + 1][1]) / g)
+        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+          const k = `${x},${y}`
+          let list = grid.get(k)
+          if (!list) grid.set(k, list = [])
+          list.push({ key, seg: i })
+        }
+      }
+    })
+    this.segGrid = grid
+  }
+
+  /**
+   * 附近可通行的「有向車道」候選（偏離路線時貼路網用）：每條有向邊取最近投影一筆，
+   * 位置是該方向巡航車道中心（與 snapToLane 同一套偏移），依距離排序。
+   */
+  nearbyLanes(p: [number, number], profile: Profile, radiusM = 40): LaneCandidate[] {
+    if (!this.segGrid) this.buildSegGrid()
+    const g = RoadGraph.GRID_DEG
+    const kx = 111320 * COS_LAT, ky = 110540
+    const r = Math.ceil(radiusM / 50)
+    const cx = Math.floor(p[0] / g), cy = Math.floor(p[1] / g)
+    const best = new Map<number, { seg: number; t: number; d2: number }>()
+    for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) {
+      for (const { key, seg } of this.segGrid!.get(`${x},${y}`) ?? []) {
+        const cs = this.edges[key].coords
+        const dx = (cs[seg + 1][0] - cs[seg][0]) * kx, dy = (cs[seg + 1][1] - cs[seg][1]) * ky
+        const px = (p[0] - cs[seg][0]) * kx, py = (p[1] - cs[seg][1]) * ky
+        const len2 = dx * dx + dy * dy
+        const t = Math.max(0, Math.min(1, len2 > 0 ? (px * dx + py * dy) / len2 : 0))
+        const ex = px - t * dx, ey = py - t * dy
+        const d2 = ex * ex + ey * ey
+        const cur = best.get(key)
+        if (!cur || d2 < cur.d2) best.set(key, { seg, t, d2 })
+      }
+    }
+    const out: LaneCandidate[] = []
+    for (const [key, { seg, t, d2 }] of best) {
+      if (Math.sqrt(d2) > radiusM + 15) continue
+      const e = this.edges[key]
+      if (!edgeAllowed(e.road, e.back, profile)) continue
+      const a = e.coords[seg], b = e.coords[seg + 1]
+      const center: [number, number] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+      const direction = bearing(a, b)
+      const offset = laneOffsets(e, profile).cruise
+      const rad = ((direction + 90) * Math.PI) / 180
+      const pos: [number, number] = [
+        center[0] + (offset * Math.sin(rad)) / kx,
+        center[1] + (offset * Math.cos(rad)) / ky,
+      ]
+      const distM = haversine(p, pos)
+      if (distM > radiusM) continue
+      const along = cumulative(e.coords)[seg] + haversine(a, center)
+      out.push({
+        key, from: e.from, to: e.to, twinKey: e.twin ? this.keyOf(e.twin) : -1,
+        pos, bearing: direction, distM, alongM: along, lengthM: e.lengthM, name: e.name,
+      })
+    }
+    return out.sort((x, y) => x.distM - y.distM)
+  }
+
+  /** 有向邊的後繼邊（終點節點的出邊，排除折返自己的 twin） */
+  successorKeys(key: number): number[] {
+    const e = this.edges[key]
+    if (!e) return []
+    const out: number[] = []
+    for (const n of this.adj.get(e.to) ?? []) if (n !== e.twin) out.push(this.keyOf(n))
+    return out
+  }
+
+  /** 有向邊的終點節點 */
+  edgeTo(key: number): number { return this.edges[key]?.to ?? -1 }
+
+  /** 節點的可通行出邊（路口分岔判定用）：幾何與出口方位（取前 15m 判斷） */
+  branchesAt(nodeId: number, profile: Profile): { key: number; coords: [number, number][]; bearing: number; name?: string }[] {
+    return (this.adj.get(nodeId) ?? [])
+      .filter((e) => edgeAllowed(e.road, e.back, profile))
+      .map((e) => ({
+        key: this.keyOf(e), coords: e.coords, name: e.name,
+        bearing: bearing(e.coords[0], pointAlong(e.coords, cumulative(e.coords), Math.min(15, e.lengthM)).pos),
+      }))
+  }
+
   snapToLane(p: [number, number], type: Profile):
     { pos: [number, number]; bearing: number; road?: string; feature?: RoadFeature } | null {
     const hit = this.projectToDirectedLane(p, type)

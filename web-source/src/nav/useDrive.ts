@@ -30,6 +30,7 @@ import {
   type RouteCamera, type SpeedCamera, type SpeedCameraAlert,
 } from '../core/speedCameras.ts'
 import { SpeedCameraVoice } from './speedCameraVoice.ts'
+import { deviationFeatures } from './roadMatch.ts'
 
 /** 接近待轉區時的高亮距離。 */
 const ZONE_HIGHLIGHT_RANGE_M = 160
@@ -337,8 +338,15 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     // 從上一條路線最後畫在畫面上的位置補間到新路線，車不瞬移
     rebaseVisualRef.current = (path) => {
       const last = displayRef.current
+      const next = new GpsAnimation(path.coords, path.cum, deviationFeatures().smooth)
+      // 平順切換（D）：接手正在走的那一段，車不停頓
+      if (deviationFeatures().smooth && animation && next.takeOver(animation, performance.now())) {
+        animation = next
+        if (!frame) frame = requestAnimationFrame(drawFrame)
+        return
+      }
       freeze()
-      animation = new GpsAnimation(path.coords, path.cum)
+      animation = next
       if (last) animation.seed(last.pos, last.bearing, last.elevM)
     }
     const gps = new GpsDriver(
@@ -358,8 +366,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       (pos, bearing) => rerouteFrom(pos, bearing),
       (msg) => { freeze(); setGpsMsg(msg); if (!lastDriveRef.current) setCanRetry(true) },
       rerouteClockRef.current,
+      { graph: p.graphRef.current, profile: p.profileRef.current },
     )
-    animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum)
+    animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum, deviationFeatures().smooth)
     if (lastDisplay) animation.seed(lastDisplay.pos, lastDisplay.bearing, lastDisplay.elevM)
     gpsDriverRef.current = gps
     gps.start()

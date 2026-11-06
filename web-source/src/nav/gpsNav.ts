@@ -11,7 +11,7 @@ import { surfaceHeightAt } from '../core/elevated3d.ts'
 import type { DriveState } from './driveState.ts'
 import type { GpsDisplayFix } from './gpsAnimation.ts'
 import { ACCURACY_TRUST_M, matchToRoute, smoothBearing, type MatchResult } from './mapMatch.ts'
-import { bearing as bearingBetween } from '../core/geo.ts'
+import { angleDelta, bearing as bearingBetween } from '../core/geo.ts'
 import {
   HIGH_ACCURACY_POSITION_OPTIONS,
   geolocationErrorMessage,
@@ -19,6 +19,11 @@ import {
 } from './geolocation.ts'
 import { rerouteReady, type RerouteClock } from './rerouteClock.ts'
 import { gpsFixGap, gpsLog } from './gpsDebug.ts'
+import { BranchWatch, RoadMatcher, deviationFeatures } from './roadMatch.ts'
+import type { Profile, RoadGraph } from '../core/graph.ts'
+
+/** 偏移改善實驗：orig = 原本、a = 偏離時貼路網、b = 路口分岔判定、abd = 合併＋平順切換（見 nav/roadMatch.ts） */
+const FEAT = deviationFeatures()
 
 export { noteRerouteFinished, type RerouteClock } from './rerouteClock.ts'
 
@@ -45,6 +50,12 @@ const FREE_HEADING_MIN_MOVE_M = 3
  * 停下時 GPS 漂移的位移方向與手機羅盤（直立車架上的方位角不穩、會被車體磁場帶偏）都只會讓車頭亂轉。
  */
 const HEADING_HOLD_KMH = 3
+/** 合併版（abd）：原始定位離路線帶超過這個距離，畫面改用路網貼合位置；回到 EXIT 內才換回 */
+const ROAD_VIEW_ENTER_M = 10
+const ROAD_VIEW_EXIT_M = 6
+/** 路線帶方向與實際行進方向差超過這個角度、且路網方向與行進一致（< AGREE）時，車頭改跟路網 */
+const HEADING_CONFLICT_DEG = 25
+const HEADING_AGREE_DEG = 20
 /** 抵達判定：GPS 貼合誤差較大，門檻放寬到 25m */
 const ARRIVE_THRESHOLD_M = 25
 /** 「即將抵達」提示範圍（公尺）：HUD 提早換成抵達卡，不要在終點才突然跳出來 */
@@ -94,6 +105,15 @@ export class GpsDriver {
   private bandCum: number[]
   private destination: [number, number]
   private finished = false
+  private graph: RoadGraph | null
+  private profile: Profile
+  /** 方案 a：偏離時的路網 HMM */
+  private roadMatcher = new RoadMatcher()
+  /** 方案 b：路口分岔監看；判定沒轉後，到換上新路線前車畫在這條分岔（及其後繼）上 */
+  private branchWatch = new BranchWatch()
+  private branchDeviation: { key: number; bearing: number } | null = null
+  /** 合併版：在線上但畫面改用路網貼合位置（見 ROAD_VIEW_*） */
+  private roadView = false
 
   constructor(
     private route: RouteResult,
@@ -102,7 +122,14 @@ export class GpsDriver {
     private onOffRoute: (pos: [number, number], bearing: number | null) => void,
     private onError: (msg: string) => void,
     private rerouteClock: RerouteClock = { lastTs: 0 },
+    opts: {
+      /** 路網與車種：偏移改善 a/b 貼路網、找分岔用 */
+      graph?: RoadGraph | null
+      profile?: Profile
+    } = {},
   ) {
+    this.graph = opts.graph ?? null
+    this.profile = opts.profile ?? 'car'
     this.band = laneBand(route)
     this.bandCum = cumulative(this.band.coords)
     this.destination = route.coords[route.coords.length - 1]
@@ -121,6 +148,10 @@ export class GpsDriver {
     this.offRouteCount = 0
     this.stoppedNearDestSince = 0
     this.lastState = null
+    if (!FEAT.smooth) this.roadMatcher.reset()
+    this.branchWatch.reset()
+    this.branchDeviation = null
+    this.roadView = false
     gpsLog('換上新路線（定位監聽沿用）', `${Math.round(route.lengthM)} m`)
   }
 
@@ -189,6 +220,79 @@ export class GpsDriver {
 
     const accuracyM = Number.isFinite(accuracy) ? accuracy : null
     const speedKmh = (speedMps ?? 0) * 3.6
+    // 行進方位（偏移改善用）：位移夠大用位移方向，否則沿用目前車頭
+    const movedM = prevRaw ? haversine(prevRaw, here) : 0
+    const heading = movedM >= FREE_HEADING_MIN_MOVE_M && speedKmh >= HEADING_HOLD_KMH
+      ? bearingBetween(prevRaw!, here) : this.smoothBrg
+    // 路網貼合每筆最多算一次（HMM 每呼叫一次就前進一步，不能重複呼叫）
+    let snapMemo: { pos: [number, number]; bearing: number } | null | undefined
+    const road = () => {
+      if (snapMemo === undefined) snapMemo = this.matchRoad(here, accuracyM, heading, movedM) ?? null
+      return snapMemo ?? undefined
+    }
+
+    // ── 方案 b：路口分岔判定 ──
+    if (FEAT.branch && this.graph) {
+      const t0 = performance.now()
+      // free（離線 >30m、畫面已改跟實際位置）時也要繼續判：剛過路口的第二票常常就落在這裡
+      if (!this.branchDeviation && !this.reroutePending && this.lastState) {
+        const v = this.branchWatch.step(this.graph, this.profile, this.route,
+          this.lastState.traveledM, this.lastState.next, here, heading)
+        if (v.kind === 'deviated') {
+          this.branchDeviation = { key: v.key, bearing: v.bearing }
+          if (FEAT.road) {
+            this.roadMatcher.reset()
+            this.roadMatcher.preferKeys([v.key, ...this.graph.successorKeys(v.key)])
+          }
+          gpsLog('[b] 路口分岔判定：沒照路線走', `實際走 ${v.name ?? '?'}  耗時 ${(performance.now() - t0).toFixed(2)} ms`)
+        }
+      }
+      if (this.branchDeviation && FEAT.road) {
+        this.free = true
+        const snapped = road()
+        if (snapped) this.branchDeviation.bearing = snapped.bearing
+        if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
+          this.rerouteClock.lastTs = Date.now()
+          this.reroutePending = true
+          this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
+          const bearing = this.branchDeviation.bearing
+          // 重規劃起點用貼合到的車道位置（原始座標會被吸到剛經過的路口另一側，新路線又繞回去）
+          const origin = snapped?.pos ?? here
+          setTimeout(() => {
+            this.reroutePending = false
+            if (!this.finished) this.onOffRoute(origin, bearing)
+          }, REROUTE_DEFER_MS)
+          return
+        }
+        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
+        return
+      }
+      if (this.branchDeviation) {
+        const t1 = performance.now()
+        const keys = new Set([this.branchDeviation.key, ...this.graph.successorKeys(this.branchDeviation.key)])
+        const c = this.graph.nearbyLanes(here, this.profile, 40).filter((x) => keys.has(x.key))
+          .sort((x, y) => x.distM + (heading === null ? 0 : Math.abs(angleDelta(x.bearing, heading)) / 10)
+            - y.distM - (heading === null ? 0 : Math.abs(angleDelta(y.bearing, heading)) / 10))[0]
+        if (c) this.branchDeviation.bearing = c.bearing
+        gpsLog('[b] 貼分岔', `${c ? Math.round(c.distM) + 'm' : '找不到，用原始座標'}  耗時 ${(performance.now() - t1).toFixed(2)} ms`)
+        this.free = true
+        if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
+          this.rerouteClock.lastTs = Date.now()
+          this.reroutePending = true
+          this.emitFree(here, prevRaw, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
+          const bearing = this.branchDeviation.bearing
+          setTimeout(() => {
+            this.reroutePending = false
+            if (!this.finished) this.onOffRoute(here, bearing)
+          }, REROUTE_DEFER_MS)
+          return
+        }
+        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
+        return
+      }
+    }
+    // 合併版：路網貼合每筆都跑（HMM 保持連續），畫面離路線帶太遠時改用它
+    const roadSnap = FEAT.smooth ? road() : undefined
     const enterM = Math.max(FREE_ENTER_M, (accuracyM ?? 0) + 10)
     this.free = this.free ? match.offRouteM > FREE_EXIT_M : match.offRouteM > enterM
 
@@ -197,14 +301,16 @@ export class GpsDriver {
       if (this.offRouteCount >= REROUTE_AFTER_FIXES && !this.reroutePending &&
         rerouteReady(this.rerouteClock, Date.now())) {
         this.rerouteClock.lastTs = Date.now()
-        this.emitFree(here, prevRaw, speedKmh, accuracyM, now)
+        const snapped = road()
+        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
         // 先讓這一幀（車跟著實際定位）畫出去再算路線：搜尋會卡住主執行緒數百毫秒到數秒
         this.reroutePending = true
         gpsLog('偏離觸發重規劃', `連續 ${this.offRouteCount} 筆離線 > ${OFF_ROUTE_THRESHOLD_M}m`)
-        const bearing = this.smoothBrg
+        const bearing = snapped && FEAT.smooth ? snapped.bearing : this.smoothBrg
+        const origin = snapped && FEAT.smooth ? snapped.pos : here
         setTimeout(() => {
           this.reroutePending = false
-          if (!this.finished) this.onOffRoute(here, bearing)
+          if (!this.finished) this.onOffRoute(origin, bearing)
         }, REROUTE_DEFER_MS)
         return
       }
@@ -214,15 +320,27 @@ export class GpsDriver {
       if (rerouteReady(this.rerouteClock, Date.now())) this.rerouteClock.streak = 0
     }
     // 偏離路線帶：不推進路線進度（貼合點會亂跳），但車和鏡頭跟著實際定位走
-    if (this.free) { this.emitFree(here, prevRaw, speedKmh, accuracyM, now); return }
+    if (this.free) { this.emitFree(here, prevRaw, speedKmh, accuracyM, now, road()); return }
     this.freePos = null
+    if (!FEAT.smooth) this.roadMatcher.reset()
     this.match = match
+    // 合併版：原始定位離路線帶 >10m（回到 6m 內才放開）時，車畫在路網貼合位置，
+    // 進度/下一個動作照路線算。這是「該轉沒轉時車卡在路口角落」的解法——
+    // 路線帶貼合只能在路線上找點，車明明直走了，最近點就是轉角。
+    // 方向矛盾也算：路線帶在轉角已經往轉彎方向彎，但實際行進（位移方向）跟路網上這條路一致
+    // ——照路線帶畫車頭就會「像有轉彎一樣」擺一下。
+    const headingConflict = !!roadSnap && heading !== null && movedM >= FREE_HEADING_MIN_MOVE_M
+      && Math.abs(angleDelta(match.bearing, heading)) > HEADING_CONFLICT_DEG
+      && Math.abs(angleDelta(roadSnap.bearing, heading)) < HEADING_AGREE_DEG
+    this.roadView = !!roadSnap && (headingConflict
+      || (this.roadView ? match.offRouteM > ROAD_VIEW_EXIT_M : match.offRouteM > ROAD_VIEW_ENTER_M))
+    const view = this.roadView ? roadSnap! : null
 
     // 方位角：貼合可信時用路線帶切線（比裝置 heading 穩得多，低速也不會亂轉），
     // 貼合不可信時 matchToRoute 已經沿用上一筆方位，這裡只再做顯示平滑。
     // 停車時鎖住車頭：貼合點在路口附近抖動會讓切線跳到橫向路段。
     if (this.smoothBrg === null || speedKmh >= HEADING_HOLD_KMH) {
-      this.smoothBrg = smoothBearing(this.smoothBrg, match.bearing)
+      this.smoothBrg = smoothBearing(this.smoothBrg, view ? view.bearing : match.bearing)
     }
 
     const traveledM = routeDistAt(this.band, this.bandCum, match.distM)
@@ -251,7 +369,7 @@ export class GpsDriver {
       roadName: rp?.name,
       roadLaneGuidance: span?.laneGuidance,
       elevM,
-      pos: match.pos, // 貼合後的座標——原始 GPS 座標會把車畫到對向車道
+      pos: view ? view.pos : match.pos, // 貼合後的座標——原始 GPS 座標會把車畫到對向車道
       bearing: this.smoothBrg,
       speedKmh,
       traveledM,
@@ -263,7 +381,7 @@ export class GpsDriver {
       arrived,
       arriving,
       gpsWeak: match.quality === 'weak',
-    }, { distanceM: match.distM, timestamp: now, bearing: this.smoothBrg, elevM })
+    }, { distanceM: match.distM, timestamp: now, bearing: this.smoothBrg, elevM, ...(view ? { pos: view.pos } : {}) })
     if (arrived) {
       this.finished = true
       this.stop()
@@ -275,19 +393,35 @@ export class GpsDriver {
    * 沿用最後一筆貼合狀態，等 reroute 換上新路線再更新。終點常在路線外（停車場、巷內），
    * 所以直線距離抵達判定在這裡也要做。
    */
+  /** 方案 a：偏離時把定位貼到路網上（不是 a 就回 undefined，照原本畫原始座標） */
+  private matchRoad(
+    here: [number, number], accuracyM: number | null, heading: number | null, movedM: number,
+  ): { pos: [number, number]; bearing: number } | undefined {
+    if (!FEAT.road || !this.graph) return undefined
+    const c = this.roadMatcher.step(this.graph, this.profile, here, accuracyM, heading, movedM)
+    return c ? { pos: c.pos, bearing: c.bearing } : undefined
+  }
+
   private emitFree(
     here: [number, number], prevRaw: [number, number] | null,
     speedKmh: number, accuracyM: number | null, now: number,
+    /** 貼到路網上的位置與路段方位（方案 a/b）；沒給就用平滑後的原始座標 */
+    snapped?: { pos: [number, number]; bearing: number },
+    /** false = 只是畫面先貼路網，還沒判定偏離（HUD 不顯示已偏離） */
+    markOffRoute = true,
   ) {
     const prev = this.freePos
-    const pos: [number, number] = prev
+    const pos: [number, number] = snapped ? snapped.pos : prev
       ? [prev[0] + (here[0] - prev[0]) * FREE_POS_ALPHA, prev[1] + (here[1] - prev[1]) * FREE_POS_ALPHA]
       : here
     this.freePos = pos
     // 車頭用原始定位之間的位移方向（不能用「貼合點 → 實際點」，那是橫向的）；
     // 停車時的位移只是 GPS 漂移，車頭鎖住。羅盤只在還沒有任何方位時當初值。
     const moved = !!prevRaw && haversine(prevRaw, here) >= FREE_HEADING_MIN_MOVE_M
-    if (moved && speedKmh >= HEADING_HOLD_KMH) {
+    if (snapped && speedKmh >= HEADING_HOLD_KMH) {
+      // 貼在路上時車頭用路段切線（不會因 GPS 抖動歪向路外）
+      this.smoothBrg = smoothBearing(this.smoothBrg, snapped.bearing)
+    } else if (moved && speedKmh >= HEADING_HOLD_KMH) {
       this.smoothBrg = smoothBearing(this.smoothBrg, bearingBetween(prevRaw!, here))
     } else if (this.smoothBrg === null) {
       this.smoothBrg = deviceHeading() ?? 0
@@ -308,7 +442,7 @@ export class GpsDriver {
       roadLaneGuidance: undefined,
       arrived,
       arriving: false,
-      offRoute: !arrived,
+      offRoute: markOffRoute && !arrived,
       // 偏離時貼合品質必然是 weak（離帶太遠），訊號弱只看精度本身
       gpsWeak: accuracyM !== null && accuracyM > ACCURACY_TRUST_M,
     }, { distanceM: this.match?.distM ?? 0, timestamp: now, bearing: this.smoothBrg, elevM: 0, pos })

@@ -16,6 +16,7 @@ import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
 import {
   createPlaceRouteStops, withCurrentStart,
   firstUnsetStopId,
+  stopSnapMode,
   type RouteDestination,
   type Stop,
 } from './placeRoute.ts'
@@ -141,6 +142,9 @@ export function usePlanner(core: MapCore): Planner {
         pts[i + 1]!,
         profileRef.current,
         routePolicyRef.current,
+        undefined,
+        stopSnapMode(stopsRef.current[i]),
+        stopSnapMode(stopsRef.current[i + 1]),
       )
       if (!result.route) {
         clearRouteLine()

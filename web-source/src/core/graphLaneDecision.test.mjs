@@ -237,3 +237,74 @@ test('同名道路的小幅彎折視為直行，不套用左轉車道限制', ()
   assert.ok(result.route, result.failure)
   assert.deepEqual(result.route.maneuvers.map((m) => m.kind), ['right', 'arrive'])
 })
+
+// 2026-11-07：純機車道路體（汽車車道 0、機車道 ≥1）原本對機車一律回 explicitly-incompatible，
+// 整套機車專用道開得進去出不來（加昌路→楠梓車站被逼繞 3.71 km，修正後 1.49 km）。
+const motoOnlyRoad = (osmId, nodes, coordinates) => {
+  const feature = road(osmId, nodes, coordinates, undefined)
+  Object.assign(feature.properties, {
+    name: `機車專用道-${osmId}`, highway: 'service', lanes: 0, lanesForward: 0,
+    motoF: true, motoCountF: 1, motorcar: 'no', motorcycle: 'yes',
+  })
+  return feature
+}
+
+test('機車可經由純機車道路體（汽車車道 0）轉出', () => {
+  const graph = new RoadGraph([
+    road(5, [0, 1], [[119.999, 22], [120, 22]], ['through']),
+    motoOnlyRoad(10, [1, 2], [[120, 22], junction]),
+    road(20, [2, 3], [junction, [120.001, 21.999]], ['through']),
+  ])
+
+  const result = graph.routeDetailed([119.9995, 22], southGoal, 'moto')
+
+  assert.ok(result.route, `應找到路線，實際失敗：${result.failure}`)
+  assert.deepEqual(
+    [...new Set(result.route.spans.map((span) => span.road?.properties.osm_id))], [5, 10, 20])
+  const turn = result.route.maneuvers.find((m) => m.kind === 'right')
+  assert.equal(turn?.laneDecision.allowed, true)
+  assert.equal(turn?.laneDecision.primaryLaneIndex, 0)
+})
+
+test('汽車車道 0 且沒有機車道的方向，機車仍不可通行', () => {
+  const noLanes = road(10, [1, 2], [[120, 22], junction], undefined)
+  Object.assign(noLanes.properties, { lanes: 0, lanesForward: 0, motoCountF: 0 })
+  const graph = new RoadGraph([
+    road(5, [0, 1], [[119.999, 22], [120, 22]], ['through']),
+    noLanes,
+    road(20, [2, 3], [junction, [120.001, 21.999]], ['through']),
+  ])
+
+  const result = graph.routeDetailed([119.9995, 22], southGoal, 'moto')
+  assert.equal(result.route, null)
+})
+
+// 2026-11-07：主線小角度分流進 *_link 匝道，路面只畫直行箭頭時，原本整條匝道被判封死
+// （楠陽高架橋往東下高楠公路南下匝道 103678985，汽車被逼繞 2.72 km，應為 1.52 km）。
+const rampDivergeGraph = (highway) => {
+  const ramp = road(20, [2, 3], [junction, [120.002, 21.9994]], undefined)
+  ramp.properties.highway = highway
+  return new RoadGraph([
+    road(10, [1, 2], [[120, 22], junction], ['through', 'through']),
+    road(30, [2, 4], [junction, [120.002, 22]], ['through', 'through']),
+    ramp,
+  ])
+}
+
+test('主線只畫直行箭頭時，仍可靠右分流進匝道（走最外側車道）', () => {
+  const result = rampDivergeGraph('primary_link').routeDetailed(start, [120.0015, 21.9997], 'car')
+
+  assert.ok(result.route, `應找到路線，實際失敗：${result.failure}`)
+  assert.deepEqual(
+    [...new Set(result.route.spans.map((span) => span.road?.properties.osm_id))], [10, 20])
+  const diverge = result.route.maneuvers.find((m) => m.kind === 'slight-right')
+  assert.equal(diverge?.laneDecision.allowed, true)
+  assert.equal(diverge?.laneDecision.primaryLaneIndex, 1)
+})
+
+test('同樣角度轉進一般道路仍受直行箭頭限制', () => {
+  const result = rampDivergeGraph('residential').routeDetailed(start, [120.0015, 21.9997], 'car')
+
+  assert.equal(result.route, null)
+  assert.equal(result.failure, 'lane-direction')
+})

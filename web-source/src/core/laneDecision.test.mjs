@@ -216,3 +216,26 @@ test('prohibited primary lane falls back to the nearest allowed lane', () => {
   assert.equal(d.primaryLaneIndex, 1)
   assert.ok(d.incompatibleLaneIndices.includes(0))
 })
+
+// 2026-11-07：直行時專用直行道原本優先於目前車道，機車被放回最外側 through;right 共用道後，
+// 每段路都被算一次假換道，加昌路上累積約 20 s，把機車路線推進巷弄。
+test('直行時已在可直行的共用車道上就不換道', () => {
+  const result = decide({
+    action: 'through', profile: 'moto',
+    laneMovements: ['through', 'through', 'through;right'], currentLaneIndex: 2,
+  })
+
+  assert.equal(result.allowed, true)
+  assert.equal(result.primaryLaneIndex, 2)
+  assert.equal(result.laneChanges, 0)
+  assert.equal(result.difficultyS, 0)
+})
+
+test('直行時目前車道不能直行，才換到最近的可直行車道', () => {
+  const result = decide({
+    action: 'through', laneMovements: ['through', 'through', 'right'], currentLaneIndex: 2,
+  })
+
+  assert.equal(result.primaryLaneIndex, 1)
+  assert.equal(result.laneChanges, 1)
+})

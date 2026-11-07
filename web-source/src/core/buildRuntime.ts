@@ -4,6 +4,7 @@ import {
   buildDividers, buildRoadSurfaces, roadsForRendering, roadsFromGeoJSON, type RoadFeature,
 } from './roads.ts'
 import { prepareBaseRoads } from './pipeline.ts'
+import { applyPostJournalFixups } from './fixups.ts'
 import type { DropRemap } from './couplet.ts'
 import { parseImported } from './importmap.ts'
 import { RoadGraph } from './graph.ts'
@@ -453,6 +454,8 @@ export async function buildClientRuntime() {
       const folded = foldJournal(journalRef.current)
       const roadsAll = [...roads, ...newRoadsFromFolded(folded, nodeRemap)]
       applyToRoads(roadsAll, folded)
+      // 晚於人工 journal 的導航修正（箭頭覆寫、OSM 通行權限更正；見 fixups.ts）
+      applyPostJournalFixups(roadsAll)
       // 捏合＝journal 紀錄，每次載入才在記憶體內接合；靜態 OSM 一個位元組都不動，
       // 所以重建 segments 也炸不到它。必須排在 applyToRoads 之後：checkRoadMerge
       // 要比對兩段的車道配置，那是人工覆寫套用後才成立的。

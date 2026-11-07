@@ -69,6 +69,30 @@ function motoProhibitedLanes(r: RoadFeature, back: boolean, laneCount: number | 
   return Array.from({ length: lanes }, (_, k) => k).filter((k) => !legal.has(k))
 }
 
+/**
+ * 路口車道決策用的車道導引。純機車道路體（汽車車道 0、機車道 ≥1，例：機車專用道、
+ * 機車地下道、清豐路兩側機車道）對機車視為「一條可直行/轉彎、無箭頭的推論車道」。
+ *
+ * 2026-11-07 修正：原本直接把汽車車道數 0 交給 resolveLaneDecision，0 車道一律回
+ * explicitly-incompatible——機車開得進這些路段卻出不去，整套機車專用道等於封死，
+ * 加昌路→楠梓車站被逼繞環廠道路 3.71 km（Google／修正後 1.49 km）。
+ * 汽車照舊（這些路段 motorcar=no，本來就進不來）；下游 laneIndexOffset／laneChoiceAreas
+ * 都以 max(1, laneCount) 換算並夾在機車可用範圍內，索引 0 會落在機車道上。
+ */
+function decisionGuidance(road: RoadFeature, back: boolean, profile: Profile) {
+  const guidance = guidanceForRoadDirection(road, back)
+  if (profile !== 'moto' || guidance.laneCount >= 1) return guidance
+  const p = road.properties
+  const motoCount = p.oneway === 'yes' ? p.motoCountF : back ? p.motoCountB : p.motoCountF
+  if (!(motoCount >= 1)) return guidance
+  return { ...guidance, laneCount: 1, laneMovements: undefined, source: 'inferred' as const }
+}
+
+/** OSM 匝道（motorway_link／trunk_link／primary_link…） */
+function isLinkRoad(road: RoadFeature): boolean {
+  return road.properties.highway?.endsWith('_link') ?? false
+}
+
 /** 機車可否行駛（國道、OSM motorcycle=no、方向別自定義禁行機車）。 */
 export function motoAllowed(r: RoadFeature, back: boolean = false): boolean {
   const p = r.properties
@@ -185,6 +209,25 @@ interface DirectedLaneProjection {
   lanePos: [number, number]
   bearing: number
 }
+
+/** 起終點候選：有向投影＋「離點選位置多遠」換算的懲罰秒數（見 snapCandidates） */
+interface SnapCandidate {
+  proj: DirectedLaneProjection
+  costS: number
+}
+
+/** 起點候選的搜尋寬度（只用於 startMode 'area'）：最近路段距離再往外這麼多公尺內的路段都列入。
+ * 40m 涵蓋分開建模的對向單行車道（高楠公路北上側在南下側外 10～27m）。 */
+const START_SNAP_EXTRA_M = 40
+/** 終點候選的搜尋寬度：只為了「點在巷口時也考慮旁邊的大路」（加昌路的點離 179 巷 1.5m、
+ * 離加昌路 12.9m）。刻意比起點窄：太寬會讓「目的地那條路到不了」被附近別條路救回來。 */
+const GOAL_SNAP_EXTRA_M = 15
+/** 終點的其他道路候選若與最近候選反向平行（夾角超過這個值），視為分隔道路的對向車道、不列入 */
+const GOAL_OPPOSITE_DEG = 150
+/** 候選路段上限（每條邊最多兩個行向） */
+const SNAP_MAX_EDGES = 6
+/** 離點選位置每 1 公尺的懲罰秒數（≈ 步行速度）：省下的行駛時間要超過它才換到較遠的候選 */
+const SNAP_PENALTY_S_PER_M = 0.7
 
 /** 附近有向車道候選（nearbyLanes）：key 是邊的穩定編號，可拿去查 successorKeys */
 export interface LaneCandidate {
@@ -831,6 +874,15 @@ export class RoadGraph {
   ): DirectedLaneProjection[] {
     const hit = this.project(p, profile)
     if (!hit) return []
+    return this.directedFromHit(p, hit, profile)
+  }
+
+  /** 中心線投影點 → 該處兩個行向的車道位置（依離 p 的距離排序；禁行的行向不列） */
+  private directedFromHit(
+    p: [number, number],
+    hit: { edge: Edge; seg: number; t: number; pos: [number, number] },
+    profile: Profile,
+  ): DirectedLaneProjection[] {
     const candidates: { edge: Edge; seg: number; t: number }[] = [{
       edge: hit.edge, seg: hit.seg, t: hit.t,
     }]
@@ -860,6 +912,86 @@ export class RoadGraph {
     }
     projections.sort((a, b) => a.distance - b.distance)
     return projections.map(({ projection }) => projection)
+  }
+
+  /**
+   * p 附近所有可通行路段的中心線投影（每條順向邊取最近點），只留離 p 不超過
+   * 「最近距離＋SNAP_EXTRA_M」者，依距離排序、最多 SNAP_MAX_EDGES 條。
+   */
+  private projectNearby(p: [number, number], profile: Profile, extraM: number):
+    { edge: Edge; seg: number; t: number; pos: [number, number]; distM: number }[] {
+    const kx = 111320 * COS_LAT, ky = 110540
+    const hits: { edge: Edge; seg: number; t: number; pos: [number, number]; distM: number }[] = []
+    for (const e of this.edges) {
+      if (e.back) continue
+      if (!edgeAllowed(e.road, false, profile) &&
+        !(e.twin && edgeAllowed(e.road, true, profile))) continue
+      const cs = e.coords
+      let best: { seg: number; t: number; d2: number } | null = null
+      for (let i = 0; i < cs.length - 1; i++) {
+        const dx = (cs[i + 1][0] - cs[i][0]) * kx
+        const dy = (cs[i + 1][1] - cs[i][1]) * ky
+        const px = (p[0] - cs[i][0]) * kx
+        const py = (p[1] - cs[i][1]) * ky
+        const len2 = dx * dx + dy * dy
+        let t = len2 > 0 ? (px * dx + py * dy) / len2 : 0
+        t = Math.max(0, Math.min(1, t))
+        const ex = px - t * dx, ey = py - t * dy
+        const d2 = ex * ex + ey * ey
+        if (!best || d2 < best.d2) best = { seg: i, t, d2 }
+      }
+      if (!best) continue
+      const { seg, t } = best
+      hits.push({
+        edge: e, seg, t, distM: Math.sqrt(best.d2),
+        pos: [cs[seg][0] + (cs[seg + 1][0] - cs[seg][0]) * t, cs[seg][1] + (cs[seg + 1][1] - cs[seg][1]) * t],
+      })
+    }
+    if (hits.length === 0) return []
+    hits.sort((a, b) => a.distM - b.distM)
+    const limit = hits[0].distM + extraM
+    return hits.filter((h) => h.distM <= limit).slice(0, SNAP_MAX_EDGES)
+  }
+
+  /**
+   * 規劃用的起終點候選（2026-11-07）：各帶「離點選位置的距離 × SNAP_PENALTY_S_PER_M」的
+   * 懲罰秒數，交給 A* 一次挑總成本最低者。
+   *
+   * - 'start-area'（起點來自搜尋地點／地址／目前位置，沒有「點在哪個車道」的意義）：
+   *   附近每條路、每個可行行向都列入，含分開建模的對向單行車道。原本只取最近行向，
+   *   分隔道路點錯一側就得先開反方向再迴轉（楠陽路先往東 164m 鑽 service 巷迴轉，
+   *   +0.6km）；高楠公路北上側是另一條單行 way，根本不會被考慮。
+   *   地圖上點車道時不走這裡——使用者點在哪一側就從哪一側出發（車道級地圖的原設計）。
+   * - 'goal'：最近那條路照原規則（無分隔雙向路兩側都可，有分隔只取較近一側）；另外納入
+   *   GOAL_SNAP_EXTRA_M 內的其他道路，修正「點在巷口卻吸到巷子」（加昌路的點吸到 179 巷，
+   *   到達時從 127 巷繞進巷子）。與最近候選反向平行者視為分隔道路的對向車道，不列入
+   *   （不擅自改成停在對面、叫人過馬路，待組內決定）。
+   */
+  private snapCandidates(p: [number, number], profile: Profile, kind: 'start-area' | 'goal'): SnapCandidate[] {
+    const out: SnapCandidate[] = []
+    const hits = this.projectNearby(p, profile, kind === 'goal' ? GOAL_SNAP_EXTRA_M : START_SNAP_EXTRA_M)
+    let primaryBearing: number | undefined
+    for (const [i, hit] of hits.entries()) {
+      const dirs = this.directedFromHit(p, hit, profile)
+      if (dirs.length === 0) continue
+      let chosen = dirs
+      if (kind === 'goal') {
+        const props = hit.edge.road.properties
+        const bothSides = props.oneway === 'no' && (
+          !!props.centerIslandJoinNodes?.length
+          || ((props.centerM || 0) <= 0 && !props.roadMergeBarrierNodes?.length))
+        chosen = bothSides ? dirs : dirs.slice(0, 1)
+        if (i === 0) primaryBearing = chosen[0].bearing
+        else if (primaryBearing !== undefined) {
+          const ref = primaryBearing
+          chosen = chosen.filter((d) => Math.abs(angleDelta(d.bearing, ref)) <= GOAL_OPPOSITE_DEG)
+        }
+      }
+      for (const proj of chosen) {
+        out.push({ proj, costS: haversine(p, proj.lanePos) * SNAP_PENALTY_S_PER_M })
+      }
+    }
+    return out.sort((a, b) => a.costS - b.costS)
   }
 
   private projectToDirectedLane(
@@ -1241,53 +1373,77 @@ export class RoadGraph {
     /** 起點的行進方位（度）。有值時起點行向取與它最接近者，而不是離點較近的車道——
      * GPS 誤差 5~15m 就足以讓「最近車道」落到對向（實測雙向道約四成），偏航重規劃必須傳。 */
     startBearing?: number,
+    /** 起點沒有方位時的吸附方式：'lane' = 地圖上點的那個車道（預設，原設計）；
+     * 'area' = 搜尋地點／地址／目前位置，附近各行向都當候選（見 snapCandidates）。 */
+    startMode: 'lane' | 'area' = 'lane',
+    /** 終點吸附方式：'lane' = 地圖上點的車道，照點選那一側（走不通才退另一側，原設計）；
+     * 'area' = 搜尋地點／地址，另納入旁邊的大路（見 snapCandidates 'goal'）。 */
+    goalMode: 'lane' | 'area' = 'lane',
   ): RouteSearchResult {
-    const startCandidates = this.projectToDirectedLanes(fromP, profile)
-    const sA = startBearing !== undefined && Number.isFinite(startBearing)
-      ? startCandidates.reduce<DirectedLaneProjection | null>((best, c) =>
-        !best || Math.abs(angleDelta(c.bearing, startBearing))
-          < Math.abs(angleDelta(best.bearing, startBearing)) ? c : best, null)
-      : startCandidates[0] ?? null
-    const projectedGoals = this.projectToDirectedLanes(toP, profile)
-    if (!sA || projectedGoals.length === 0) {
-      return { route: null, failure: 'no-projection' }
+    // 有行進方位（GPS 偏航重規劃）：起點取方位最接近的行向。
+    // 沒有：'lane'（地圖點車道）取最近行向；'area'（搜尋／地址／目前位置）附近各行向都是候選。
+    let starts: SnapCandidate[]
+    if (startBearing !== undefined && Number.isFinite(startBearing)) {
+      const sA = this.projectToDirectedLanes(fromP, profile)
+        .reduce<DirectedLaneProjection | null>((best, c) =>
+          !best || Math.abs(angleDelta(c.bearing, startBearing))
+            < Math.abs(angleDelta(best.bearing, startBearing)) ? c : best, null)
+      starts = sA ? [{ proj: sA, costS: 0 }] : []
+    } else if (startMode === 'area') {
+      starts = this.snapCandidates(fromP, profile, 'start-area')
+    } else {
+      starts = this.projectToDirectedLanes(fromP, profile).slice(0, 1).map((proj) => ({ proj, costS: 0 }))
     }
-    const primaryGoal = projectedGoals[0]
-    const primaryProps = primaryGoal.edge.road.properties
-    // A joined center-island road models paired carriageways as one bidirectional
-    // feature.  A point on its centreline cannot identify the intended side, so
-    // let routing choose the reachable directed projection.  Ordinary divided
-    // roads still keep main's strict nearest-side behavior.
-    const joinedCenterIsland = !!primaryProps.centerIslandJoinNodes?.length
-    const reachable = this.reachableNodes(sA.edge.to, profile)
-    const goals = (primaryProps.oneway === 'no'
-      && (joinedCenterIsland || (
-        (primaryProps.centerM || 0) <= 0
-        && !primaryProps.roadMergeBarrierNodes?.length
-      ))
-      ? projectedGoals
-      : [primaryGoal]).filter((goal) => goal.edge === sA.edge || goal.edge === sA.edge.twin
-      || reachable.has(goal.edge.from))
+    if (starts.length === 0) return { route: null, failure: 'no-projection' }
+    const reachable = this.reachableNodes(starts.map((c) => c.proj.edge.to), profile)
+    const usable = (goal: SnapCandidate) => starts.some((c) =>
+      goal.proj.edge === c.proj.edge || goal.proj.edge === c.proj.edge.twin)
+      || reachable.has(goal.proj.edge.from)
+
+    // 終點候選組：依序嘗試，第一組找得到路就用。
+    // 'lane'：點選那一側一組、（無分隔雙向路才有的）另一側一組——點選側走得通就不換邊。
+    // 'area'：所有候選放同一組，由 A* 依總成本挑。
+    let goalSets: SnapCandidate[][]
+    if (goalMode === 'area') {
+      goalSets = [this.snapCandidates(toP, profile, 'goal')]
+    } else {
+      const projectedGoals = this.projectToDirectedLanes(toP, profile)
+      if (projectedGoals.length === 0) return { route: null, failure: 'no-projection' }
+      const primaryProps = projectedGoals[0].edge.road.properties
+      // A joined center-island road models paired carriageways as one bidirectional
+      // feature.  A point on its centreline cannot identify the intended side, so
+      // let routing choose the reachable directed projection.  Ordinary divided
+      // roads still keep main's strict nearest-side behavior.
+      const bothSides = primaryProps.oneway === 'no' && (
+        !!primaryProps.centerIslandJoinNodes?.length || (
+          (primaryProps.centerM || 0) <= 0 && !primaryProps.roadMergeBarrierNodes?.length))
+      goalSets = (bothSides ? projectedGoals : projectedGoals.slice(0, 1))
+        .map((proj) => [{ proj, costS: 0 }])
+    }
+    goalSets = goalSets.map((set) => set.filter(usable)).filter((set) => set.length > 0)
+    if (goalSets.length === 0) {
+      return { route: null, failure: goalMode === 'area' ? 'no-projection' : 'unreachable' }
+    }
     // 放寬版（只看車種通行、不看轉向規則）都到不了 → 嚴格搜尋也必然失敗，
     // 不必讓 A* 掃完整張圖兩輪（不可達原本要 5~10 秒）。
-    if (goals.length === 0) return { route: null, failure: 'unreachable' }
     let planCache = this.transitionPlanCache.get(policy)
     if (!planCache) { planCache = new Map(); this.transitionPlanCache.set(policy, planCache) }
-    for (const goal of goals) {
-      const result = this.routeToProjection(sA, goal, toP, profile, policy, true, planCache)
+    for (const goals of goalSets) {
+      const result = this.routeToProjection(starts, goals, toP, profile, policy, true, planCache)
       if (result) return { route: result }
     }
-    for (const goal of goals) {
-      const roadOnly = this.routeToProjection(sA, goal, toP, profile, policy, false)
-      if (roadOnly) return { route: null, failure: 'lane-direction' }
+    for (const goals of goalSets) {
+      if (this.routeToProjection(starts, goals, toP, profile, policy, false)) {
+        return { route: null, failure: 'lane-direction' }
+      }
     }
     return { route: null, failure: 'unreachable' }
   }
 
   /** 放寬可達集合：只檢查車種可否通行該邊，不套轉向／分隔島／車道限制（是嚴格搜尋的超集合）。 */
-  private reachableNodes(startNode: number, profile: Profile): Set<number> {
-    const seen = new Set<number>([startNode])
-    const stack = [startNode]
+  private reachableNodes(startNodes: number[], profile: Profile): Set<number> {
+    const seen = new Set<number>(startNodes)
+    const stack = [...startNodes]
     while (stack.length > 0) {
       const node = stack.pop()!
       for (const e of this.adj.get(node) ?? []) {
@@ -1299,9 +1455,39 @@ export class RoadGraph {
     return seen
   }
 
+  /** 同一條邊上的起訖：順向直接一段；對向（無中央實體分隔）接 twin。不成立回 null。 */
+  private sameEdgeRoute(
+    sA: DirectedLaneProjection, sB: DirectedLaneProjection, profile: Profile,
+  ): RouteResult | null {
+    if (sA.edge !== sB.edge) return null
+    const forwardOk = (sA.seg < sB.seg || (sA.seg === sB.seg && sA.t <= sB.t)) &&
+      edgeAllowed(sA.edge.road, sA.edge.back, profile)
+    if (forwardOk) {
+      const cs = dedupe([sA.pos, ...sA.edge.coords.slice(sA.seg + 1, sB.seg + 1), sB.pos])
+      if (cs.length >= 2) return this.assemble([makeEdge(sA.edge.road, -1, -1, cs, sA.edge.back)], profile)
+    } else if (sA.edge.twin && edgeAllowed(sA.edge.road, true, profile)
+      && (!medianDivided(sA.edge.road)
+        || !!sA.edge.road.properties.centerIslandJoinNodes?.length)) {
+      // 中央實體分隔的路段不走這條捷徑：起訖在同一段的對向車道時，直接接
+      // twin 等於原地穿過分隔島。交給 A* 去找合法的繞行。
+      // centerIslandJoinNodes 是 anna 的合併道路模型；其接點限制由 barrier
+      // transition 處理，同一臂內的反向吸附仍需保留既有行為。
+      const t = sA.edge.twin
+      const a = twinSeg(sA.edge, sA.seg), b = twinSeg(sA.edge, sB.seg)
+      const cs = dedupe([sA.pos, ...t.coords.slice(a + 1, b + 1), sB.pos])
+      if (cs.length >= 2) return this.assemble([makeEdge(t.road, -1, -1, cs, t.back)], profile)
+    }
+    return null
+  }
+
+  /**
+   * 多起點 × 多終點 A*：每個候選的 costS 加在起點初始成本／終點完成成本上，一次搜尋
+   * 就挑出「行駛＋車道難度＋離點選位置」總成本最低的組合。只有一組起訖、costS 為 0
+   * 時與原本的單起單終行為相同。
+   */
   private routeToProjection(
-    sA: DirectedLaneProjection,
-    sB: DirectedLaneProjection,
+    starts: SnapCandidate[],
+    goals: SnapCandidate[],
     toP: [number, number],
     profile: Profile,
     policy: LaneRoutePolicy,
@@ -1309,48 +1495,43 @@ export class RoadGraph {
     planCache = new Map<string, TransitionPlan>(),
   ): RouteResult | null {
 
-    // 同一條（順向）邊且順序正確 → 直接一段
-    if (sA.edge === sB.edge) {
-      const forwardOk = (sA.seg < sB.seg || (sA.seg === sB.seg && sA.t <= sB.t)) &&
-        edgeAllowed(sA.edge.road, sA.edge.back, profile)
-      if (forwardOk) {
-        const cs = dedupe([sA.pos, ...sA.edge.coords.slice(sA.seg + 1, sB.seg + 1), sB.pos])
-        if (cs.length >= 2) return this.assemble([makeEdge(sA.edge.road, -1, -1, cs, sA.edge.back)], profile)
-      } else if (sA.edge.twin && edgeAllowed(sA.edge.road, true, profile)
-        && (!medianDivided(sA.edge.road)
-          || !!sA.edge.road.properties.centerIslandJoinNodes?.length)) {
-        // 中央實體分隔的路段不走這條捷徑：起訖在同一段的對向車道時，直接接
-        // twin 等於原地穿過分隔島。交給下面的 A* 去找合法的繞行。
-        // centerIslandJoinNodes 是 anna 的合併道路模型；其接點限制由 barrier
-        // transition 處理，同一臂內的反向吸附仍需保留既有行為。
-        const t = sA.edge.twin
-        const a = twinSeg(sA.edge, sA.seg), b = twinSeg(sA.edge, sB.seg)
-        const cs = dedupe([sA.pos, ...t.coords.slice(a + 1, b + 1), sB.pos])
-        if (cs.length >= 2) return this.assemble([makeEdge(t.road, -1, -1, cs, t.back)], profile)
-      }
+    // 起訖在同一條邊上：不經 A*，直接一段（與 A* 結果比總成本）
+    let direct: { route: RouteResult; total: number } | null = null
+    for (const a of starts) for (const b of goals) {
+      const route = this.sameEdgeRoute(a.proj, b.proj, profile)
+      if (!route) continue
+      const total = route.timeS + a.costS + b.costS
+      if (!direct || total < direct.total) direct = { route, total }
     }
 
-    // 起點入口：只沿使用者實際點選的車道方向走到邊尾。
-    const startEntries: { node: number; part: Edge }[] = []
-    const addStart = (e: Edge, seg: number) => {
-      if (!edgeAllowed(e.road, e.back, profile)) return
-      const cs = coordsFromSnap(e, seg, sA.pos)
-      if (cs.length >= 2) startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, cs, e.back) })
-      else startEntries.push({ node: e.to, part: makeEdge(e.road, -1, e.to, [sA.pos, e.coords[e.coords.length - 1]], e.back) })
+    // 起點入口：只沿候選的車道方向走到邊尾。
+    const startEntries: { node: number; part: Edge; costS: number }[] = []
+    for (const { proj, costS } of starts) {
+      const e = proj.edge
+      if (!edgeAllowed(e.road, e.back, profile)) continue
+      const cs = coordsFromSnap(e, proj.seg, proj.pos)
+      startEntries.push({
+        node: e.to, costS,
+        part: makeEdge(e.road, -1, e.to,
+          cs.length >= 2 ? cs : [proj.pos, e.coords[e.coords.length - 1]], e.back),
+      })
     }
-    addStart(sA.edge, sA.seg)
 
-    // 終點出口：只接受使用者實際點選的車道方向。
-    const goalEntries: { node: number; part: Edge }[] = []
-    const addGoal = (e: Edge, seg: number) => {
-      if (!edgeAllowed(e.road, e.back, profile)) return
-      const cs = coordsToSnap(e, seg, sB.pos)
-      if (cs.length >= 2) goalEntries.push({ node: e.from, part: makeEdge(e.road, e.from, -1, cs, e.back) })
+    // 終點出口：只接受候選的車道方向。
+    const goalEntries: { node: number; part: Edge; costS: number }[] = []
+    for (const { proj, costS } of goals) {
+      const e = proj.edge
+      if (!edgeAllowed(e.road, e.back, profile)) continue
+      const cs = coordsToSnap(e, proj.seg, proj.pos)
+      if (cs.length >= 2) goalEntries.push({ node: e.from, costS, part: makeEdge(e.road, e.from, -1, cs, e.back) })
     }
-    addGoal(sB.edge, sB.seg)
-    if (startEntries.length === 0 || goalEntries.length === 0) return null
+    if (startEntries.length === 0 || goalEntries.length === 0) return direct?.route ?? null
 
-    const goalPos = toP
+    // 多個終點候選時，啟發式扣掉候選離 toP 的最大距離，維持可採納（不高估）
+    const goalSlackM = goals.length > 1
+      ? Math.max(...goals.map((c) => haversine(c.proj.pos, toP))) : 0
+    const heuristic = (pos: [number, number]) =>
+      Math.max(0, haversine(pos, toP) - goalSlackM) / MAX_SPEED_MS
     const stateKey = (node: number, incoming: Edge, entryLaneIndex?: number) =>
       `${node}|${edgeIdentity(incoming)}|lane:${entryLaneIndex ?? 'unknown'}`
     const plan = (incoming: Edge, outgoing: Edge, node: number, laneIndex?: number) => {
@@ -1379,12 +1560,13 @@ export class RoadGraph {
     const open = new OpenSet()
     for (const s of startEntries) {
       const key = stateKey(s.node, s.part, undefined)
-      if (s.part.timeS < (g.get(key) ?? Infinity)) {
+      const initial = s.part.timeS + s.costS
+      if (initial < (g.get(key) ?? Infinity)) {
         states.set(key, { node: s.node, incoming: s.part })
-        g.set(key, s.part.timeS)
+        g.set(key, initial)
         startPart.set(key, s.part)
-        open.set(key, s.part.timeS +
-          haversine(this.nodePos.get(s.node) ?? s.part.coords[s.part.coords.length - 1], goalPos) / MAX_SPEED_MS)
+        open.set(key, initial +
+          heuristic(this.nodePos.get(s.node) ?? s.part.coords[s.part.coords.length - 1]))
       }
     }
     const closed = new Set<string>()
@@ -1413,7 +1595,7 @@ export class RoadGraph {
             ? plan(current.incoming, ge.part, current.node, current.entryLaneIndex)
             : undefined
           if (enforceLaneDirection && !transition?.decision.allowed) continue
-          const total = g.get(currentKey)! + ge.part.timeS
+          const total = g.get(currentKey)! + ge.part.timeS + ge.costS
             + (transition?.decision.difficultyS ?? 0)
           if (!bestGoal || total < bestGoal.cost) {
             bestGoal = { cost: total, stateKey: currentKey, part: ge.part, transition }
@@ -1444,12 +1626,12 @@ export class RoadGraph {
           })
           g.set(nextKey, tentative)
           cameFrom.set(nextKey, { previous: currentKey, edge: e, transition })
-          open.set(nextKey, tentative
-            + haversine(this.nodePos.get(e.to)!, goalPos) / MAX_SPEED_MS)
+          open.set(nextKey, tentative + heuristic(this.nodePos.get(e.to)!))
         }
       }
     }
-    if (!bestGoal) return null
+    if (!bestGoal) return direct?.route ?? null
+    if (direct && direct.total <= bestGoal.cost) return direct.route
 
     const chain: Edge[] = [bestGoal.part]
     const transitions: (TransitionPlan | undefined)[] = [bestGoal.transition]
@@ -1480,7 +1662,7 @@ export class RoadGraph {
       + `:${incoming.back ? 1 : 0}:${nodeId}:${profile}`
     const cached = this.sealedApproachCache.get(key)
     if (cached !== undefined) return cached
-    const guidance = guidanceForRoadDirection(incoming.road, incoming.back)
+    const guidance = decisionGuidance(incoming.road, incoming.back, profile)
     const arms = new Set([...(this.adj.get(nodeId) ?? []), ...(this.adjIn.get(nodeId) ?? [])]
       .map((e) => e.road.properties.osm_id))
     if (arms.size < 3 || guidance.source === 'inferred' || !guidance.laneMovements?.length) {
@@ -1575,7 +1757,7 @@ export class RoadGraph {
           ? 'uturn'
           : 'through'
     const p = incoming.road.properties
-    const guidance = guidanceForRoadDirection(incoming.road, incoming.back)
+    const guidance = decisionGuidance(incoming.road, incoming.back, profile)
     const incomingMarks = incoming.back ? p.laneMarksB : p.laneMarksF
     const motoLeftTurnLane = profile === 'moto' && (incomingMarks?.some(
       (mark) => mark?.text.trim() === MOTO_LEFT_TURN_MARK) ?? false)
@@ -1591,7 +1773,7 @@ export class RoadGraph {
       : false
 
     const ignoreMovements = this.approachSealed(incoming, nodeId, profile)
-    const decision = resolveLaneDecision({
+    const decisionInput = {
       action,
       profile,
       laneCount: guidance.laneCount,
@@ -1608,7 +1790,18 @@ export class RoadGraph {
       twoStage: twoStage || (motoLeftTurnLane && action !== 'through' && action !== 'right'),
       // 機車不得使用的汽車車道（禁行機車標線／逐車道禁行）。車道數與導引一致時才能逐道對應。
       prohibitedLaneIndices: profile === 'moto' ? motoProhibitedLanes(incoming.road, incoming.back, guidance.laneCount) : undefined,
-    })
+    }
+    let decision = resolveLaneDecision(decisionInput)
+    // 匝道分流：主線以小角度（slight-left/right）分出 *_link 匝道，是「靠邊分流」不是路口轉彎，
+    // 路面通常只畫直行箭頭。照箭頭判會「沒有任何車道能下匝道」，整條匝道封死。
+    // 2026-11-07 修正：楠陽高架橋往東的 LanePilot 箭頭 through×3 擋掉下橋匝道 103678985，
+    // 汽車往高楠公路南下被逼鑽巷弄繞 2.72 km（不擋為 1.52 km）。只在箭頭判定拒絕時退回推論
+    // （右分流→最外側、左分流→最內側）；箭頭本來就允許的分流照舊用箭頭。
+    if (!decision.allowed && decisionInput.laneMovements
+      && (kind === 'slight-right' || kind === 'slight-left')
+      && isLinkRoad(outgoing.road) && !isLinkRoad(incoming.road)) {
+      decision = resolveLaneDecision({ ...decisionInput, laneMovements: undefined, guidanceSource: 'inferred' })
+    }
     const outgoingProps = outgoing.road.properties
     const outgoingLaneCount = Math.max(1,
       outgoing.back ? outgoingProps.lanesBackward : outgoingProps.lanesForward)

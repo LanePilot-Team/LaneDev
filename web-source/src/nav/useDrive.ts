@@ -22,6 +22,7 @@ import { VehicleModelLayer } from '../core/models3d.ts'
 import { angleDelta } from '../core/geo.ts'
 import type { Mode } from '../app/mapCore.ts'
 import type { Stop } from '../plan/usePlanner.ts'
+import { stopSnapMode } from '../plan/placeRoute.ts'
 import { activeNavigationOcclusion } from '../core/occlusion.ts'
 import { isZoneEnabled, type Zone } from '../core/zones.ts'
 import { routeFailureText } from '../plan/routeFailure.ts'
@@ -396,16 +397,16 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
    * 還沒經過的停靠點：路線記錄了每個中途停靠點的里程（viaDistM），
    * 目前進度之後的停靠點都要照原順序繞經，最後才是終點。
    */
-  function remainingTargets(): [number, number][] {
+  function remainingTargets(): Stop[] {
     const stops = p.stopsRef.current
-    const to = stops[stops.length - 1]?.pos
-    if (!to) return []
+    const to = stops[stops.length - 1]
+    if (!to?.pos) return []
     const vias = stops.slice(1, -1)
     const viaDistM = p.routeRef.current?.viaDistM ?? []
     const traveledM = lastDriveRef.current?.traveledM ?? 0
     const pending = vias.filter((stop, i) =>
       !!stop.pos && (viaDistM[i] === undefined || viaDistM[i] > traveledM + 1))
-    return [...pending.map((stop) => stop.pos!), to]
+    return [...pending, to]
   }
 
   /** 偏航重規劃：從目前（已偏離）位置依序繞經未到的停靠點，再到終點，並以 GPS 接續導航。 */
@@ -424,8 +425,12 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         + `下次最快 ${((rerouteClockRef.current.cooldownMs ?? 0) / 1000).toFixed(0)}s 後`)
     }
     for (let i = 0; i < targets.length; i++) {
-      const result = g.routeDetailed(from, targets[i], p.profileRef.current, p.routePolicy,
-        i === 0 ? bearing ?? undefined : undefined)
+      // 第一段從目前 GPS 位置出發（有方位就依方位）；之後各段從上一個停靠點出發，
+      // 起終點吸附方式跟規劃時一樣依停靠點來源（stopSnapMode）。
+      const result = g.routeDetailed(from, targets[i].pos!, p.profileRef.current, p.routePolicy,
+        i === 0 ? bearing ?? undefined : undefined,
+        i === 0 ? 'area' : stopSnapMode(targets[i - 1]),
+        stopSnapMode(targets[i]))
       if (!result.route) {
         settle(false)
         rerouteErrorRef.current = routeFailureText(result.failure, i + 1)
@@ -433,7 +438,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         return
       }
       legs.push(result.route)
-      from = targets[i]
+      from = targets[i].pos!
     }
     settle(true)
     const route = legs.length > 1 ? mergeRoutes(legs) : legs[0]

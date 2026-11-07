@@ -10,6 +10,15 @@ export interface Stop {
   placeProvider?: DestinationProvider
 }
 
+/**
+ * 路線規劃的起終點吸附方式（2026-11-07）：地圖上點車道選的停靠點只有座標（沒有地點／
+ * 目前位置標籤）→ 'lane'，照點的那一側車道；搜尋地點、地址、目前位置 → 'area'，
+ * 附近各行向與旁邊的大路都可當候選（graph.ts snapCandidates）。
+ */
+export function stopSnapMode(stop: Stop | undefined): 'lane' | 'area' {
+  return stop && (stop.placeId !== undefined || stop.label !== undefined) ? 'area' : 'lane'
+}
+
 export interface RouteDestination {
   address?: string
   id: string

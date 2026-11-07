@@ -84,6 +84,15 @@ function candidateOrder(
   return (a, b) => {
     if (preferredSide === 'outermost') return b.index - a.index
     if (preferredSide === 'innermost') return a.index - b.index
+    // 直行：已在可直行的車道上就留在原車道，不為了「專用直行道」硬換道。
+    // 2026-11-07 修正：原本專用車道優先於目前車道，機車每過一個路口被放回最外側
+    // （常是 through;right 共用道），每段路都被算一次假換道（2 s＋準備不足），
+    // 加昌路上累積約 20 s，把機車路線推進巷弄。專用優先只保留給轉彎（下方註解）。
+    if (action === 'through' && currentLaneIndex !== undefined) {
+      const aMoves = Math.abs(a.index - currentLaneIndex)
+      const bMoves = Math.abs(b.index - currentLaneIndex)
+      if (aMoves !== bMoves) return aMoves - bMoves
+    }
     if (a.dedicated !== b.dedicated) return a.dedicated ? -1 : 1
     // When every available turning lane is shared with through traffic, keep
     // the navigation line on the turning side. This avoids selecting an inner

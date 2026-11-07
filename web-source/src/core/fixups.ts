@@ -362,3 +362,43 @@ export function applyFixups(roads: RoadFeature[]) {
     }
   }
 }
+
+/**
+ * 導航修正（套在人工 journal **之後**）：journal 的車道箭頭會覆蓋 applyFixups 的結果，
+ * 所以要改人工標註的箭頭、或改 OSM 通行權限且需晚於 journal 的，放這裡。
+ * 依據是 2026-11-07 與 Google 地圖逐組比對（docs/CLIENT_REVIEW.md），尚未現場確認；
+ * 標註／OSM 修正後這裡的項目應移除。
+ */
+
+/**
+ * OSM 標 motorcar=no、但實際汽車可通行的路段：旗楠公路（台22）從楠梓新路往南接
+ * 高楠公路南下的這一串。證據：汽車匝道 way/884582693（OSM 無限制）的終點
+ * node/280507406 只接 way/256795148，照 OSM 汽車開上去就出不來；Google 汽車路線
+ * 也走這裡（楠梓新路→竹子門橋 1.3 km，開放前我們 1.91 km、開放後 1.30 km）。
+ */
+const MOTORCAR_ALLOWED_WAYS = new Set<number>([
+  25724899, // 楠梓新路（往南接匝道的 85 m）
+  256795148, // 旗楠公路匝道
+  884583094, // 旗楠公路匝道（接 383563018 → 高楠公路）
+])
+
+/**
+ * 人工標註箭頭覆寫（順向，左→右）：高楠公路南下機車道（1 車道）整段被標成只能直行，
+ * 擋掉 1003巷、水管路等 7 個右轉出口；機車道往南又直接開出地圖範圍（OSM 2026-01-07
+ * 切出的延續段 way/1465030882 不在 shard 內），結果從這裡出發的機車任何目的地都找不到路。
+ * Google 機車路線在這裡右轉進 1003巷。
+ */
+const TURN_LANES_OVERRIDE: Record<number, string[]> = {
+  294647549: ['through;right'],
+  294647550: ['through;right'],
+  564743848: ['through;right'],
+}
+
+export function applyPostJournalFixups(roads: RoadFeature[]) {
+  for (const r of roads) {
+    const p = r.properties
+    if (MOTORCAR_ALLOWED_WAYS.has(p.osm_id) && p.motorcar === 'no') p.motorcar = undefined
+    const turns = TURN_LANES_OVERRIDE[p.osm_id]
+    if (turns && p.lanesForward === turns.length) p.turnLanes = [...turns]
+  }
+}

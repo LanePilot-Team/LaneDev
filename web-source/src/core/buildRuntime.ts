@@ -8,6 +8,7 @@ import { applyPostJournalFixups } from './fixups.ts'
 import type { DropRemap } from './couplet.ts'
 import { parseImported } from './importmap.ts'
 import { RoadGraph } from './graph.ts'
+import { addNanzihConnections } from './nanzihConnections.ts'
 import {
   loadDeletedZoneIds, loadZones, zonesToGeoJSON, type Zone,
 } from './zones.ts'
@@ -462,7 +463,7 @@ export async function buildClientRuntime() {
       // 導航保留來源路段；只有繪圖視圖接合幾何。被 drop 的次段仍可由 provenance 解析。
       const activeRoads = roadsAll.filter((road) => !road.properties.deleted)
       const mergeView = buildRoadMergeViews(activeRoads, journalRef.current)
-      roadsRef.current = mergeView.routingRoads
+      roadsRef.current = addNanzihConnections(mergeView.routingRoads)
       renderRoadsRef.current = mergeView.renderRoads
       if (mergeView.resolved.length > 0) {
         console.info(`journal 捏合：解析 ${mergeView.resolved.length} 組路段`)

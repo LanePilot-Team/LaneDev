@@ -1,6 +1,31 @@
 import type { RoadFeature } from './roads.ts'
 import { haversine } from './geo.ts'
 
+/** Narrow, user-confirmed overrides for directions used by the route reference. */
+export function applyNanzihAccessCorrections(roads: RoadFeature[]): void {
+  for (const road of roads) {
+    const p = road.properties
+    if (p.osm_id === 313225089 && [2972429459, 1196965131].includes(p.blockNode)) p.motorcar = 'yes'
+    const forward = (p.osm_id === 230216178 && p.blockNode === 4916071634)
+      || (p.osm_id === 268219227 && p.blockNode === 2624297538)
+    const backward = p.osm_id === 230216178 && p.blockNode === 2387445684
+    if (!forward && !backward) continue
+    const count = forward ? p.lanesForward : p.lanesBackward
+    if (count < 1) throw new Error('楠梓通行修正缺少車道')
+    const marks = [...(forward ? p.laneMarksF ?? [] : p.laneMarksB ?? [])]
+    if (marks[count - 1]?.text.trim() === '禁行機車') marks[count - 1] = null
+    const access = [...(forward ? p.motorcycleAccessByLaneF ?? [] : p.motorcycleAccessByLaneB ?? [])]
+    access[count - 1] = 'yes'
+    if (forward) {
+      p.laneMarksF = marks; p.motorcycleAccessByLaneF = access
+      p.rulesF = p.rulesF?.filter(rule => rule !== 'no_moto')
+    } else {
+      p.laneMarksB = marks; p.motorcycleAccessByLaneB = access
+      p.rulesB = p.rulesB?.filter(rule => rule !== 'no_moto')
+    }
+  }
+}
+
 /** User-confirmed connection shown by the Nanzih route reference. */
 export function addNanzihConnections(roads: RoadFeature[]): RoadFeature[] {
   if (roads.some(r => r.properties.osm_id === -98765)) return roads

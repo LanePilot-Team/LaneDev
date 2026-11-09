@@ -187,6 +187,12 @@ interface Edge {
   twin?: Edge
 }
 
+export interface ReferenceRoadPath {
+  coords: [number, number][]
+  spans: { id: number; back: boolean; toIdx: number }[]
+  band?: LaneBandResult
+}
+
 /** Versioned build-time graph; road/twin references are restored by index. */
 export interface RoadGraphSnapshot {
   version: 1
@@ -252,6 +258,8 @@ export interface RouteResult {
   cum: number[]
   lengthM: number
   timeS: number
+  /** A reviewed route carries the exact lane geometry and corresponding route distances. */
+  referenceBand?: LaneBandResult
   maneuvers: Maneuver[]
   /**
    * 車道偏移區段（coords[?..toIdx]）：
@@ -602,6 +610,63 @@ function twinSeg(e: Edge, seg: number): number {
 }
 
 export class RoadGraph {
+  /** Reconstruct an explicitly reviewed directed road path using this graph's road metadata. */
+  routeFromReference(path: ReferenceRoadPath, profile: Profile, policy: LaneRoutePolicy = {}): RouteResult | null {
+    let previousIndex = 0
+    const chain: Edge[] = []
+    const distanceToEdge = (p: [number, number], edge: Edge): number => {
+      let best = Infinity
+      for (let i = 1; i < edge.coords.length; i++) {
+        const a = edge.coords[i - 1], b = edge.coords[i]
+        const dx = (b[0] - a[0]) * COS_LAT, dy = b[1] - a[1]
+        const t = Math.max(0, Math.min(1, (((p[0] - a[0]) * COS_LAT) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)))
+        best = Math.min(best, haversine(p, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]))
+      }
+      return best
+    }
+    for (const span of path.spans) {
+      const coords = path.coords.slice(previousIndex, span.toIdx + 1)
+      previousIndex = span.toIdx
+      if (coords.length < 2) return null
+      const candidates = this.edges.filter(e => e.road.properties.osm_id === span.id && e.back === span.back)
+      let best: Edge | null = null, bestScore = Infinity
+      for (const edge of candidates) {
+        const score = Math.max(...coords.map(p => distanceToEdge(p, edge)))
+        const continuity = chain.length && chain[chain.length - 1].to === edge.from ? -0.00001 : 0
+        if (score + continuity < bestScore) { best = edge; bestScore = score + continuity }
+      }
+      if (!best || bestScore > 0.5) return null
+      const len = cumulative(coords).at(-1)!
+      if (len < 0.001) return null
+      chain.push({ ...best, coords, lengthM: len, timeS: len * best.timeS / best.lengthM,
+        from: haversine(coords[0], best.coords[0]) < 0.5 ? best.from : -1,
+        to: haversine(coords[coords.length - 1], best.coords[best.coords.length - 1]) < 0.5 ? best.to : -1 })
+    }
+    if (previousIndex !== path.coords.length - 1) return null
+    let laneIndex: number | undefined
+    const transitions: (TransitionPlan | undefined)[] = []
+    for (let i = 1; i < chain.length; i++) {
+      const node = chain[i].from >= 0 ? chain[i].from : chain[i - 1].to
+      if (node < 0) { transitions.push(undefined); laneIndex = undefined; continue }
+      const plan = this.laneTransitionPlan(chain[i - 1], chain[i], node, profile, policy, laneIndex, true)
+      transitions.push(plan)
+      laneIndex = plan.entryLaneIndex
+    }
+    const route = this.assemble(chain, profile, transitions)
+    for (const m of route?.maneuvers ?? []) {
+      if (m.laneDecision?.inferred && m.laneGuidance) {
+        m.laneGuidance = { ...m.laneGuidance, laneMovements: undefined, source: 'inferred' }
+        m.turnLanes = undefined
+      }
+    }
+    if (route && path.band) {
+      if (path.band.coords.length < 2 || path.band.coords.length !== path.band.routeD.length
+        || path.band.routeD.some((d, i, ds) => !Number.isFinite(d) || (i > 0 && d < ds[i - 1]))
+        || Math.abs(path.band.routeD[path.band.routeD.length - 1] - route.lengthM) > 0.5) return null
+      route.referenceBand = path.band
+    }
+    return route
+  }
   snapshot(roads: RoadFeature[]): RoadGraphSnapshot {
     const roadIds = new Map(roads.map((road, i) => [road, i]))
     const edgeIds = new Map(this.edges.map((edge, i) => [edge, i]))
@@ -1741,6 +1806,7 @@ export class RoadGraph {
     profile: Profile,
     policy: LaneRoutePolicy,
     currentLaneIndex?: number,
+    preferReference = false,
   ): TransitionPlan {
     const incomingCoords = incoming.coords
     const incomingBearing = bearing(
@@ -1798,8 +1864,8 @@ export class RoadGraph {
     // 汽車往高楠公路南下被逼鑽巷弄繞 2.72 km（不擋為 1.52 km）。只在箭頭判定拒絕時退回推論
     // （右分流→最外側、左分流→最內側）；箭頭本來就允許的分流照舊用箭頭。
     if (!decision.allowed && decisionInput.laneMovements
-      && (kind === 'slight-right' || kind === 'slight-left')
-      && isLinkRoad(outgoing.road) && !isLinkRoad(incoming.road)) {
+      && (preferReference || ((kind === 'slight-right' || kind === 'slight-left')
+      && isLinkRoad(outgoing.road) && !isLinkRoad(incoming.road)))) {
       decision = resolveLaneDecision({ ...decisionInput, laneMovements: undefined, guidanceSource: 'inferred' })
     }
     const outgoingProps = outgoing.road.properties
@@ -2147,6 +2213,7 @@ export function laneChoiceAreas(route: RouteResult): LaneChoiceArea[] {
  * 路線帶畫在車道內、車貼在路線帶上（drive.ts 直接沿這條帶行駛）。
  */
 export function laneBand(route: RouteResult): LaneBandResult {
+  if (route.referenceBand) return route.referenceBand
   const cs = route.coords
   const cum = route.cum
   const total = cum[cum.length - 1]

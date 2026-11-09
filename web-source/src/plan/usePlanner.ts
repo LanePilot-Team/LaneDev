@@ -13,6 +13,7 @@ import { EMPTY_FC, type MapCore, type Mode } from '../app/mapCore.ts'
 import { isZoneEnabled } from '../core/zones.ts'
 import { routeFailureText } from './routeFailure.ts'
 import { twoStageForLaneBaseApproach } from '../core/laneBase.ts'
+import { nanzihPreferredRoute } from '../core/nanzihPreferred.ts'
 import {
   createPlaceRouteStops, withCurrentStart,
   firstUnsetStopId,
@@ -137,7 +138,11 @@ export function usePlanner(core: MapCore): Planner {
     if (!g || pts.some((p) => !p)) { clearRouteLine(); return }
     const legs: RouteResult[] = []
     for (let i = 0; i < pts.length - 1; i++) {
-      const result = g.routeDetailed(
+      const preferred = pts.length === 2
+        ? nanzihPreferredRoute(g, stopsRef.current[i].placePosition ?? pts[i]!,
+          stopsRef.current[i + 1].placePosition ?? pts[i + 1]!, profileRef.current, routePolicyRef.current)
+        : { matched: false, route: null }
+      const result = preferred.matched ? { route: preferred.route, failure: 'unreachable' as const } : g.routeDetailed(
         pts[i]!,
         pts[i + 1]!,
         profileRef.current,

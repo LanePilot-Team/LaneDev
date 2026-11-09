@@ -7,8 +7,10 @@ import { PlaceSearch } from '../places/PlaceSearch.tsx'
 import { PlaceAddress } from '../places/PlaceAddress.tsx'
 import { destinationLabel, type DestinationSelection } from '../places/destination.ts'
 
-export function PlanPanel({ core, planner, onClose, startGpsNav }: {
+export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }: {
   core: MapCore; planner: Planner; onClose: () => void; startGpsNav: () => void
+  /** dev ?sim 限定：模擬駕駛（prod 不傳） */
+  startSimDrive?: () => void
 }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [stepsOpen, setStepsOpen] = useState(true)
@@ -111,6 +113,8 @@ export function PlanPanel({ core, planner, onClose, startGpsNav }: {
           <button className="route-start-button" disabled={editing !== null || locating} onClick={startGpsNav}>
             {editing !== null ? '請先選好地點' : '開始導航'}
           </button>
+          {import.meta.env.DEV && startSimDrive && <button className="route-start-button" disabled={editing !== null}
+            onClick={startSimDrive}>🧪 模擬駕駛</button>}
         </div>}
         {routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
           onToggle={event => setStepsOpen(event.currentTarget.open)}><summary>路線步驟・向下滑動查看更多</summary>

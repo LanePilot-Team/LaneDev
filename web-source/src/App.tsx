@@ -30,6 +30,8 @@ import {
   type DestinationSelection,
 } from './places/destination.ts'
 
+import { SIM, SimControls } from './dev/index.ts'
+
 import './App.css'
 
 export default function App() {
@@ -60,6 +62,17 @@ export default function App() {
         })
         return
       }
+      // dev ?sim：點地圖依序設起點 → 終點（第三下重來），取代瀏覽模式的點選
+      if (import.meta.env.DEV && SIM && (m === 'browse' || m === 'pick')) {
+        if (m === 'browse' || planner.stopsRef.current.every((s) => s.pos)) {
+          clearDestinationSelection()
+          setRoadInfo(null)
+          planner.startPick()
+          setMode('pick')
+        }
+        planner.handlePickClick(p)
+        return
+      }
       if (m === 'browse') {
         const placeFeature = map.queryRenderedFeatures(e.point, { layers: [...POI_LAYER_IDS] })[0]
         const place = placeFeature ? placeFromPoiFeature(placeFeature) : null
@@ -77,6 +90,7 @@ export default function App() {
     drive, gpsMsg, canRetry, cameraAlert,
     startGpsNav, stopAllDrivers,
     following, recenter,
+    startSimDrive, sim,
   } = useDrive({
     mode, setMode,
     mapRef: core.mapRef, routeRef: planner.routeRef, graphRef: core.graphRef,
@@ -220,8 +234,9 @@ export default function App() {
       {/* ── 側面板：路線規劃 ── */}
       {mode === 'pick' && (
         <PlanPanel core={core} planner={planner} onClose={() => switchMode('browse')}
-          startGpsNav={startGpsNav} />
+          startGpsNav={startGpsNav} startSimDrive={startSimDrive} />
       )}
+      {import.meta.env.DEV && sim && <SimControls sim={sim} driving={mode === 'drive'} />}
 
       {/* ── 路段資訊卡（瀏覽模式）── */}
       {mode === 'browse' && roadInfo && (

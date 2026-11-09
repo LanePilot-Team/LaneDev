@@ -2,6 +2,7 @@
 
 - 所有後续修改留在目前 Git 工作區與分支；不要切換分支或建立另一工作樹。
 - 這是用戶端，不是 LaneDev 網頁開發工具。不得重新引入道路／待轉區編輯、資料匯入寫入、Demo、錄影展示、模擬駕駛或播放倍率、大眾運輸功能。
+  - 例外（dev 限定）：`web-source/src/dev/` 的開發測試工具（`?sim` 地圖點選起終點＋模擬駕駛），只在 `npm run dev` 且網址帶 `?sim` 時生效，必須以 `import.meta.env.DEV` 守住，不得進入 prod build／APK。
 - 僅實作使用者明確要求的問題；另外發現的問題列入 docs/CLIENT_REVIEW.md，未經要求不直接修正。
 - web-source 是 64a1fd8 的 Android 客戶端衍生來源。修改來源後重新打包，不手改 minified JS。一般 Android Studio 建置仍只依赖已提交的 APK assets。
 - 前端更新：在 web-source 執行 npm ci --ignore-scripts、npm test、npm run build；在根目錄執行 tools/import-web-assets.ps1 -WebProject ./web-source。

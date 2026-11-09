@@ -24,7 +24,7 @@ geo.features = geo.features.filter(feature => !isTransitPlace(feature.properties
 await writeFile(target, JSON.stringify(geo))
 
 const modules = JSON.parse(await readFile(path.join(dist, 'client-modules.json'), 'utf8'))
-const forbidden = modules.filter(name => /\/src\/(edit\/|app\/importFlow|core\/(transit|buildRuntime|runtimeBuildEntry|pipeline)|nav\/drive\.ts)/.test(name))
+const forbidden = modules.filter(name => /\/src\/(edit\/|app\/importFlow|core\/(transit|buildRuntime|runtimeBuildEntry|pipeline)|nav\/drive\.ts|dev\/)/.test(name))
 if (forbidden.length) throw new Error(`Client bundle contains developer modules: ${forbidden.join(', ')}`)
 const scripts = {}
 const runtimeDir = path.join(dist, 'data/runtime')

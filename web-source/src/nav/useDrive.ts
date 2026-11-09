@@ -23,6 +23,7 @@ import { angleDelta } from '../core/geo.ts'
 import type { Mode } from '../app/mapCore.ts'
 import type { Stop } from '../plan/usePlanner.ts'
 import { stopSnapMode } from '../plan/placeRoute.ts'
+import { SIM, SimDriver } from '../dev/index.ts'
 import { activeNavigationOcclusion } from '../core/occlusion.ts'
 import { isZoneEnabled, type Zone } from '../core/zones.ts'
 import { routeFailureText } from '../plan/routeFailure.ts'
@@ -88,10 +89,16 @@ export interface UseDriveResult {
   following: boolean
   /** 「回到目前位置」：重新跟隨並復原導航視角 */
   recenter: () => void
+  /** dev ?sim 限定：模擬駕駛（prod 為 undefined） */
+  startSimDrive?: () => void
+  sim?: { multiplier: number; setMultiplier: (m: number) => void; paused: boolean; togglePause: () => void }
 }
 
 export function useDrive(p: UseDriveParams): UseDriveResult {
   const gpsDriverRef = useRef<GpsDriver | null>(null)
+  const simDriverRef = useRef<InstanceType<typeof SimDriver> | null>(null)
+  const [simMultiplier, setSimMultiplierState] = useState(3)
+  const [simPaused, setSimPaused] = useState(false)
   const lastDriveRef = useRef<DriveState | null>(null)
   const activeZoneIdRef = useRef<string | null>(null)
   const routeCamerasRef = useRef<RouteCamera[]>([])
@@ -249,6 +256,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     nativeCommand('navigation', { active: false })
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
+    simDriverRef.current?.stop()
+    simDriverRef.current = null
     stopVisualRef.current?.()
     stopVisualRef.current = null
     displayRef.current = null
@@ -450,5 +459,67 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (gpsDriverRef.current) runGpsNav(true)
   }
 
-  return { drive, gpsMsg, canRetry, cameraAlert, startGpsNav, stopAllDrivers, following, recenter }
+  /** dev ?sim：沿路線等速模擬行駛（移植舊 main 的 startDrive/runDriver，不含偏離重規劃） */
+  function startSimDrive() {
+    const route = p.routeRef.current
+    const map = p.mapRef.current
+    if (!route || !map) return
+    stopAllDrivers()
+    p.setMode('drive')
+    setFollow(true)
+    map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
+    map.setLayoutProperty('road-label', 'visibility', 'none')
+    setNavCameraClamp(map, false)
+    map.jumpTo(navCamera())
+    armSpeedCameras(route)
+    const camPadding = { top: Math.round(map.getContainer().clientHeight * 0.45) }
+    let lastHud = 0
+    let frame = 0
+    const driver = new SimDriver(route, (s) => {
+      lastDriveRef.current = s
+      updateZoneHighlight(s)
+      ;(window as unknown as Record<string, unknown>).__drive = s
+      // 鏡頭/車模 30Hz 就夠順；HUD 壓在 ~6fps（效能地雷，別改高）
+      frame++
+      if (frame % 2 === 0 || s.arrived) {
+        displayRef.current = { pos: s.pos, bearing: s.bearing, elevM: s.elevM ?? 0 }
+        p.vehicleLayerRef.current?.setNav(s.pos, s.bearing, p.profileRef.current, s.elevM ?? 0)
+        activeNavigationOcclusion()?.update(s.pos, s.bearing, s.elevM ?? 0)
+        if (followingRef.current && performance.now() - p.lastGestureRef.current > 250) {
+          map.jumpTo({ center: s.pos, bearing: s.bearing, padding: camPadding, elevation: s.elevM ?? 0 })
+        }
+      }
+      const now = performance.now()
+      if (s.arrived || now - lastHud > 160) {
+        lastHud = now
+        setDrive(s)
+        updateSpeedCameraAlert(s)
+      }
+    })
+    driver.multiplier = simMultiplier
+    setSimPaused(false)
+    simDriverRef.current = driver
+    driver.start()
+  }
+
+  const sim = {
+    multiplier: simMultiplier,
+    setMultiplier: (m: number) => {
+      setSimMultiplierState(m)
+      if (simDriverRef.current) simDriverRef.current.multiplier = m
+    },
+    paused: simPaused,
+    togglePause: () => {
+      const d = simDriverRef.current
+      if (!d) return
+      d.paused = !d.paused
+      setSimPaused(d.paused)
+    },
+  }
+
+  return {
+    drive, gpsMsg, canRetry, cameraAlert, startGpsNav, stopAllDrivers, following, recenter,
+    startSimDrive: import.meta.env.DEV && SIM ? startSimDrive : undefined,
+    sim: import.meta.env.DEV && SIM ? sim : undefined,
+  }
 }

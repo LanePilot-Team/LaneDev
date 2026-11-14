@@ -1,0 +1,11 @@
+.glass-refraction-definitions {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-transparency: no-preference) and (forced-colors: none) {
+  [data-glass-refraction="active"] {
+    backdrop-filter: var(--glass-refraction-base, blur(3px) saturate(120%)) var(--glass-refraction-filter);
+  }
+}

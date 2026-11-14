@@ -1,0 +1,535 @@
+{
+  "version": 1,
+  "routes": {
+    "north-station": {
+      "car": {
+        "real": {
+          "src": "./media/car/AB_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/AB_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/AB_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/AB_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/AB_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/AB_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "north-east": {
+      "car": {
+        "real": {
+          "src": "./media/car/AC_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/AC_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/AC_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "nav": {
+          "src": "./media/scooter/AC_nav.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/AC_google.mp4",
+          "offset": 0
+        },
+        "real": {
+          "src": "./media/scooter/AC_real.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "north-south": {
+      "car": {
+        "real": {
+          "src": "./media/car/AD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/AD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/AD_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/AD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/AD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/AD_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "north-west": {
+      "car": {
+        "real": {
+          "src": "./media/car/AE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/AE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/AE_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/AE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/AE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/AE_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "station-north": {
+      "car": {
+        "real": {
+          "src": "./media/car/BA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/BA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/BA_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "station-south": {
+      "car": {
+        "real": {
+          "src": "./media/car/BD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/BD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/BD_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/BD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/BD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/BD_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "station-west": {
+      "car": {
+        "real": {
+          "src": "./media/car/BE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/BE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/BE_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "east-north": {
+      "car": {
+        "real": {
+          "src": "./media/car/CA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/CA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/CA_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/CA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/CA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/CA_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "east-south": {
+      "car": {
+        "real": {
+          "src": "./media/car/CD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/CD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/CD_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/CD_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/CD_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/CD_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "east-west": {
+      "car": {
+        "real": {
+          "src": "./media/car/CE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/CE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/CE_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/CE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/CE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/CE_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "south-north": {
+      "car": {
+        "real": {
+          "src": "./media/car/DA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/DA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/DA_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/DA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/DA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/DA_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "south-station": {
+      "car": {
+        "real": {
+          "src": "./media/car/DB_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/DB_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/DB_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/DB_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/DB_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/DB_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "south-east": {
+      "car": {
+        "real": {
+          "src": "./media/car/DC_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/DC_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/DC_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/DC_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/DC_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/DC_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "south-west": {
+      "car": {
+        "real": {
+          "src": "./media/car/DE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/DE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/DE_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/DE_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/DE_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/DE_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "west-north": {
+      "car": {
+        "real": {
+          "src": "./media/car/EA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/EA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/EA_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/EA_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/EA_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/EA_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "west-east": {
+      "car": {
+        "real": {
+          "src": "./media/car/EC_1_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/EC_1_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/EC_1_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "nav": {
+          "src": "./media/scooter/EC_nav.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/EC_google.mp4",
+          "offset": 0
+        },
+        "real": {
+          "src": "./media/scooter/EC_real.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "west-south": {
+      "car": {
+        "real": {
+          "src": "./media/car/ED_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/car/ED_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/car/ED_nav.mp4",
+          "offset": 0
+        }
+      },
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/ED_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/ED_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/ED_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "west-station": {
+      "scooter": {
+        "real": {
+          "src": "./media/scooter/EB_real.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/EB_google.mp4",
+          "offset": 0
+        },
+        "nav": {
+          "src": "./media/scooter/EB_nav.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "east-station": {
+      "scooter": {
+        "nav": {
+          "src": "./media/scooter/CB_nav.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/CB_google.mp4",
+          "offset": 0
+        },
+        "real": {
+          "src": "./media/scooter/CB_real.mp4",
+          "offset": 0
+        }
+      }
+    },
+    "station-east": {
+      "scooter": {
+        "nav": {
+          "src": "./media/scooter/BC_nav.mp4",
+          "offset": 0
+        },
+        "google": {
+          "src": "./media/scooter/BC_google.mp4",
+          "offset": 0
+        },
+        "real": {
+          "src": "./media/scooter/BC_real.mp4",
+          "offset": 0
+        }
+      }
+    }
+  }
+}

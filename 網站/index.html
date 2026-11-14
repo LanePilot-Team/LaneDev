@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f8f5">
+  <meta name="description" content="用圖形選擇楠梓百慕達三角洲的起終點，並排比較實景、Google Maps 與車道導航錄影。">
+  <title>楠梓路線</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./glass-refraction.css">
+  <script src="./app.js?v=share-1" type="module"></script>
+  <script src="./offline.js" type="module"></script>
+</head>
+<body>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="m4 9 2-5h12l2 5M3 10h18v8H3zm2 8v3m14-3v3M7 13v1m10-1v1"/></symbol>
+  <symbol id="i-scooter" viewBox="0 0 24 24"><circle cx="5" cy="17" r="3"/><circle cx="19" cy="17" r="3"/><path d="M5 17h8l4-11h-4m2 7H7l-2-3H2m15-7h3v3h-3m-2 7 4 4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3v17m-4-4 4 4 4-4m4 5V4m-4 4 4-4 4 4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2zm6-2v16m6-14v16"/></symbol>
+</defs></svg>
+<header class="site-header"><button id="nav-explore" class="text-button">選擇路線</button><button id="offline-prepare" class="text-button">準備離線展示</button></header><p id="offline-status" role="status" aria-live="polite" style="margin:0 20px;font-size:13px"></p>
+<main id="explorer">
+  <section class="explore-workspace" aria-label="圖形路線選擇器">
+    <div class="map-card">
+      <div class="map-topline"><strong id="map-instruction">選擇起點</strong><div class="preview-controls"><label for="preview-speed">速度</label><select id="preview-speed" aria-label="路徑預覽速度"><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select><button id="preview-route" class="text-button" disabled>預覽路徑</button></div></div>
+      <div id="map-viewport" class="map-viewport">
+        <svg id="route-map" viewBox="0 0 900 640" role="group" aria-label="楠梓地圖，請點選起點與終點"><g id="map-scene"><rect x="-1200" y="-1200" width="3300" height="3000" fill="#f1f3ef"/><g id="map-roads"></g><g id="route-overlay"></g><g id="map-nodes"></g><g id="route-cursor" hidden><circle r="14" fill="#287b97" stroke="#fff" stroke-width="2"/><path d="M0 -9L6 6 0 3 -6 6Z" fill="#fff"/></g></g></svg>
+        <div class="compass" aria-label="北方朝上"><span>N</span><svg viewBox="0 0 20 27"><path d="m10 1 7 20-7-4-7 4z" fill="#53675e"/><path d="M10 1v16l-7 4z" fill="#a9b5ab"/></svg></div>
+        <div class="map-controls"><button id="zoom-in" aria-label="放大地圖">+</button><button id="zoom-out" aria-label="縮小地圖">−</button><button id="map-reset" aria-label="重設地圖視角"><svg class="icon"><use href="#i-expand"/></svg></button></div>
+        <a class="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap</a>
+      </div>
+      <div class="map-bottomline"><div><span class="legend-dot origin"></span> 起點 <span class="legend-dot destination"></span> 終點 </div><button id="labels-toggle" aria-pressed="true">道路名稱 <span class="mini-toggle"></span></button></div>
+    </div>
+    <aside class="route-panel">
+      <div class="panel-heading"><strong class="route-panel-title">路線</strong><div class="panel-heading-controls"><button id="clear-route" class="clear-route" hidden>清除路線</button><button id="route-counter" class="route-counter case-picker" aria-label="查看全部35組路線">35組路線 ▾</button></div></div>
+      <div class="route-stops">
+        <button id="edit-origin" class="stop-row"><span class="stop-dot origin">起</span><span><small>出發地</small><strong id="origin-text" class="placeholder">點選地圖上的起點</strong></span><span class="edit-hint">↗</span></button>
+        <div class="stops-connector"></div><button id="swap-route" class="swap-button" aria-label="交換起點與終點" disabled><svg class="icon"><use href="#i-swap"/></svg></button>
+        <button id="edit-destination" class="stop-row"><span class="stop-dot destination">終</span><span><small>目的地</small><strong id="destination-text" class="placeholder">點選終點</strong></span><span class="edit-hint">↗</span></button>
+      </div>
+      <div class="vehicle-heading"><h3>交通工具</h3></div>
+      <div class="vehicle-switch" role="group" aria-label="選擇交通工具"><button data-vehicle="car" aria-pressed="true"><svg class="icon"><use href="#i-car"/></svg>汽車</button><button data-vehicle="scooter" aria-pressed="false"><svg class="icon"><use href="#i-scooter"/></svg>機車</button></div>
+      <p id="geometry-status" class="geometry-status" role="status">選擇起點與終點。</p>
+      <div class="case-navigation"><button id="previous-case" aria-label="上一組路線" disabled>‹</button><span id="case-label">汽車17組・機車18組</span><button id="next-case" aria-label="下一組路線">›</button></div>
+      <button id="start-route" class="primary-button" disabled><span>選擇起終點</span><svg class="icon"><use href="#i-arrow"/></svg></button>
+      <div class="panel-foot"><span class="tiny-dot"></span><span id="route-availability">影片暫無檔案</span></div>
+    </aside>
+  </section>
+</main>
+<section id="player" class="player-page" hidden aria-label="路線影片播放器">
+  <div class="player-heading"><button id="back-map" class="text-button"><span>←</span> 返回地圖</button><div class="player-route"><span id="player-origin"></span><svg class="icon"><use href="#i-arrow"/></svg><span id="player-destination"></span><span id="player-vehicle" class="pill"></span></div></div>
+  <div class="player-toolbar"><div class="screen-toggles" role="group" aria-label="選擇播放畫面"><span>顯示畫面</span><button data-screen="real" aria-pressed="true"><svg class="icon"><use href="#i-video"/></svg>實景 <span>✓</span></button><button data-screen="google" aria-pressed="true"><svg class="icon"><use href="#i-phone"/></svg>Google Maps <span>✓</span></button><button data-screen="nav" aria-pressed="true"><svg class="icon"><use href="#i-phone"/></svg>車道導航 <span>✓</span></button></div></div>
+  <div id="player-shell" class="player-shell">
+    <div id="screens" class="screens" data-count="3" data-real="true">
+      <article class="screen screen-real" data-panel="real"><div class="screen-title"><span><span class="screen-index">01</span> 道路實景</span><span>16:9</span></div><div class="media-frame"><video id="video-real" playsinline preload="none" muted aria-label="道路實景影片"></video><div class="empty-media real-empty"><div><span class="empty-icon"><svg class="icon"><use href="#i-video"/></svg></span><p>實景影片暫無檔案</p></div></div><div class="footage-gap" hidden></div><div class="media-loading" hidden>正在緩衝…</div><div class="media-error" hidden><strong>影片暫時無法播放</strong><p>請確認網路、檔案網址或 MP4 編碼。</p><button data-retry="real">重新載入</button></div></div></article>
+      <article class="screen screen-portrait" data-panel="google"><div class="screen-title"><span><span class="screen-index">02</span> Google Maps</span><span>9:16</span></div><div class="media-frame"><video id="video-google" playsinline preload="none" muted aria-label="Google Maps 導航錄影"></video><div class="empty-media phone-empty google-empty"><div class="phone-placeholder"><span class="empty-icon"><svg class="icon"><use href="#i-map"/></svg></span><p>Google Maps 錄影暫無檔案</p></div></div><div class="media-loading" hidden>正在緩衝…</div><div class="media-error" hidden><strong>影片暫時無法播放</strong><p>請確認網路或檔案。</p><button data-retry="google">重新載入</button></div></div></article>
+      <article class="screen screen-portrait" data-panel="nav"><div class="screen-title"><span><span class="screen-index">03</span> 車道導航</span><span>9:16</span></div><div class="media-frame"><video id="video-nav" playsinline preload="none" muted aria-label="我們的車道導航錄影"></video><div class="empty-media phone-empty nav-empty"><div class="phone-placeholder"><span class="empty-icon"><svg class="icon"><use href="#i-arrow"/></svg></span><p>車道導航錄影暫無檔案</p></div></div><div class="media-loading" hidden>正在緩衝…</div><div class="media-error" hidden><strong>影片暫時無法播放</strong><p>請確認網路或檔案。</p><button data-retry="nav">重新載入</button></div></div></article>
+    </div>
+    <div class="playback-controls"><div class="timeline-wrap"><div class="timeline-track" aria-hidden="true"><div id="buffered-ranges"></div><div id="timeline-played"></div></div><input id="timeline" type="range" min="0" max="100" step="0.1" value="0" disabled aria-label="同步播放進度"></div><div class="control-row"><div class="playback-left"><button id="play-pause" class="play-button" disabled aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button><button id="replay" class="control-icon" disabled aria-label="從頭播放"><svg class="icon"><use href="#i-reset"/></svg></button><span id="time-display" class="time-display">00:00 <span>/ 00:00</span></span><span id="sync-status" class="sync-status">等暫無檔案影片</span></div><div class="playback-right"><label class="audio-toggle"><input id="sound-google" type="checkbox">Google Maps 聲音</label><label class="audio-toggle"><input id="sound-nav" type="checkbox">車道導航聲音</label><select id="speed" aria-label="播放速度"><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select><select id="quality" aria-label="影片畫質"><option value="auto">自動畫質</option><option value="low">省流量</option><option value="high">原畫質</option></select><button id="fullscreen" class="control-icon" aria-label="全螢幕"><svg class="icon"><use href="#i-expand"/></svg></button></div></div></div>
+  </div>
+  
+  
+  
+  <div class="player-bottom"><p><span class="tiny-dot"></span> 已開啟的影片共用時間軸。實景影片不含音軌；兩個導航聲音可各自開關。</p><button id="change-route" class="text-button">換一條路線 <svg class="icon"><use href="#i-arrow"/></svg></button></div>
+</section>
+<div id="intro-overlay" class="intro-overlay" hidden><button id="skip-intro">略過進場 <svg class="icon"><use href="#i-arrow"/></svg></button></div>
+
+<dialog id="cases-dialog" class="dialog cases-dialog"><div class="dialog-header"><h2>35組路線</h2><button data-close-dialog aria-label="關閉路線清單"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="case-groups" class="case-groups"></div></dialog>
+<div id="notification" class="notification" role="status" hidden></div>
+
+</body></html>

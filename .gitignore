@@ -105,3 +105,9 @@ web-source.zip
 /dist/
 .gstack/
 *.tsbuildinfo
+
+# iOS build products and per-user Xcode state
+ios/.build/
+ios/.build-device/
+**/xcuserdata/
+*.xcresult/

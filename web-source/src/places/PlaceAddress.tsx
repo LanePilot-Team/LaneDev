@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { nativeRequestId } from '../native/platform.ts'
 import { nativeCommand } from '../native/client.ts'
 import type { PlaceRecord } from './places.ts'
 
@@ -14,7 +15,7 @@ export function lookupAddress(position: [number, number]): Promise<string> {
   const result = new Promise<string>(resolve => {
     queue.push(() => {
       running++
-      const id = crypto.randomUUID()
+      const id = nativeRequestId()
       const timer = setTimeout(() => finish(''), 8000)
       function finish(address: string) {
         clearTimeout(timer)

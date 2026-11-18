@@ -1,5 +1,24 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-11-18：第一階段盤點補充（本輪未修正程式）
+
+- 本輪開始時已有的 iOS 反查地址使用單一 CLGeocoder，busy 直接回空字串；共用 `PlaceAddress.tsx` 則允許兩筆查詢並行。已確認程式上的容量差異，尚未用真實反查服務操作重現，可能讓同時出現的缺地址地點提早降級為無地址。列入後續單獨驗證，不擅自改排程或地址資料。
+- `web-source/src/core/asset.ts` 的說明仍寫 build base 是 `/LaneDev/`，實際 Vite 配置／解析為 `./`；這是既有註解落差，本輪以實際解析結果盤點，未修改功能或重打包 App。
+- `App.tsx` 仍有 `google-ui-kit` 來源標籤，但目前 `GooglePlaceSearch.tsx` 實作是 `Place.searchByText`。這不是已確認的搜尋功能失敗；診斷／metadata 命名若要清理另行處理，避免誤把 UI Kit 當成必須啟用的 API。
+
+與本次移植直接相關的 iOS 原生 target 16.0／前端 target 16.4 差異，已列為 [移植計畫](ios-port-plan.md) 第二階段門檻；本輪只有環境、規範與文件盤點，沒有調整部署設定。
+
+## 2026-11-18：iOS 移植時額外發現（未擴大修正）
+
+- 本機 iOS 26.3 Simulator 缺少 `AppleColorEmoji.ttc`，WebKit 日誌回報字型檔不存在；汽機車 Emoji、齒輪及部分符號顯示方框。已修正本次移植所需的表單中文字型繼承，未改動系統 runtime、官方資料或把所有既有圖示重畫。實體 iPhone 的圖示仍待確認。
+- MapLibre 的來源署名展開框在窄螢幕會佔據導航底部地圖，且部分文字被 HUD 遮住；屬共用介面既有配置，保留資料授權顯名，未在移植中重排。證據見 `ios-evidence/foreground-navigation.png`。
+- Simulator 語音服務有 VoiceDBClient 解碼警告並使用系統 fallback；本次收到新的中文 start／finish 回呼，但不能據此宣稱 iPhone 喇叭、耳機或藍牙實際可聽。
+- Google Places 仍沒有可用 API key；本次驗證內建搜尋，不宣稱 Google 備援成功。iOS 系統反查地址依賴網路及系統可用性，離線時保留既有「地址未提供」與座標行為。
+- 預計算仍回報既有 couplet 合併、Lane Base 未解析規則及楠陽路接合警告。本次未改官方輸入或放寬汽機車／車道／待轉限制來消除警告。
+- 本機只有 Java 26、沒有 Android SDK；已經使用者授權，在 `/private/tmp` 安裝臨時 JDK 21、API 36 與 Build Tools 35.0.0，Android APK／單元測試回歸通過。既有 Windows PowerShell 建置入口未改；Mac 本輪用 `JAVA_HOME=… ANDROID_HOME=… bash gradlew …`。尚未安裝 Android Emulator，沒有新增本輪 Android 裝置操作驗證。
+
+本次 iOS 的完成項目、受阻的簽章／實機／鎖屏驗證，以及下一階段刪除 Simulator 工具的門檻，集中於 [ios-port-plan.md](ios-port-plan.md)。
+
 ## 2026-11-07（續二）：起終點依來源吸附、兩處資料修正
 
 延續下一節「Google 對照」的三類原因，依使用者決定修正。

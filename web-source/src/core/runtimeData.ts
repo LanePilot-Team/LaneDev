@@ -1,4 +1,5 @@
 import { asset } from './asset.ts'
+import { responseSHA256 } from '../native/platform.ts'
 import { runtimeReviver, RUNTIME_FORMAT } from './runtimeCodec.ts'
 import type { buildClientRuntime } from './buildRuntime.ts'
 
@@ -28,8 +29,7 @@ export async function loadRuntimeData(signal: AbortSignal) {
   const navResponse = await fetch(runtimeAsset(manifest.navigation.file), { signal })
   if (!navResponse.ok) throw new Error('無法讀取導航資料')
   const bytes = await navResponse.arrayBuffer()
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  const hash = [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('')
+  const hash = await responseSHA256(navResponse, bytes)
   if (hash !== manifest.navigation.sha256) throw new Error('導航資料校驗失敗，請重新安裝')
   const navigation = JSON.parse(new TextDecoder().decode(bytes), runtimeReviver) as RuntimeNavigation
   if (!navigation.roads?.length || !(navigation.laneBaseIndex.approachByKey instanceof Map)) {

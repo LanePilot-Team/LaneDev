@@ -1,0 +1,639 @@
+{
+  "capturedAt": "2026-11-18 17:11:46 Asia/Taipei",
+  "scope": "Stage 1 environment and port inventory; no app/native/shared implementation changes",
+  "implementationBefore": {
+    "fileCount": 347,
+    "sha256": "effcc1b2671a2c770b68d69c1fe3de470990251df51ec889d8d6dab9486458b2"
+  },
+  "branch": "feat/ios-navigation",
+  "head": "69cbd159b5d78e0e99e64098a4a17641cd6a095c",
+  "applicableInstructionPaths": [
+    {
+      "file": "/AGENTS.md",
+      "exists": false
+    },
+    {
+      "file": "/Users/AGENTS.md",
+      "exists": false
+    },
+    {
+      "file": "/Users/wang/AGENTS.md",
+      "exists": false
+    },
+    {
+      "file": "/Users/wang/Desktop/AGENTS.md",
+      "exists": false
+    },
+    {
+      "file": "/Users/wang/Desktop/iosdev/AGENTS.md",
+      "exists": false
+    },
+    {
+      "file": "/Users/wang/Desktop/iosdev/LaneDev/AGENTS.md",
+      "exists": true
+    }
+  ],
+  "macOS": "ProductName:\t\tmacOS\nProductVersion:\t\t15.7.9\nBuildVersion:\t\t24G830",
+  "architecture": "arm64",
+  "developerDirectory": "/Applications/Xcode.app/Contents/Developer",
+  "xcode": "Xcode 26.2\nBuild version 17C52",
+  "iphoneOSSDK": "26.2",
+  "simulatorSDK": "26.2",
+  "sdkList": "DriverKit SDKs:\n\tDriverKit 25.2                \t-sdk driverkit25.2\n\niOS SDKs:\n\tiOS 26.2                      \t-sdk iphoneos26.2\n\niOS Simulator SDKs:\n\tSimulator - iOS 26.2          \t-sdk iphonesimulator26.2\n\nmacOS SDKs:\n\tmacOS 26.2                    \t-sdk macosx26.2\n\tmacOS 26.2                    \t-sdk macosx26.2\n\ntvOS SDKs:\n\ttvOS 26.2                     \t-sdk appletvos26.2\n\ntvOS Simulator SDKs:\n\tSimulator - tvOS 26.2         \t-sdk appletvsimulator26.2\n\nvisionOS SDKs:\n\tvisionOS 26.2                 \t-sdk xros26.2\n\nvisionOS Simulator SDKs:\n\tSimulator - visionOS 26.2     \t-sdk xrsimulator26.2\n\nwatchOS SDKs:\n\twatchOS 26.2                  \t-sdk watchos26.2\n\nwatchOS Simulator SDKs:\n\tSimulator - watchOS 26.2      \t-sdk watchsimulator26.2\n\n",
+  "runtimes": [
+    {
+      "name": "iOS 26.3",
+      "version": "26.3.1",
+      "build": "23D8133",
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "isAvailable": true,
+      "supportedArchitectures": [
+        "arm64"
+      ]
+    }
+  ],
+  "iphones": [
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iPhone 17 Pro",
+      "udid": "6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981",
+      "state": "Booted",
+      "isAvailable": true
+    },
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iPhone 17 Pro Max",
+      "udid": "0105E1DF-7CC8-476E-BEEA-B5F47B779DA4",
+      "state": "Shutdown",
+      "isAvailable": true
+    },
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iPhone Air",
+      "udid": "35EA352A-4C40-4FAF-9E35-F02D2EBE4561",
+      "state": "Shutdown",
+      "isAvailable": true
+    },
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iPhone 17",
+      "udid": "0A81A474-4B84-471B-A147-8BA36D5A5718",
+      "state": "Shutdown",
+      "isAvailable": true
+    },
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iPhone 16e",
+      "udid": "FA333BBA-480F-40A2-AEE5-3C8C946FB38A",
+      "state": "Shutdown",
+      "isAvailable": true
+    }
+  ],
+  "unavailableDeviceSets": [
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+      "devices": [
+        {
+          "name": "iPhone 16 Pro",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 16 Pro Max",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 16e",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 16",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 16 Plus",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 11-inch (M4)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 13-inch (M4)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad mini (A17 Pro)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad (A16)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Air 13-inch (M3)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Air 11-inch (M3)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        }
+      ]
+    },
+    {
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "devices": [
+        {
+          "name": "iPhone 17 Pro",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 17 Pro Max",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone Air",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 17",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPhone 16e",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 13-inch (M5)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 11-inch (M5)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 11-inch (M4)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Pro 13-inch (M4)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad mini (A17 Pro)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad (A16)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Air 13-inch (M3)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        },
+        {
+          "name": "iPad Air 11-inch (M3)",
+          "isAvailable": false,
+          "availabilityError": "runtime profile not found using \"System\" match policy"
+        }
+      ]
+    }
+  ],
+  "node": "v26.0.0",
+  "npm": "11.12.1",
+  "packageCount": 14,
+  "directDependencies": [
+    {
+      "name": "@turf/turf",
+      "requested": "^7.3.5",
+      "installed": "7.3.5",
+      "locked": "7.3.5",
+      "matchesLock": true
+    },
+    {
+      "name": "maplibre-gl",
+      "requested": "^5.24.0",
+      "installed": "5.24.0",
+      "locked": "5.24.0",
+      "matchesLock": true
+    },
+    {
+      "name": "osmtogeojson",
+      "requested": "^3.0.0-beta.5",
+      "installed": "3.0.0-beta.5",
+      "locked": "3.0.0-beta.5",
+      "matchesLock": true
+    },
+    {
+      "name": "react",
+      "requested": "^19.2.6",
+      "installed": "19.2.7",
+      "locked": "19.2.7",
+      "matchesLock": true
+    },
+    {
+      "name": "react-dom",
+      "requested": "^19.2.6",
+      "installed": "19.2.7",
+      "locked": "19.2.7",
+      "matchesLock": true
+    },
+    {
+      "name": "three",
+      "requested": "^0.185.1",
+      "installed": "0.185.1",
+      "locked": "0.185.1",
+      "matchesLock": true
+    },
+    {
+      "name": "@types/geojson",
+      "requested": "^7946.0.16",
+      "installed": "7946.0.16",
+      "locked": "7946.0.16",
+      "matchesLock": true
+    },
+    {
+      "name": "@types/google.maps",
+      "requested": "^3.65.5",
+      "installed": "3.65.5",
+      "locked": "3.65.5",
+      "matchesLock": true
+    },
+    {
+      "name": "@types/react",
+      "requested": "^19.2.14",
+      "installed": "19.2.17",
+      "locked": "19.2.17",
+      "matchesLock": true
+    },
+    {
+      "name": "@types/react-dom",
+      "requested": "^19.2.3",
+      "installed": "19.2.3",
+      "locked": "19.2.3",
+      "matchesLock": true
+    },
+    {
+      "name": "@types/three",
+      "requested": "^0.185.0",
+      "installed": "0.185.0",
+      "locked": "0.185.0",
+      "matchesLock": true
+    },
+    {
+      "name": "@vitejs/plugin-react",
+      "requested": "^6.0.1",
+      "installed": "6.0.3",
+      "locked": "6.0.3",
+      "matchesLock": true
+    },
+    {
+      "name": "typescript",
+      "requested": "~6.0.2",
+      "installed": "6.0.3",
+      "locked": "6.0.3",
+      "matchesLock": true
+    },
+    {
+      "name": "vite",
+      "requested": "^8.0.12",
+      "installed": "8.1.2",
+      "locked": "8.1.2",
+      "matchesLock": true
+    }
+  ],
+  "nodeEngineForVite": "^20.19.0 || >=22.12.0",
+  "typescript": "Version 6.0.3",
+  "vite": "vite/8.1.2 darwin-arm64 node-v26.0.0",
+  "resolvedWebBuild": {
+    "target": [
+      "chrome111",
+      "edge111",
+      "firefox114",
+      "safari16.4",
+      "ios16.4"
+    ],
+    "cssTarget": [
+      "chrome111",
+      "edge111",
+      "firefox114",
+      "safari16.4",
+      "ios16.4"
+    ],
+    "base": "./",
+    "workerFormat": "iife"
+  },
+  "minimumSupportDecision": "iOS 16.4; current native target remains 16.0 until next implementation stage; no 16.x runtime verified",
+  "nanzih": {
+    "caseCount": 35,
+    "profileCounts": {
+      "car": 17,
+      "moto": 18
+    },
+    "keys": [
+      "north-station:car",
+      "north-station:moto",
+      "north-east:car",
+      "north-east:moto",
+      "north-south:car",
+      "north-south:moto",
+      "north-west:car",
+      "north-west:moto",
+      "station-north:car",
+      "station-south:car",
+      "station-south:moto",
+      "station-west:car",
+      "east-north:car",
+      "east-north:moto",
+      "east-south:car",
+      "east-south:moto",
+      "east-west:car",
+      "east-west:moto",
+      "south-north:car",
+      "south-north:moto",
+      "south-station:car",
+      "south-station:moto",
+      "south-east:car",
+      "south-east:moto",
+      "south-west:car",
+      "south-west:moto",
+      "west-north:car",
+      "west-north:moto",
+      "west-east:car",
+      "west-east:moto",
+      "west-south:car",
+      "west-south:moto",
+      "station-east:moto",
+      "east-station:moto",
+      "west-station:moto"
+    ],
+    "anchors": {
+      "north": [
+        120.321029,
+        22.72933
+      ],
+      "station": [
+        120.32437,
+        22.727035
+      ],
+      "east": [
+        120.3290217,
+        22.7236493
+      ],
+      "south": [
+        120.3253565,
+        22.7194044
+      ],
+      "west": [
+        120.3166,
+        22.72246
+      ]
+    }
+  },
+  "precomputed": {
+    "roads": 11033,
+    "zones": 346,
+    "workerLoadedLayers": 9,
+    "navigation": {
+      "file": "navigation.1f52ab3842ba401751b56ed6b8d7c105921a4dbab80ee8e8d5cc460ead5f6b66.json",
+      "sha256": "1f52ab3842ba401751b56ed6b8d7c105921a4dbab80ee8e8d5cc460ead5f6b66"
+    },
+    "inputHash": "228aa6172cf71a5c5a3c5d4ff041ebfef6955aa14105ac1591ba1880455761ab"
+  },
+  "commands": [
+    {
+      "command": [
+        "xcodebuild",
+        "-version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "Xcode 26.2\nBuild version 17C52\n"
+    },
+    {
+      "command": [
+        "xcodebuild",
+        "-showsdks"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "DriverKit SDKs:\n\tDriverKit 25.2                \t-sdk driverkit25.2\n\niOS SDKs:\n\tiOS 26.2                      \t-sdk iphoneos26.2\n\niOS Simulator SDKs:\n\tSimulator - iOS 26.2          \t-sdk iphonesimulator26.2\n\nmacOS SDKs:\n\tmacOS 26.2                    \t-sdk macosx26.2\n\tmacOS 26.2                    \t-sdk macosx26.2\n\ntvOS SDKs:\n\ttvOS 26.2                     \t-sdk appletvos26.2\n\ntvOS Simulator SDKs:\n\tSimulator - tvOS 26.2         \t-sdk appletvsimulator26.2\n\nvisionOS SDKs:\n\tvisionOS 26.2                 \t-sdk xros26.2\n\nvisionOS Simulator SDKs:\n\tSimulator - visionOS 26.2     \t-sdk xrsimulator26.2\n\nwatchOS SDKs:\n\twatchOS 26.2                  \t-sdk watchos26.2\n\nwatchOS Simulator SDKs:\n\tSimulator - watchOS 26.2      \t-sdk watchsimulator26.2\n\n"
+    },
+    {
+      "command": [
+        "xcrun",
+        "simctl",
+        "list",
+        "runtimes",
+        "--json"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "{\n  \"runtimes\" : [\n    {\n      \"isAvailable\" : true,\n      \"version\" : \"26.3.1\",\n      \"isInternal\" : false,\n      \"buildversion\" : \"23D8133\",\n      \"supportedArchitectures\" : [\n        \"arm64\"\n      ],\n      \"supportedDeviceTypes\" : [\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 17 Pro.simdevicetype\",\n          \"name\" : \"iPhone 17 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 17 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 17 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone Air.simdevicetype\",\n          \"name\" : \"iPhone Air\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-Air\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 17.simdevicetype\",\n          \"name\" : \"iPhone 17\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 16 Pro.simdevicetype\",\n          \"name\" : \"iPhone 16 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 16 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 16 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 16e.simdevicetype\",\n          \"name\" : \"iPhone 16e\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16e\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 16.simdevicetype\",\n          \"name\" : \"iPhone 16\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 16 Plus.simdevicetype\",\n          \"name\" : \"iPhone 16 Plus\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Plus\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 15 Pro.simdevicetype\",\n          \"name\" : \"iPhone 15 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 15 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 15 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 15.simdevicetype\",\n          \"name\" : \"iPhone 15\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-15\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 15 Plus.simdevicetype\",\n          \"name\" : \"iPhone 15 Plus\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-15-Plus\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 14 Pro.simdevicetype\",\n          \"name\" : \"iPhone 14 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 14 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 14 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 14.simdevicetype\",\n          \"name\" : \"iPhone 14\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-14\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 14 Plus.simdevicetype\",\n          \"name\" : \"iPhone 14 Plus\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-14-Plus\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone SE (3rd generation).simdevicetype\",\n          \"name\" : \"iPhone SE (3rd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 13 Pro.simdevicetype\",\n          \"name\" : \"iPhone 13 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-13-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 13 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 13 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-13-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 13.simdevicetype\",\n          \"name\" : \"iPhone 13\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-13\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 13 mini.simdevicetype\",\n          \"name\" : \"iPhone 13 mini\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-13-mini\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 12 Pro.simdevicetype\",\n          \"name\" : \"iPhone 12 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 12 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 12 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 12.simdevicetype\",\n          \"name\" : \"iPhone 12\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-12\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 12 mini.simdevicetype\",\n          \"name\" : \"iPhone 12 mini\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-12-mini\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone SE (2nd generation).simdevicetype\",\n          \"name\" : \"iPhone SE (2nd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 11 Pro.simdevicetype\",\n          \"name\" : \"iPhone 11 Pro\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 11 Pro Max.simdevicetype\",\n          \"name\" : \"iPhone 11 Pro Max\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPhone 11.simdevicetype\",\n          \"name\" : \"iPhone 11\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-11\",\n          \"productFamily\" : \"iPhone\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 13-inch (M5) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro 13-inch (M5) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 13-inch (M5).simdevicetype\",\n          \"name\" : \"iPad Pro 13-inch (M5)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 11-inch (M5) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro 11-inch (M5) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 11-inch (M5).simdevicetype\",\n          \"name\" : \"iPad Pro 11-inch (M5)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 11-inch (M4) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro 11-inch (M4) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 11-inch (M4).simdevicetype\",\n          \"name\" : \"iPad Pro 11-inch (M4)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 13-inch (M4) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro 13-inch (M4) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro 13-inch (M4).simdevicetype\",\n          \"name\" : \"iPad Pro 13-inch (M4)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad (A16).simdevicetype\",\n          \"name\" : \"iPad (A16)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-A16\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air 13-inch (M3).simdevicetype\",\n          \"name\" : \"iPad Air 13-inch (M3)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air 11-inch (M3).simdevicetype\",\n          \"name\" : \"iPad Air 11-inch (M3)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air 11-inch (M2).simdevicetype\",\n          \"name\" : \"iPad Air 11-inch (M2)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M2\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air 13-inch (M2).simdevicetype\",\n          \"name\" : \"iPad Air 13-inch (M2)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M2\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad mini (A17 Pro).simdevicetype\",\n          \"name\" : \"iPad mini (A17 Pro)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (11-inch) (4th generation) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro (11-inch) (4th generation) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-4th-generation-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (11-inch) (4th generation).simdevicetype\",\n          \"name\" : \"iPad Pro (11-inch) (4th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-4th-generation-8GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (12.9-inch) (6th generation) (16GB).simdevicetype\",\n          \"name\" : \"iPad Pro (12.9-inch) (6th generation) (16GB)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-6th-generation-16GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (12.9-inch) (6th generation).simdevicetype\",\n          \"name\" : \"iPad Pro (12.9-inch) (6th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-6th-generation-8GB\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad (10th generation).simdevicetype\",\n          \"name\" : \"iPad (10th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-10th-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air (5th generation).simdevicetype\",\n          \"name\" : \"iPad Air (5th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-5th-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad mini (6th generation).simdevicetype\",\n          \"name\" : \"iPad mini (6th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-6th-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (11-inch) (3rd generation).simdevicetype\",\n          \"name\" : \"iPad Pro (11-inch) (3rd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-3rd-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (12.9-inch) (5th generation).simdevicetype\",\n          \"name\" : \"iPad Pro (12.9-inch) (5th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-5th-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad (9th generation).simdevicetype\",\n          \"name\" : \"iPad (9th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-9th-generation\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air (4th generation).simdevicetype\",\n          \"name\" : \"iPad Air (4th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air--4th-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad (8th generation).simdevicetype\",\n          \"name\" : \"iPad (8th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad--8th-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Air (3rd generation).simdevicetype\",\n          \"name\" : \"iPad Air (3rd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air--3rd-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad mini (5th generation).simdevicetype\",\n          \"name\" : \"iPad mini (5th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini--5th-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (11-inch) (2nd generation).simdevicetype\",\n          \"name\" : \"iPad Pro (11-inch) (2nd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro--11-inch---2nd-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (12.9-inch) (4th generation).simdevicetype\",\n          \"name\" : \"iPad Pro (12.9-inch) (4th generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro--12-9-inch---4th-generation-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (11-inch) (1st generation).simdevicetype\",\n          \"name\" : \"iPad Pro (11-inch) (1st generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro--11-inch-\",\n          \"productFamily\" : \"iPad\"\n        },\n        {\n          \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/DeviceTypes\\/iPad Pro (12.9-inch) (3rd generation).simdevicetype\",\n          \"name\" : \"iPad Pro (12.9-inch) (3rd generation)\",\n          \"identifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro--12-9-inch---3rd-generation-\",\n          \"productFamily\" : \"iPad\"\n        }\n      ],\n      \"identifier\" : \"com.apple.CoreSimulator.SimRuntime.iOS-26-3\",\n      \"platform\" : \"iOS\",\n      \"bundlePath\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Volumes\\/iOS_23D8133\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/Runtimes\\/iOS 26.3.simruntime\",\n      \"runtimeRoot\" : \"\\/Library\\/Developer\\/CoreSimulator\\/Volumes\\/iOS_23D8133\\/Library\\/Developer\\/CoreSimulator\\/Profiles\\/Runtimes\\/iOS 26.3.simruntime\\/Contents\\/Resources\\/RuntimeRoot\",\n      \"lastUsage\" : {\n        \"arm64\" : \"2026-11-18T09:02:40Z\"\n      },\n      \"name\" : \"iOS 26.3\"\n    }\n  ]\n}\n"
+    },
+    {
+      "command": [
+        "xcrun",
+        "simctl",
+        "list",
+        "devices",
+        "available",
+        "--json"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "{\n  \"devices\" : {\n    \"com.apple.CoreSimulator.SimRuntime.iOS-18-6\" : [\n\n    ],\n    \"com.apple.CoreSimulator.SimRuntime.iOS-26-0\" : [\n\n    ],\n    \"com.apple.CoreSimulator.SimRuntime.iOS-26-3\" : [\n      {\n        \"lastBootedAt\" : \"2026-11-18T08:30:20Z\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\\/data\",\n        \"dataPathSize\" : 2726457344,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\",\n        \"udid\" : \"6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\",\n        \"isAvailable\" : true,\n        \"logPathSize\" : 360448,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro\",\n        \"state\" : \"Booted\",\n        \"name\" : \"iPhone 17 Pro\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\",\n        \"udid\" : \"0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17 Pro Max\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/35EA352A-4C40-4FAF-9E35-F02D2EBE4561\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/35EA352A-4C40-4FAF-9E35-F02D2EBE4561\",\n        \"udid\" : \"35EA352A-4C40-4FAF-9E35-F02D2EBE4561\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-Air\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone Air\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0A81A474-4B84-471B-A147-8BA36D5A5718\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0A81A474-4B84-471B-A147-8BA36D5A5718\",\n        \"udid\" : \"0A81A474-4B84-471B-A147-8BA36D5A5718\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17\"\n      },\n      {\n        \"lastBootedAt\" : \"2026-06-06T12:30:19Z\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/FA333BBA-480F-40A2-AEE5-3C8C946FB38A\\/data\",\n        \"dataPathSize\" : 2289717248,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/FA333BBA-480F-40A2-AEE5-3C8C946FB38A\",\n        \"udid\" : \"FA333BBA-480F-40A2-AEE5-3C8C946FB38A\",\n        \"isAvailable\" : true,\n        \"logPathSize\" : 458752,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16e\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16e\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/A6C15616-2E99-432D-B82C-D8ED68CC87F5\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/A6C15616-2E99-432D-B82C-D8ED68CC87F5\",\n        \"udid\" : \"A6C15616-2E99-432D-B82C-D8ED68CC87F5\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 13-inch (M5)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/75A8B75D-E01A-4444-A37F-C88E972E24A2\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/75A8B75D-E01A-4444-A37F-C88E972E24A2\",\n        \"udid\" : \"75A8B75D-E01A-4444-A37F-C88E972E24A2\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 11-inch (M5)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/7A30713B-CEFE-4C16-9635-0628B25F6CF7\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/7A30713B-CEFE-4C16-9635-0628B25F6CF7\",\n        \"udid\" : \"7A30713B-CEFE-4C16-9635-0628B25F6CF7\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad mini (A17 Pro)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\",\n        \"udid\" : \"FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-A16\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad (A16)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/F34BF015-364D-4A32-B369-7392405091A1\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/F34BF015-364D-4A32-B369-7392405091A1\",\n        \"udid\" : \"F34BF015-364D-4A32-B369-7392405091A1\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 13-inch (M3)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/E647C67C-15F5-4529-9B56-45227855B592\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/E647C67C-15F5-4529-9B56-45227855B592\",\n        \"udid\" : \"E647C67C-15F5-4529-9B56-45227855B592\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 11-inch (M3)\"\n      }\n    ]\n  }\n}\n"
+    },
+    {
+      "command": [
+        "xcrun",
+        "simctl",
+        "list",
+        "devices",
+        "--json"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "{\n  \"devices\" : {\n    \"com.apple.CoreSimulator.SimRuntime.iOS-18-6\" : [\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/A4A83CD0-CC08-41A5-ACC1-E6C55107AC73\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/A4A83CD0-CC08-41A5-ACC1-E6C55107AC73\",\n        \"udid\" : \"A4A83CD0-CC08-41A5-ACC1-E6C55107AC73\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16 Pro\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0F9D49DE-A95E-4A5A-8FCE-F4839D3B6CD3\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0F9D49DE-A95E-4A5A-8FCE-F4839D3B6CD3\",\n        \"udid\" : \"0F9D49DE-A95E-4A5A-8FCE-F4839D3B6CD3\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16 Pro Max\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/4BF130CE-907F-432B-B1BB-FEE3A03F6C47\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/4BF130CE-907F-432B-B1BB-FEE3A03F6C47\",\n        \"udid\" : \"4BF130CE-907F-432B-B1BB-FEE3A03F6C47\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16e\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16e\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/8DF78AD2-CF00-4DA0-8D06-9F2DEF91CDE2\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/8DF78AD2-CF00-4DA0-8D06-9F2DEF91CDE2\",\n        \"udid\" : \"8DF78AD2-CF00-4DA0-8D06-9F2DEF91CDE2\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/10DE35F7-8F90-445B-B8C0-B0F9216EA30B\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/10DE35F7-8F90-445B-B8C0-B0F9216EA30B\",\n        \"udid\" : \"10DE35F7-8F90-445B-B8C0-B0F9216EA30B\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16-Plus\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16 Plus\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0EE27D29-B6D8-4261-8226-86B39BBCDCC0\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0EE27D29-B6D8-4261-8226-86B39BBCDCC0\",\n        \"udid\" : \"0EE27D29-B6D8-4261-8226-86B39BBCDCC0\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 11-inch (M4)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/4537C010-81D5-4DD1-9ECD-E83DF7CA8137\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/4537C010-81D5-4DD1-9ECD-E83DF7CA8137\",\n        \"udid\" : \"4537C010-81D5-4DD1-9ECD-E83DF7CA8137\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 13-inch (M4)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/54319D52-E234-4F9F-AB52-53F360E1377E\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/54319D52-E234-4F9F-AB52-53F360E1377E\",\n        \"udid\" : \"54319D52-E234-4F9F-AB52-53F360E1377E\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad mini (A17 Pro)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/56609B09-1390-40BA-9787-651D4546F593\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/56609B09-1390-40BA-9787-651D4546F593\",\n        \"udid\" : \"56609B09-1390-40BA-9787-651D4546F593\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-A16\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad (A16)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/E8F9A61A-1573-4B84-B6B0-7EA8DADC60A8\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/E8F9A61A-1573-4B84-B6B0-7EA8DADC60A8\",\n        \"udid\" : \"E8F9A61A-1573-4B84-B6B0-7EA8DADC60A8\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 13-inch (M3)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/9940960B-83CA-477A-9D63-70DCFF81CB3A\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/9940960B-83CA-477A-9D63-70DCFF81CB3A\",\n        \"udid\" : \"9940960B-83CA-477A-9D63-70DCFF81CB3A\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 11-inch (M3)\"\n      }\n    ],\n    \"com.apple.CoreSimulator.SimRuntime.iOS-26-0\" : [\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/80B3D0A0-46BE-4F79-909D-1EE189EC6D9B\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/80B3D0A0-46BE-4F79-909D-1EE189EC6D9B\",\n        \"udid\" : \"80B3D0A0-46BE-4F79-909D-1EE189EC6D9B\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17 Pro\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0A96681A-629C-4B1D-BDC3-D46F5569581B\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0A96681A-629C-4B1D-BDC3-D46F5569581B\",\n        \"udid\" : \"0A96681A-629C-4B1D-BDC3-D46F5569581B\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17 Pro Max\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/7C2EE59B-7FCE-433E-8DA8-D2AC2E21B65F\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/7C2EE59B-7FCE-433E-8DA8-D2AC2E21B65F\",\n        \"udid\" : \"7C2EE59B-7FCE-433E-8DA8-D2AC2E21B65F\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-Air\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone Air\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/F774D37F-C462-4B46-8B9A-C4791617AD23\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/F774D37F-C462-4B46-8B9A-C4791617AD23\",\n        \"udid\" : \"F774D37F-C462-4B46-8B9A-C4791617AD23\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/310AA8DB-060A-4B5C-9A4A-8997B81D230A\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/310AA8DB-060A-4B5C-9A4A-8997B81D230A\",\n        \"udid\" : \"310AA8DB-060A-4B5C-9A4A-8997B81D230A\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16e\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16e\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/73DDF0C7-52E2-4D70-ACAC-240E37997C73\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/73DDF0C7-52E2-4D70-ACAC-240E37997C73\",\n        \"udid\" : \"73DDF0C7-52E2-4D70-ACAC-240E37997C73\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 13-inch (M5)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/AC8AC17E-E648-4984-A29D-53AFDA5E6680\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/AC8AC17E-E648-4984-A29D-53AFDA5E6680\",\n        \"udid\" : \"AC8AC17E-E648-4984-A29D-53AFDA5E6680\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 11-inch (M5)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/1B59A924-7421-419D-B9ED-7A785A1A89E5\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/1B59A924-7421-419D-B9ED-7A785A1A89E5\",\n        \"udid\" : \"1B59A924-7421-419D-B9ED-7A785A1A89E5\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 11-inch (M4)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/1DA49F55-65D2-4CD1-A760-3AA34660B7C6\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/1DA49F55-65D2-4CD1-A760-3AA34660B7C6\",\n        \"udid\" : \"1DA49F55-65D2-4CD1-A760-3AA34660B7C6\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 13-inch (M4)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/F7A56836-7F73-49DE-8F09-05793A241E66\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/F7A56836-7F73-49DE-8F09-05793A241E66\",\n        \"udid\" : \"F7A56836-7F73-49DE-8F09-05793A241E66\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad mini (A17 Pro)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/703BAA99-DCE6-497B-AF12-07C43D3D5C08\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/703BAA99-DCE6-497B-AF12-07C43D3D5C08\",\n        \"udid\" : \"703BAA99-DCE6-497B-AF12-07C43D3D5C08\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-A16\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad (A16)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/A2275335-4077-4199-9428-E1D95BB320B5\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/A2275335-4077-4199-9428-E1D95BB320B5\",\n        \"udid\" : \"A2275335-4077-4199-9428-E1D95BB320B5\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 13-inch (M3)\"\n      },\n      {\n        \"availabilityError\" : \"runtime profile not found using \\\"System\\\" match policy\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/74065B8C-E0A2-44ED-81B2-147F5E08AC6B\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/74065B8C-E0A2-44ED-81B2-147F5E08AC6B\",\n        \"udid\" : \"74065B8C-E0A2-44ED-81B2-147F5E08AC6B\",\n        \"isAvailable\" : false,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 11-inch (M3)\"\n      }\n    ],\n    \"com.apple.CoreSimulator.SimRuntime.iOS-26-3\" : [\n      {\n        \"lastBootedAt\" : \"2026-11-18T08:30:20Z\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\\/data\",\n        \"dataPathSize\" : 2726457344,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\",\n        \"udid\" : \"6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981\",\n        \"isAvailable\" : true,\n        \"logPathSize\" : 360448,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro\",\n        \"state\" : \"Booted\",\n        \"name\" : \"iPhone 17 Pro\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\",\n        \"udid\" : \"0105E1DF-7CC8-476E-BEEA-B5F47B779DA4\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17 Pro Max\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/35EA352A-4C40-4FAF-9E35-F02D2EBE4561\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/35EA352A-4C40-4FAF-9E35-F02D2EBE4561\",\n        \"udid\" : \"35EA352A-4C40-4FAF-9E35-F02D2EBE4561\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-Air\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone Air\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/0A81A474-4B84-471B-A147-8BA36D5A5718\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/0A81A474-4B84-471B-A147-8BA36D5A5718\",\n        \"udid\" : \"0A81A474-4B84-471B-A147-8BA36D5A5718\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-17\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 17\"\n      },\n      {\n        \"lastBootedAt\" : \"2026-06-06T12:30:19Z\",\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/FA333BBA-480F-40A2-AEE5-3C8C946FB38A\\/data\",\n        \"dataPathSize\" : 2289717248,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/FA333BBA-480F-40A2-AEE5-3C8C946FB38A\",\n        \"udid\" : \"FA333BBA-480F-40A2-AEE5-3C8C946FB38A\",\n        \"isAvailable\" : true,\n        \"logPathSize\" : 458752,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPhone-16e\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPhone 16e\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/A6C15616-2E99-432D-B82C-D8ED68CC87F5\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/A6C15616-2E99-432D-B82C-D8ED68CC87F5\",\n        \"udid\" : \"A6C15616-2E99-432D-B82C-D8ED68CC87F5\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 13-inch (M5)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/75A8B75D-E01A-4444-A37F-C88E972E24A2\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/75A8B75D-E01A-4444-A37F-C88E972E24A2\",\n        \"udid\" : \"75A8B75D-E01A-4444-A37F-C88E972E24A2\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Pro 11-inch (M5)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/7A30713B-CEFE-4C16-9635-0628B25F6CF7\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/7A30713B-CEFE-4C16-9635-0628B25F6CF7\",\n        \"udid\" : \"7A30713B-CEFE-4C16-9635-0628B25F6CF7\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad mini (A17 Pro)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\",\n        \"udid\" : \"FF5E88BC-58A4-46AD-87A6-FFE8ACB2E0B6\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-A16\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad (A16)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/F34BF015-364D-4A32-B369-7392405091A1\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/F34BF015-364D-4A32-B369-7392405091A1\",\n        \"udid\" : \"F34BF015-364D-4A32-B369-7392405091A1\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 13-inch (M3)\"\n      },\n      {\n        \"dataPath\" : \"\\/Users\\/wang\\/Library\\/Developer\\/CoreSimulator\\/Devices\\/E647C67C-15F5-4529-9B56-45227855B592\\/data\",\n        \"dataPathSize\" : 18337792,\n        \"logPath\" : \"\\/Users\\/wang\\/Library\\/Logs\\/CoreSimulator\\/E647C67C-15F5-4529-9B56-45227855B592\",\n        \"udid\" : \"E647C67C-15F5-4529-9B56-45227855B592\",\n        \"isAvailable\" : true,\n        \"deviceTypeIdentifier\" : \"com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3\",\n        \"state\" : \"Shutdown\",\n        \"name\" : \"iPad Air 11-inch (M3)\"\n      }\n    ]\n  }\n}\n"
+    },
+    {
+      "command": [
+        "node",
+        "--version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "v26.0.0\n"
+    },
+    {
+      "command": [
+        "npm",
+        "--version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "11.12.1\n"
+    },
+    {
+      "command": [
+        "npm",
+        "ls",
+        "--depth=0",
+        "--json"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev/web-source",
+      "exitCode": 0,
+      "stdout": "{\n  \"version\": \"0.2.0\",\n  \"name\": \"lanedev-android-client\",\n  \"dependencies\": {\n    \"@turf/turf\": {\n      \"version\": \"7.3.5\",\n      \"resolved\": \"https://registry.npmjs.org/@turf/turf/-/turf-7.3.5.tgz\",\n      \"overridden\": false\n    },\n    \"@types/geojson\": {\n      \"version\": \"7946.0.16\",\n      \"resolved\": \"https://registry.npmjs.org/@types/geojson/-/geojson-7946.0.16.tgz\",\n      \"overridden\": false\n    },\n    \"@types/google.maps\": {\n      \"version\": \"3.65.5\",\n      \"resolved\": \"https://registry.npmjs.org/@types/google.maps/-/google.maps-3.65.5.tgz\",\n      \"overridden\": false\n    },\n    \"@types/react-dom\": {\n      \"version\": \"19.2.3\",\n      \"resolved\": \"https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz\",\n      \"overridden\": false\n    },\n    \"@types/react\": {\n      \"version\": \"19.2.17\",\n      \"resolved\": \"https://registry.npmjs.org/@types/react/-/react-19.2.17.tgz\",\n      \"overridden\": false\n    },\n    \"@types/three\": {\n      \"version\": \"0.185.0\",\n      \"resolved\": \"https://registry.npmjs.org/@types/three/-/three-0.185.0.tgz\",\n      \"overridden\": false\n    },\n    \"@vitejs/plugin-react\": {\n      \"version\": \"6.0.3\",\n      \"resolved\": \"https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-6.0.3.tgz\",\n      \"overridden\": false\n    },\n    \"maplibre-gl\": {\n      \"version\": \"5.24.0\",\n      \"resolved\": \"https://registry.npmjs.org/maplibre-gl/-/maplibre-gl-5.24.0.tgz\",\n      \"overridden\": false\n    },\n    \"osmtogeojson\": {\n      \"version\": \"3.0.0-beta.5\",\n      \"resolved\": \"https://registry.npmjs.org/osmtogeojson/-/osmtogeojson-3.0.0-beta.5.tgz\",\n      \"overridden\": false\n    },\n    \"react-dom\": {\n      \"version\": \"19.2.7\",\n      \"resolved\": \"https://registry.npmjs.org/react-dom/-/react-dom-19.2.7.tgz\",\n      \"overridden\": false\n    },\n    \"react\": {\n      \"version\": \"19.2.7\",\n      \"resolved\": \"https://registry.npmjs.org/react/-/react-19.2.7.tgz\",\n      \"overridden\": false\n    },\n    \"three\": {\n      \"version\": \"0.185.1\",\n      \"resolved\": \"https://registry.npmjs.org/three/-/three-0.185.1.tgz\",\n      \"overridden\": false\n    },\n    \"typescript\": {\n      \"version\": \"6.0.3\",\n      \"resolved\": \"https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz\",\n      \"overridden\": false\n    },\n    \"vite\": {\n      \"version\": \"8.1.2\",\n      \"resolved\": \"https://registry.npmjs.org/vite/-/vite-8.1.2.tgz\",\n      \"overridden\": false\n    }\n  }\n}\n"
+    },
+    {
+      "command": [
+        "node",
+        "--input-type=module",
+        "-e",
+        "import {resolveConfig} from \"vite\"; const c=await resolveConfig({},\"build\"); console.log(JSON.stringify({target:c.build.target,cssTarget:c.build.cssTarget,base:c.base,workerFormat:c.worker.format}))"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev/web-source",
+      "exitCode": 0,
+      "stdout": "{\"target\":[\"chrome111\",\"edge111\",\"firefox114\",\"safari16.4\",\"ios16.4\"],\"cssTarget\":[\"chrome111\",\"edge111\",\"firefox114\",\"safari16.4\",\"ios16.4\"],\"base\":\"./\",\"workerFormat\":\"iife\"}\n"
+    },
+    {
+      "command": [
+        "git",
+        "branch",
+        "--show-current"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "feat/ios-navigation\n"
+    },
+    {
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "69cbd159b5d78e0e99e64098a4a17641cd6a095c\n"
+    },
+    {
+      "command": [
+        "sw_vers"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t15.7.9\nBuildVersion:\t\t24G830\n"
+    },
+    {
+      "command": [
+        "uname",
+        "-m"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "arm64\n"
+    },
+    {
+      "command": [
+        "xcode-select",
+        "-p"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "/Applications/Xcode.app/Contents/Developer\n"
+    },
+    {
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "--show-sdk-version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "26.2\n"
+    },
+    {
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "--show-sdk-version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev",
+      "exitCode": 0,
+      "stdout": "26.2\n"
+    },
+    {
+      "command": [
+        "/Users/wang/Desktop/iosdev/LaneDev/web-source/node_modules/.bin/tsc",
+        "--version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev/web-source",
+      "exitCode": 0,
+      "stdout": "Version 6.0.3\n"
+    },
+    {
+      "command": [
+        "/Users/wang/Desktop/iosdev/LaneDev/web-source/node_modules/.bin/vite",
+        "--version"
+      ],
+      "cwd": "/Users/wang/Desktop/iosdev/LaneDev/web-source",
+      "exitCode": 0,
+      "stdout": "vite/8.1.2 darwin-arm64 node-v26.0.0\n"
+    }
+  ],
+  "stage1Verification": {
+    "sharedTests": {
+      "command": "npm test",
+      "cwd": "web-source",
+      "exitCode": 0,
+      "passed": 302,
+      "failed": 0,
+      "includesAll35NanzihCases": true,
+      "log": "stage1-shared-tests.log"
+    },
+    "precomputed": {
+      "command": "node tools/build-runtime.mjs",
+      "cwd": "web-source",
+      "exitCode": 0,
+      "comparedRoutes": 24,
+      "successfulRoutes": 22,
+      "log": "stage1-precomputed-routes.log"
+    },
+    "appBuildsAndDeviceOperationRerun": false
+  },
+  "keyPresenceOnly": {
+    "localPropertiesExists": false,
+    "envLocalExists": false,
+    "viteGoogleKeyEnvironmentPresent": false,
+    "bundledGooglePlaceholderPresent": true
+  },
+  "implementationAfter": {
+    "fileCount": 347,
+    "sha256": "effcc1b2671a2c770b68d69c1fe3de470990251df51ec889d8d6dab9486458b2",
+    "unchanged": true
+  }
+}

@@ -1,0 +1,129 @@
+# Executed verification — 2026-11-18 Asia/Taipei
+
+Workspace: /Users/wang/Desktop/iosdev/LaneDev
+Branch: feat/ios-navigation
+Base HEAD: 69cbd15
+Xcode 26.2 (17C52), iPhone 17 Pro Simulator, iOS 26.3
+
+## npm test
+ℹ tests 302
+ℹ suites 0
+ℹ pass 302
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2024.91925
+
+## npm run build / precompute
+Precomputed 12740 ms; 11033 roads, 346 zones, 24 identical route results (22 successful).
+Navigation 25.41 MiB; 9 worker-loaded layers; input 228aa6172cf71a5c5a3c5d4ff041ebfef6955aa14105ac1591ba1880455761ab
+✓ built in 404ms
+Client package checked: no editor, simulation or transit modules; transport POIs removed.
+
+## Android
+JAVA_HOME=/private/tmp/jdk-21.0.13+9/Contents/Home ANDROID_HOME=/private/tmp/lanedev-android-sdk bash gradlew assembleDebug testDebugUnitTest
+BUILD SUCCESSFUL in 856ms
+40 actionable tasks: 3 executed, 37 up-to-date
+Existing Android JUnit: 1 test, 0 failures, 0 errors (addition_isCorrect only). No Android device run this round.
+
+## Debug Simulator
+xcodebuild build-for-testing (Debug, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+** TEST BUILD SUCCEEDED **
+xcodebuild test-without-building (Debug, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+Test Case '-[LaneDevTests.ForegroundNavigationTests testBundledOfflineSearchPlanningAndNavigation]' started.
+IOS_ROUTE_PREVIEW: 1.1 公里
+IOS_NAVIGATION_HUD: Made with Natural Earth
+Test Case '-[LaneDevTests.ForegroundNavigationTests testBundledOfflineSearchPlanningAndNavigation]' passed (10.917 seconds).
+Test Case '-[LaneDevTests.ForegroundNavigationTests testDeviationReroutesAndArrival]' started.
+IOS_REROUTE: revision 2 -> 3; one native watch
+Test Case '-[LaneDevTests.ForegroundNavigationTests testDeviationReroutesAndArrival]' passed (9.468 seconds).
+Test Case '-[LaneDevTests.ForegroundNavigationTests testNativeSpeechCallbacks]' started.
+IOS_SPEECH_CALLBACKS: starts=4, finishes=3, 音量 60% · Speaker
+Test Case '-[LaneDevTests.ForegroundNavigationTests testNativeSpeechCallbacks]' passed (5.420 seconds).
+Test Case '-[LaneDevTests.ForegroundNavigationTests testReadOnlyBundleAndIntegrity]' started.
+IOS_BUNDLE_CHECK: ["resources": <__NSArrayM 0x600000d17c30>(
+Test Case '-[LaneDevTests.ForegroundNavigationTests testReadOnlyBundleAndIntegrity]' passed (1.963 seconds).
+Test Case '-[LaneDevTests.ForegroundNavigationTests testSystemCoreLocationBridge]' started.
+IOS_CORE_LOCATION: ["accuracy": 5.0, "latitude": 22.73301744810952, "longitude": 120.2758], source=CoreLocation (Simulator injected; not real GPS)
+Test Case '-[LaneDevTests.ForegroundNavigationTests testSystemCoreLocationBridge]' passed (2.713 seconds).
+Executed 5 tests, with 0 failures (0 unexpected) in 30.481 (30.483) seconds
+Executed 5 tests, with 0 failures (0 unexpected) in 30.481 (30.483) seconds
+Executed 5 tests, with 0 failures (0 unexpected) in 30.481 (30.484) seconds
+Test Case '-[LaneDevUITests.ForegroundUITests testTouchNavigationAndHomeResume]' started.
+Reapplied OS location fixture after UI app launch (not real GPS).
+Test Case '-[LaneDevUITests.ForegroundUITests testTouchNavigationAndHomeResume]' passed (19.036 seconds).
+Executed 1 test, with 0 failures (0 unexpected) in 19.036 (19.037) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 19.036 (19.038) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 19.036 (19.039) seconds
+** TEST EXECUTE SUCCEEDED **
+PASS debug; log: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/debug-2026-11-18T08-51-28-568Z/xcodebuild.log; result: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/debug-2026-11-18T08-51-28-568Z/results.xcresult
+
+
+## Release Simulator
+xcodebuild build-for-testing (Release, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+** TEST BUILD SUCCEEDED **
+xcodebuild test-without-building (Release, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+Test Case '-[LaneDevUITests.ForegroundUITests testReleaseBundleWithSystemLocation]' started.
+Reapplied OS location fixture after UI app launch (not real GPS).
+Test Case '-[LaneDevUITests.ForegroundUITests testReleaseBundleWithSystemLocation]' passed (21.186 seconds).
+Executed 1 test, with 0 failures (0 unexpected) in 21.186 (21.188) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 21.186 (21.188) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 21.186 (21.189) seconds
+** TEST EXECUTE SUCCEEDED **
+PASS release; log: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/release-2026-11-18T08-53-23-524Z/xcodebuild.log; result: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/release-2026-11-18T08-53-23-524Z/results.xcresult
+
+
+## Permission denied
+xcodebuild build-for-testing (Debug, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+** TEST BUILD SUCCEEDED **
+xcodebuild test-without-building (Debug, 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981)
+Test Case '-[LaneDevTests.ForegroundNavigationTests testDeniedLocationPermission]' started.
+IOS_DENIED_LOCATION: 未授權定位，請到 App 設定允許使用期間定位
+Test Case '-[LaneDevTests.ForegroundNavigationTests testDeniedLocationPermission]' passed (2.291 seconds).
+Executed 1 test, with 0 failures (0 unexpected) in 2.291 (2.291) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 2.291 (2.291) seconds
+Executed 1 test, with 0 failures (0 unexpected) in 2.291 (2.292) seconds
+** TEST EXECUTE SUCCEEDED **
+PASS denied; log: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/denied-2026-11-18T08-54-35-409Z/xcodebuild.log; result: /Users/wang/Desktop/iosdev/LaneDev/ios/.build/test-results/denied-2026-11-18T08-54-35-409Z/results.xcresult
+
+
+## iPhone arm64 compile (unsigned, not real-device execution)
+xcodebuild -project ios/LaneDev.xcodeproj -scheme LaneDev -destination generic/platform=iOS -configuration Release -derivedDataPath ios/.build-device build CODE_SIGNING_ALLOWED=NO
+** BUILD SUCCEEDED **
+
+## Actual Home / foreground lifecycle (OSLog)
+Timestamp               Ty Process[PID:TID]
+2026-11-18 16:47:45.980 I  LaneDev[11803:23e85] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:49:46.088 I  LaneDev[12162:26213] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:51:36.453 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:51:36.485 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:51:45.111 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=false locationUpdating=false speechForeground=false idleDisabled=false
+2026-11-18 16:51:45.357 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=true speechForeground=true idleDisabled=true
+2026-11-18 16:51:47.402 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:51:56.865 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:52:02.291 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:52:04.247 I  LaneDev[12531:28489] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:52:11.858 I  LaneDev[12629:28b9d] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:52:25.833 I  LaneDev[12629:28b9d] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=false locationUpdating=false speechForeground=false idleDisabled=false
+2026-11-18 16:52:26.903 I  LaneDev[12629:28b9d] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=true speechForeground=true idleDisabled=true
+2026-11-18 16:53:33.273 I  LaneDev[12998:2abdd] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:54:39.073 I  LaneDev[13370:2caa6] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+2026-11-18 16:54:39.706 I  LaneDev[13370:2caa6] [tw.lanepilot.lanedev.ios:Lifecycle] foreground=true locationUpdating=false speechForeground=true idleDisabled=false
+
+
+## Data audit
+Official source files and packaged raw road/journal/LanePilot bytes: git diff --quiet passed.
+15 rebuilt static files originally differed only by BOM/line endings/outer whitespace; original bytes preserved.
+Precomputed outputs vs committed baseline: same structure and nonnumeric values, maximum floating-point delta 4.833779598811816e-9; no significant differences.
+No route, vehicle, lane, waiting-zone or Nanzih reference rule was changed.
+Both native Release executables: strings check found none of SimulatorLocationSource, simRoute, 虛擬定位, 沿路線前進, location-source, LaneSimulator.
+Shared JS still has inert optional LaneSimulator hooks; remove them and temporary Simulator sources before the physical-iPhone milestone.
+No listeners on development ports 5190/5173/4173 during operation. Local UI resource list contained no http/https requests.
+No physical iPhone, signing, real GPS, real speaker/Bluetooth or actual lock-screen operation verified.
+
+## Standalone launch after all test tools exited
+xcrun simctl launch booted tw.lanepilot.lanedev.ios
+tw.lanepilot.lanedev.ios: 14616
+Confirmed loading overlay disappeared and bundled map/search were visible; screenshot: standalone-startup.png.
+No Vite/dev server was started. This is Simulator validation, not physical iPhone validation.

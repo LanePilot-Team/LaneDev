@@ -31,8 +31,8 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
         <div className="settings-subsection-body">
           <p className="settings-status">{state.tts}</p>
           <div className="settings-actions">
-            <button onClick={() => nativeCommand('ttsInstall')}>下載中文語音</button>
-            <button onClick={() => nativeCommand('ttsSettings')}>系統語音設定</button>
+            {window.LanePlatform !== 'ios' && <button onClick={() => nativeCommand('ttsInstall')}>下載中文語音</button>}
+            <button onClick={() => nativeCommand('ttsSettings')}>{window.LanePlatform === 'ios' ? 'iOS 語音說明' : '系統語音設定'}</button>
             <button onClick={() => nativeCommand('ttsRefresh')}>重新檢查語音</button>
             <button onClick={() => nativeCommand('ttsTest')}>試聽中文</button>
           </div>

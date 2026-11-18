@@ -4,6 +4,7 @@
 // 貼合對象是「路線帶」（laneBand）而不是路網中心線——畫面上的藍線就是這條帶，
 // 車貼在帶上才會跟藍線重合；貼中心線的話車會固定偏一個車道寬。
 import { deviceHeading } from '../native/client.ts'
+import { locationProvider } from '../native/platform.ts'
 import { remainingRouteSeconds } from './arrivalEstimate.ts'
 import { cumulative, haversine } from '../core/geo.ts'
 import { laneBand, spanAtDist, type LaneBandResult, type RouteResult } from '../core/graph.ts'
@@ -84,6 +85,7 @@ function routeDistAt(band: LaneBandResult, bandCum: number[], bandDist: number):
 }
 
 export class GpsDriver {
+  private geolocation = locationProvider()
   private watchId: number | null = null
   private wakeLock: WakeLockSentinelLike | null = null
   private offRouteCount = 0
@@ -165,7 +167,7 @@ export class GpsDriver {
       if (wl) this.wakeLock = await wl.request('screen')
     } catch { /* 拿不到 wake lock 也沒關係，不影響導航 */ }
     if (this.finished) { await this.wakeLock?.release(); this.wakeLock = null; return }
-    this.watchId = navigator.geolocation.watchPosition(
+    this.watchId = this.geolocation!.watchPosition(
       (pos) => this.onFix(pos),
       (err) => {
         gpsLog('定位錯誤', `code=${err.code} ${err.message}`)
@@ -462,7 +464,7 @@ export class GpsDriver {
   stop() {
     this.finished = true
     if (this.watchId !== null) {
-      navigator.geolocation.clearWatch(this.watchId)
+      this.geolocation?.clearWatch(this.watchId)
       gpsLog('watch 停止', `id=${this.watchId}`)
       this.watchId = null
     }

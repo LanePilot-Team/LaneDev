@@ -4,6 +4,12 @@ body {
   font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
   overflow: hidden;
 }
+/* WKWebView form controls otherwise use a separate fallback font with missing CJK glyphs. */
+html[data-platform="ios"] button,
+html[data-platform="ios"] input,
+html[data-platform="ios"] select {
+  font-family: "PingFang TC", system-ui, "Apple Color Emoji", sans-serif;
+}
 
 .app {
   position: relative;

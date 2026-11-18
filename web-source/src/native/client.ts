@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { nativeRequestId } from './platform.ts'
 
 declare global {
   interface Window { LaneNative?: { postMessage(message: string): void } }
@@ -58,7 +59,7 @@ export function setZoom(value: number) {
 }
 export function speak(text: string, priority = false) {
   if (!state.voice) return
-  // All navigation and speed camera speech shares the Android TTS queue.
+  // Navigation and speed camera speech share the native speech queue.
   nativeCommand('speak', { text, priority })
 }
 export function stopSpeech() { nativeCommand('stopSpeech') }
@@ -77,7 +78,7 @@ if (typeof window !== 'undefined') window.addEventListener('lane-native', ((even
 export function ensureLocation(): Promise<void> {
   if (typeof window === 'undefined' || !window.LaneNative) return Promise.resolve()
   return new Promise((resolve, reject) => {
-    const id = crypto.randomUUID()
+    const id = nativeRequestId()
     const timeout = window.setTimeout(() => done('定位授權逾時，請重試'), 60000)
     function done(error?: string) {
       clearTimeout(timeout)

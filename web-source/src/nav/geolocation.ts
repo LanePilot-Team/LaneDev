@@ -2,6 +2,7 @@
 // GPS 導航與地標搜尋都從這裡取得相同的安全連線判斷與錯誤體驗。
 
 import { ensureLocation } from '../native/client.ts'
+import { locationProvider } from '../native/platform.ts'
 
 export const HIGH_ACCURACY_POSITION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -17,8 +18,7 @@ export interface CurrentLocation {
 type CurrentPositionGeolocation = Pick<Geolocation, 'getCurrentPosition'>
 
 function browserGeolocation(): CurrentPositionGeolocation | null {
-  if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return null
-  return navigator.geolocation
+  return locationProvider()
 }
 
 /** Geolocation 需要 HTTPS；localhost 與 127.0.0.1 保留本機開發例外。 */
@@ -26,12 +26,13 @@ export function isSecureContext(
   secureContext = typeof window !== 'undefined' && window.isSecureContext,
   hostname = typeof location !== 'undefined' ? location.hostname : '',
 ): boolean {
-  return secureContext || hostname === 'localhost' || hostname === '127.0.0.1'
+  const native = typeof window !== 'undefined' && window.LanePlatform === 'ios' && !!window.LaneGeolocation
+  return native || secureContext || hostname === 'localhost' || hostname === '127.0.0.1'
 }
 
 /** 回傳目前環境不能定位的原因；null 代表可繼續要求權限。 */
 export function geolocationUnavailableMessage(
-  supported = typeof navigator !== 'undefined' && 'geolocation' in navigator,
+  supported = !!locationProvider(),
   secureContext = isSecureContext(),
 ): string | null {
   if (!supported) return '此瀏覽器不支援 Geolocation API'

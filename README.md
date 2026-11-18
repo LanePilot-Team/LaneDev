@@ -1,5 +1,7 @@
 # LaneDev Android 用戶端
 
+iOS 前景導航專案位於 [`ios/LaneDev.xcodeproj`](ios/LaneDev.xcodeproj)，使用 Swift＋WKWebView、Core Location 與原生中文語音，內建共用前端與預計算路網。開啟與 Simulator 操作方式見 [iOS 說明](ios/README.md)，驗證範圍與限制見 [移植紀錄](docs/ios-port-plan.md)。
+
 在 Android Studio 開啟本資料夾，Gradle Sync 後選取裝置並執行 app。
 一般 APK 建置只需要 Android SDK 36 與 Android Studio 內建 JDK 21，
 不需要 Node.js，也不需要另一份網頁專案。

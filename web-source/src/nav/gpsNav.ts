@@ -106,6 +106,7 @@ export class GpsDriver {
   private band: LaneBandResult
   private bandCum: number[]
   private destination: [number, number]
+  private started = false
   private finished = false
   private graph: RoadGraph | null
   private profile: Profile
@@ -158,7 +159,9 @@ export class GpsDriver {
   }
 
   async start() {
-    const unavailable = geolocationUnavailableMessage()
+    if (this.started || this.finished) return
+    this.started = true
+    const unavailable = geolocationUnavailableMessage(!!this.geolocation)
     if (unavailable) { this.onError(unavailable); return }
     try {
       const wl = (navigator as Navigator & {
@@ -166,32 +169,41 @@ export class GpsDriver {
       }).wakeLock
       if (wl) this.wakeLock = await wl.request('screen')
     } catch { /* 拿不到 wake lock 也沒關係，不影響導航 */ }
-    if (this.finished) { await this.wakeLock?.release(); this.wakeLock = null; return }
-    this.watchId = this.geolocation!.watchPosition(
+    if (this.finished) { await this.wakeLock?.release().catch(() => {}); this.wakeLock = null; return }
+    const watchId = this.geolocation!.watchPosition(
       (pos) => this.onFix(pos),
       (err) => {
+        if (this.finished) return
+        if (this.geolocation?.getAuthorization) {
+          this.lastFixPos = null
+          this.stoppedNearDestSince = 0
+          this.offRouteCount = 0
+        }
         gpsLog('定位錯誤', `code=${err.code} ${err.message}`)
         this.onError(geolocationErrorMessage(err))
       },
       HIGH_ACCURACY_POSITION_OPTIONS,
     )
-    gpsLog('watch 開始', `id=${this.watchId}`)
+    if (this.finished) this.geolocation!.clearWatch(watchId)
+    else this.watchId = watchId
+    gpsLog('watch 開始', `id=${watchId}`)
   }
 
   private onFix(pos: GeolocationPosition) {
     if (this.finished) return
-    const { longitude: lon, latitude: lat, speed, accuracy } = pos.coords
+    const { longitude: lon, latitude: lat, speed, accuracy, heading: course } = pos.coords
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) return
     const here: [number, number] = [lon, lat]
     const now = pos.timestamp
     const gap = gpsFixGap()
-    if (!Number.isFinite(now) || Date.now() - now > 10000 || now <= this.lastFixTs) {
+    if (!Number.isFinite(now) || Date.now() - now > 10000 || now - Date.now() > 1000 || now <= this.lastFixTs) {
       gpsLog('fix 丟棄', `間隔 ${gap}  時間戳記落後 ${((Date.now() - now) / 1000).toFixed(1)}s`)
       return
     }
     const elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
 
     // 車速：優先用裝置回報值；沒有就用位移/時間推（低速時 GPS 常回 null）
-    let speedMps = speed != null && !Number.isNaN(speed) ? Math.max(0, speed) : null
+    let speedMps = speed != null && Number.isFinite(speed) && speed >= 0 ? speed : null
     if (speedMps === null && this.lastFixPos && elapsedS > 0.2) {
       speedMps = haversine(this.lastFixPos, here) / elapsedS
     }
@@ -222,10 +234,15 @@ export class GpsDriver {
 
     const accuracyM = Number.isFinite(accuracy) ? accuracy : null
     const speedKmh = (speedMps ?? 0) * 3.6
-    // 行進方位（偏移改善用）：位移夠大用位移方向，否則沿用目前車頭
+    // 位移夠大時沿用既有的位移方向政策。iOS 在移動且定位可信時可補用原生 course。
     const movedM = prevRaw ? haversine(prevRaw, here) : 0
-    const heading = movedM >= FREE_HEADING_MIN_MOVE_M && speedKmh >= HEADING_HOLD_KMH
-      ? bearingBetween(prevRaw!, here) : this.smoothBrg
+    let movementBearing: number | null = null
+    if (speedKmh >= HEADING_HOLD_KMH) {
+      if (prevRaw && movedM >= FREE_HEADING_MIN_MOVE_M) movementBearing = bearingBetween(prevRaw, here)
+      else if (this.geolocation?.getAuthorization && accuracy <= ACCURACY_TRUST_M && course != null
+        && Number.isFinite(course) && course >= 0 && course < 360) movementBearing = course
+    }
+    const heading = movementBearing ?? this.smoothBrg
     // 路網貼合每筆最多算一次（HMM 每呼叫一次就前進一步，不能重複呼叫）
     let snapMemo: { pos: [number, number]; bearing: number } | null | undefined
     const road = () => {
@@ -256,7 +273,7 @@ export class GpsDriver {
         if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
           this.rerouteClock.lastTs = Date.now()
           this.reroutePending = true
-          this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
+          this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
           const bearing = this.branchDeviation.bearing
           // 重規劃起點用貼合到的車道位置（原始座標會被吸到剛經過的路口另一側，新路線又繞回去）
           const origin = snapped?.pos ?? here
@@ -266,7 +283,7 @@ export class GpsDriver {
           }, REROUTE_DEFER_MS)
           return
         }
-        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
+        this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
         return
       }
       if (this.branchDeviation) {
@@ -281,7 +298,7 @@ export class GpsDriver {
         if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
           this.rerouteClock.lastTs = Date.now()
           this.reroutePending = true
-          this.emitFree(here, prevRaw, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
+          this.emitFree(here, movementBearing, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
           const bearing = this.branchDeviation.bearing
           setTimeout(() => {
             this.reroutePending = false
@@ -289,7 +306,7 @@ export class GpsDriver {
           }, REROUTE_DEFER_MS)
           return
         }
-        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
+        this.emitFree(here, movementBearing, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
         return
       }
     }
@@ -304,7 +321,7 @@ export class GpsDriver {
         rerouteReady(this.rerouteClock, Date.now())) {
         this.rerouteClock.lastTs = Date.now()
         const snapped = road()
-        this.emitFree(here, prevRaw, speedKmh, accuracyM, now, snapped)
+        this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
         // 先讓這一幀（車跟著實際定位）畫出去再算路線：搜尋會卡住主執行緒數百毫秒到數秒
         this.reroutePending = true
         gpsLog('偏離觸發重規劃', `連續 ${this.offRouteCount} 筆離線 > ${OFF_ROUTE_THRESHOLD_M}m`)
@@ -322,7 +339,7 @@ export class GpsDriver {
       if (rerouteReady(this.rerouteClock, Date.now())) this.rerouteClock.streak = 0
     }
     // 偏離路線帶：不推進路線進度（貼合點會亂跳），但車和鏡頭跟著實際定位走
-    if (this.free) { this.emitFree(here, prevRaw, speedKmh, accuracyM, now, road()); return }
+    if (this.free) { this.emitFree(here, movementBearing, speedKmh, accuracyM, now, road()); return }
     this.freePos = null
     if (!FEAT.smooth) this.roadMatcher.reset()
     this.match = match
@@ -405,7 +422,7 @@ export class GpsDriver {
   }
 
   private emitFree(
-    here: [number, number], prevRaw: [number, number] | null,
+    here: [number, number], movementBearing: number | null,
     speedKmh: number, accuracyM: number | null, now: number,
     /** 貼到路網上的位置與路段方位（方案 a/b）；沒給就用平滑後的原始座標 */
     snapped?: { pos: [number, number]; bearing: number },
@@ -419,12 +436,11 @@ export class GpsDriver {
     this.freePos = pos
     // 車頭用原始定位之間的位移方向（不能用「貼合點 → 實際點」，那是橫向的）；
     // 停車時的位移只是 GPS 漂移，車頭鎖住。羅盤只在還沒有任何方位時當初值。
-    const moved = !!prevRaw && haversine(prevRaw, here) >= FREE_HEADING_MIN_MOVE_M
     if (snapped && speedKmh >= HEADING_HOLD_KMH) {
       // 貼在路上時車頭用路段切線（不會因 GPS 抖動歪向路外）
       this.smoothBrg = smoothBearing(this.smoothBrg, snapped.bearing)
-    } else if (moved && speedKmh >= HEADING_HOLD_KMH) {
-      this.smoothBrg = smoothBearing(this.smoothBrg, bearingBetween(prevRaw!, here))
+    } else if (movementBearing !== null) {
+      this.smoothBrg = smoothBearing(this.smoothBrg, movementBearing)
     } else if (this.smoothBrg === null) {
       this.smoothBrg = deviceHeading() ?? 0
     }

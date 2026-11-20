@@ -9,6 +9,8 @@ test('browser provider stays selected unless an explicit native iOS provider is 
   assert.equal(locationProvider(), browser)
   window.LanePlatform = 'ios'
   assert.equal(locationProvider(), native)
+  delete window.LaneGeolocation
+  assert.equal(locationProvider(), null, 'iOS must not fall back to browser GPS')
   delete globalThis.window
   delete globalThis.navigator
 })

@@ -1,5 +1,6 @@
 import XCTest
 import WebKit
+import CoreLocation
 @testable import LaneDev
 
 @MainActor
@@ -34,9 +35,9 @@ final class ForegroundNavigationTests: XCTestCase {
             if (!b) throw new Error('Missing button ' + \(encoded)); b.click();
             """)
     }
-    func plan() async throws {
+    func plan(useVirtual: Bool = true) async throws {
         #if targetEnvironment(simulator)
-        XCTAssertTrue(controller.locations.selectVirtual(true))
+        XCTAssertTrue(controller.locations.selectVirtual(useVirtual))
         #endif
         _ = try await js("""
             const input = document.querySelector('.place-search-form input');
@@ -256,15 +257,109 @@ final class ForegroundNavigationTests: XCTestCase {
         }
         let position = try await js("""
             return await new Promise((resolve, reject) => window.LaneGeolocation.getCurrentPosition(
-              p => resolve({longitude:p.coords.longitude, latitude:p.coords.latitude, accuracy:p.coords.accuracy}),
+              p => resolve({longitude:p.coords.longitude, latitude:p.coords.latitude, accuracy:p.coords.accuracy, timestamp:p.timestamp}),
               e => reject(new Error(e.message)), {timeout:15000}));
             """) as! [String: Double]
         XCTAssertEqual(position["longitude"]!, 120.2758, accuracy: 0.02)
         XCTAssertEqual(position["latitude"]!, 22.7327, accuracy: 0.02)
+        XCTAssertLessThan(abs(Date().timeIntervalSince1970 * 1000 - position["timestamp"]!), 10_000)
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertTrue(controller.locations.watches.isEmpty)
         XCTAssertFalse(controller.locations.updating)
         print("IOS_CORE_LOCATION: \(position), source=CoreLocation (Simulator injected; not real GPS)")
+    }
+
+    func testCoreLocationConversionAndAuthorizationPolicy() throws {
+        let now = Date(timeIntervalSince1970: 1_795_000_000)
+        let started = now.addingTimeInterval(-2)
+        let coordinate = CLLocationCoordinate2D(latitude: 22.7327, longitude: 120.2758)
+        let valid = CLLocation(coordinate: coordinate, altitude: 83, horizontalAccuracy: 5,
+                               verticalAccuracy: 12, course: 71, courseAccuracy: 6,
+                               speed: 8, speedAccuracy: 1, timestamp: now)
+        let payload = try XCTUnwrap(LocationService.position(valid, since: started, now: now))
+        let coords = try XCTUnwrap(payload["coords"] as? [String: Double])
+        XCTAssertEqual(payload["timestamp"] as? Double, 1_795_000_000_000)
+        XCTAssertEqual(coords, ["latitude": 22.7327, "longitude": 120.2758, "accuracy": 5,
+                                "altitude": 83, "altitudeAccuracy": 12, "speed": 8, "heading": 71])
+        let unknown = CLLocation(coordinate: coordinate, altitude: .nan, horizontalAccuracy: 7,
+                                 verticalAccuracy: -1, course: 83, courseAccuracy: 75,
+                                 speed: -1, speedAccuracy: -1, timestamp: now)
+        let unknownPayload = try XCTUnwrap(LocationService.position(unknown, since: started, now: now))
+        let unknownCoords = try XCTUnwrap(unknownPayload["coords"] as? [String: Any])
+        for key in ["altitude", "altitudeAccuracy", "speed", "heading"] { XCTAssertTrue(unknownCoords[key] is NSNull) }
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(unknownPayload))
+        let invalid = CLLocation(coordinate: coordinate, altitude: 0, horizontalAccuracy: -1,
+                                 verticalAccuracy: 1, timestamp: now)
+        XCTAssertNil(LocationService.position(invalid, since: started, now: now))
+        XCTAssertFalse(LocationService.fresh(now.addingTimeInterval(-3), since: started, now: now))
+        XCTAssertFalse(LocationService.fresh(now.addingTimeInterval(-11), since: .distantPast, now: now))
+        XCTAssertFalse(LocationService.fresh(now.addingTimeInterval(2), since: started, now: now))
+        XCTAssertEqual(LocationService.compassBearing(trueHeading: 90, magnetic: 80, accuracy: 5), 90)
+        XCTAssertEqual(LocationService.compassBearing(trueHeading: -1, magnetic: 80, accuracy: 5), 80)
+        XCTAssertNil(LocationService.compassBearing(trueHeading: 90, magnetic: 80, accuracy: 75))
+        XCTAssertEqual(LocationAuthorization.resolve(.notDetermined, accuracy: .fullAccuracy, servicesEnabled: nil), .notDetermined)
+        XCTAssertEqual(LocationAuthorization.resolve(.denied, accuracy: .fullAccuracy, servicesEnabled: true), .denied)
+        XCTAssertEqual(LocationAuthorization.resolve(.denied, accuracy: .fullAccuracy, servicesEnabled: false), .servicesDisabled)
+        XCTAssertEqual(LocationAuthorization.resolve(.restricted, accuracy: .fullAccuracy, servicesEnabled: true), .restricted)
+        XCTAssertEqual(LocationAuthorization.resolve(.authorizedWhenInUse, accuracy: .reducedAccuracy, servicesEnabled: true), .reduced)
+        XCTAssertEqual(LocationAuthorization.resolve(.authorizedWhenInUse, accuracy: .fullAccuracy, servicesEnabled: true), .full)
+    }
+
+    func testSystemLocationDrivesHudAndReloadCancelsWatch() async throws {
+        XCTAssertTrue(controller.locations.selectVirtual(false))
+        XCTAssertEqual(controller.locations.authorization, .full, "Grant Simulator location before starting the test")
+        _ = try await js("""
+            Object.defineProperty(navigator, 'geolocation', {get() { throw new Error('Browser GPS must not be opened on iOS'); }});
+            window.systemFixes = [];
+            window.addEventListener('lane-native', ({detail}) => {
+              if (detail.type === 'position') window.systemFixes.push(detail);
+            });
+            """)
+        try await plan(useVirtual: false)
+        let before = try await js("return window.systemFixes.length") as! Int
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.banner') && window.systemFixes.length >= \(before + 2)", seconds: 25)
+        XCTAssertTrue(controller.locations.updating)
+        XCTAssertFalse(controller.locations.virtual)
+        XCTAssertEqual(controller.locations.watches.count, 1)
+        let evidence = try await js("""
+            const [a,b] = window.systemFixes.slice(-2);
+            return {fixes: [a,b].map(x => [x.coords.longitude,x.coords.latitude,x.timestamp]),
+                    speed: document.querySelector('.speed-num')?.innerText,
+                    hud: document.querySelector('.banner')?.innerText};
+            """) as! [String: Any]
+        let fixes = try XCTUnwrap(evidence["fixes"] as? [[Double]])
+        XCTAssertGreaterThan(fixes[1][2], fixes[0][2])
+        XCTAssertNotEqual(fixes[1][1], fixes[0][1], "Simulator OS fixture must move between updates")
+        XCTAssertFalse((evidence["hud"] as? String ?? "").isEmpty)
+        print("IOS_SYSTEM_LOCATION_HUD: \(evidence)")
+        try await screenshot("stage3-system-location-hud")
+
+        controller.setForeground(false)
+        XCTAssertFalse(controller.locations.updating)
+        try await wait("document.querySelector('.gps-weak')?.innerText.includes('已暫停')")
+        let pausedCount = try await js("return window.systemFixes.length") as! Int
+        try await Task.sleep(for: .milliseconds(1250))
+        let countWhilePaused = try await js("return window.systemFixes.length") as? Int
+        XCTAssertEqual(countWhilePaused, pausedCount)
+        controller.setForeground(true)
+        try await wait("window.systemFixes.length > \(pausedCount) && !document.querySelector('.gps-weak')?.innerText.includes('已暫停')")
+        XCTAssertEqual(controller.locations.watches.count, 1)
+
+        _ = try await js("document.body.dataset.previousDocument='true'")
+        controller.webView.reload()
+        try await wait("!document.body.dataset.previousDocument && document.querySelector('.place-search-form input') && !document.querySelector('.loading')")
+        XCTAssertTrue(controller.locations.watches.isEmpty)
+        XCTAssertFalse(controller.locations.updating)
+        XCTAssertFalse(controller.navigating)
+        try await plan(useVirtual: false)
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.banner')")
+        XCTAssertEqual(controller.locations.watches.count, 1)
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        XCTAssertTrue(controller.locations.watches.isEmpty)
+        XCTAssertFalse(controller.locations.updating)
     }
 
     /// Run separately after simctl privacy revoke location, then restore permission.
@@ -284,6 +379,11 @@ final class ForegroundNavigationTests: XCTestCase {
             });
             """) as? String
         XCTAssertTrue(error?.contains("未授權") == true)
+        let denied = try await js("""
+            return await new Promise(resolve => window.LaneGeolocation.getCurrentPosition(
+              () => resolve('unexpected fix'), e => resolve(e.reason), {timeout:3000}));
+            """) as? String
+        XCTAssertEqual(denied, "denied")
         XCTAssertTrue(controller.locations.watches.isEmpty)
         XCTAssertFalse(controller.locations.updating)
         print("IOS_DENIED_LOCATION: \(error ?? "missing")")

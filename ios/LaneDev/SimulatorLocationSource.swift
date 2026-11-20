@@ -60,7 +60,8 @@ final class SimulatorLocationSource {
             if segment == route.count - 1 { playing = false }
         }
         onFix(CLLocation(coordinate: coordinate, altitude: 0, horizontalAccuracy: 6,
-            verticalAccuracy: -1, course: heading, speed: playing ? speed : 0, timestamp: Date()))
+            verticalAccuracy: -1, course: heading, courseAccuracy: heading >= 0 ? 0 : -1,
+            speed: playing ? speed : 0, speedAccuracy: 0, timestamp: Date()))
     }
 }
 #endif

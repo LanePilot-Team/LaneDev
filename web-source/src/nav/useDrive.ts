@@ -114,7 +114,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   const [following, setFollowing] = useState(true)
   const followingRef = useRef(true)
 
-  const sessionRef = useRef(0)
+  const pendingPermissionRef = useRef<AbortController | null>(null)
   const stopVisualRef = useRef<(() => void) | null>(null)
   /** 重新規劃換路線時，把車的補間動畫換到新路線帶上（沿用同一個 GpsDriver 與定位監聽） */
   const rebaseVisualRef = useRef<((path: { coords: [number, number][]; cum: number[] }) => void) | null>(null)
@@ -130,7 +130,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     return () => window.removeEventListener('navigation-zoom', onZoom)
   }, [p.mode])
   useEffect(() => () => {
-    sessionRef.current++
+    pendingPermissionRef.current?.abort()
     gpsDriverRef.current?.stop()
     stopVisualRef.current?.()
     voiceRef.current.reset()
@@ -252,7 +252,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   function stopAllDrivers() {
-    sessionRef.current++
+    pendingPermissionRef.current?.abort()
     nativeCommand('navigation', { active: false })
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
@@ -388,19 +388,25 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
 
   /** 對外的「開始導航」入口——包一層是為了不把 click 事件物件當成 resume 參數 */
   async function startGpsNav() {
-    const session = ++sessionRef.current
+    pendingPermissionRef.current?.abort()
+    const request = new AbortController()
+    pendingPermissionRef.current = request
+    gpsDriverRef.current?.stop()
+    stopVisualRef.current?.()
     p.setMode('drive')
     setDrive(null)
     setCanRetry(false)
     setGpsMsg('正在確認定位權限…')
     try {
-      await ensureLocation()
-      if (session === sessionRef.current) runGpsNav(false)
+      await ensureLocation(request.signal)
+      if (!request.signal.aborted) runGpsNav(false)
     } catch (e) {
-      if (session === sessionRef.current) {
+      if (!request.signal.aborted) {
         setGpsMsg(e instanceof Error ? e.message : '無法啟動定位')
         setCanRetry(true)
       }
+    } finally {
+      if (pendingPermissionRef.current === request) pendingPermissionRef.current = null
     }
   }
 

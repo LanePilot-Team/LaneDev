@@ -2,7 +2,7 @@
 
 ## 2026-11-20：第二階段額外發現
 
-- 工作區原有 Gradle wrapper 9.7.1 搭配 AGP 8.13.0 時，Gradle 在套用 `com.android.application` 階段回報 `InternalProblems` API 已移除。保留既有 wrapper 修改，同一 Android 專案用 Gradle 8.14.3／JDK 21／API 36 完成 APK 建置與單元測試。
+- Gradle Wrapper 9.7.1 搭配 AGP 8.13.0 時，Gradle 在套用 `com.android.application` 階段回報 `InternalProblems` 已移除。已將 Wrapper 恢復為 8.14.3，並以 JDK 21／Android SDK 36 執行 `bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks`。Debug APK 成功產出，1 項單元測試通過。
 - 本輪 Simulator 的繁中地圖與表單字型通過，WebKit 仍紀錄缺少 `AppleColorEmoji.ttc`，搜尋與設定等部分圖示顯示替代字元。保留為既有 runtime 問題，實際畫面見第二階段證據。
 
 ## 2026-11-18：第一階段盤點補充（本輪未修正程式）

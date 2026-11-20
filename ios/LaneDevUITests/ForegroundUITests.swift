@@ -147,6 +147,12 @@ final class ForegroundUITests: XCTestCase {
         XCTAssertTrue(direction.waitForExistence(timeout: 20), app.debugDescription)
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "release-core-location-navigation"; shot.lifetime = .keepAlways; add(shot)
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5) || app.state == .runningBackgroundSuspended)
+        app.activate()
+        XCTAssertTrue(direction.waitForExistence(timeout: 20))
+        let paused = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "前景導航已暫停")).firstMatch
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: paused)], timeout: 15), .completed)
         end.tap()
         XCTAssertTrue(app.webViews.textFields.firstMatch.waitForExistence(timeout: 10))
     }

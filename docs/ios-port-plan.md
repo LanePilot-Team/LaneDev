@@ -126,7 +126,7 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | --- | --- | --- | --- |
 | 第一階段：環境與移植盤點 | 規範、工具、原生功能、版本、WK 風險、路線基準與移除清單。 | 實際環境命令、lock 檢查、兩種基準重跑；明列既有／本輪／待確認，保存原工作區。 | **本輪完成**；證據連結如上。 |
 | 第二階段：容器／相容性收斂 | 沿用既有 Swift＋WK 專案，對齊最低 iOS 16.4、原生與共用橋接，補儲存／Worker／錯誤路徑。 | App／測試 target 與產生器對齊；Simulator Debug／Release 與 arm64 build；無 Mac 伺服器載入全部本機資料；localStorage 重啟驗證；非法 origin／寫入／校驗失敗不能啟動導航；確認 WebGL2／Worker／字型。 | 已有前次基礎實作與證據；**不把它當成本輪最低版本門檻已通過**。16.x runtime 不足需實體最低版本裝置或補足相容環境。 |
-| 第三階段：前景導航操作 | 搜尋、起終點、汽機車／車道／待轉、語音、偏航、抵達、定位來源與錯誤、Home／返回。 | 共用測試含 24＋35 基準；同一定位核心且來源互斥；權限拒絕／概略精度／掉訊可處理；開始／結束不殘留 watch 或亮屏；實際 UI 操作與截圖；Android assembleDebug／testDebugUnitTest 回歸。 | 前次已有 Simulator 前景成果；需依第二階段調整重跑。Google 若仍受阻，獨立列示，不阻斷本地搜尋與核心驗收。 |
+| 第三階段：平台介面與 iOS 原生定位 | 單次、持續定位與授權；精度、時間、行進方向與羅盤；中斷、恢復及取消訂閱。 | Simulator 系統注入經 Core Location、橋接、共用核心進入導航 HUD；權限與生命週期測試；重跑 24＋35 路由基準與 Android 建置。 | 本輪實作與操作結果見第三階段紀錄。 |
 | 第四階段：移除虛擬功能與實機 | 先完成下列實際刪除，再處理 Team／簽章、iPhone 安裝與道路／音訊／效能驗證。 | 刪除來源／UI／橋接／hook／測試／腳本入口；重新產生專案與打包；源码與成品掃描、iOS／Android 回歸；實體移動與聽測有可重現證據。 | 受實體 iPhone／簽章環境限制；不能以 Simulator／unsigned build 替代。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
@@ -186,7 +186,43 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 - [載入進度](ios-evidence/stage2/map-loading-progress.png)、[版本錯誤與重試](ios-evidence/stage2/map-loading-error.png)、[重試恢復](ios-evidence/stage2/map-recovered.png)。
 - [執行紀錄](ios-evidence/stage2/verification.txt) 與 [成品模式／雜湊稽核](ios-evidence/stage2/package-audit.json)。
 
-第三階段接續既有前景導航，按第一階段的操作門檻驗收與補測。iOS 16.4 runtime 缺席、實體 iPhone、簽章、Google Places 授權，以及實際鎖屏仍是獨立項目。
+第三階段接續既有前景導航，收斂平台定位介面，並使用 Simulator 的系統位置注入驗證。iOS 16.4 runtime 缺席、實體 iPhone、簽章、Google Places 授權，以及實際鎖屏仍是獨立項目。
+
+## 第三階段：平台介面與 iOS 原生定位（2026-11-20）
+
+### 定位資料流與行為
+
+| 入口 | 資料流 |
+| --- | --- |
+| 單次定位／規劃起點 | `LocateControl`、`PlanPanel` → `geolocation.ts` → `client.ts` 送出 `requestLocation`，等待相同 ID 的 `lane-native/locationResult` → 選定來源的 `getCurrentPosition` → 把 `{longitude, latitude}` 轉為 `[經度, 緯度]`。關閉面板、手動選起點或進入導航時取消等待，iOS 也同步刪除 native 登記。 |
+| 持續導航 | `useDrive` 先確認授權，`GpsDriver` 用同一 `LocationSource` 啟停訂閱。`gpsNav.ts` 以共同路線帶、車道、待轉、偏航和抵達策略消化位置，單點重規劃沿用同一訂閱。 |
+| iOS 橋接 | `App → window.LaneNative.postMessage → LocationService → CLLocationManager`，`position`、`positionError`、`locationAuthorization`、`heading`、`lifecycle` 由 `lane-native` 回傳。`Bridge.js` 在同一原生來源多工單次與持續請求，用跨文件唯一的 ID 濾掉延遲回覆。重載或 WebKit 程序終止時，原生清除訂閱與定位需求。iOS 橋接無法連線時顯示錯誤。 |
+| Android／瀏覽器 | Android 既有授權命令與 WebView `navigator.geolocation` 繼續使用。瀏覽器使用同一 Geolocation 介面。App 內的 Simulator 虛擬工具與 Core Location 各自只提供定位，兩者共用位置檢查和 `GpsDriver`，導航中鎖定來源。 |
+
+- Core Location 送出 Unix 毫秒、m/s、公尺與角度，不合法的必填欄位捨棄，未知高度、速度和航向用 `null`。開始／恢復前的定位、超過 10 秒、超前本機時鐘超過 1 秒、重複及倒退資料皆擋在導航外。車速由共用核心轉為 km/h，缺值時使用連續定位的位移和時間估算。
+- 單次起點與車道導航均要求精確位置。首次要求使用期間授權，拒絕、受限、概略與系統定位服務關閉各有提示。系統服務查詢離開主執行緒。授權改變時停止產生進度，持續訂閱在恢復精確授權後等待新位置。Core Location 暫時沒有 fix 時等待後續回呼，前景定位逾時維持既有 15 秒並支援恢復。離開前景時停止定位與羅盤並暫停定位逾時計時，回到前景才重新啟動。
+- 導航優先使用可信的路線／路網切線或行進位移，iOS 在移動且精度可靠時可用 course 補足方向。低速保留車頭，羅盤只在尚無車頭時補值。真北可用時優先，否則採磁北，精度不可靠或超過 3 秒即隱藏。 [Apple 精度授權](https://developer.apple.com/documentation/corelocation/cllocationmanager/accuracyauthorization) · [Core Location 航向精度](https://developer.apple.com/documentation/corelocation/cllocation/courseaccuracy)
+
+### 本輪實際驗證
+
+使用 Xcode 26.2、iPhone 17 Pro Simulator、iOS 26.3.1。測試工具使用 `simctl location start` 注入系統座標，測後清除，拒絕測試也恢復了原先的測試授權。
+
+| 入口 | 結果 |
+| --- | --- |
+| `node ios/tools/build-web.mjs all`；`npm run build`；`node tools/sync-web-assets.mjs` | 306 項共用測試通過，包含 35 組楠梓人工參考。24 組預計算前後路由一致，其中 22 組有解。iOS Debug／Release 資產與 Android 正式資產均同步並通過內容校驗。官方道路、待轉區與參考資料的位元組維持原樣。 |
+| `node ios/tools/test-simulator.mjs debug` | 9 項 XCTest、2 項 XCUITest 通過。單次定位由 Core Location 送出 `[120.2758, 22.73310799]`，精度 5 m，回覆後 native watch 歸零。使用 Core Location 規劃到國立高雄大學並開始導航。瀏覽器定位 getter 設為一旦呼叫就拋錯，兩筆系統 fix 仍成功抵達 WKWebView，緯度由 `22.73314414` 更新至 `22.73315317`，時間差約 1 秒。畫面顯示 4 km/h、前方 150 公尺左轉與車道指引。 [Simulator 原始畫面](ios-evidence/stage3/system-location-hud.png) |
+| 同一 Debug 測試中的暫停、恢復與重載 | 原生轉入 inactive 後停止更新，畫面顯示暫停，1.25 秒觀察期間收到 0 筆位置。回到前景由新位置清除暫停訊息，訂閱維持 1 個。重載 WKWebView 時降為 0，重新導航為 1，結束後為 0。原有偏航測試仍在同一訂閱重規劃並抵達。 |
+| `node ios/tools/test-simulator.mjs release` | 2 項 XCUITest 通過。正式包以系統注入定位啟動前景導航，實際按 Home 再返回後恢復方向指引，並能結束導航。 |
+| `node ios/tools/test-simulator.mjs denied` | 1 項 XCTest 通過。實際撤銷 App 的 Simulator 定位授權，確認授權訊息、單次定位 `denied` 錯誤與訂閱清理。概略、全域服務關閉、受限、過期、逾時與無效方向由 Swift／Node 測試覆蓋。 |
+| iPhone 目標與 Android 回歸 | Release `generic/platform=iOS` arm64 未簽章建置成功。以 Gradle Wrapper 8.14.3、JDK 21、SDK 36 執行 `assembleDebug testDebugUnitTest --offline --rerun-tasks`，產出 28 MB Debug APK，1 項單元測試通過。Android 此輪使用建置與測試結果驗證，裝置操作仍待測。 |
+
+完整 Xcode log 與 `.xcresult` 位於 `ios/.build/test-results/` 的 `debug-2026-11-20T15-17-59-204Z`、`release-2026-11-20T15-21-12-291Z`、`denied-2026-11-20T15-22-04-752Z`。首輪共用測試有一處沿用舊式單次定位參數，改為新介面後全數重跑通過。
+
+### 待確認及下一階段
+
+- 實體 iPhone 的 GPS、磁場干擾、初次授權彈窗、概略位置和全域服務設定切換待實際操作。iOS 16.4 執行需對應 runtime 或裝置，有簽章的 iPhone 安裝需 Team 與實體裝置。
+- Home 已驗證前景導航暫停與恢復。背景持續導航及鎖屏持續導航目前未支援，真正鎖屏的操作行為仍待獨立驗證。
+- 下一階段依上方清單刪除 App 內虛擬定位來源、工具列、橋接接點及相關測試，再跑共用、iOS 與 Android 驗證，之後進行有簽章的實機前景驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍受金鑰及來源授權限制。
 
 ---
 

@@ -16,18 +16,23 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
   const [stepsOpen, setStepsOpen] = useState(true)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
-  const requestId = useRef(0)
-  useEffect(() => () => { requestId.current++ }, [])
+  const pendingLocation = useRef<AbortController | null>(null)
+  useEffect(() => () => pendingLocation.current?.abort(), [])
   async function useCurrentStart() {
-    const id = ++requestId.current
+    pendingLocation.current?.abort()
+    const request = new AbortController()
+    pendingLocation.current = request
     setLocating(true)
     setLocationError('')
     try {
-      const result = await requestCurrentPosition()
-      if (id === requestId.current) planner.setCurrentStart(result.position)
+      const result = await requestCurrentPosition({ signal: request.signal })
+      if (!request.signal.aborted) planner.setCurrentStart(result.position)
     } catch (e) {
-      if (id === requestId.current) setLocationError(e instanceof Error ? e.message : '無法定位')
-    } finally { if (id === requestId.current) setLocating(false) }
+      if (!request.signal.aborted) setLocationError(e instanceof Error ? e.message : '無法定位')
+    } finally {
+      if (pendingLocation.current === request) pendingLocation.current = null
+      if (!request.signal.aborted) setLocating(false)
+    }
   }
   useEffect(() => {
     if (!planner.stopsRef.current[0]?.pos) void useCurrentStart()
@@ -36,7 +41,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
   const label = (i: number) => i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
   function editStop(id: number) {
     if (id === planner.stopsRef.current[0]?.id) {
-      requestId.current++
+      pendingLocation.current?.abort()
       setLocating(false)
     }
     planner.selectStop(id)

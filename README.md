@@ -8,9 +8,19 @@ iOS 前景導航專案位於 [`ios/LaneDev.xcodeproj`](ios/LaneDev.xcodeproj)，
 
 ## 建置
 
+專案使用 Android Gradle Plugin 8.13.0 與 Gradle Wrapper 8.14.3。Android Studio 的 Gradle JDK 請選 JDK 21。
+
+Windows PowerShell：
+
 ```powershell
 .\tools\gradle.ps1 assembleDebug
 .\tools\gradle.ps1 testDebugUnitTest
+```
+
+macOS 或 Linux 終端機請先將 `JAVA_HOME` 指向 JDK 21，並將 `ANDROID_HOME` 指向安裝了 SDK Platform 36 的 Android SDK：
+
+```sh
+bash gradlew assembleDebug testDebugUnitTest
 ```
 
 APK：`app/build/outputs/apk/debug/app-debug.apk`。

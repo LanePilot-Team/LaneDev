@@ -1,8 +1,8 @@
-// 瀏覽器定位共用能力：環境檢查、錯誤文案，以及供路線起點使用的一次性定位。
+// 共用定位能力：環境檢查、錯誤文案，以及供路線起點使用的一次性定位。
 // GPS 導航與地標搜尋都從這裡取得相同的安全連線判斷與錯誤體驗。
 
 import { ensureLocation } from '../native/client.ts'
-import { locationProvider } from '../native/platform.ts'
+import { locationProvider, type LocationAuthorization, type LocationSource } from '../native/platform.ts'
 
 export const HIGH_ACCURACY_POSITION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -15,11 +15,7 @@ export interface CurrentLocation {
   accuracyM: number | null
 }
 
-type CurrentPositionGeolocation = Pick<Geolocation, 'getCurrentPosition'>
-
-function browserGeolocation(): CurrentPositionGeolocation | null {
-  return locationProvider()
-}
+type CurrentPositionGeolocation = Pick<LocationSource, 'getCurrentPosition' | 'getAuthorization'>
 
 /** Geolocation 需要 HTTPS；localhost 與 127.0.0.1 保留本機開發例外。 */
 export function isSecureContext(
@@ -35,15 +31,17 @@ export function geolocationUnavailableMessage(
   supported = !!locationProvider(),
   secureContext = isSecureContext(),
 ): string | null {
-  if (!supported) return '此瀏覽器不支援 Geolocation API'
+  if (!supported) return typeof window !== 'undefined' && window.LanePlatform === 'ios'
+    ? 'iOS 定位服務未能連線，請重新載入 App' : '此瀏覽器不支援 Geolocation API'
   if (!secureContext) return '需要 HTTPS 才能取得定位，請用 tailscale serve 或 localhost 開啟'
   return null
 }
 
-/** 將瀏覽器的數字錯誤碼收斂成 GPS 導航與路線規劃共用的繁中訊息。 */
+/** iOS 能區分系統、權限與生命週期原因；瀏覽器沿用標準數字錯誤碼。 */
 export function geolocationErrorMessage(
-  error: Pick<GeolocationPositionError, 'code' | 'message'>,
+  error: Pick<GeolocationPositionError, 'code' | 'message'> & { reason?: LocationAuthorization | 'paused' | 'unavailable' | 'timeout' },
 ): string {
+  if (error.reason && error.message) return error.message
   if (error.code === 1) return '未授權定位，請在設定中的 App 定位權限允許精確位置'
   if (error.code === 2) return 'GPS 訊號不可用'
   if (error.code === 3) return 'GPS 取得逾時'
@@ -53,20 +51,34 @@ export function geolocationErrorMessage(
 /**
  * 取得一筆高精度位置。參數可注入，讓定位流程不依賴真實瀏覽器也能測試。
  */
-export async function requestCurrentPosition(
-  geolocation: CurrentPositionGeolocation | null = browserGeolocation(),
-  secureContext = isSecureContext(),
-): Promise<CurrentLocation> {
+export async function requestCurrentPosition({
+  geolocation = locationProvider(), secureContext = isSecureContext(), signal,
+}: {
+  geolocation?: CurrentPositionGeolocation | null
+  secureContext?: boolean
+  signal?: AbortSignal
+} = {}): Promise<CurrentLocation> {
   const unavailable = geolocationUnavailableMessage(Boolean(geolocation), secureContext)
   if (unavailable) return Promise.reject(new Error(unavailable))
 
-  if (geolocation === browserGeolocation()) await ensureLocation()
+  if (geolocation === locationProvider()) await ensureLocation(signal)
+  signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
-    geolocation!.getCurrentPosition(
+    let cancel: void | (() => void)
+    const cleanup = () => signal?.removeEventListener('abort', abort)
+    const abort = () => {
+      cancel?.()
+      cleanup()
+      reject(signal?.reason)
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    cancel = geolocation!.getCurrentPosition(
       (result) => {
+        cleanup()
+        if (signal?.aborted) return
         const longitude = result.coords.longitude
         const latitude = result.coords.latitude
-        if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+        if (!Number.isFinite(longitude) || Math.abs(longitude) > 180 || !Number.isFinite(latitude) || Math.abs(latitude) > 90) {
           reject(new Error('定位回傳的座標無效'))
           return
         }
@@ -76,7 +88,10 @@ export async function requestCurrentPosition(
           accuracyM: Number.isFinite(accuracy) ? Math.max(0, accuracy) : null,
         })
       },
-      (error) => reject(new Error(geolocationErrorMessage(error))),
+      (error) => {
+        cleanup()
+        if (!signal?.aborted) reject(new Error(geolocationErrorMessage(error)))
+      },
       HIGH_ACCURACY_POSITION_OPTIONS,
     )
   })

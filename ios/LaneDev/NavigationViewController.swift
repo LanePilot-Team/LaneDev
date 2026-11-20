@@ -40,7 +40,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         catch { showError(error.localizedDescription); return }
 
         let config = WKWebViewConfiguration()
-        config.userContentController.add(self, name: "LaneNative")
+        config.userContentController.add(BridgeMessageHandler(self), name: "LaneNative")
         config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.dataset.platform='ios'",
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -114,7 +114,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame,
+        guard webReady, message.frameInfo.isMainFrame,
               message.frameInfo.request.url?.scheme == "lanedev", message.frameInfo.request.url?.host == "app",
               let text = message.body as? String, text.utf8.count < 2_000_000,
               let data = text.data(using: .utf8), let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -124,8 +124,9 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         switch command["type"] as? String {
         case "status": status()
         case "requestLocation": locations.requestPermission(id: command["id"] as? String ?? "")
-        case "locationStart": if let id = command["id"] as? Int { locations.start(id: id) }
-        case "locationStop": if let id = command["id"] as? Int { locations.stop(id: id) }
+        case "locationPermissionCancel": if let id = command["id"] as? String { locations.cancelPermission(id: id) }
+        case "locationStart": if let id = command["id"] as? String { locations.start(id: id) }
+        case "locationStop": if let id = command["id"] as? String { locations.stop(id: id) }
         case "speak": speech.speak(command["text"] as? String ?? "", priority: command["priority"] as? Bool ?? false)
         case "stopSpeech": speech.stop()
         case "navigation": setNavigation(command["active"] as? Bool ?? false)
@@ -176,11 +177,12 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         webReady = false; locations.reset(); setNavigation(false)
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { webReady = true; status() }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { webReady = true }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { locations.publishState(); status() }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        locations.reset(); setNavigation(false)
+        webReady = false; locations.reset(); setNavigation(false)
         showError("導航畫面已被系統終止，請重新載入並規劃路線。")
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -227,5 +229,15 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
             stack.leadingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -24),
         ])
+    }
+}
+
+private final class BridgeMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var target: NavigationViewController?
+
+    init(_ target: NavigationViewController) { self.target = target }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(controller, didReceive: message)
     }
 }

@@ -1,16 +1,23 @@
-/** Native iOS supplies one Geolocation-compatible source; Android/browser keeps its provider. */
+export type LocationAuthorization = 'checking' | 'notDetermined' | 'denied' | 'restricted' | 'reduced' | 'full' | 'servicesDisabled'
+
+export interface LocationSource extends Pick<Geolocation, 'watchPosition' | 'clearWatch'> {
+  getCurrentPosition(...args: Parameters<Geolocation['getCurrentPosition']>): void | (() => void)
+  getAuthorization?(): LocationAuthorization
+}
+
+/** Native iOS supplies one source; Android/browser keeps its provider. */
 declare global {
   interface Window {
     LanePlatform?: 'ios'
-    LaneGeolocation?: Pick<Geolocation, 'getCurrentPosition' | 'watchPosition' | 'clearWatch'>
+    LaneGeolocation?: LocationSource
     // Temporary iOS Simulator Debug hook. Delete at the physical-iPhone milestone.
     LaneSimulator?: { setRoute(coords: [number, number][]): void }
   }
 }
 
-export function locationProvider() {
-  if (typeof window !== 'undefined' && window.LanePlatform === 'ios' && window.LaneGeolocation) {
-    return window.LaneGeolocation
+export function locationProvider(): LocationSource | null {
+  if (typeof window !== 'undefined' && window.LanePlatform === 'ios') {
+    return window.LaneGeolocation ?? null
   }
   return typeof navigator !== 'undefined' && 'geolocation' in navigator ? navigator.geolocation : null
 }

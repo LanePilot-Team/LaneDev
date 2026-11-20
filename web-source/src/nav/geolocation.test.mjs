@@ -61,7 +61,7 @@ test('一次性定位會使用高精度設定並回傳座標與精度', async ()
     },
   }
 
-  const result = await requestCurrentPosition(geolocation, true)
+  const result = await requestCurrentPosition({ geolocation, secureContext: true })
 
   assert.deepEqual(result, {
     position: [120.2758, 22.7327],
@@ -72,7 +72,7 @@ test('一次性定位會使用高精度設定並回傳座標與精度', async ()
 
 test('一次性定位沿用共用的環境與錯誤處理', async () => {
   await assert.rejects(
-    requestCurrentPosition(null, false),
+    requestCurrentPosition({ geolocation: null, secureContext: false }),
     /此瀏覽器不支援 Geolocation API/,
   )
 
@@ -82,7 +82,7 @@ test('一次性定位沿用共用的環境與錯誤處理', async () => {
     },
   }
   await assert.rejects(
-    requestCurrentPosition(denied, true),
+    requestCurrentPosition({ geolocation: denied, secureContext: true }),
     /未授權定位/,
   )
 })
@@ -101,7 +101,28 @@ test('一次性定位拒絕無效座標', async () => {
   }
 
   await assert.rejects(
-    requestCurrentPosition(geolocation, true),
+    requestCurrentPosition({ geolocation, secureContext: true }),
     /定位回傳的座標無效/,
   )
+})
+
+test('離開定位畫面會取消已登記的 iOS 單次請求並忽略遲到 callback', async () => {
+  const controller = new AbortController()
+  let success, cancelCount = 0
+  const geolocation = {
+    getCurrentPosition(onSuccess) {
+      success = onSuccess
+      return () => cancelCount++
+    },
+  }
+  const result = requestCurrentPosition({ geolocation, secureContext: true, signal: controller.signal })
+  controller.abort()
+  success({ coords: { longitude: 120, latitude: 22, accuracy: 5 } })
+  await assert.rejects(result, { name: 'AbortError' })
+  assert.equal(cancelCount, 1)
+})
+
+test('原生錯誤保留關閉定位服務與概略位置等可操作文案', () => {
+  assert.equal(geolocationErrorMessage({ code: 1, reason: 'servicesDisabled', message: '手機定位服務已關閉' }), '手機定位服務已關閉')
+  assert.equal(geolocationErrorMessage({ code: 1, reason: 'reduced', message: '請開啟精確位置' }), '請開啟精確位置')
 })

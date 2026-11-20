@@ -55,6 +55,21 @@ test('手機 GPS 關閉會回傳可操作的錯誤', async () => {
   await assert.rejects(waiting, /手機定位已關閉/)
 })
 
+test('取消 iOS 定位授權請求會清除等待並通知原生端', async () => {
+  const controller = new AbortController()
+  window.LanePlatform = 'ios'
+  try {
+    const waiting = client.ensureLocation(controller.signal)
+    const { id } = messages.at(-1)
+    controller.abort()
+    assert.deepEqual(messages.at(-1), { type: 'locationPermissionCancel', id })
+    events.dispatchEvent(new CustomEvent('lane-native', { detail: { type: 'locationResult', id } }))
+    await assert.rejects(waiting, { name: 'AbortError' })
+  } finally {
+    delete window.LanePlatform
+  }
+})
+
 test('不可靠方向不會被當成有效朝向', () => {
   events.dispatchEvent(new CustomEvent('lane-native', { detail: { type: 'heading', value: 123 } }))
   assert.equal(client.deviceHeading(), 123)

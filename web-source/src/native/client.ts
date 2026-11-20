@@ -75,21 +75,31 @@ if (typeof window !== 'undefined') window.addEventListener('lane-native', ((even
   })
 }) as EventListener)
 
-export function ensureLocation(): Promise<void> {
+export function ensureLocation(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason)
   if (typeof window === 'undefined' || !window.LaneNative) return Promise.resolve()
   return new Promise((resolve, reject) => {
     const id = nativeRequestId()
-    const timeout = window.setTimeout(() => done('定位授權逾時，請重試'), 60000)
-    function done(error?: string) {
+    const timeout = window.setTimeout(() => cancel(new Error('定位授權逾時，請重試')), 60000)
+    function cleanup() {
       clearTimeout(timeout)
       window.removeEventListener('lane-native', handle)
-      if (error) reject(new Error(error)); else resolve()
+      signal?.removeEventListener('abort', abort)
     }
+    function cancel(error: unknown) {
+      cleanup()
+      if (window.LanePlatform === 'ios') nativeCommand('locationPermissionCancel', { id })
+      reject(error)
+    }
+    function abort() { cancel(signal?.reason) }
     function handle(event: Event) {
       const data = (event as CustomEvent).detail
-      if (data.type === 'locationResult' && data.id === id) done(data.error || undefined)
+      if (data?.type !== 'locationResult' || data.id !== id) return
+      cleanup()
+      if (data.error) reject(new Error(data.error)); else resolve()
     }
     window.addEventListener('lane-native', handle)
+    signal?.addEventListener('abort', abort, { once: true })
     nativeCommand('requestLocation', { id })
   })
 }

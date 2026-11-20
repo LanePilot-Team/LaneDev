@@ -111,5 +111,6 @@ web-source.zip
 ios/.build/
 ios/.web/
 ios/.build-device/
+ios/GooglePlaces.local.xcconfig
 **/xcuserdata/
 *.xcresult/

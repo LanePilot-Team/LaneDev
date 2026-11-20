@@ -169,7 +169,7 @@ export function RecenterButton({ onClick }: { onClick: () => void }) {
 /** 導航中（drive 模式）的整組 HUD：看板、速度、測速提示、底部列；GPS 未定位時顯示過渡列 */
 export function DriveHUD({
   drive, twoStage, profile, gpsMsg, canRetry, cameraAlert,
-  destinationName,
+  destinationName, nextStop,
   onEnd, onRetry,
 }: {
   drive: DriveState | null
@@ -180,6 +180,7 @@ export function DriveHUD({
   canRetry: boolean
   /** 目的地名稱（有選地點才有）——抵達卡與收尾語音都用它 */
   destinationName?: string
+  nextStop?: string | null
   /** 測速照相提示（沒有就不顯示卡片） */
   cameraAlert: SpeedCameraAlert | null
   onEnd: () => void
@@ -236,6 +237,7 @@ export function DriveHUD({
                 )).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' 抵達'}
           </span>
           {drive.roadName && <span className="trip-road">{drive.roadName}</span>}
+          {nextStop && !drive.arrived && <span className="trip-stop">下一站 {nextStop}</span>}
         </div>
       </div>
     </>

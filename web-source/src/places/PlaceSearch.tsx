@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { PlaceAddress } from './PlaceAddress.tsx'
 import { asset } from '../core/asset.ts'
 import type { MapCore } from '../app/mapCore.ts'
@@ -24,6 +24,7 @@ import {
   savedPlaceRecord,
   useSavedPlaces,
 } from './savedPlaces.ts'
+import { IOS_GOOGLE_PLACES_UNCONFIGURED, searchNativeGooglePlace } from './nativeGooglePlaces.ts'
 
 type SearchProvider = 'local' | 'google'
 
@@ -34,7 +35,7 @@ export function PlaceSearch({
   onSelect,
   onClear,
   onChooseStart,
-  picker = false, initialQuery = '', searchLabel = '搜尋地點或地址', inputId,
+  picker = false, initialQuery = '', searchLabel = '搜尋地點或地址', inputId, children,
 }: {
   inputId?: string
   picker?: boolean
@@ -46,8 +47,12 @@ export function PlaceSearch({
   onSelect: (destination: DestinationSelection) => void
   onClear: () => void
   onChooseStart: (destination: DestinationSelection) => void
+  children?: ReactNode
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const ios = window.LanePlatform === 'ios'
+  const nativeGoogleRequest = useRef<AbortController | null>(null)
+  useEffect(() => () => nativeGoogleRequest.current?.abort(), [])
   useEffect(() => { if (picker) inputRef.current?.select() }, [picker])
   const [places, setPlaces] = useState<PlaceRecord[]>([])
   const [query, setQuery] = useState(initialQuery)
@@ -92,6 +97,9 @@ export function PlaceSearch({
   }
 
   function clearSearch() {
+    nativeGoogleRequest.current?.abort()
+    nativeGoogleRequest.current = null
+    setGoogleState('idle')
     setQuery('')
     setProvider('local')
     setGoogleSubmittedQuery('')
@@ -112,18 +120,39 @@ export function PlaceSearch({
     if (!submittedQuery || googleState === 'loading') return
 
     const center = core.mapRef.current?.getCenter()
+    const bias: [number, number] | undefined = center ? [center.lng, center.lat] : undefined
+    if (ios) {
+      inputRef.current?.blur()
+      const request = new AbortController()
+      nativeGoogleRequest.current = request
+      setGoogleState('loading')
+      setGoogleSelectionError(null)
+      try {
+        const result = await searchNativeGooglePlace(submittedQuery, bias, request.signal)
+        if (result && !request.signal.aborted) showDestination(result)
+      } catch (error) {
+        if (!request.signal.aborted) setGoogleSelectionError(error instanceof Error ? error.message : 'Google Places 暫時無法搜尋')
+      } finally {
+        if (nativeGoogleRequest.current === request) {
+          nativeGoogleRequest.current = null
+          if (!request.signal.aborted) setGoogleState('idle')
+        }
+      }
+      return
+    }
     setProvider('google')
     setGoogleSubmittedQuery(submittedQuery)
     setGoogleSelectionError(null)
     await googleSearchRef.current?.search(
       submittedQuery,
-      center ? [center.lng, center.lat] : undefined,
+      bias,
     )
   }
 
   function showDestination(destination: DestinationSelection) {
     const map = core.mapRef.current
     if (!map || mapLoading || !map.getSource('placeSelection')) return
+    inputRef.current?.blur()
     onSelect(destination)
     if (picker) return
     map.flyTo({
@@ -180,6 +209,12 @@ export function PlaceSearch({
           value={query}
           onChange={(event) => {
             const nextQuery = event.target.value
+            if (nativeGoogleRequest.current) {
+              nativeGoogleRequest.current.abort()
+              nativeGoogleRequest.current = null
+              setGoogleState('idle')
+            }
+            setGoogleSelectionError(null)
             setQuery(nextQuery)
             if (!nextQuery.trim()) {
               setProvider('local')
@@ -205,6 +240,7 @@ export function PlaceSearch({
           {provider === 'google' ? 'Google 搜尋' : '搜尋'}
         </button>
       </form>
+      {children}
 
       {focused && !hasQuery && !resolvedSelected && (
         <div className="saved-place-shortcuts" role="group" aria-label="常用地點">
@@ -255,17 +291,20 @@ export function PlaceSearch({
           )}
           {dataState !== 'loading' && (
             <div className={`place-provider-switch${results.length === 0 ? ' prominent' : ''}`}>
-              <span>{results.length > 0 ? '沒有你要的地點？' : 'OSM＋TDX 沒有這個地點？'}</span>
+              <span>{ios && !window.LaneGooglePlacesAvailable
+                ? IOS_GOOGLE_PLACES_UNCONFIGURED
+                : results.length > 0 ? '沒有你要的地點？' : 'OSM＋TDX 沒有這個地點？'}</span>
               <button type="button" onClick={() => void searchWithGoogle()}
-                disabled={!hasQuery || googleState === 'loading'}>
+                disabled={!hasQuery || googleState === 'loading' || (ios && !window.LaneGooglePlacesAvailable)}>
                 使用 Google Places 搜尋
               </button>
             </div>
           )}
+          {ios && googleSelectionError && <div className="google-selection-error" role="alert">{googleSelectionError}</div>}
         </div>
       )}
 
-      <div className="place-results google-provider-results"
+      {!ios && <div className="place-results google-provider-results"
         hidden={!hasQuery || provider !== 'google' || Boolean(resolvedSelected)}
         aria-label="Google Places 搜尋結果">
         <div className="google-place-header">
@@ -285,7 +324,7 @@ export function PlaceSearch({
         {googleSelectionError && (
           <div className="google-selection-error" role="alert">{googleSelectionError}</div>
         )}
-      </div>
+      </div>}
 
       {resolvedSelected && (
         <div className="place-route-choice"
@@ -297,7 +336,7 @@ export function PlaceSearch({
               <b>{destinationLabel(resolvedSelected)}</b>
               {resolvedSelected.provider === 'local'
                 ? <PlaceAddress place={resolvedSelected.place} addressOnly />
-                : <small>地址請見 Google 搜尋結果</small>}
+                : <small>地點來源 Google Maps</small>}
             </span>
             <button type="button" onClick={clearMarker}>變更</button>
           </div>

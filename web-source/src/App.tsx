@@ -90,7 +90,7 @@ export default function App() {
     })
   const planner = usePlanner(core)
   const {
-    drive, gpsMsg, canRetry, cameraAlert,
+    drive, gpsMsg, canRetry, cameraAlert, nextStop,
     startGpsNav, stopAllDrivers,
     following, recenter,
     startSimDrive, sim,
@@ -254,7 +254,7 @@ export default function App() {
           drive={drive} twoStage={planner.isTwoStage(drive?.next ?? null)}
           profile={planner.profile} gpsMsg={gpsMsg}
           canRetry={canRetry}
-          cameraAlert={cameraAlert}
+          cameraAlert={cameraAlert} nextStop={nextStop}
           destinationName={destinationName}
           onEnd={!drive && canRetry ? cancelDriveStart : endDrive}
           onRetry={startGpsNav}

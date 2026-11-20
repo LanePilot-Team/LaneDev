@@ -33,6 +33,7 @@ import {
 } from '../core/speedCameras.ts'
 import { SpeedCameraVoice } from './speedCameraVoice.ts'
 import { deviationFeatures } from './roadMatch.ts'
+import { pendingRouteTargets } from './routeTargets.ts'
 
 /** 接近待轉區時的高亮距離。 */
 const ZONE_HIGHLIGHT_RANGE_M = 160
@@ -82,6 +83,7 @@ export interface UseDriveResult {
   canRetry: boolean
   /** 目前該顯示的測速照相提示（沒有就是 null） */
   cameraAlert: SpeedCameraAlert | null
+  nextStop: string | null
   startGpsNav: () => void
   /** 停止目前的 GPS 導航並清空行駛相關 state；給 endDrive/clearAllRoute 共用 */
   stopAllDrivers: () => void
@@ -96,6 +98,9 @@ export interface UseDriveResult {
 
 export function useDrive(p: UseDriveParams): UseDriveResult {
   const gpsDriverRef = useRef<GpsDriver | null>(null)
+  const routeTargetsRef = useRef<Stop[]>([])
+  const routeProgressRef = useRef(0)
+  const [nextStop, setNextStop] = useState<string | null>(null)
   const simDriverRef = useRef<InstanceType<typeof SimDriver> | null>(null)
   const [simMultiplier, setSimMultiplierState] = useState(3)
   const [simPaused, setSimPaused] = useState(false)
@@ -256,6 +261,9 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     nativeCommand('navigation', { active: false })
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
+    routeTargetsRef.current = []
+    routeProgressRef.current = 0
+    setNextStop(null)
     simDriverRef.current?.stop()
     simDriverRef.current = null
     stopVisualRef.current?.()
@@ -287,6 +295,11 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const route = p.routeRef.current
     const map = p.mapRef.current
     if (!route || !map) return
+    if (!resume) {
+      routeTargetsRef.current = p.stopsRef.current.slice(1)
+      routeProgressRef.current = 0
+    }
+    publishNextStop()
     p.setMode('drive')
     nativeCommand('navigation', { active: true })
     map.setLayoutProperty('oneway-arrow', 'visibility', 'none')
@@ -365,6 +378,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       (s, fix) => {
         if (import.meta.env.MODE === 'ios-simulator' && s.arrived) window.LaneSimulator?.arrive()
         lastDriveRef.current = s
+        routeProgressRef.current = Math.max(routeProgressRef.current, s.traveledM)
+        publishNextStop()
         updateZoneHighlight(s)
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
         if (!fix || s.gpsWeak || document.hidden) freeze()
@@ -416,15 +431,12 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
    * 目前進度之後的停靠點都要照原順序繞經，最後才是終點。
    */
   function remainingTargets(): Stop[] {
-    const stops = p.stopsRef.current
-    const to = stops[stops.length - 1]
-    if (!to?.pos) return []
-    const vias = stops.slice(1, -1)
-    const viaDistM = p.routeRef.current?.viaDistM ?? []
-    const traveledM = lastDriveRef.current?.traveledM ?? 0
-    const pending = vias.filter((stop, i) =>
-      !!stop.pos && (viaDistM[i] === undefined || viaDistM[i] > traveledM + 1))
-    return [...pending, to]
+    return pendingRouteTargets(routeTargetsRef.current, p.routeRef.current?.viaDistM ?? [], routeProgressRef.current)
+  }
+
+  function publishNextStop() {
+    const pending = remainingTargets()
+    setNextStop(pending.length > 1 ? pending[0].label ?? '地圖選取的停靠點' : null)
   }
 
   /** 偏航重規劃：從目前（已偏離）位置依序繞經未到的停靠點，再到終點，並以 GPS 接續導航。 */
@@ -464,6 +476,8 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     setGpsMsg(null)
     p.annotateTwoStage(route)
     p.routeRef.current = route
+    routeTargetsRef.current = targets
+    routeProgressRef.current = 0
     drawRouteLine(route)
     if (gpsDriverRef.current) runGpsNav(true)
   }
@@ -527,7 +541,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   return {
-    drive, gpsMsg, canRetry, cameraAlert, startGpsNav, stopAllDrivers, following, recenter,
+    drive, gpsMsg, canRetry, cameraAlert, nextStop, startGpsNav, stopAllDrivers, following, recenter,
     startSimDrive: import.meta.env.DEV && SIM ? startSimDrive : undefined,
     sim: import.meta.env.DEV && SIM ? sim : undefined,
   }

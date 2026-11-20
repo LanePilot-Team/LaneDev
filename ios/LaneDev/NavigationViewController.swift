@@ -7,6 +7,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     private(set) var webView: WKWebView!
     let locations = LocationService()
     let speech = SpeechService()
+    private let googlePlaces = GooglePlacesService()
     private(set) var navigating = false
     private var webReady = false
     private var geocoder = CLGeocoder()
@@ -42,6 +43,9 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(BridgeMessageHandler(self), name: "LaneNative")
+        config.userContentController.addUserScript(WKUserScript(source:
+            "Object.defineProperty(window, 'LaneGooglePlacesAvailable', {value: \(googlePlaces.configured)})",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.dataset.platform='ios'",
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
@@ -90,7 +94,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         #endif
         NSLayoutConstraint.activate([webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: topAnchor), webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)])
+            webView.topAnchor.constraint(equalTo: topAnchor), webView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)])
         locations.emit = { [weak self] in self?.emit($0) }
         locations.changed = { [weak self] in self?.status() }
         speech.changed = { [weak self] in self?.status() }
@@ -180,6 +184,8 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         case "appSettings", "locationSettings":
             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
         case "reverseGeocode": reverseGeocode(command)
+        case "googlePlaceSearch": googlePlaces.search(command, from: self) { [weak self] in self?.emit($0) }
+        case "googlePlaceCancel": if let id = command["id"] as? String { googlePlaces.cancel(id: id) }
         #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         case "simulatorPrepare":
             if navigating, locations.virtual, let coords = command["coords"] as? [[Double]] {
@@ -232,7 +238,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
             "compass": CLLocationManager.headingAvailable() ? "前景使用 iOS 方向感測器；低精度時隱藏朝向" : "方向感測器不可用，使用 GPS 行進方向"])
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        webReady = false; locations.reset(); setNavigation(false)
+        webReady = false; googlePlaces.cancel(); locations.reset(); setNavigation(false)
         #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         simulatorReady = false
         simulatorPicking = false
@@ -244,7 +250,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webReady = false; locations.reset(); setNavigation(false)
+        webReady = false; googlePlaces.cancel(); locations.reset(); setNavigation(false)
         showError("導航畫面已被系統終止，請重新載入並規劃路線。")
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

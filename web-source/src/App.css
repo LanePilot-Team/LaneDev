@@ -476,6 +476,7 @@ html[data-platform="ios"] select {
   padding: 12px 14px 14px;
 }
 .route-preview-head {
+  flex: none;
   position: sticky; top: 0; z-index: 2;
   display: flex; align-items: center; gap: 8px; margin: -12px -14px 10px;
   padding: 12px 14px 10px; background: #fff; border-bottom: 1px solid #edf0f4;
@@ -524,10 +525,23 @@ html[data-platform="ios"] select {
 .route-stop-editing-copy { color: #718096; font-size: 11px; }
 .route-stop-card .stop-edit-action { min-height: 32px; padding: 5px 4px; }
 .route-via-remove { margin-top: 7px; padding: 5px 9px; background: #f1f3f6; color: #667386; }
+.route-via-actions, .route-pick-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.route-via-actions button { margin-top: 6px; border: 0; border-radius: 8px; padding: 5px 8px; background: #eef5ff; color: #1559a0; }
+.route-via-actions button:disabled { opacity: .38; }
+.route-map-pick {
+  position: absolute; z-index: 25; inset: 12px 12px auto; width: fit-content;
+  max-width: calc(100% - 24px); box-sizing: border-box;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 10px 12px; border-radius: 12px; background: white; color: #172235;
+  box-shadow: 0 3px 14px #16304a38;
+}
+.route-map-pick p { margin: 0; }
+.route-map-pick button { padding: 8px 10px; border: 0; border-radius: 8px; background: #eef5ff; color: #1559a0; }
+.route-map-pick-error { flex-basis: 100%; color: #b42318; }
 .route-status { margin: 6px 0 10px; color: #566479; font-size: 12px; }
 .route-status-error { margin: 8px 0 0; }
 .route-add-stop { margin-top: 8px; padding: 8px; }
-.route-preview-summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid #edf0f4; }
+.route-preview-summary { flex: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #edf0f4; }
 .route-preview-metrics {
   display: flex; align-items: baseline; justify-content: space-between;
   color: #62728a; font-size: 12px;
@@ -731,11 +745,12 @@ html[data-platform="ios"] select {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 14px; color: #7a8494;
 }
-.trip .trip-road {
+.trip .trip-road, .trip .trip-stop {
   grid-column: 2; min-width: 0; margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13px; font-weight: 700; color: #3d4a5c;
 }
+.trip .trip-stop { font-size: 12px; }
 .end-btn, .mult-btn {
   border: none; border-radius: 10px; padding: 10px 14px;
   font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;

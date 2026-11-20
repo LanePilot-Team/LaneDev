@@ -33,14 +33,17 @@ export function googleDestination(
   place: google.maps.places.Place,
   submittedQuery: string,
 ): DestinationSelection | null {
-  const id = place.id?.trim()
   const location = place.location
-  const queryLabel = submittedQuery.trim()
-  if (!id || !location || !queryLabel) return null
+  return location ? googleCoordinateDestination(place.id, location.lng(), location.lat(), submittedQuery) : null
+}
 
-  const lng = location.lng()
-  const lat = location.lat()
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null
+export function googleCoordinateDestination(
+  placeId: unknown, lng: unknown, lat: unknown, submittedQuery: string,
+): DestinationSelection | null {
+  const id = typeof placeId === 'string' ? placeId.trim() : ''
+  const queryLabel = submittedQuery.trim()
+  if (!id || !queryLabel || typeof lng !== 'number' || !Number.isFinite(lng) || Math.abs(lng) > 180
+    || typeof lat !== 'number' || !Number.isFinite(lat) || Math.abs(lat) > 90) return null
 
   return {
     provider: 'google-ui-kit',

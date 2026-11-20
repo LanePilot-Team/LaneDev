@@ -75,6 +75,72 @@ final class ForegroundUITests: XCTestCase {
 
     #if DEBUG
     @MainActor
+    func testMainFlowKeyboardMapStartAndEndButtons() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let web = app.webViews.firstMatch
+        let search = web.textFields["搜尋地點或地址"]
+        let locate = web.buttons["目前位置"]
+        XCTAssertTrue(search.waitForExistence(timeout: 30))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)], timeout: 30), .completed)
+        app.segmentedControls["location-source"].buttons["虛擬定位"].tap()
+        search.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), app.debugDescription)
+        search.typeText("高雄大學")
+        let result = web.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "國立高雄大學 81148")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 15), app.debugDescription)
+        let screen = app.coordinate(withNormalizedOffset: .zero)
+        let listTop = search.frame.maxY + 14
+        let lower = min(keyboard.frame.minY - 18, listTop + 148)
+        let upper = listTop + 24
+        for _ in 0..<5 where !result.isHittable && lower > upper {
+            let from = screen.withOffset(CGVector(dx: search.frame.midX, dy: lower))
+            let to = screen.withOffset(CGVector(dx: search.frame.midX, dy: upper))
+            from.press(forDuration: 0.05, thenDragTo: to)
+        }
+        XCTAssertTrue(result.isHittable, app.debugDescription)
+        XCTAssertLessThanOrEqual(result.frame.maxY, keyboard.frame.minY + 2)
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        capture("stage5-keyboard-local-search")
+        result.tap()
+        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 6))
+        let route = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "路線")).firstMatch
+        XCTAssertTrue(route.waitForExistence(timeout: 10)); route.tap()
+        let origin = web.textFields["起點"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "我的位置"), object: origin)], timeout: 12), .completed)
+
+        web.buttons["更換起點"].tap()
+        let mapStart = web.buttons["在地圖上選起點"]
+        XCTAssertTrue(mapStart.waitForExistence(timeout: 10), app.debugDescription)
+        mapStart.tap()
+        XCTAssertTrue(keyboard.waitForNonExistence(timeout: 6))
+        XCTAssertTrue(web.buttons["取消選點"].waitForExistence(timeout: 8), app.debugDescription)
+        web.coordinate(withNormalizedOffset: CGVector(dx: 0.38, dy: 0.58)).tap()
+        XCTAssertTrue(origin.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertNotEqual(origin.value as? String, "我的位置")
+
+        let start = web.buttons["開始導航"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        XCTAssertTrue(start.isHittable)
+        XCTAssertGreaterThanOrEqual(start.frame.height, 44)
+        capture("stage5-map-selected-preview")
+        start.tap()
+        let end = web.buttons["✕ 結束"]
+        XCTAssertTrue(end.waitForExistence(timeout: 15))
+        XCTAssertTrue(end.isHittable)
+        XCTAssertGreaterThanOrEqual(end.frame.height, 44)
+        XCTAssertLessThanOrEqual(end.frame.maxY, web.frame.maxY)
+        end.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        print("IOS_STAGE5_TOUCH: keyboard results reachable, selected location, current start then replaced with map point, preview/exit controls >=44pt")
+    }
+
+    @MainActor
     func testTouchNavigationAndHomeResume() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -96,13 +162,12 @@ final class ForegroundUITests: XCTestCase {
             field.tap()
             field.typeText(query)
             if app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
-            if app.buttons["Done"].exists { app.buttons["Done"].tap() }
             let result = app.webViews.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
             XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
             result.tap()
         }
         choose("起點", query: "高雄大學產學育成中心", name: "高雄大學產學育成中心")
-        choose("終點", query: "高雄大學", name: "國立高雄大學 81148")
+        choose("終點", query: "國立高雄大學", name: "國立高雄大學 81148")
         let playback = app.buttons["sim-playback"]
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: playback)], timeout: 15), .completed)
         app.segmentedControls["sim-rate"].buttons["3x"].tap()

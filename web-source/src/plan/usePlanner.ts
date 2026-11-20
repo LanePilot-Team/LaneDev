@@ -29,6 +29,7 @@ export interface Planner {
   stops: Stop[]
   stopsRef: RefObject<Stop[]>
   activeStop: number | null
+  mapPickId: number | null
   routeRef: RefObject<RouteResult | null>
   routeSummary: { km: number; min: number } | null
   routeError: string | null
@@ -47,10 +48,12 @@ export interface Planner {
     position: [number, number],
   ) => void
   selectStop: (id: number) => void
+  pickStopOnMap: (id: number) => void
+  cancelMapPick: () => void
   setStopDestination: (id: number, destination: RouteDestination) => boolean
   setCurrentStart: (position: [number, number]) => void
   clearAllRoute: () => void
-  addVia: () => void
+  addVia: () => number
   resetStop: (id: number) => void
   removeStop: (id: number) => void
   moveStop: (fromId: number | null, toId: number) => void
@@ -69,6 +72,12 @@ export function usePlanner(core: MapCore): Planner {
   const activeStopRef = useRef<number | null>(1)
   const [activeStop, setActiveStopState] = useState<number | null>(1)
   const setActiveStop = (id: number | null) => { activeStopRef.current = id; setActiveStopState(id) }
+  const mapPickRef = useRef<number | null>(null)
+  const [mapPickId, setMapPickId] = useState<number | null>(null)
+  function setMapPick(id: number | null) {
+    mapPickRef.current = id
+    setMapPickId(id)
+  }
 
   const routeRef = useRef<RouteResult | null>(null)
   const [routeSummary, setRouteSummary] = useState<{ km: number; min: number } | null>(null)
@@ -291,6 +300,7 @@ export function usePlanner(core: MapCore): Planner {
 
   function clearAllRoute() {
     stopAllDriversRef.current()
+    setMapPick(null)
     clearRouteLine()
     setRouteError(null)
     if (core.mapRef.current) {
@@ -304,6 +314,7 @@ export function usePlanner(core: MapCore): Planner {
     const next = [...list.slice(0, -1), { id, pos: null }, list[list.length - 1]]
     setStops(next)
     setActiveStop(id)
+    return id
   }
 
   function resetStop(id: number) {
@@ -325,7 +336,7 @@ export function usePlanner(core: MapCore): Planner {
     const list = [...stopsRef.current]
     const fi = list.findIndex((s) => s.id === fromId)
     const ti = list.findIndex((s) => s.id === toId)
-    if (fi < 0 || ti < 0) return
+    if (fi < 1 || ti < 1 || fi === list.length - 1 || ti === list.length - 1) return
     const [moved] = list.splice(fi, 1)
     list.splice(ti, 0, moved)
     setStops(list)
@@ -334,19 +345,18 @@ export function usePlanner(core: MapCore): Planner {
   /** pick 模式的地圖點擊：指派給「作用中」的停靠點；沒有就找第一個未設定的 */
   function handlePickClick(p: [number, number]) {
     const list = stopsRef.current
-    let idx = list.findIndex((s) => s.id === activeStopRef.current)
-    if (idx < 0 || list[idx].pos) idx = list.findIndex((s) => !s.pos)
+    const explicitId = mapPickRef.current
+    let idx = list.findIndex((s) => s.id === (explicitId ?? activeStopRef.current))
+    if (idx < 0 || (explicitId === null && list[idx].pos)) idx = list.findIndex((s) => !s.pos)
     if (idx < 0) return
     const snapped = snapRoutePoint(p, 180, idx === 0 ? '起點' : '停靠點')
     if (!snapped) return
     setRouteError(null)
-    const next = list.map((s, i) => (i === idx ? { ...s, pos: snapped } : s))
-    stopsRef.current = next
-    setStopsState(next)
+    const next = list.map((s, i) => i === idx ? { id: s.id, pos: snapped } : s)
+    setStops(next)
+    setMapPick(null)
     const nextEmpty = next.find((s) => !s.pos)
     setActiveStop(nextEmpty ? nextEmpty.id : null)
-    syncEndpoints()
-    routeFromStops()
   }
 
   /**
@@ -389,11 +399,12 @@ export function usePlanner(core: MapCore): Planner {
   }
 
   return {
-    stops, stopsRef, activeStop, routeRef, routeSummary, routeError,
+    stops, stopsRef, activeStop, mapPickId, routeRef, routeSummary, routeError,
     profile, profileRef, routePolicy: routePolicyRef.current,
     dragStopRef, dragOverStop, setDragOverStop, stopAllDriversRef,
     startPick, startPlacePick, startPlaceFromCurrentLocation,
     selectStop: setActiveStop, setStopDestination,
+    pickStopOnMap: setMapPick, cancelMapPick: () => { setMapPick(null); setRouteError(null) },
     setCurrentStart, clearAllRoute, addVia, resetStop, removeStop, moveStop,
     handlePickClick,
     computeTwoStage, isTwoStage, annotateTwoStage, toggleProfile,

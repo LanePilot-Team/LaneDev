@@ -1,5 +1,10 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-11-21 第五階段額外發現
+
+- iOS 26.3.1 Simulator 輸入期間，系統日誌回報缺少 `hapticpatternlibrary.plist`。本輪用實際鍵盤與觸控執行操作，實體裝置的輸入觸覺回饋仍待確認。
+- 已打包的部分人工待轉區 `from.name`／`to.name` 可見亂碼，例如 `zone-ms1psrfb`。本輪以路口 ID 與行向驗證既有待轉判斷，資料維持唯讀，名稱編碼需另行核對來源。
+
 ## 2026-11-20：第二階段額外發現
 
 - Gradle Wrapper 9.7.1 搭配 AGP 8.13.0 時，Gradle 在套用 `com.android.application` 階段回報 `InternalProblems` 已移除。已將 Wrapper 恢復為 8.14.3，並以 JDK 21／Android SDK 36 執行 `bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks`。Debug APK 成功產出，1 項單元測試通過。

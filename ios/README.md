@@ -67,7 +67,22 @@ UI 測試執行器可能重設系統模擬定位，工具在 App 啟動後重設
 未配置 UIBackgroundModes、Always 定位或背景音訊，不保證背景、鎖屏導航。
 規劃起點與前景導航需要精確位置。若拒絕授權或僅允許概略位置，請到設定的 App 定位權限允許使用期間定位並開啟精確位置。若整部手機的定位服務已關閉，App 會提示從系統設定開啟。定位恢復後，導航會用新的定位繼續更新。
 中文語音使用 iOS 已安裝聲音；下載入口由 iOS 系統管理。
-本地 POI、路網與指引可離線；Google 搜尋及反查地址需要網路，缺少資料時顯示座標。
+本地地標、常用地點、路線與導航可離線操作。路線預覽中的「更換」可搜尋地點；點「在地圖上選」可直接設定該站。停靠點以下方的上移、下移調整順序，預覽使用同一份道路限制重新計算。
+
+## Google Places（可選）
+
+iOS 從 Swift 呼叫原生 Places UI Kit 的 `PlaceSearchView`。App 只在使用者按「使用 Google Places 搜尋」時提交查詢，結果與來源標示由 Google 元件顯示。LaneDev 只在當次規劃使用選取結果的 Place ID、座標與使用者輸入的查詢文字。iOS 資產不載入 Maps JavaScript API，原生 SDK 的授權使用 App 的 Bundle ID。 [Google iOS UI Kit 設定](https://developers.google.com/maps/documentation/places/ios-sdk/places-ui-kit-get-started) · [Places UI Kit 與非 Google 地圖條款](https://cloud.google.com/maps-platform/terms/maps-service-terms#places-ui-kit)
+
+1. 在有帳單帳戶的 Cloud 專案啟用 **Places UI Kit API** 和 **Places API (New)**，建立獨立的 iOS 金鑰。把應用程式限制設為 **iOS apps**，加入 `tw.lanepilot.lanedev.ios`，API 限制選這兩個服務。改用其他 Bundle ID 時一併更新限制。 [Google iOS 金鑰設定](https://developers.google.com/maps/documentation/places/ios-sdk/get-api-key)
+2. 在 `ios/GooglePlaces.local.xcconfig` 加一行設定。此檔案已忽略，由 `GooglePlaces.xcconfig` 選擇性載入，重新建置並安裝 App 後生效。
+
+   ```xcconfig
+   LANE_IOS_GOOGLE_PLACES_API_KEY = YOUR_RESTRICTED_IOS_KEY
+   ```
+
+3. 裝置連網時輸入地名，點 Google Places。確認原生清單顯示 Google Maps 來源，選擇有座標的結果後可在 LaneDev 規劃。未設定金鑰時，搜尋清單會明示狀態，本地結果仍可選取。
+
+GooglePlacesSwift 固定 10.15.0，支援本專案的 iOS 16.4 部署目標。Xcode 第一次解析套件需要網路；解析後 App 啟動與本地搜尋仍使用內建資源。金鑰經 Info.plist 帶入 App，請使用已限制的金鑰並保持本機設定檔不進 Git。第 3 步的線上成功案例需要有效金鑰。 [固定版官方套件](https://github.com/googlemaps/ios-places-sdk/blob/10.15.0/Package.swift)
 
 實機簽章需在 Xcode 選自己的 Team 與可用 bundle ID；本工作區沒有配置開發者 Team 或配送簽章。
 驗證證據與未完成事項見 `../docs/ios-port-plan.md`。

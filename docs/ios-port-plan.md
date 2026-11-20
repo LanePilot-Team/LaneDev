@@ -128,7 +128,8 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | 第二階段：容器／相容性收斂 | 沿用既有 Swift＋WK 專案，對齊最低 iOS 16.4、原生與共用橋接，補儲存／Worker／錯誤路徑。 | App／測試 target 與產生器對齊；Simulator Debug／Release 與 arm64 build；無 Mac 伺服器載入全部本機資料；localStorage 重啟驗證；非法 origin／寫入／校驗失敗不能啟動導航；確認 WebGL2／Worker／字型。 | 已有前次基礎實作與證據；**不把它當成本輪最低版本門檻已通過**。16.x runtime 不足需實體最低版本裝置或補足相容環境。 |
 | 第三階段：平台介面與 iOS 原生定位 | 單次、持續定位與授權；精度、時間、行進方向與羅盤；中斷、恢復及取消訂閱。 | Simulator 系統注入經 Core Location、橋接、共用核心進入導航 HUD；權限與生命週期測試；重跑 24＋35 路由基準與 Android 建置。 | 本輪實作與操作結果見第三階段紀錄。 |
 | 第四階段：前期虛擬導航 | 獨立位置來源、選起終點、播放控制、1x／3x／8x、應轉未轉及訊號情境。 | 操作正常導航、偏航、暫停／恢復及抵達；核對倍速單位與訂閱；稽核正式包。 | 本輪結果見第四階段紀錄。 |
-| 第五階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
+| 第五階段：主要操作流程 | 本地搜尋、常用地點、起終點、停靠點、重規劃、導引、iPhone 觸控與原生 Google 搜尋。 | 實際操作，保留楠梓參考適用條件，驗證多次重算按同一趟行程順序保留待經停靠點。 | 本輪驗證見第五階段紀錄。 |
+| 第六階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
 各實作階段都要更新本文件、執行適當測試與建置，保存失敗與成功證據；不得只交計畫。只有本階段盤點需要的測試在這輪重新執行，未擅自推進功能實作。
@@ -223,7 +224,7 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 - 實體 iPhone 的 GPS、磁場干擾、初次授權彈窗、概略位置和全域服務設定切換待實際操作。iOS 16.4 執行需對應 runtime 或裝置，有簽章的 iPhone 安裝需 Team 與實體裝置。
 - Home 已驗證前景導航暫停與恢復。背景持續導航及鎖屏持續導航目前未支援，真正鎖屏的操作行為仍待獨立驗證。
-- 第四階段將既有 Simulator 工具收斂為完整且可移除的開發面板，第五階段執行完整刪除與實機驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍受金鑰及來源授權限制。
+- 第四階段收斂為可移除的開發面板。第五階段串通主要操作並以 Simulator 驗證，第六階段執行完整刪除與實機驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍需要有效且受限制的金鑰。
 
 ## 第四階段：前期虛擬導航
 
@@ -262,9 +263,38 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 - iPhone arm64 Debug 和 Release 的未簽章建置成功。掃描兩個 iPhone App 及 Simulator Release 的 native executable、Debug dylib 及 Web 資產，確認皆使用 `ios-release`，腳本 SHA-256 正確，未含虛擬來源、命令、面板、時計及倍率標記。Simulator Debug 的相同掃描確實找到工具。另把開發旗標傳給 Release 的資產校驗，確認建置校驗會拒絕組態不一致。
 - Gradle Wrapper 8.14.3、JDK 21、Android SDK 36 執行 `assembleDebug testDebugUnitTest --offline --rerun-tasks` 成功，APK 內的資產政策及實際 JS 均排除 iOS 開發功能，1 項 Android 單元測試通過。Android 裝置操作待實機驗證。
 
-首輪建置修正了 Swift 非同步測試輔助函式的逃逸 closure。首輪操作時這個 Simulator 的語音偏好原本關閉，測試已改為開啟並於結束時還原，重跑收到原生導航語音回呼。實體 iPhone 的 GPS、喇叭或藍牙輸出、簽章和道路驗收待第五階段。背景及鎖屏持續導航目前仍屬前景範圍之外，這一輪的 Home 復原測試只證明回前景可接續。
+首輪建置修正了 Swift 非同步測試輔助函式的逃逸 closure。首輪操作時這個 Simulator 的語音偏好原本關閉，測試已改為開啟並於結束時還原，重跑收到原生導航語音回呼。實體 iPhone 的 GPS、喇叭或藍牙輸出、簽章和道路驗收待第六階段。背景及鎖屏持續導航目前仍屬前景範圍之外，這一輪的 Home 復原測試只證明回前景可接續。
 
 ---
+
+## 第五階段：主要操作流程（2026-11-21）
+
+- 本地與常用地點選取共用同一份內建地標，選定後關閉鍵盤並顯示目的地。規劃預設取得目前位置，也可以對任一站搜尋或明確選取地圖點。地圖替換會清除原站的來源與地址，再依現有路網吸附。
+- 上移與下移只作用於停靠點。每次更換、排序或切換汽機車時都使用現有車種與通行規則重算。既有楠梓人工參考的兩端點、方向、車種匹配門檻保留，多停靠點與未命中組合走一般規劃。
+- 偏航後把待經站點與新路線的里程對應一起更新，另以當前路線的最大進度辨識已經過的停靠點。HUD 顯示下一站，靠近終點的抵達判定也會先檢查中途站是否已完成。
+- WKWebView 由 UIKit 安全區及 `keyboardLayoutGuide` 定位。iOS 搜尋欄維持 16px，清單與規劃內容可捲動。「開始導航」固定在預覽面板下方，主要點按控制至少 44pt。仍沿用現有 React、MapLibre、路網和導航核心。
+- iOS 使用固定版 GooglePlacesSwift 10.15.0 的 Places UI Kit，iOS bundle 不載入 Google 的 JavaScript bootstrap。使用者按下 Google 搜尋才呼叫原生 `PlaceSearchView`。原生使用 Info.plist 中的 iOS 專用金鑰與 Bundle ID；WKWebView 只接收是否設定的布林值，以及本次選取的 ID、座標與取消／錯誤。API Key 設定檔忽略不追蹤。 [iOS 設定步驟](../ios/README.md#google-places可選) · [Google 原生 Places UI Kit](https://developers.google.com/maps/documentation/places/ios-sdk/places-ui-kit-get-started) · [Google 自訂來源及 Referer 指引](https://developers.google.com/maps/api-security-best-practices#host-your-browser-based-apps-on-a-server)
+
+測試使用 iPhone 17 Pro Simulator（iOS 26.3.1）與 Xcode 26.2。首次操作發現鍵盤開啟時，後段搜尋結果要在清單內捲動，替換站點時其他站列也會擠壓輸入區。編輯模式改為只顯示當前站，使用目前位置與地圖選點操作放在輸入欄下方，避免搜尋焦點改變時按鈕移位。另調整測試使用實際出現在客戶端索引的地標，維持既有大眾運輸過濾。
+
+| 實際操作 | 本輪結果 |
+| --- | --- |
+| 本地地標與常用地點 | 在 WKWebView 從常用地點編輯選入國立高雄大學，再從常用捷徑選取該地點，確認目的地摘要並啟動路線。測試結束還原本機偏好。 [常用地點](ios-evidence/stage5/saved-place.png) |
+| 鍵盤、安全區與手選起點 | XCUITest 開啟軟體鍵盤，捲動「高雄大學」搜尋結果並點選鍵盤上方的「國立高雄大學」。選取後確認鍵盤關閉。規劃先用目前位置，再按「在地圖上選起點」點實際地圖並確認起點值改變。實測「開始導航」與「結束」高度至少 44pt，底部結束按鈕留在 WKWebView 安全範圍內，實際點按離開導航。 [鍵盤搜尋](ios-evidence/stage5/keyboard-search.png) · [地圖起點與預覽](ios-evidence/stage5/map-start-preview.png) |
+| 預覽、排序、車種及重啟 | 先取得目前位置，再搜尋替換起點與終點，新增高雄大學郵局及國立高雄大學游泳池，操作上移並確認順序。重新計算機車與汽車路線，收合及打開轉向步驟。開始後看到下一站與 ETA，點結束後清除 GPS 訂閱，再規劃並開始一段新導航。 [排序預覽](ios-evidence/stage5/reordered-waypoints.png) |
+| 路口待轉、測速及導航資訊 | 機車由援中國民小學往綜合籃球場，預覽出現待轉步驟，導航在路口 `2601136103` 顯示待轉牌、車道指引與 ETA。汽車由中和里里辦公室往中和兒童公園，在德中路與大學二十九路口路線上出現測速警示與剩餘距離，顯示速限 60 km/h。 [待轉](ios-evidence/stage5/two-stage.png) · [測速](ios-evidence/stage5/speed-camera.png) |
+| 途經站後連續偏航 | 依序將高雄大學產學育成中心、高雄大學郵局設為停靠點。經過第一站後操作保持直行，核心連續兩次重算都保留郵局為下一站，定位仍只有一個訂閱。未新增、移除或改寫道路及通行條件。 [偏航後的下一站](ios-evidence/stage5/waypoint-reroute.png) |
+| Google 未設定 | Simulator 顯示缺金鑰狀態，沒有 Maps JavaScript bootstrap。即使直接抵達原生橋接，缺金鑰也回覆明確錯誤並保持本地搜尋可選取。查詢結果回傳、請求取消以及內容欄位由共用橋接測試檢查。線上結果與受限制金鑰的正向驗證需提供有效金鑰。 [缺金鑰畫面](ios-evidence/stage5/google-key-missing.png) |
+| 抵達 | 重跑既有整合導航，車輛沿真實路線資料行進至國立高雄大學，由共用核心判定抵達，完成按鈕回到瀏覽，定位與導航計時器清空。 [抵達](ios-evidence/stage5/arrival.png) |
+
+### 建置與回歸
+
+- `node ios/tools/build-web.mjs all` 通過 311 項共用測試，涵蓋 35 組楠梓人工參考路線。24 組預計算前後的路由一致，其中 22 組有解。兩種 iOS 前端建置及包內資產稽核通過，官方道路、待轉區及參考資料的原始檔無差異。
+- `node ios/tools/test-simulator.mjs debug` 通過 15 項 XCTest 和 3 項 XCUITest。`release` 通過 2 項 XCUITest，涵蓋系統定位、離線地圖觸控及回前景。`denied` 通過 1 項定位權限拒絕測試。各組的原始日誌及 `results.xcresult` 保存在 `ios/.build/test-results/` 下的 `debug-2026-11-20T16-24-33-878Z`、`release-2026-11-20T16-28-04-514Z`、`denied-2026-11-20T16-28-59-572Z`，時間戳使用 UTC。
+- `LaneDevRelease` 的 `generic/platform=iOS` 未簽章 arm64 建置通過，`MinimumOSVersion` 為 16.4。成品含 `ios-release` 前端與原生 Google SDK，資產稽核確認排除 Simulator 虛擬導航入口。
+- Android 前端用 `npm run build` 與 `node tools/sync-web-assets.mjs` 重新打包。Gradle `assembleDebug testDebugUnitTest --offline --rerun-tasks` 通過並產出 `app/build/outputs/apk/debug/app-debug.apk`，既有 1 項 JUnit 通過。APK 保留 Android 的 Google JavaScript 載入路徑。未使用 Android 裝置操作。
+
+下一階段依第四階段清單刪除 Simulator 虛擬工具，並將本輪使用該來源的測試改為適合正式成品的系統定位或實機案例。iOS 16.4 仍只有部署編譯目標，實體 iPhone、簽章、真正鎖屏與 Google 成功授權的驗證各自待補。背景與鎖屏持續導航目前未支援。
 
 ## 先前實作與驗證紀錄（歷史，保留）
 

@@ -5,6 +5,18 @@ root = File.expand_path(__dir__)
 project = Xcodeproj::Project.new(File.join(root, 'LaneDev.xcodeproj'))
 minimum_ios = '16.4'
 app = project.new_target(:application, 'LaneDev', :ios, minimum_ios)
+package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+package.repositoryURL = 'https://github.com/googlemaps/ios-places-sdk.git'
+package.requirement = { 'kind' => 'exactVersion', 'version' => '10.15.0' }
+project.root_object.package_references << package
+places = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+places.package = package
+places.product_name = 'GooglePlacesSwift'
+app.package_product_dependencies << places
+linked_places = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+linked_places.product_ref = places
+app.frameworks_build_phase.files << linked_places
+places_config = project.main_group.new_file('GooglePlaces.xcconfig')
 group = project.main_group.new_group('LaneDev', 'LaneDev')
 Dir[File.join(root, 'LaneDev', '*.swift')].sort.each { |f| app.source_build_phase.add_file_reference(group.new_file(File.basename(f))) }
 app.resources_build_phase.add_file_reference(group.new_file('Bridge.js'))
@@ -17,6 +29,7 @@ verify.shell_script = '/bin/sh "$SCRIPT_INPUT_FILE_0"'
 verify.always_out_of_date = '1'
 group.new_file('Info.plist')
 app.build_configurations.each do |c|
+  c.base_configuration_reference = places_config
   c.build_settings.merge!({
     'PRODUCT_BUNDLE_IDENTIFIER' => 'tw.lanepilot.lanedev.ios',
     'INFOPLIST_FILE' => 'LaneDev/Info.plist',

@@ -1,0 +1,3 @@
+// Optional machine-local iOS Places UI Kit key.
+LANE_IOS_GOOGLE_PLACES_API_KEY =
+#include? "GooglePlaces.local.xcconfig"

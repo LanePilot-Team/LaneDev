@@ -9,6 +9,7 @@
   <key>CFBundleShortVersionString</key><string>0.3.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSRequiresIPhoneOS</key><true/>
+  <key>LaneGooglePlacesAPIKey</key><string>$(LANE_IOS_GOOGLE_PLACES_API_KEY)</string>
   <key>NSLocationWhenInUseUsageDescription</key><string>LaneDev 使用您的精確位置顯示目前車道、導航指引與偏航重規劃。僅在 App 前景取得位置。</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key><dict>

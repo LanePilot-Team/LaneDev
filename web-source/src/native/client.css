@@ -125,3 +125,38 @@
   box-shadow: 0 4px 16px #0004; font-size: 14px; font-weight: 600; white-space: nowrap;
 }
 .saved-place-pick-banner button { border: 0; border-radius: 8px; padding: 8px 12px; background: #fff; color: #103e70; font-weight: 700; }
+
+/* The iOS WebView itself fits between the safe area and the keyboard. */
+html[data-platform='ios'] .app { --map-action-size: 44px; }
+html[data-platform='ios'] .place-search-form input,
+html[data-platform='ios'] .saved-place-editor input { font-size: 16px; }
+html[data-platform='ios'] .place-search-form { min-height: 54px; box-sizing: border-box; }
+html[data-platform='ios'] .place-search .place-results { max-height: min(55dvh, calc(100dvh - 85px), 460px); }
+html[data-platform='ios'] .route-search-panel .stop-place-search .place-results { max-height: min(38dvh, 270px); }
+html[data-platform='ios'] .place-result,
+html[data-platform='ios'] .place-provider-switch button,
+html[data-platform='ios'] .place-route-target button,
+html[data-platform='ios'] .place-route-methods button,
+html[data-platform='ios'] .place-clear,
+html[data-platform='ios'] .client-settings button,
+html[data-platform='ios'] .route-profile-option,
+html[data-platform='ios'] .route-preview-head .sp-close,
+html[data-platform='ios'] .stop-edit-action,
+html[data-platform='ios'] .route-via-actions button,
+html[data-platform='ios'] .route-add-stop,
+html[data-platform='ios'] .route-pick-options button,
+html[data-platform='ios'] .route-start-button,
+html[data-platform='ios'] .route-map-pick button,
+html[data-platform='ios'] .bottom-bar button,
+html[data-platform='ios'] .arrival-card button { min-height: 44px; }
+html[data-platform='ios'] .place-clear,
+html[data-platform='ios'] .route-preview-head .sp-close,
+html[data-platform='ios'] .stop-edit-action { min-width: 44px; }
+html[data-platform='ios'] .route-profile { height: 44px; }
+html[data-platform='ios'] .route-profile-option { width: auto; min-width: 50px; }
+html[data-platform='ios'] .side-panel.route-preview-card { max-height: min(76dvh, 585px); }
+html[data-platform='ios'] .side-panel.route-preview-card.is-searching {
+  height: auto; max-height: calc(100dvh - 24px); overflow: hidden;
+}
+html[data-platform='ios'] .client-settings-body { max-height: min(55dvh, calc(100dvh - 68px)); }
+html[data-platform='ios'] .trip .trip-eta { white-space: normal; }

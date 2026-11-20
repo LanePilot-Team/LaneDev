@@ -6,6 +6,15 @@ export default defineConfig(({ command, mode }) => ({
   base: './',
   plugins: [react(), {
     name: 'client-module-audit',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (mode === 'ios-simulator' || mode === 'ios-release') {
+          return html.replace(/<script data-web-google-places>[\s\S]*?<\/script>\s*/, '')
+        }
+        return html
+      },
+    },
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'client-modules.json',
         source: JSON.stringify([...this.getModuleIds()].map(id => id.replaceAll('\\\\', '/'))) })

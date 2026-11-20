@@ -22,6 +22,7 @@ import { rerouteReady, type RerouteClock } from './rerouteClock.ts'
 import { gpsFixGap, gpsLog } from './gpsDebug.ts'
 import { BranchWatch, RoadMatcher, deviationFeatures } from './roadMatch.ts'
 import type { Profile, RoadGraph } from '../core/graph.ts'
+import { passedAllViaStops } from './routeTargets.ts'
 
 /** 偏移改善實驗：orig = 原本、a = 偏離時貼路網、b = 路口分岔判定、abd = 合併＋平順切換（見 nav/roadMatch.ts） */
 const FEAT = deviationFeatures()
@@ -102,6 +103,7 @@ export class GpsDriver {
   private smoothBrg: number | null = null
   private match: MatchResult | null = null
   private stoppedNearDestSince = 0
+  private maxTraveledM = 0
   /** 最後一次送出的畫面狀態——GPS 掉訊時原地重送（標上 gpsWeak），畫面不會整個空掉 */
   private lastState: DriveState | null = null
   private band: LaneBandResult
@@ -151,6 +153,7 @@ export class GpsDriver {
     this.match = null
     this.offRouteCount = 0
     this.stoppedNearDestSince = 0
+    this.maxTraveledM = 0
     this.lastState = null
     if (!FEAT.smooth) this.roadMatcher.reset()
     this.branchWatch.reset()
@@ -364,6 +367,7 @@ export class GpsDriver {
     }
 
     const traveledM = routeDistAt(this.band, this.bandCum, match.distM)
+    this.maxTraveledM = Math.max(this.maxTraveledM, traveledM)
     const ni = this.route.maneuvers.findIndex((m) => m.distM > traveledM + 1)
     const next = ni >= 0 ? this.route.maneuvers[ni] : null
     const next2 = ni >= 0 ? this.route.maneuvers[ni + 1] ?? null : null
@@ -378,8 +382,9 @@ export class GpsDriver {
       this.stoppedNearDestSince = 0
     }
     const heldAtDest = this.stoppedNearDestSince > 0 && motionNow - this.stoppedNearDestSince > STOP_HOLD_MS
-    const arrived = remainM < ARRIVE_THRESHOLD_M || directToDestM < DIRECT_ARRIVE_M || heldAtDest
-    const arriving = !arrived && remainM < ARRIVING_THRESHOLD_M
+    const lastStop = passedAllViaStops(this.route.viaDistM, this.maxTraveledM)
+    const arrived = lastStop && (remainM < ARRIVE_THRESHOLD_M || directToDestM < DIRECT_ARRIVE_M || heldAtDest)
+    const arriving = lastStop && !arrived && remainM < ARRIVING_THRESHOLD_M
 
     const span = spanAtDist(this.route, traveledM)
     const rp = span?.road?.properties
@@ -445,7 +450,8 @@ export class GpsDriver {
     } else if (this.smoothBrg === null) {
       this.smoothBrg = deviceHeading() ?? 0
     }
-    const arrived = haversine(here, this.destination) < DIRECT_ARRIVE_M
+    const arrived = passedAllViaStops(this.route.viaDistM, this.maxTraveledM)
+      && haversine(here, this.destination) < DIRECT_ARRIVE_M
     const base: DriveState = this.lastState ?? {
       pos, bearing: this.smoothBrg, speedKmh, traveledM: 0, remainM: this.route.lengthM,
       remainS: this.route.timeS, next: this.route.maneuvers[0] ?? null,

@@ -35,6 +35,38 @@ final class ForegroundNavigationTests: XCTestCase {
             if (!b) throw new Error('Missing button ' + \(encoded)); b.click();
             """)
     }
+
+    func setSearch(_ selector: String, _ query: String) async throws {
+        let queryJSON = String(data: try JSONEncoder().encode(query), encoding: .utf8)!
+        _ = try await js("""
+            const field = document.querySelector('\(selector)');
+            if (!field) throw new Error('Search field is absent');
+            field.focus();
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, \(queryJSON));
+            field.dispatchEvent(new Event('input', {bubbles:true}));
+            """)
+    }
+
+    func selectLocalResult(_ name: String, within selector: String = ".place-search") async throws {
+        let nameJSON = String(data: try JSONEncoder().encode(name), encoding: .utf8)!
+        let match = "[...document.querySelectorAll('\(selector) .place-result')].find(b => b.querySelector('b')?.innerText === \(nameJSON))"
+        try await wait(match, seconds: 15)
+        _ = try await js("(\(match)).click()")
+    }
+
+    func editLocalStop(_ label: String, as name: String, query: String? = nil) async throws {
+        _ = try await js("document.querySelector('button[aria-label=\"更換\(label)\"]').click()")
+        try await setSearch(".stop-place-search input", query ?? name)
+        try await selectLocalResult(name, within: ".stop-place-search")
+        try await wait("!document.querySelector('.stop-place-search')")
+    }
+
+    func addLocalStop(_ name: String) async throws {
+        try await click("＋ 新增停靠點")
+        try await setSearch(".stop-place-search input", name)
+        try await selectLocalResult(name, within: ".stop-place-search")
+        try await wait("!document.querySelector('.stop-place-search')")
+    }
     func plan(useVirtual: Bool = true) async throws {
         #if targetEnvironment(simulator)
         XCTAssertTrue(controller.locations.selectVirtual(useVirtual))
@@ -219,6 +251,135 @@ final class ForegroundNavigationTests: XCTestCase {
     }
 
     #if targetEnvironment(simulator)
+    func testLocalSearchSavedPlacesAndEditingStops() async throws {
+        XCTAssertTrue(controller.locations.selectVirtual(true))
+        let saved = try await js("return localStorage.getItem('client.savedPlaces')") as? String
+        let savedJSON = String(data: try JSONEncoder().encode(saved), encoding: .utf8)!
+        addTeardownBlock { [weak self] in
+            _ = try await self?.js("const value=\(savedJSON); if(value === null) localStorage.removeItem('client.savedPlaces'); else localStorage.setItem('client.savedPlaces',value)")
+        }
+        _ = try await js("""
+            document.querySelector('.client-settings').open = true;
+            document.querySelector('.saved-place-settings').closest('details').open = true;
+            document.querySelector('.saved-place-item button').click();
+            """)
+        try await setSearch(".saved-place-editor input", "國立高雄大學")
+        try await wait("[...document.querySelectorAll('.saved-place-matches button b')].some(b => b.innerText === '國立高雄大學')", seconds: 12)
+        _ = try await js("""
+            [...document.querySelectorAll('.saved-place-matches button')].find(b => b.querySelector('b').innerText === '國立高雄大學').click();
+            document.querySelector('.client-settings').open = false;
+            document.querySelector('.place-search-form input').focus();
+            """)
+        try await wait("document.querySelector('.saved-place-chip')?.innerText.includes('國立高雄大學')")
+        _ = try await js("document.querySelector('.saved-place-chip').click()")
+        try await wait("document.querySelector('.place-route-target')?.innerText.includes('國立高雄大學')")
+        try await screenshot("stage5-saved-place")
+        _ = try await js("document.querySelector('.place-route-methods button').click()")
+        try await wait("document.querySelector('.route-stop-value[aria-label=起點]')?.value === '我的位置'")
+        try await editLocalStop("起點", as: "高雄大學產學育成中心")
+        try await editLocalStop("終點", as: "高雄大學行政大樓i郵箱")
+        try await addLocalStop("高雄大學郵局")
+        try await addLocalStop("國立高雄大學游泳池")
+        try await wait("document.querySelector('.route-start-button')?.disabled === false")
+        _ = try await js("document.querySelector('button[aria-label=\"停靠點 2上移\"]').click()")
+        try await wait("document.querySelector('input[aria-label=\"停靠點 1\"]')?.value === '國立高雄大學游泳池' && document.querySelector('input[aria-label=\"停靠點 2\"]')?.value === '高雄大學郵局'")
+        _ = try await js("document.querySelector('button[aria-label=機車]').click()")
+        try await wait("document.querySelector('button[aria-label=機車]').getAttribute('aria-pressed') === 'true' && document.querySelector('.route-steps .mlist-item')")
+        _ = try await js("document.querySelector('button[aria-label=汽車]').click()")
+        try await wait("document.querySelector('button[aria-label=汽車]').getAttribute('aria-pressed') === 'true' && document.querySelector('.route-start-button')?.disabled === false")
+        _ = try await js("document.querySelector('.route-steps summary').click()")
+        try await wait("document.querySelector('.route-steps')?.open === false")
+        _ = try await js("document.querySelector('.route-steps summary').click()")
+        try await wait("document.querySelector('.route-steps')?.open && document.querySelector('.mlist-act')?.innerText.length > 0")
+        try await screenshot("stage5-reordered-waypoints")
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.trip-stop')?.innerText.includes('國立高雄大學游泳池') && document.querySelector('.trip-eta')?.innerText.includes('抵達')")
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        XCTAssertTrue(controller.locations.watches.isEmpty)
+        try await plan()
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.banner')")
+        XCTAssertEqual(controller.locations.watches.count, 1)
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        print("IOS_STAGE5_EDIT: saved place, current start, edited endpoints, two reordered vias, both profiles, preview steps, cancel and restart")
+    }
+
+    func testMissingGoogleKeyKeepsOfflineSearchUsable() async throws {
+        guard try await js("return window.LaneGooglePlacesAvailable") as? Bool == false else {
+            throw XCTSkip("Missing-key case requires an unconfigured Google Places build")
+        }
+        try await setSearch(".place-search-form input", "確定沒有這個地點xyz")
+        try await wait("document.querySelector('.place-provider-switch')?.innerText.includes('未設定 iOS 金鑰')")
+        try await wait("document.querySelector('.place-provider-switch button').disabled && typeof window.google === 'undefined'")
+        let reply = try await js("""
+            return new Promise(resolve => {
+              const id = 'stage5-google-key-check';
+              const receive = ({detail}) => { if (detail.id === id) {
+                window.removeEventListener('lane-native', receive); resolve(detail.error);
+              }};
+              window.addEventListener('lane-native', receive);
+              window.LaneNative.postMessage(JSON.stringify({type:'googlePlaceSearch', id, query:'測試'}));
+            });
+            """) as? String
+        XCTAssertTrue(reply?.contains("未設定 iOS 金鑰") == true)
+        XCTAssertNil(controller.presentedViewController)
+        try await screenshot("stage5-google-key-missing")
+        try await setSearch(".place-search-form input", "高雄大學")
+        try await selectLocalResult("國立高雄大學")
+        try await wait("document.querySelector('.place-route-target')?.innerText.includes('國立高雄大學')")
+        print("IOS_STAGE5_GOOGLE: no key, native refusal, no JS loader, offline result selected")
+    }
+
+    func testRouteGuidanceUsesBundledTwoStageAndSpeedCameraData() async throws {
+        XCTAssertTrue(controller.locations.selectVirtual(true))
+        try await plan()
+        _ = try await js("document.querySelector('button[aria-label=機車]').click()")
+        try await editLocalStop("起點", as: "高雄市楠梓區援中國民小學", query: "援中國民小學")
+        try await editLocalStop("終點", as: "綜合籃球場")
+        try await wait("document.querySelector('.mlist-item.two-stage')?.innerText.includes('待轉')")
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.two-stage-sign') && document.querySelector('.lane-preview') && document.querySelector('.trip-eta')?.innerText.includes('抵達')")
+        try await screenshot("stage5-two-stage-guidance")
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        try await plan()
+        _ = try await js("document.querySelector('button[aria-label=汽車]').click()")
+        try await editLocalStop("起點", as: "中和里里辦公室")
+        try await editLocalStop("終點", as: "中和兒童公園")
+        controller.handleSimulatorAction(.rate(.fastest))
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.camera-card:not(.camera-passed)')?.innerText.includes('測速') && document.querySelector('.trip b')?.innerText.includes('公尺')", seconds: 18)
+        try await screenshot("stage5-speed-camera-alert")
+        let alert = try await js("return document.querySelector('.camera-card').innerText")
+        print("IOS_STAGE5_GUIDANCE: node 2601136103 two-stage, camera \(alert ?? "")")
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+    }
+
+    func testRepeatedReroutesKeepOnlyUpcomingStops() async throws {
+        try await plan()
+        try await addLocalStop("高雄大學產學育成中心")
+        try await addLocalStop("高雄大學郵局")
+        try await wait("document.querySelector('.route-start-button')?.disabled === false")
+        let simulator = controller.locations.simulator
+        controller.handleSimulatorAction(.rate(.fastest))
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.trip-stop')?.innerText.includes('產學育成中心')", seconds: 15)
+        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')", seconds: 15)
+        controller.handleSimulatorAction(.straight)
+        try await waitForSimulator(seconds: 25) { simulator.reroutes >= 1 }
+        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')")
+        try await waitForSimulator(seconds: 25) { simulator.reroutes >= 2 }
+        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')")
+        XCTAssertEqual(controller.locations.watches.count, 1)
+        try await screenshot("stage5-reroute-keeps-waypoint")
+        print("IOS_STAGE5_VIA: completed 高雄大學產學育成中心, pending 高雄大學郵局 after \(simulator.reroutes) reroutes")
+        controller.handleSimulatorAction(.end)
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+    }
+
     func testSimulatorMissedTurnKeepsTrackThroughReroute() async throws {
         try await plan()
         _ = try await js("document.querySelector('.route-start-button').click()")

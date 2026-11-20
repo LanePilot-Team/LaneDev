@@ -62,7 +62,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
   const simulatorStart = useEffectEvent((event: Event) => {
     if (import.meta.env.MODE !== 'ios-simulator') return
     const data = (event as CustomEvent).detail
-    if (data?.type === 'simulatorControl' && data.action === 'start' && routeSummary && editing === null && !locating) {
+    if (data?.type === 'simulatorControl' && data.action === 'start' && routeSummary && editing === null && !locating && planner.mapPickId === null) {
       startGpsNav()
     }
   })
@@ -77,9 +77,17 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
   }, [])
   useEffect(() => {
     if (import.meta.env.MODE === 'ios-simulator') {
-      window.LaneSimulator?.planStatus(Boolean(routeSummary && editing === null && !locating), true)
+      window.LaneSimulator?.planStatus(Boolean(routeSummary && editing === null && !locating && planner.mapPickId === null), true)
     }
-  }, [routeSummary, editing, locating])
+  }, [routeSummary, editing, locating, planner.mapPickId])
+  if (planner.mapPickId !== null) {
+    const index = stops.findIndex(stop => stop.id === planner.mapPickId)
+    return <section className="route-map-pick" aria-label="從地圖設定停靠點">
+      <p role="status">點地圖設定{label(index)}</p>
+      <button type="button" onClick={planner.cancelMapPick}>取消選點</button>
+      {routeError && <p className="route-map-pick-error" role="alert">{routeError}</p>}
+    </section>
+  }
   return <section className={`side-panel route-search-panel route-preview-card${editing !== null ? ' is-searching' : ''}${routeStepsClass}`} aria-label="搜尋與路線規劃">
     <div className="sp-head route-preview-head">
       <div className="route-preview-title">
@@ -101,7 +109,7 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
         {locating && <p className="route-status" role="status">正在取得目前位置…</p>}
         {locationError && <p role="alert" className="sp-error route-status-error">{locationError}；可直接搜尋起點。</p>}
         <div className="route-stops">
-          {stops.map((stop, i) => <div className={`route-stop route-stop-card${editing === stop.id ? ' is-editing' : ''}`} key={stop.id}
+          {stops.map((stop, i) => (editing === null || editing === stop.id) && <div className={`route-stop route-stop-card${editing === stop.id ? ' is-editing' : ''}`} key={stop.id}
             onKeyDown={event => { if (event.key === 'Escape') setEditing(null) }}>
             {editing === stop.id ? <>
               <div className="route-stop-row route-stop-editing-head">
@@ -112,8 +120,15 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
               <PlaceSearch key={stop.id} core={core} mapLoading={false} selected={null} picker
                 inputId={`stop-${stop.id}`} initialQuery={stop.label === '我的位置' ? '' : stop.label ?? ''} searchLabel={`搜尋${label(i)}地點或地址`}
                 onSelect={destination => selectPlace(stop.id, destination)} onClear={() => {}}
-                onChooseStart={() => {}} />
-              {i === 0 && <button className="location-suggestion" onClick={() => { setEditing(null); void useCurrentStart() }}>⌖ 目前位置</button>}
+                onChooseStart={() => {}}>
+                <div className="route-pick-options">
+                  {i === 0 && <button type="button" className="location-suggestion" onClick={() => { setEditing(null); void useCurrentStart() }}>使用目前位置</button>}
+                  <button type="button" className="location-suggestion" onClick={() => {
+                    setEditing(null)
+                    planner.pickStopOnMap(stop.id)
+                  }}>在地圖上選{label(i)}</button>
+                </div>
+              </PlaceSearch>
             </> : <>
               <div className="route-stop-row">
                 <span className={`route-stop-dot ${i === 0 ? 'start' : i === stops.length - 1 ? 'end' : 'via'}`} aria-hidden="true" />
@@ -128,26 +143,29 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
               </div>
               {stop.placePosition && <PlaceAddress addressOnly place={{ address: stop.address, position: stop.placePosition }} />}
             </>}
-            {i > 0 && i < stops.length - 1 && <button className="mini route-via-remove" onClick={() => planner.removeStop(stop.id)}>移除停靠點</button>}
+            {editing !== stop.id && i > 0 && i < stops.length - 1 && <div className="route-via-actions">
+              <button type="button" aria-label={`${label(i)}上移`} disabled={i === 1}
+                onClick={() => planner.moveStop(stop.id, stops[i - 1].id)}>↑ 上移</button>
+              <button type="button" aria-label={`${label(i)}下移`} disabled={i === stops.length - 2}
+                onClick={() => planner.moveStop(stop.id, stops[i + 1].id)}>↓ 下移</button>
+              <button type="button" className="mini route-via-remove" onClick={() => planner.removeStop(stop.id)}>移除</button>
+            </div>}
           </div>)}
         </div>
-        <button className="sp-add route-add-stop" onClick={() => { planner.addVia(); setEditing(null) }}>＋ 新增停靠點</button>
+        {editing === null && <button className="sp-add route-add-stop" onClick={() => setEditing(planner.addVia())}>＋ 新增停靠點</button>}
       </div>
       <div className="route-preview-secondary">
         {routeError && <div role="alert" className="sp-error route-status-error">{routeError}</div>}
-        {routeSummary && <div className="route-preview-summary">
-          <div className="route-preview-metrics"><span><b>{routeSummary.km.toFixed(1)}</b> 公里</span><span>約 {Math.max(1, Math.ceil(routeSummary.min))} 分鐘</span></div>
-          <button className="route-start-button" disabled={editing !== null || locating} onClick={startGpsNav}>
-            {editing !== null ? '請先選好地點' : '開始導航'}
-          </button>
-          {import.meta.env.DEV && startSimDrive && <button className="route-start-button" disabled={editing !== null}
-            onClick={startSimDrive}>🧪 模擬駕駛</button>}
-        </div>}
-        {routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
+        {editing === null && routeSummary && planner.routeRef.current && <details className="route-steps" open={stepsOpen}
           onToggle={event => setStepsOpen(event.currentTarget.open)}><summary>路線步驟・向下滑動查看更多</summary>
           <ManeuverList route={planner.routeRef.current} profile={profile} />
         </details>}
       </div>
     </div>
+    {routeSummary && editing === null && <div className="route-preview-summary">
+      <div className="route-preview-metrics"><span><b>{routeSummary.km.toFixed(1)}</b> 公里</span><span>約 {Math.max(1, Math.ceil(routeSummary.min))} 分鐘</span></div>
+      <button className="route-start-button" disabled={locating} onClick={startGpsNav}>開始導航</button>
+      {import.meta.env.DEV && startSimDrive && <button className="route-start-button" onClick={startSimDrive}>🧪 模擬駕駛</button>}
+    </div>}
   </section>
 }

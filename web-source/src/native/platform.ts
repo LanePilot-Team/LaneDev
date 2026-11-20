@@ -11,7 +11,13 @@ declare global {
     LanePlatform?: 'ios'
     LaneGeolocation?: LocationSource
     // Temporary iOS Simulator Debug hook. Delete at the physical-iPhone milestone.
-    LaneSimulator?: { setRoute(coords: [number, number][]): void }
+    LaneSimulator?: {
+      prepare(coords: [number, number][]): void
+      planStatus(ready: boolean, picking: boolean): void
+      noteReroute(): void
+      arrive(): void
+      timing(wallTimestamp: number): { motionTimestamp: number; playbackRate: 1 | 3 | 8 } | undefined
+    }
   }
 }
 

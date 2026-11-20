@@ -28,7 +28,10 @@ app.build_configurations.each do |c|
     'SUPPORTS_MACCATALYST' => 'NO',
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => c.name == 'Debug' ? 'DEBUG' : '',
   })
-  c.build_settings['LANE_WEB_MODE[sdk=iphonesimulator*]'] = 'ios-simulator' if c.name == 'Debug'
+  if c.name == 'Debug'
+    c.build_settings['LANE_WEB_MODE[sdk=iphonesimulator*]'] = 'ios-simulator'
+    c.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]'] = 'DEBUG LANE_SIMULATOR_NAVIGATION'
+  end
 end
 tests = project.new_target(:unit_test_bundle, 'LaneDevTests', :ios, minimum_ios)
 test_group = project.main_group.new_group('LaneDevTests', 'LaneDevTests')

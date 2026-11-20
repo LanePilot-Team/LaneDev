@@ -66,7 +66,7 @@
         if (foreground) entry.earliest = Math.max(entry.earliest, data.timestamp ?? Date.now());
         arm(id, entry);
         if (!foreground && !entry.once) {
-          entry.error?.(failure(2, 'paused', '前景導航已暫停，返回 App 後等待新定位'));
+          entry.error?.(failure(2, 'paused', data.message ?? '前景導航已暫停，返回 App 後等待新定位'));
         }
       }
     }

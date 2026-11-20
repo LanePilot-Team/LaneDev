@@ -11,9 +11,10 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     private var webReady = false
     private var geocoder = CLGeocoder()
     private var errorOverlay: UIView?
-    #if DEBUG && targetEnvironment(simulator)
-    private let sourcePicker = UISegmentedControl(items: ["Core Location", "虛擬定位"])
-    private let playButton = UIButton(type: .system)
+    #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+    private let simulatorPanel = SimulatorNavigationPanel()
+    private var simulatorReady = false
+    private var simulatorPicking = false
     #endif
 
     override func viewDidLoad() {
@@ -43,13 +44,25 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         config.userContentController.add(BridgeMessageHandler(self), name: "LaneNative")
         config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.dataset.platform='ios'",
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         config.userContentController.addUserScript(WKUserScript(source: """
-            Object.defineProperty(window, 'LaneSimulator', {value: Object.freeze({setRoute: coords =>
-              window.LaneNative.postMessage(JSON.stringify({type:'simRoute', coords}))})});
+            (() => {
+              let fixTiming;
+              window.addEventListener('lane-native', ({detail}) => {
+                if (detail?.type === 'position') fixTiming = detail.motionTimestamp == null ? undefined : detail;
+              });
+              const send = (type, fields = {}) => window.LaneNative.postMessage(JSON.stringify({type, ...fields}));
+              Object.defineProperty(window, 'LaneSimulator', { value: Object.freeze({
+                prepare: coords => send('simulatorPrepare', {coords}),
+                planStatus: (ready, picking) => send('simulatorPlanStatus', {ready, picking}),
+                noteReroute: () => send('simulatorRouteChanged'),
+                arrive: () => send('simulatorArrived'),
+                timing: wallTimestamp => fixTiming?.timestamp === wallTimestamp ? fixTiming : undefined,
+              }) });
+            })();
             """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         #endif
+        config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.setURLSchemeHandler(handler, forURLScheme: "lanedev")
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -62,22 +75,18 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
         var topAnchor = view.safeAreaLayoutGuide.topAnchor
-        #if DEBUG && targetEnvironment(simulator)
-        sourcePicker.selectedSegmentIndex = 0
-        sourcePicker.addTarget(self, action: #selector(sourceChanged), for: .valueChanged)
-        sourcePicker.accessibilityIdentifier = "location-source"
-        playButton.setTitle("沿路線前進", for: .normal)
-        playButton.addTarget(self, action: #selector(play), for: .touchUpInside)
-        let deviation = UIButton(type: .system)
-        deviation.setTitle("偏航", for: .normal)
-        deviation.addTarget(self, action: #selector(deviate), for: .touchUpInside)
-        let bar = UIStackView(arrangedSubviews: [sourcePicker, playButton, deviation])
-        bar.spacing = 8; bar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bar)
-        NSLayoutConstraint.activate([bar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8),
-            bar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
-            bar.topAnchor.constraint(equalTo: topAnchor), bar.heightAnchor.constraint(equalToConstant: 40)])
-        topAnchor = bar.bottomAnchor
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        simulatorPanel.translatesAutoresizingMaskIntoConstraints = false
+        simulatorPanel.perform = { [weak self] action in self?.handleSimulatorAction(action) }
+        locations.simulator.onChange = { [weak self] in self?.updateSimulatorPanel() }
+        view.addSubview(simulatorPanel)
+        NSLayoutConstraint.activate([
+            simulatorPanel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            simulatorPanel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            simulatorPanel.topAnchor.constraint(equalTo: topAnchor),
+        ])
+        updateSimulatorPanel()
+        topAnchor = simulatorPanel.bottomAnchor
         #endif
         NSLayoutConstraint.activate([webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
@@ -88,20 +97,46 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         webView.load(URLRequest(url: BundleSchemeHandler.origin))
     }
 
-    #if DEBUG && targetEnvironment(simulator)
-    @objc private func sourceChanged() {
-        if !locations.selectVirtual(sourcePicker.selectedSegmentIndex == 1) {
-            sourcePicker.selectedSegmentIndex = locations.virtual ? 1 : 0
-            showNotice("請先結束導航，再切換定位來源")
+    #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+    private func updateSimulatorPanel() {
+        simulatorPanel.update(locations.simulator, virtual: locations.virtual, navigating: navigating,
+                              ready: simulatorReady, picking: simulatorPicking)
+    }
+
+    func handleSimulatorAction(_ action: SimulatorNavigationPanel.Action) {
+        let simulator = locations.simulator
+        switch action {
+        case .selectVirtual(let enabled):
+            if !locations.selectVirtual(enabled) { showNotice("請先結束導航或等目前定位完成，再切換來源") }
+        case .choosePoints: emit(["type": "simulatorControl", "action": "pick"])
+        case .start:
+            simulatorReady = false
+            emit(["type": "simulatorControl", "action": "start"])
+        case .pause:
+            simulator.pause()
+            locations.updateSimulatorPause()
+            speech.stop()
+        case .resume:
+            simulator.resume()
+            locations.updateSimulatorPause()
+        case .end:
+            simulator.end()
+            speech.stop()
+            emit(["type": "simulatorControl", "action": "end"])
+        case .rate(let rate): simulator.setRate(rate)
+        case .straight: simulator.keepStraight()
+        case .park: simulator.setParked(!simulator.parked)
+        case .jitter: simulator.setJitter(!simulator.jitter)
+        case .signal:
+            simulator.setSignalLost(!simulator.signalLost)
+            if simulator.signalLost {
+                locations.reportSimulatorSignalLoss()
+                speech.stop()
+            }
         }
+        updateSimulatorPanel()
         status()
     }
-    @objc private func play() {
-        guard locations.virtual, navigating else { showNotice("先選虛擬定位、規劃路線並開始導航，再前進"); return }
-        locations.simulator.togglePlayback()
-        playButton.setTitle(locations.simulator.playing ? "暫停前進" : "沿路線前進", for: .normal)
-    }
-    @objc private func deviate() { if locations.virtual && navigating { locations.simulator.deviate() } }
     #endif
 
     func setForeground(_ active: Bool) {
@@ -127,7 +162,16 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         case "locationPermissionCancel": if let id = command["id"] as? String { locations.cancelPermission(id: id) }
         case "locationStart": if let id = command["id"] as? String { locations.start(id: id) }
         case "locationStop": if let id = command["id"] as? String { locations.stop(id: id) }
-        case "speak": speech.speak(command["text"] as? String ?? "", priority: command["priority"] as? Bool ?? false)
+        case "speak":
+            let text = command["text"] as? String ?? ""
+            let priority = command["priority"] as? Bool ?? false
+            #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+            if locations.virtual && locations.simulator.rate != .normal {
+                speech.speak(text, priority: priority, queueIfBusy: false)
+                return
+            }
+            #endif
+            speech.speak(text, priority: priority)
         case "stopSpeech": speech.stop()
         case "navigation": setNavigation(command["active"] as? Bool ?? false)
         case "ttsTest": speech.stop(); speech.speak("語音導航測試，前方路口請右轉。")
@@ -136,8 +180,17 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         case "appSettings", "locationSettings":
             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
         case "reverseGeocode": reverseGeocode(command)
-        #if DEBUG && targetEnvironment(simulator)
-        case "simRoute": if let coords = command["coords"] as? [[Double]] { locations.simulator.setRoute(coords) }
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        case "simulatorPrepare":
+            if navigating, locations.virtual, let coords = command["coords"] as? [[Double]] {
+                locations.simulator.prepare(coords)
+            }
+        case "simulatorPlanStatus":
+            simulatorReady = command["ready"] as? Bool ?? false
+            simulatorPicking = command["picking"] as? Bool ?? false
+            updateSimulatorPanel()
+        case "simulatorRouteChanged": if navigating && locations.virtual { locations.simulator.noteReroute() }
+        case "simulatorArrived": if navigating && locations.virtual { locations.simulator.arrive() }
         #endif
         default: break
         }
@@ -145,9 +198,13 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     private func setNavigation(_ active: Bool) {
         navigating = active
         UIApplication.shared.isIdleTimerDisabled = locations.foreground && active
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         locations.navigationActive = active
-        if !active { locations.simulator.pause(); playButton.setTitle("沿路線前進", for: .normal) }
+        if !active {
+            locations.simulator.end()
+            if locations.virtual { locations.updateSimulatorPause() }
+        }
+        updateSimulatorPanel()
         #endif
         if !active { speech.stop() }
     }
@@ -176,6 +233,11 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         webReady = false; locations.reset(); setNavigation(false)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        simulatorReady = false
+        simulatorPicking = false
+        updateSimulatorPanel()
+        #endif
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { webReady = true }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { locations.publishState(); status() }

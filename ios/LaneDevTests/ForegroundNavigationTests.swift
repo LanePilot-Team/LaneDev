@@ -38,6 +38,7 @@ final class ForegroundNavigationTests: XCTestCase {
     func plan(useVirtual: Bool = true) async throws {
         #if targetEnvironment(simulator)
         XCTAssertTrue(controller.locations.selectVirtual(useVirtual))
+        if useVirtual { controller.locations.simulator.setRate(.normal) }
         #endif
         _ = try await js("""
             const input = document.querySelector('.place-search-form input');
@@ -79,8 +80,7 @@ final class ForegroundNavigationTests: XCTestCase {
         #if targetEnvironment(simulator)
         XCTAssertTrue(controller.locations.virtual)
         XCTAssertFalse(controller.locations.selectVirtual(false), "Source cannot switch during navigation")
-        XCTAssertGreaterThan(controller.locations.simulator.route.count, 2)
-        controller.locations.simulator.togglePlayback()
+        XCTAssertGreaterThan(controller.locations.simulator.track.count, 2)
         #endif
         let before = try await js("return document.querySelector('.drive-hud')?.innerText ?? document.body.innerText")
         try await Task.sleep(for: .seconds(4))
@@ -219,32 +219,145 @@ final class ForegroundNavigationTests: XCTestCase {
     }
 
     #if targetEnvironment(simulator)
-    func testDeviationReroutesAndArrival() async throws {
+    func testSimulatorMissedTurnKeepsTrackThroughReroute() async throws {
         try await plan()
         _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.banner') && !document.querySelector('.gps-msg')")
-        try await Task.sleep(for: .seconds(2))
+        try await wait("document.querySelector('.banner-dist span')?.innerText.includes('左轉')")
         let simulator = controller.locations.simulator
-        let destination = try XCTUnwrap(simulator.route.last)
-        let revision = simulator.routeRevision
-        simulator.deviate()
-        let deadline = Date().addingTimeInterval(30)
-        while simulator.routeRevision == revision && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
-        XCTAssertGreaterThan(simulator.routeRevision, revision, "Off-route fixes must cause the real shared reroute")
+        controller.handleSimulatorAction(.rate(.fastest))
+        try await waitForSimulator { simulator.distanceM >= 32 }
+        let track = simulator.track.map { [$0.longitude, $0.latitude] }
+        let before = simulator.coordinate
+        controller.handleSimulatorAction(.straight)
+        let bearing = try XCTUnwrap(simulator.straightBearing)
+        try await waitForSimulator(seconds: 30) { simulator.reroutes > 0 }
+        let atReroute = simulator.distanceM
+        try await waitForSimulator { simulator.distanceM >= atReroute + 24 }
+        XCTAssertGreaterThan(SimulatorLocationSource.distance(before, simulator.coordinate), 50)
+        XCTAssertEqual(simulator.straightBearing, bearing)
+        XCTAssertEqual(simulator.track.map { [$0.longitude, $0.latitude] }, track)
         XCTAssertEqual(controller.locations.watches.count, 1)
-        print("IOS_REROUTE: revision \(revision) -> \(simulator.routeRevision); one native watch")
-        try await screenshot("rerouted-navigation")
-        // Inject an arrival GPS fix; the shared GpsDriver still decides arrival.
-        simulator.setRoute([[destination.longitude, destination.latitude], [destination.longitude, destination.latitude]])
-        simulator.togglePlayback()
-        simulator.tick()
-        try await wait("document.querySelector('.arrival-card')")
-        XCTAssertTrue(controller.locations.watches.isEmpty)
-        try await screenshot("arrival")
+        print("IOS_STAGE4_MISSED_TURN: reroutes=\(simulator.reroutes) bearing=\(bearing) moved=\(Int(atReroute))m originalTrack=\(track.count) nextFixes=\(Int(simulator.distanceM - atReroute))m watches=1")
+        try await screenshot("stage4-missed-turn-after-reroute")
+        controller.handleSimulatorAction(.end)
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        try await waitForSimulator { self.controller.locations.watches.isEmpty && !simulator.hasPendingWork }
+        XCTAssertTrue(controller.locations.selectVirtual(false))
+        XCTAssertFalse(controller.locations.updating)
+    }
+
+    func testSimulatorNavigationScenariosAndNaturalArrival() async throws {
+        let voiceWasEnabled = try await js("return document.querySelector('.client-settings input[type=checkbox]').checked") as? Bool
+        if voiceWasEnabled == false {
+            _ = try await js("document.querySelector('.client-settings input[type=checkbox]').click()")
+            addTeardownBlock { [weak self] in
+                _ = try await self?.js("const voice = document.querySelector('.client-settings input[type=checkbox]'); if (voice?.checked) voice.click()")
+            }
+        }
+        try await plan()
+        let simulator = controller.locations.simulator
+        let speechBefore = controller.speech.starts
+        _ = try await js("""
+            window.stage4Samples = [];
+            window.addEventListener('lane-native', ({detail}) => {
+              if (detail.type === 'position' && detail.motionTimestamp) window.stage4Samples.push(detail.coords);
+            });
+            """)
+        _ = try await js("document.querySelector('.route-start-button').click()")
+        try await wait("document.querySelector('.banner') && document.querySelector('.speed-num')?.innerText === '29'")
+        print("IOS_STAGE4_DRIVING: voiceWasEnabled=\(voiceWasEnabled ?? false) voiceReady=\(controller.speech.ready) speech=\(controller.speech.speech)")
+        if controller.speech.ready { try await waitForSimulator { self.controller.speech.starts > speechBefore } }
+        try await screenshot("stage4-normal-navigation")
+
+        controller.handleSimulatorAction(.pause)
+        try await wait("document.querySelector('.gps-weak')?.innerText.includes('虛擬導航已暫停')")
+        let pausedAt = simulator.elapsedSeconds
+        let pausedDistance = simulator.distanceM
+        XCTAssertFalse(simulator.hasPendingWork)
+        try await Task.sleep(for: .milliseconds(1250))
+        XCTAssertEqual(simulator.elapsedSeconds, pausedAt)
+        XCTAssertEqual(simulator.distanceM, pausedDistance)
+        XCTAssertEqual(controller.locations.watches.count, 1)
+        try await screenshot("stage4-paused-hud")
+
+        controller.handleSimulatorAction(.park)
+        controller.handleSimulatorAction(.jitter)
+        controller.handleSimulatorAction(.rate(.fast))
+        controller.handleSimulatorAction(.resume)
+        try await wait("document.querySelector('.speed-num')?.innerText === '0' && !document.querySelector('.gps-weak')?.innerText.includes('已暫停')")
+        try await waitForSimulator { simulator.elapsedSeconds >= pausedAt + 3 }
+        try await wait("stage4Samples.filter(c => c.speed === 0 && c.accuracy === 14).length >= 2")
+        XCTAssertEqual(simulator.distanceM, pausedDistance)
+        let jittered = try await js("""
+            return window.stage4Samples.filter(c => c.speed === 0 && c.accuracy === 14).slice(-2)
+              .map(c => [c.longitude, c.latitude]);
+            """) as? [[Double]]
+        XCTAssertEqual(jittered?.count, 2)
+        XCTAssertNotEqual(jittered?.first, jittered?.last)
+        controller.handleSimulatorAction(.jitter)
+        controller.handleSimulatorAction(.park)
+
+        controller.handleSimulatorAction(.signal)
+        try await wait("document.querySelector('.gps-weak')?.innerText.includes('GPS 訊號中斷')")
+        try await screenshot("stage4-signal-outage")
+        let outageDistance = simulator.distanceM
+        let outageSamples = try await js("return window.stage4Samples.length") as? Int
+        try await waitForSimulator { simulator.distanceM >= outageDistance + 16 }
+        let samplesAfterOutage = try await js("return window.stage4Samples.length") as? Int
+        XCTAssertEqual(outageSamples, samplesAfterOutage)
+        controller.handleSimulatorAction(.signal)
+        try await wait("!document.querySelector('.gps-weak')?.innerText.includes('GPS 訊號中斷') && document.querySelector('.speed-num')?.innerText === '29'")
+        try await screenshot("stage4-resumed-hud")
+
+        controller.handleSimulatorAction(.rate(.fastest))
+        try await wait("document.querySelector('.arrival-card')", seconds: 50)
+        try await waitForSimulator { self.controller.locations.watches.isEmpty && !simulator.hasPendingWork }
+        XCTAssertEqual(simulator.state, .arrived)
+        XCTAssertNil(simulator.straightBearing)
+        XCTAssertGreaterThan(simulator.distanceM, 850)
+        print("IOS_STAGE4_NATURAL_ARRIVAL: elapsed=\(simulator.elapsedSeconds)s distance=\(Int(simulator.distanceM))m speechStarts=\(controller.speech.starts - speechBefore) watches=0")
+        try await screenshot("stage4-natural-arrival")
         try await click("完成導航")
         try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
         XCTAssertFalse(controller.navigating)
         XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
+    }
+
+    func testSimulatorRatesKeepMotionTimeDistanceAndSpeed() async throws {
+        let simulator = SimulatorLocationSource()
+        var samples: [(wall: Double, motion: Double, distance: Double, speed: Double)] = []
+        simulator.onFix = { location, motion in
+            samples.append((location.timestamp.timeIntervalSince1970, motion, simulator.distanceM, location.speed))
+        }
+        defer { simulator.stop() }
+        XCTAssertTrue(simulator.prepare([[120.2758, 22.7327], [120.2758, 22.744]]))
+        simulator.start()
+        for rate in SimulatorLocationSource.Rate.allCases {
+            simulator.setRate(rate)
+            samples.removeAll()
+            try await waitForSimulator { samples.filter { $0.speed > 0 }.count >= 3 }
+            let moving = Array(samples.filter { $0.speed > 0 }.suffix(3))
+            for (a, b) in zip(moving, moving.dropFirst()) {
+                XCTAssertEqual(b.motion - a.motion, 1000, accuracy: 0.01)
+                XCTAssertEqual(b.distance - a.distance, 8, accuracy: 0.01)
+                XCTAssertEqual(b.speed * 3.6, 28.8, accuracy: 0.01)
+            }
+            let interval = (moving[2].wall - moving[0].wall) / 2
+            let expected = 1 / Double(rate.rawValue)
+            XCTAssertEqual(interval, expected, accuracy: max(0.08, expected * 0.4))
+            print("IOS_STAGE4_RATE: \(rate.rawValue)x wall=\(String(format: "%.3f", interval))s logical=1s distance=8m speed=28.8km/h")
+        }
+        simulator.stop()
+        XCTAssertFalse(simulator.hasPendingWork)
+    }
+
+    func waitForSimulator(seconds: Double = 10, _ condition: @escaping () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition() && Date() < deadline { try await Task.sleep(for: .milliseconds(35)) }
+        guard condition() else {
+            XCTFail("Timed out waiting for Simulator playback")
+            throw NSError(domain: "LaneDevSimulatorTests", code: 1)
+        }
     }
 
     /// Run separately with simctl privacy grant and simctl location start; no virtual source.

@@ -127,19 +127,20 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | 第一階段：環境與移植盤點 | 規範、工具、原生功能、版本、WK 風險、路線基準與移除清單。 | 實際環境命令、lock 檢查、兩種基準重跑；明列既有／本輪／待確認，保存原工作區。 | **本輪完成**；證據連結如上。 |
 | 第二階段：容器／相容性收斂 | 沿用既有 Swift＋WK 專案，對齊最低 iOS 16.4、原生與共用橋接，補儲存／Worker／錯誤路徑。 | App／測試 target 與產生器對齊；Simulator Debug／Release 與 arm64 build；無 Mac 伺服器載入全部本機資料；localStorage 重啟驗證；非法 origin／寫入／校驗失敗不能啟動導航；確認 WebGL2／Worker／字型。 | 已有前次基礎實作與證據；**不把它當成本輪最低版本門檻已通過**。16.x runtime 不足需實體最低版本裝置或補足相容環境。 |
 | 第三階段：平台介面與 iOS 原生定位 | 單次、持續定位與授權；精度、時間、行進方向與羅盤；中斷、恢復及取消訂閱。 | Simulator 系統注入經 Core Location、橋接、共用核心進入導航 HUD；權限與生命週期測試；重跑 24＋35 路由基準與 Android 建置。 | 本輪實作與操作結果見第三階段紀錄。 |
-| 第四階段：移除虛擬功能與實機 | 先完成下列實際刪除，再處理 Team／簽章、iPhone 安裝與道路／音訊／效能驗證。 | 刪除來源／UI／橋接／hook／測試／腳本入口；重新產生專案與打包；源码與成品掃描、iOS／Android 回歸；實體移動與聽測有可重現證據。 | 受實體 iPhone／簽章環境限制；不能以 Simulator／unsigned build 替代。 |
+| 第四階段：前期虛擬導航 | 獨立位置來源、選起終點、播放控制、1x／3x／8x、應轉未轉及訊號情境。 | 操作正常導航、偏航、暫停／恢復及抵達；核對倍速單位與訂閱；稽核正式包。 | 本輪結果見第四階段紀錄。 |
+| 第五階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
 各實作階段都要更新本文件、執行適當測試與建置，保存失敗與成功證據；不得只交計畫。只有本階段盤點需要的測試在這輪重新執行，未擅自推進功能實作。
 
 ### 8. 實體 iPhone 階段前的虛擬功能移除清單
 
-以下是**尚待實際刪除**的清單；現有條件編譯與 Release 不顯示工具不等於已刪除。
+以下是尚待實際刪除的範圍。第四階段的表格補列本輪檔案、旗標和入口。
 
-- [ ] 刪除 `ios/LaneDev/SimulatorLocationSource.swift` 及其來源／timer／路線推進／偏航注入，不留下虛擬位置預設值或保留開關。
+- [ ] 刪除 `ios/LaneDev/SimulatorLocationSource.swift`、`SimulatorNavigationPanel.swift`、軌跡、倍速與各情境控制。
 - [ ] 刪除 `LocationService.swift` 的 simulator property、virtual selector、導航鎖定狀態及所有 Simulator 分支，只剩 Core Location 提供器。
-- [ ] 刪除 `NavigationViewController.swift` 的原生來源 selector／前進／偏航工具列、控制 handler、`LaneSimulator` 注入及 `simRoute` 指令。
-- [ ] 刪除 `web-source/src/native/platform.ts` 的 LaneSimulator 型別及 `src/nav/useDrive.ts` 的兩個 setRoute hook；重新編譯，不能只讓 hook 在執行時是 undefined。
+- [ ] 刪除 `NavigationViewController.swift` 中的面板、控制 handler、`LaneSimulator` 注入與第四階段列出的全部橋接入口。
+- [ ] 刪除 `platform.ts` 的 `LaneSimulator` 型別，以及 `App.tsx`、`PlanPanel.tsx` 和 `nav/` 的面板、樣本時計與播放接點。保留取消待執行重規劃這類共用定位生命週期修正。
 - [ ] 移除／改寫 `ForegroundNavigationTests.swift`、`ForegroundUITests.swift` 中依賴虛擬前進／偏航／控制項的測試；保留可驗證真實定位契約的測試，不留下另一套模擬導航。
 - [ ] 移除／改寫 `ios/tools/test-simulator.mjs` 相關虛擬導航與座標情境入口；清除 Simulator 測試定位情境。純測試 Geolocation contract 的 `iosBridge.test.mjs` 應先確認沒有虛擬導航依賴，避免誤刪必要回歸。
 - [ ] 從 `ios/generate-project.rb` 產生的 Xcode source／resource references 與專案中移除相關檔案，再檢查產生器不會重新帶回；調整 simulator-specific scheme／測試選取。
@@ -222,7 +223,46 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 - 實體 iPhone 的 GPS、磁場干擾、初次授權彈窗、概略位置和全域服務設定切換待實際操作。iOS 16.4 執行需對應 runtime 或裝置，有簽章的 iPhone 安裝需 Team 與實體裝置。
 - Home 已驗證前景導航暫停與恢復。背景持續導航及鎖屏持續導航目前未支援，真正鎖屏的操作行為仍待獨立驗證。
-- 下一階段依上方清單刪除 App 內虛擬定位來源、工具列、橋接接點及相關測試，再跑共用、iOS 與 Android 驗證，之後進行有簽章的實機前景驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍受金鑰及來源授權限制。
+- 第四階段將既有 Simulator 工具收斂為完整且可移除的開發面板，第五階段執行完整刪除與實機驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍受金鑰及來源授權限制。
+
+## 第四階段：前期虛擬導航
+
+### 行為與時間語意
+
+- 選「虛擬定位」後，可由開發面板進入原有地圖選點和地標搜尋。開始導航仍走 `useDrive` 與 `GpsDriver`。虛擬來源把 `CLLocation` 交給第三階段的 `LocationService`，再以相同的 `LocationSource` 介面回到道路匹配、車道、偏航、測速、語音及抵達。
+- 每趟只擷取一次起始路線用作初始行進軌跡。情境中的「保持直行」鎖定當時行向，往前連續行駛。共用核心重算時只通知面板的重算計數，軌跡、進度和行向保留。
+- 1x、3x、8x 分別約每 1、⅓、⅛ 個真實秒送一筆位置，每筆都代表 1 模擬秒，正常前進 8 m，車速報 8 m/s（28.8 km/h）。匹配的時間差、停車抵達與 ETA 使用模擬時鐘。位置有效性、定位逾時與重算 CPU 冷卻仍使用系統時間。地圖補間適配播放倍率，轉向與測速繼續用同一套公尺與 km/h 門檻。倍速播放中會略過來不及播完的一般提示，迫近轉向與抵達沿用既有優先級。
+- 暫停取消來源的計時器、web 位置逾時與待執行重算，凍結位置與模擬時間。繼續時沿原軌跡送新位置。停車繼續送速度 0，定位抖動只改樣本座標及精度。訊號中斷保留行進但停止送 fix，恢復後以當下位置繼續。結束與離開前景會停止先前的定位工作。
+
+### 後期移除項目
+
+| 範圍 | 檔案、介面與入口 |
+| --- | --- |
+| 來源與 UI | 改寫的 `ios/LaneDev/SimulatorLocationSource.swift` 與新增的 `SimulatorNavigationPanel.swift`。刪除預設錨點、倍率、模擬時計、原始軌跡、保持直行、停車、抖動、中斷、位置回呼和控制項 `location-source`、`sim-choose`、`sim-playback`、`sim-end`、`sim-scenarios`、`sim-rate`、`sim-status`。 |
+| 原生橋接 | `NavigationViewController.swift` 的 `LaneSimulator` document-start 注入、`simulatorControl`、`simulatorPrepare`、`simulatorPlanStatus`、`simulatorRouteChanged`、`simulatorArrived` 及倍速語音佇列限制。`LocationService.swift` 的模擬來源切換、暫停／中斷回報、`motionTimestamp` 和 `playbackRate` payload。`Bridge.js` 的暫停自訂文案及 `SpeechService.swift` 的 `queueIfBusy` 由本階段使用，可隨相關入口移除。 |
+| 共用前端 | `native/platform.ts` 的 `LaneSimulator`，`App.tsx` 的點選／結束 handler，`plan/PlanPanel.tsx` 的就緒狀態／開始 handler。`nav/useDrive.ts` 的 prepare、noteReroute 與 arrive，`gpsNav.ts`、`gpsAnimation.ts`、`driveState.ts`、`DriveHUD.tsx` 的模擬時鐘、畫面插值倍率及 ETA 欄位。 |
+| 組態與資源 | `project.pbxproj` 的面板／來源引用、`generate-project.rb` 的 `LANE_SIMULATOR_NAVIGATION`、`verify-web-mode.sh` 的旗標比對、`BundleSchemeHandler.swift` 的開發模式條件。Vite `ios-simulator`、`.web/ios-simulator/public`、`client-policy.json.simulatorTools` 與 `build-web.mjs`、`package-client.mjs`、`tools/sync-web-assets.mjs` 中對應的模式／檢查。面板由 UIKit 建立，軌跡從現有規劃或直行操作產生，沒有另包 GPX、道路或地圖資料。 |
+| 測試與操作指令 | `ForegroundNavigationTests.swift` 的虛擬用例、`ForegroundUITests.swift` 的開發面板操作、`ios/tools/test-simulator.mjs` 的虛擬測試選取、`ios/README.md`、`AGENTS.md` 的前期例外和移植計畫。保留純 Core Location、Android／瀏覽器、定位契約等回歸。歷史證據可留在 `docs/ios-evidence/stage4/`。 |
+
+### 實際操作與證據
+
+2026-11-20 使用 iPhone 17 Pro Simulator（iOS 26.3.1）與 Xcode 26.2 操作內建資產。
+
+| 項目 | 結果 |
+| --- | --- |
+| 面板選點與正常導航 | XCUITest 用「選起終點」開啟既有規劃，分別選高雄大學產學育成中心及國立高雄大學，以面板的「開始」進入導航。畫面為 3x，速度顯示 29 km/h，實際有轉向與車道指引。 [行駛畫面](ios-evidence/stage4/driving.png) |
+| 應轉未轉 | 起始導航提示左轉後使用「保持直行」。共用核心在累積行駛 136 m 時已完成重算，當時的直行方位約 145.75°。重算後再走 24 m，軌跡的 191 個起始點與行向相同，定位訂閱維持 1 個。結束後訂閱與計時工作歸零，切回 Core Location。 [偏航重算畫面](ios-evidence/stage4/missed-turn.png) |
+| 暫停／繼續 | 實際點按面板暫停、切換倍率後繼續，也按 Home 再回到 App。另在整合測試停住 1.25 個真實秒，行駛里程與模擬秒數沒有增加，來源沒有 timer 或待送初始 fix，訂閱保留供恢復。 [暫停](ios-evidence/stage4/paused.png) · [繼續](ios-evidence/stage4/resumed.png) |
+| 停車／抖動／中斷 | 停車時 HUD 顯示 0，虛擬里程凍結。開啟抖動時擷取兩筆不同座標，速度皆為 0，回報精度 14 m。中斷期間車仍前進至少 16 m，WKWebView 收到 0 筆位置，恢復後重新收到 fix 並恢復 29 km/h。 [訊號中斷](ios-evidence/stage4/signal-outage.png) |
+| 自然抵達與語音 | 1x、3x、8x 切換後沿起始路徑前進 1,032 m、累積 132 個模擬秒，由共用核心顯示抵達，未注入終點座標。抵達後訂閱及來源 timer 均歸零，本次導航收到 11 次原生語音開始回呼。 [抵達畫面](ios-evidence/stage4/arrival.png) |
+| 倍速 | 同一行駛測試量得約 1.000、0.334、0.125 個真實秒一筆。三組各筆間距皆為 1 模擬秒／8 m，速度 28.8 km/h。 |
+
+- `node ios/tools/build-web.mjs all` 完成兩種 iOS 資產建置。306 項共用測試及 35 組楠梓參考通過，24 組路由預計算前後一致。`npm run build` 和 `node tools/sync-web-assets.mjs` 更新 Android 的正式資產。官方道路、待轉區與參考路線資料維持原樣。
+- `node ios/tools/test-simulator.mjs debug` 通過 11 項 XCTest、2 項 XCUITest。`release` 通過 2 項 XCUITest，包含 Core Location 前景導航和 Home 復原。`denied` 通過 1 項實際撤銷授權測試。完整 Xcode log 與 `.xcresult` 位於 `ios/.build/test-results/` 的 `debug-2026-11-20T15-46-15-803Z`、`release-2026-11-20T15-48-45-960Z`、`denied-2026-11-20T15-49-36-592Z`。另以 `stage4-resume.xcresult` 重跑面板操作，在新 fix 清除暫停提示後保存繼續畫面。
+- iPhone arm64 Debug 和 Release 的未簽章建置成功。掃描兩個 iPhone App 及 Simulator Release 的 native executable、Debug dylib 及 Web 資產，確認皆使用 `ios-release`，腳本 SHA-256 正確，未含虛擬來源、命令、面板、時計及倍率標記。Simulator Debug 的相同掃描確實找到工具。另把開發旗標傳給 Release 的資產校驗，確認建置校驗會拒絕組態不一致。
+- Gradle Wrapper 8.14.3、JDK 21、Android SDK 36 執行 `assembleDebug testDebugUnitTest --offline --rerun-tasks` 成功，APK 內的資產政策及實際 JS 均排除 iOS 開發功能，1 項 Android 單元測試通過。Android 裝置操作待實機驗證。
+
+首輪建置修正了 Swift 非同步測試輔助函式的逃逸 closure。首輪操作時這個 Simulator 的語音偏好原本關閉，測試已改為開啟並於結束時還原，重跑收到原生導航語音回呼。實體 iPhone 的 GPS、喇叭或藍牙輸出、簽章和道路驗收待第五階段。背景及鎖屏持續導航目前仍屬前景範圍之外，這一輪的 Home 復原測試只證明回前景可接續。
 
 ---
 

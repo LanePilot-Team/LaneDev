@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 /// Read-only, local bundle origin. No HTTP server, writes, or private WebKit preferences.
 final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
     static let origin = URL(string: "lanedev://app/index.html")!
-    #if DEBUG && targetEnvironment(simulator)
+    #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
     static let expectedMode = "ios-simulator"
     #else
     static let expectedMode = "ios-release"

@@ -48,18 +48,29 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private var startedAt = Date()
     private var lastFixAt = Date.distantPast
 
-    #if DEBUG && targetEnvironment(simulator)
+    #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
     let simulator = SimulatorLocationSource()
     private(set) var virtual = false
     var navigationActive = false
 
     func selectVirtual(_ enabled: Bool) -> Bool {
-        guard !navigationActive else { return false }
+        if virtual == enabled { return true }
+        guard !navigationActive, watches.isEmpty, permissionRequests.isEmpty else { return false }
         stopUpdates()
+        simulator.end()
         virtual = enabled
         clearHeading()
+        publishForeground()
         checkAuthorization()
         return true
+    }
+
+    func updateSimulatorPause() { publishForeground() }
+
+    func reportSimulatorSignalLoss() {
+        guard virtual, foreground, !watches.isEmpty else { return }
+        emit(["type": "positionError", "ids": Array(watches), "code": 2,
+              "reason": "unavailable", "message": "GPS 訊號中斷，等待恢復"])
     }
     #endif
 
@@ -71,16 +82,16 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = false
         manager.allowsBackgroundLocationUpdates = false
-        #if DEBUG && targetEnvironment(simulator)
-        simulator.onFix = { [weak self] location in
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        simulator.onFix = { [weak self] location, motionTimestamp in
             guard let self, self.virtual else { return }
-            self.deliver(location)
+            self.deliver(location, motionTimestamp: motionTimestamp)
         }
         #endif
     }
 
     var authorization: LocationAuthorization {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         if virtual { return .full }
         #endif
         return .resolve(manager.authorizationStatus, accuracy: manager.accuracyAuthorization,
@@ -88,7 +99,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     var locationStatus: String {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         if foreground && virtual { return "Simulator 虛擬定位；非實機 GPS" }
         #endif
         return foreground ? authorization.message : "前景導航已暫停，回到 App 後等待新定位"
@@ -100,7 +111,15 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func publishForeground() {
-        emit(["type": "lifecycle", "active": foreground, "timestamp": Date().timeIntervalSince1970 * 1000])
+        var event: [String: Any] = ["type": "lifecycle", "active": foreground,
+                                    "timestamp": Date().timeIntervalSince1970 * 1000]
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        if foreground && virtual && simulator.state == .paused {
+            event["active"] = false
+            event["message"] = "虛擬導航已暫停"
+        }
+        #endif
+        emit(event)
     }
 
     private func publishAuthorization() {
@@ -179,7 +198,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     private func stopUpdates() {
         guard updating else { return }
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         if virtual { simulator.stop() }
         else {
             manager.stopUpdatingLocation()
@@ -210,7 +229,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
                 startedAt = Date()
                 lastFixAt = .distantPast
                 updating = true
-                #if DEBUG && targetEnvironment(simulator)
+                #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
                 if virtual { simulator.start(); changed(); return }
                 #endif
                 manager.startUpdatingLocation()
@@ -261,7 +280,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         guard !virtual else { return }
         #endif
         for location in locations.reversed() {
@@ -270,13 +289,19 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     @discardableResult
-    private func deliver(_ location: CLLocation) -> Bool {
+    private func deliver(_ location: CLLocation, motionTimestamp: Double? = nil) -> Bool {
         guard foreground, updating, authorization == .full, !watches.isEmpty,
               location.timestamp > lastFixAt,
               var payload = Self.position(location, since: startedAt, now: Date()) else { return false }
         lastFixAt = location.timestamp
         payload["type"] = "position"
         payload["ids"] = Array(watches)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
+        if let motionTimestamp, motionTimestamp > 0 {
+            payload["motionTimestamp"] = motionTimestamp
+            payload["playbackRate"] = simulator.rate.rawValue
+        }
+        #endif
         emit(payload)
         return true
     }
@@ -287,7 +312,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading heading: CLHeading) {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         guard !virtual else { return }
         #endif
         guard foreground, updating, authorization == .full,
@@ -298,7 +323,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         guard !virtual else { return }
         #endif
         guard foreground, !watches.isEmpty else { return }

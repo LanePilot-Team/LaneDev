@@ -51,14 +51,17 @@ node ios/tools/test-simulator.mjs denied
 UI 測試執行器可能重設系統模擬定位，工具在 App 啟動後重設注入路徑；這仍是 Simulator 座標，不是真實 GPS。
 `LaneDevRelease` scheme 用於無虛擬工具的 Release 操作驗證。
 
-Simulator Debug 頂部選「虛擬定位」，先搜尋目的地、規劃、開始導航，再按「沿路線前進」。
-固定以每秒定位推進，沒有倍率或另一套導航演算法。「偏航」會移開定位，讓既有核心自行判斷與重規劃。
-切換來源需先結束導航，Core Location 與虛擬來源不能同時送資料。虛擬定位不代表真實 GPS 驗證。
+在 `LaneDev` 的 Simulator Debug 成品上，於頂部選「虛擬定位」。
+
+1. 點「選起終點」，依序點地圖或利用規劃面板的「更換起點」「更換終點」搜尋。路線就緒後點開發面板的「開始」。
+2. 以 `1x`、`3x` 或 `8x` 切換播放頻率。「暫停」凍結車輛與模擬時間，「繼續」從原處接續，「結束」清除這一趟的路線和訂閱。
+3. 要重現應轉未轉，在已開始前進且轉向前，從「情境」選「保持直行」。重規劃後仍沿當時的行向走。以「結束」回到規劃下一趟。
+4. 「停車」送出速度 0，「定位抖動」加入固定的定位誤差。「中斷訊號」停止回傳 fix，但車仍在前進，選「恢復訊號」後送出新的位置。
+
+換倍速時每筆仍是 1 模擬秒、正常行駛仍是 8 m/s。面板顯示模擬秒數與行駛公尺。切換 Core Location 前需先結束導航，或等目前的單次定位結束。
 
 實體 iPhone / Release 的虛擬來源、工具列與接收指令全部由條件編譯排除。
-**轉入實機階段前仍必須完整刪除** `SimulatorLocationSource.swift`、NavigationViewController／LocationService 的 Simulator 區塊、
-`web-source/src/native/platform.ts` 的 LaneSimulator 宣告、useDrive 的兩個 setRoute 接點及相應測試，再重跑驗證與檢查二進位字串。
-不能以本輪編譯排除取代後續實際刪除。
+**轉入實機階段前必須完整刪除**虛擬來源、面板、橋接、建置旗標與測試入口。完整盤點見[第四階段移植紀錄](../docs/ios-port-plan.md#第四階段前期虛擬導航)。
 
 只支援前景。離開 App／鎖屏時停止位置與語音並恢復自動休眠；返回前景等待新位置。
 未配置 UIBackgroundModes、Always 定位或背景音訊，不保證背景、鎖屏導航。

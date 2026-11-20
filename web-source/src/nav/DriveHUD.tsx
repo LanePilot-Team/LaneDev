@@ -230,7 +230,10 @@ export function DriveHUD({
           <span className="trip-eta">
             {drive.arrived ? '已抵達'
               : drive.arriving ? '即將抵達目的地'
-                : `約 ${Math.max(1, Math.ceil(drive.remainS / 60))} 分鐘 · ` + new Date(arrivalTimestamp(Date.now(), drive.remainS)).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' 抵達'}
+                : `約 ${Math.max(1, Math.ceil(drive.remainS / 60))} 分鐘 · ` + new Date(arrivalTimestamp(
+                  (import.meta.env.MODE === 'ios-simulator' ? drive.motionTimestamp : undefined) ?? Date.now(),
+                  drive.remainS,
+                )).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' 抵達'}
           </span>
           {drive.roadName && <span className="trip-road">{drive.roadName}</span>}
         </div>

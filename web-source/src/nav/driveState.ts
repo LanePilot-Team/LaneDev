@@ -9,6 +9,8 @@ export interface DriveState {
   traveledM: number
   remainM: number
   remainS: number
+  /** Simulator motion clock, available only in the iOS development bundle. */
+  motionTimestamp?: number
   next: Maneuver | null
   /** next 之後緊接的動作（連動指示「隨後…」用） */
   next2: Maneuver | null

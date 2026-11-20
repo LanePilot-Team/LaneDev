@@ -1,5 +1,5 @@
 import { requestCurrentPosition } from '../nav/geolocation.ts'
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useEffectEvent } from 'react'
 import { ManeuverList } from './ManeuverList.tsx'
 import type { Planner } from './usePlanner.ts'
 import type { MapCore } from '../app/mapCore.ts'
@@ -35,7 +35,8 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
     }
   }
   useEffect(() => {
-    if (!planner.stopsRef.current[0]?.pos) void useCurrentStart()
+    const stops = planner.stopsRef.current
+    if (!stops[0]?.pos && stops.at(-1)?.pos) void useCurrentStart()
   }, [])
   const { stops, routeError, routeSummary, profile } = planner
   const label = (i: number) => i === 0 ? '起點' : i === stops.length - 1 ? '終點' : `停靠點 ${i}`
@@ -58,6 +59,27 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
     if (id === planner.stopsRef.current[0]?.id) setLocationError('')
   }
   const routeStepsClass = routeSummary ? (stepsOpen ? ' route-steps-open' : ' route-steps-closed') : ''
+  const simulatorStart = useEffectEvent((event: Event) => {
+    if (import.meta.env.MODE !== 'ios-simulator') return
+    const data = (event as CustomEvent).detail
+    if (data?.type === 'simulatorControl' && data.action === 'start' && routeSummary && editing === null && !locating) {
+      startGpsNav()
+    }
+  })
+  useEffect(() => {
+    if (import.meta.env.MODE !== 'ios-simulator') return
+    const control = (event: Event) => simulatorStart(event)
+    window.addEventListener('lane-native', control)
+    return () => {
+      window.removeEventListener('lane-native', control)
+      window.LaneSimulator?.planStatus(false, false)
+    }
+  }, [])
+  useEffect(() => {
+    if (import.meta.env.MODE === 'ios-simulator') {
+      window.LaneSimulator?.planStatus(Boolean(routeSummary && editing === null && !locating), true)
+    }
+  }, [routeSummary, editing, locating])
   return <section className={`side-panel route-search-panel route-preview-card${editing !== null ? ' is-searching' : ''}${routeStepsClass}`} aria-label="搜尋與路線規劃">
     <div className="sp-head route-preview-head">
       <div className="route-preview-title">

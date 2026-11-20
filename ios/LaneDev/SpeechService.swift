@@ -29,11 +29,11 @@ final class SpeechService: NSObject, @preconcurrency AVSpeechSynthesizerDelegate
     }
     @objc private func interrupted() { stop(); speech = "音訊已中斷，等待下一則導航指示"; changed() }
     func setForeground(_ active: Bool) { foreground = active; if !active { stop() }; changed() }
-    func speak(_ text: String, priority: Bool = false) {
+    func speak(_ text: String, priority: Bool = false, queueIfBusy: Bool = true) {
         guard foreground, !text.isEmpty, text.count <= 1000 else { return }
         guard let voice else { speech = "無法播放：缺少中文聲音"; changed(); return }
         if priority { stop() }
-        guard pending.count < 3 else { return }
+        guard pending.count < (queueIfBusy ? 3 : 1) else { return }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])

@@ -1,7 +1,7 @@
 // LaneDev Android 用戶端 App：模式機（瀏覽／規劃／導航）+ 點擊分派 + 畫面組裝。
 // 功能實作在 app/（地圖核心）、plan/（規劃）、nav/（導航）、browse/（路段資訊）、places/（搜尋）、
 // native/（Android 原生橋接）。道路資料唯讀，沒有編輯功能。
-import { useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useMapCore, type Mode } from './app/mapCore.ts'
 
 import { usePlanner } from './plan/usePlanner.ts'
@@ -40,6 +40,7 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [mode, setModeState] = useState<Mode>('browse')
   const modeRef = useRef<Mode>('browse')
+  const pickRevision = useRef(0)
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m) }
 
   const [roadInfo, setRoadInfo] = useState<Record<string, unknown> | null>(null)
@@ -159,6 +160,26 @@ export default function App() {
     restoreBrowseMap()
   }
 
+  const simulatorControl = useEffectEvent((event: Event) => {
+    if (import.meta.env.MODE !== 'ios-simulator' || loading) return
+    const data = (event as CustomEvent).detail
+    if (data?.type !== 'simulatorControl') return
+    if (data.action === 'pick' && mode !== 'drive') {
+      pickRevision.current++
+      clearDestinationSelection()
+      setRoadInfo(null)
+      planner.startPick()
+      setMode('pick')
+    }
+    if (data.action === 'end' && mode === 'drive') endDrive()
+  })
+  useEffect(() => {
+    if (import.meta.env.MODE !== 'ios-simulator') return
+    const control = (event: Event) => simulatorControl(event)
+    window.addEventListener('lane-native', control)
+    return () => window.removeEventListener('lane-native', control)
+  }, [])
+
   function switchMode(m: Mode) {
     if (modeRef.current === 'drive') endDrive()
     if (m !== 'pick') planner.clearAllRoute()
@@ -242,7 +263,8 @@ export default function App() {
 
       {/* ── 側面板：路線規劃 ── */}
       {mode === 'pick' && (
-        <PlanPanel core={core} planner={planner} onClose={() => switchMode('browse')}
+        <PlanPanel key={import.meta.env.MODE === 'ios-simulator' ? pickRevision.current : 0}
+          core={core} planner={planner} onClose={() => switchMode('browse')}
           startGpsNav={startGpsNav} startSimDrive={startSimDrive} />
       )}
       {import.meta.env.DEV && sim && <SimControls sim={sim} driving={mode === 'drive'} />}

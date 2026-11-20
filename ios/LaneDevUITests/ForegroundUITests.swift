@@ -80,35 +80,61 @@ final class ForegroundUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.segmentedControls["location-source"].waitForExistence(timeout: 10))
-        app.segmentedControls["location-source"].buttons["虛擬定位"].tap()
         let search = app.webViews.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 30))
-        search.tap()
-        search.typeText("高雄大學")
-        if app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
-        if app.buttons["Done"].exists { app.buttons["Done"].tap() }
-        let university = app.webViews.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", "國立高雄大學 81148")).firstMatch
-        XCTAssertTrue(university.waitForExistence(timeout: 10), app.debugDescription)
-        university.tap()
-        let route = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "路線")).firstMatch
-        XCTAssertTrue(route.waitForExistence(timeout: 10), app.debugDescription)
-        route.tap()
-        let start = app.webViews.buttons["開始導航"]
-        XCTAssertTrue(start.waitForExistence(timeout: 15), app.debugDescription)
-        start.tap()
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.webViews.buttons["目前位置"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        app.segmentedControls["location-source"].buttons["虛擬定位"].tap()
+        app.buttons["sim-choose"].tap()
+        XCTAssertTrue(app.webViews.buttons["更換起點"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.webViews.buttons["更換終點"].exists)
+        XCTAssertTrue(app.staticTexts["sim-status"].label.contains("點地圖選起點與終點"))
+        func choose(_ endpoint: String, query: String, name: String) {
+            app.webViews.buttons["更換\(endpoint)"].tap()
+            let field = app.webViews.textFields["搜尋\(endpoint)地點或地址"]
+            XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+            field.tap()
+            field.typeText(query)
+            if app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
+            if app.buttons["Done"].exists { app.buttons["Done"].tap() }
+            let result = app.webViews.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+            XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
+            result.tap()
+        }
+        choose("起點", query: "高雄大學產學育成中心", name: "高雄大學產學育成中心")
+        choose("終點", query: "高雄大學", name: "國立高雄大學 81148")
+        let playback = app.buttons["sim-playback"]
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: playback)], timeout: 15), .completed)
+        app.segmentedControls["sim-rate"].buttons["3x"].tap()
+        playback.tap()
         let end = app.webViews.buttons["✕ 結束"]
         XCTAssertTrue(end.waitForExistence(timeout: 15), app.debugDescription)
         let direction = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "前方 ")).firstMatch
         XCTAssertTrue(direction.waitForExistence(timeout: 15), app.debugDescription)
-        app.buttons["沿路線前進"].tap()
-        let nav = XCTAttachment(screenshot: app.screenshot())
-        nav.name = "touch-foreground-navigation"; nav.lifetime = .keepAlways; add(nav)
+        func capture(_ name: String) {
+            let nav = XCTAttachment(screenshot: app.screenshot())
+            nav.name = name; nav.lifetime = .keepAlways; add(nav)
+        }
+        capture("stage4-panel-driving")
+        playback.tap()
+        XCTAssertEqual(playback.label, "繼續")
+        XCTAssertTrue(app.staticTexts["sim-status"].label.hasPrefix("已暫停"))
+        let pauseNotice = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "虛擬導航已暫停")).firstMatch
+        XCTAssertTrue(pauseNotice.waitForExistence(timeout: 5))
+        capture("stage4-panel-paused")
+        app.segmentedControls["sim-rate"].buttons["1x"].tap()
+        playback.tap()
+        XCTAssertEqual(playback.label, "暫停")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: pauseNotice)], timeout: 10), .completed)
+        capture("stage4-panel-resumed")
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5) || app.state == .runningBackgroundSuspended)
         app.activate()
         XCTAssertTrue(end.waitForExistence(timeout: 15))
-        end.tap()
+        app.buttons["sim-end"].tap()
         XCTAssertTrue(app.webViews.textFields.firstMatch.waitForExistence(timeout: 10))
+        app.segmentedControls["location-source"].buttons["Core Location"].tap()
+        XCTAssertFalse(app.buttons["sim-playback"].isHittable)
     }
     #else
     @MainActor
@@ -117,7 +143,9 @@ final class ForegroundUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertFalse(app.segmentedControls["location-source"].exists)
-        XCTAssertFalse(app.buttons["沿路線前進"].exists)
+        XCTAssertFalse(app.buttons["sim-playback"].exists)
+        XCTAssertFalse(app.buttons["sim-choose"].exists)
+        XCTAssertFalse(app.buttons["sim-scenarios"].exists)
         let search = app.webViews.textFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 30))
         XCTAssertTrue(app.webViews.buttons["目前位置"].waitForExistence(timeout: 30))

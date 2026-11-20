@@ -90,12 +90,13 @@ export class GpsDriver {
   private wakeLock: WakeLockSentinelLike | null = null
   private offRouteCount = 0
   /** 已排程重規劃、還沒開始算：期間進來的定位不再重複觸發 */
-  private reroutePending = false
+  private rerouteTimer: ReturnType<typeof setTimeout> | null = null
   /** 目前畫面是否改跟實際定位（偏離路線帶） */
   private free = false
   /** 偏離時平滑後的顯示座標 */
   private freePos: [number, number] | null = null
   private lastFixTs = 0
+  declare private lastMotionTimestamp: number | undefined
   private lastSpeedMps = 0
   private lastFixPos: [number, number] | null = null
   private smoothBrg: number | null = null
@@ -175,6 +176,7 @@ export class GpsDriver {
       (err) => {
         if (this.finished) return
         if (this.geolocation?.getAuthorization) {
+          this.cancelReroute()
           this.lastFixPos = null
           this.stoppedNearDestSince = 0
           this.offRouteCount = 0
@@ -200,7 +202,18 @@ export class GpsDriver {
       gpsLog('fix 丟棄', `間隔 ${gap}  時間戳記落後 ${((Date.now() - now) / 1000).toFixed(1)}s`)
       return
     }
-    const elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
+    let elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
+    let motionNow = now
+    if (import.meta.env.MODE === 'ios-simulator') {
+      const timing = window.LaneSimulator?.timing(now)
+      if (timing) {
+        motionNow = timing.motionTimestamp
+        const previous = this.lastMotionTimestamp
+        if (previous !== undefined && motionNow <= previous) return
+        elapsedS = previous === undefined ? 0 : (motionNow - previous) / 1000
+        this.lastMotionTimestamp = motionNow
+      }
+    }
 
     // 車速：優先用裝置回報值；沒有就用位移/時間推（低速時 GPS 常回 null）
     let speedMps = speed != null && Number.isFinite(speed) && speed >= 0 ? speed : null
@@ -254,7 +267,7 @@ export class GpsDriver {
     if (FEAT.branch && this.graph) {
       const t0 = performance.now()
       // free（離線 >30m、畫面已改跟實際位置）時也要繼續判：剛過路口的第二票常常就落在這裡
-      if (!this.branchDeviation && !this.reroutePending && this.lastState) {
+      if (!this.branchDeviation && this.rerouteTimer === null && this.lastState) {
         const v = this.branchWatch.step(this.graph, this.profile, this.route,
           this.lastState.traveledM, this.lastState.next, here, heading)
         if (v.kind === 'deviated') {
@@ -270,17 +283,13 @@ export class GpsDriver {
         this.free = true
         const snapped = road()
         if (snapped) this.branchDeviation.bearing = snapped.bearing
-        if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
+        if (this.rerouteTimer === null && rerouteReady(this.rerouteClock, Date.now())) {
           this.rerouteClock.lastTs = Date.now()
-          this.reroutePending = true
           this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
           const bearing = this.branchDeviation.bearing
           // 重規劃起點用貼合到的車道位置（原始座標會被吸到剛經過的路口另一側，新路線又繞回去）
           const origin = snapped?.pos ?? here
-          setTimeout(() => {
-            this.reroutePending = false
-            if (!this.finished) this.onOffRoute(origin, bearing)
-          }, REROUTE_DEFER_MS)
+          this.scheduleReroute(origin, bearing)
           return
         }
         this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
@@ -295,15 +304,11 @@ export class GpsDriver {
         if (c) this.branchDeviation.bearing = c.bearing
         gpsLog('[b] 貼分岔', `${c ? Math.round(c.distM) + 'm' : '找不到，用原始座標'}  耗時 ${(performance.now() - t1).toFixed(2)} ms`)
         this.free = true
-        if (!this.reroutePending && rerouteReady(this.rerouteClock, Date.now())) {
+        if (this.rerouteTimer === null && rerouteReady(this.rerouteClock, Date.now())) {
           this.rerouteClock.lastTs = Date.now()
-          this.reroutePending = true
           this.emitFree(here, movementBearing, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
           const bearing = this.branchDeviation.bearing
-          setTimeout(() => {
-            this.reroutePending = false
-            if (!this.finished) this.onOffRoute(here, bearing)
-          }, REROUTE_DEFER_MS)
+          this.scheduleReroute(here, bearing)
           return
         }
         this.emitFree(here, movementBearing, speedKmh, accuracyM, now, c ? { pos: c.pos, bearing: c.bearing } : undefined)
@@ -317,20 +322,16 @@ export class GpsDriver {
 
     if (match.offRouteM > OFF_ROUTE_THRESHOLD_M) {
       this.offRouteCount += 1
-      if (this.offRouteCount >= REROUTE_AFTER_FIXES && !this.reroutePending &&
+      if (this.offRouteCount >= REROUTE_AFTER_FIXES && this.rerouteTimer === null &&
         rerouteReady(this.rerouteClock, Date.now())) {
         this.rerouteClock.lastTs = Date.now()
         const snapped = road()
         this.emitFree(here, movementBearing, speedKmh, accuracyM, now, snapped)
         // 先讓這一幀（車跟著實際定位）畫出去再算路線：搜尋會卡住主執行緒數百毫秒到數秒
-        this.reroutePending = true
         gpsLog('偏離觸發重規劃', `連續 ${this.offRouteCount} 筆離線 > ${OFF_ROUTE_THRESHOLD_M}m`)
         const bearing = snapped && FEAT.smooth ? snapped.bearing : this.smoothBrg
         const origin = snapped && FEAT.smooth ? snapped.pos : here
-        setTimeout(() => {
-          this.reroutePending = false
-          if (!this.finished) this.onOffRoute(origin, bearing)
-        }, REROUTE_DEFER_MS)
+        this.scheduleReroute(origin, bearing)
         return
       }
     } else {
@@ -372,11 +373,11 @@ export class GpsDriver {
     // 停在終點附近夠久 → 視同抵達（GPS 推不到路線盡頭時的保底）
     const lastLeg = !next || next.kind === 'arrive'
     if (lastLeg && remainM < STOP_ARRIVE_M && speedKmh < STOP_SPEED_KMH) {
-      if (!this.stoppedNearDestSince) this.stoppedNearDestSince = now
+      if (!this.stoppedNearDestSince) this.stoppedNearDestSince = motionNow
     } else {
       this.stoppedNearDestSince = 0
     }
-    const heldAtDest = this.stoppedNearDestSince > 0 && now - this.stoppedNearDestSince > STOP_HOLD_MS
+    const heldAtDest = this.stoppedNearDestSince > 0 && motionNow - this.stoppedNearDestSince > STOP_HOLD_MS
     const arrived = remainM < ARRIVE_THRESHOLD_M || directToDestM < DIRECT_ARRIVE_M || heldAtDest
     const arriving = !arrived && remainM < ARRIVING_THRESHOLD_M
 
@@ -472,13 +473,34 @@ export class GpsDriver {
 
   get displayPath() { return { coords: this.band.coords, cum: this.bandCum } }
 
+  private scheduleReroute(origin: [number, number], bearing: number | null) {
+    if (this.finished) return
+    this.rerouteTimer = setTimeout(() => {
+      this.rerouteTimer = null
+      this.onOffRoute(origin, bearing)
+    }, REROUTE_DEFER_MS)
+  }
+
+  private cancelReroute() {
+    if (this.rerouteTimer !== null) clearTimeout(this.rerouteTimer)
+    this.rerouteTimer = null
+  }
+
   private emit(state: DriveState, fix?: GpsDisplayFix) {
+    if (import.meta.env.MODE === 'ios-simulator' && fix) {
+      const timing = window.LaneSimulator?.timing(fix.timestamp)
+      if (timing) {
+        state = { ...state, motionTimestamp: timing.motionTimestamp }
+        fix = { ...fix, playbackRate: timing.playbackRate }
+      }
+    }
     this.lastState = state
     this.onTick(state, fix)
   }
 
   stop() {
     this.finished = true
+    this.cancelReroute()
     if (this.watchId !== null) {
       this.geolocation?.clearWatch(this.watchId)
       gpsLog('watch 停止', `id=${this.watchId}`)

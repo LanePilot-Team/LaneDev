@@ -99,7 +99,7 @@ export interface UseDriveResult {
 export function useDrive(p: UseDriveParams): UseDriveResult {
   const gpsDriverRef = useRef<GpsDriver | null>(null)
   const routeTargetsRef = useRef<Stop[]>([])
-  const routeProgressRef = useRef(0)
+  const passedViaRef = useRef(0)
   const [nextStop, setNextStop] = useState<string | null>(null)
   const simDriverRef = useRef<InstanceType<typeof SimDriver> | null>(null)
   const [simMultiplier, setSimMultiplierState] = useState(3)
@@ -262,7 +262,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     gpsDriverRef.current?.stop()
     gpsDriverRef.current = null
     routeTargetsRef.current = []
-    routeProgressRef.current = 0
+    passedViaRef.current = 0
     setNextStop(null)
     simDriverRef.current?.stop()
     simDriverRef.current = null
@@ -297,7 +297,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (!route || !map) return
     if (!resume) {
       routeTargetsRef.current = p.stopsRef.current.slice(1)
-      routeProgressRef.current = 0
+      passedViaRef.current = 0
     }
     publishNextStop()
     p.setMode('drive')
@@ -387,7 +387,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         else if (fix) guidanceSuspended = false
         if (import.meta.env.MODE === 'ios-simulator' && s.arrived) window.LaneSimulator?.arrive()
         lastDriveRef.current = s
-        routeProgressRef.current = Math.max(routeProgressRef.current, s.traveledM)
+        passedViaRef.current = s.passedViaCount ?? 0
         publishNextStop()
         updateZoneHighlight(s)
         if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__drive = s
@@ -441,11 +441,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   /**
-   * 還沒經過的停靠點：路線記錄了每個中途停靠點的里程（viaDistM），
-   * 目前進度之後的停靠點都要照原順序繞經，最後才是終點。
+   * 保留尚未由定位確認的停靠點及終點，依現有行程順序重新規劃。
    */
   function remainingTargets(): Stop[] {
-    return pendingRouteTargets(routeTargetsRef.current, p.routeRef.current?.viaDistM ?? [], routeProgressRef.current)
+    return pendingRouteTargets(routeTargetsRef.current, passedViaRef.current)
   }
 
   function publishNextStop() {
@@ -491,7 +490,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     p.annotateTwoStage(route)
     p.routeRef.current = route
     routeTargetsRef.current = targets
-    routeProgressRef.current = 0
+    passedViaRef.current = 0
     drawRouteLine(route)
     if (gpsDriverRef.current) runGpsNav(true)
   }

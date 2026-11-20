@@ -8,6 +8,24 @@ final class ForegroundUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertRecenterInNavigation(_ app: XCUIApplication, source: String) {
+        let web = app.webViews.firstMatch
+        let recenter = web.buttons["回到目前位置"]
+        XCTAssertFalse(recenter.exists)
+        let from = web.coordinate(withNormalizedOffset: CGVector(dx: 0.28, dy: 0.64))
+        let to = web.coordinate(withNormalizedOffset: CGVector(dx: 0.61, dy: 0.50))
+        from.press(forDuration: 0.05, thenDragTo: to)
+        XCTAssertTrue(recenter.waitForExistence(timeout: 8), app.debugDescription)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "stage7-\(source)-drag-recenter"
+        shot.lifetime = .keepAlways
+        add(shot)
+        recenter.tap()
+        XCTAssertTrue(recenter.waitForNonExistence(timeout: 8), app.debugDescription)
+        print("IOS_STAGE7_RECENTER \(source): drag released follow; recenter restored follow")
+    }
+
+    @MainActor
     func testOfflineMapGesturesAndPreferenceAfterRelaunch() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -251,6 +269,7 @@ final class ForegroundUITests: XCTestCase {
         XCTAssertTrue(end.isHittable)
         XCTAssertGreaterThanOrEqual(end.frame.height, 44)
         XCTAssertLessThanOrEqual(end.frame.maxY, web.frame.maxY)
+        assertRecenterInNavigation(app, source: "virtual")
         end.tap()
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         print("IOS_STAGE5_TOUCH: keyboard results reachable, selected location, current start then replaced with map point, preview/exit controls >=44pt")
@@ -319,6 +338,24 @@ final class ForegroundUITests: XCTestCase {
     }
     #else
     @MainActor
+    func testStage7ReleaseStartupTiming() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        var samples: [Int] = []
+        for _ in 0..<3 {
+            if app.state != .notRunning { app.terminate() }
+            let startedAt = ProcessInfo.processInfo.systemUptime
+            app.launch()
+            let locate = app.webViews.buttons["目前位置"]
+            XCTAssertTrue(locate.waitForExistence(timeout: 30))
+            let usable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)
+            XCTAssertEqual(XCTWaiter.wait(for: [usable], timeout: 30), .completed)
+            samples.append(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))
+        }
+        print("IOS_STAGE7_STARTUP_MS: \(samples)")
+    }
+
+    @MainActor
     func testReleaseBundleWithSystemLocation() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -356,6 +393,7 @@ final class ForegroundUITests: XCTestCase {
         XCTAssertTrue(direction.waitForExistence(timeout: 20), app.debugDescription)
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "release-core-location-navigation"; shot.lifetime = .keepAlways; add(shot)
+        assertRecenterInNavigation(app, source: "core-location")
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5) || app.state == .runningBackgroundSuspended)
         app.activate()

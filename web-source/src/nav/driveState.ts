@@ -16,6 +16,8 @@ export interface DriveState {
   next2: Maneuver | null
   nextDistM: number
   arrived: boolean
+  /** Number of intermediate stops validated by GPS on the currently installed route. */
+  passedViaCount?: number
   /** 即將抵達（剩餘距離進入提示範圍）：HUD 提早換成抵達卡，結束才不會太突然 */
   arriving?: boolean
   /** 這筆定位精度不足以分辨車道／方向：HUD 標示訊號弱 */

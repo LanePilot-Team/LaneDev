@@ -46,6 +46,8 @@ node ios/tools/test-simulator.mjs release
 node ios/tools/test-simulator.mjs denied
 ```
 
+`node ios/tools/test-simulator.mjs system` 執行第七階段的 Core Location 路線、停靠點、定位授權變更和規劃失敗案例。測試以 `simctl` 操作系統定位，App 的虛擬定位保持關閉。 [Simulator 驗收紀錄](../docs/ios-port-plan.md#stage7)
+
 測試工具會建置、安裝 App、授予／暫時撤銷 Simulator 權限、注入 Core Location 座標，並執行 XCTest／XCUITest。
 結果放在 `ios/.build/test-results/`。拒絕授權測完恢復權限，定位情境測完清除。
 UI 測試執行器可能重設系統模擬定位，工具在 App 啟動後重設注入路徑；這仍是 Simulator 座標，不是真實 GPS。

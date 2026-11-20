@@ -2403,9 +2403,9 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const weaves = [...legs[0].weaves]
   let distOff = legs[0].lengthM
   let timeS = legs[0].timeS
-  const viaDistM: number[] = []
+  const viaIndices: number[] = []
   for (let i = 1; i < legs.length; i++) {
-    viaDistM.push(distOff)
+    viaIndices.push(coords.length - 1)
     const L = legs[i]
     if (haversine(coords[coords.length - 1], L.coords[0]) > 0.5) coords.push(L.coords[0])
     const base = coords.length - 1
@@ -2421,7 +2421,8 @@ export function mergeRoutes(legs: RouteResult[]): RouteResult {
   const arrive = last.maneuvers[last.maneuvers.length - 1]
   maneuvers.push({ ...arrive, distM: distOff - last.lengthM + arrive.distM })
   const cum = cumulative(coords)
-  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans, diverges, weaves, viaDistM }
+  return { coords, cum, lengthM: cum[cum.length - 1], timeS, maneuvers, spans, diverges, weaves,
+    viaDistM: viaIndices.map(index => cum[index]) }
 }
 
 /** 相鄰轉向合併門檻：錯位路口/巷弄接駁的兩個轉向點通常在 20m 內 */

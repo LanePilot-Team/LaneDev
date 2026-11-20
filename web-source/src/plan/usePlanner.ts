@@ -203,6 +203,7 @@ export function usePlanner(core: MapCore): Planner {
     point: [number, number],
     maxDistanceM: number,
     pointLabel: string,
+    recovery = '',
   ): [number, number] | null {
     const graph = core.graphRef.current
     if (!graph) {
@@ -211,12 +212,12 @@ export function usePlanner(core: MapCore): Planner {
     }
     const snapped = graph.snapToLane(point, profileRef.current)
     if (!snapped) {
-      setRouteError(`${pointLabel}附近找不到可通行道路`)
+      setRouteError(`${pointLabel}附近找不到可通行道路${recovery}`)
       return null
     }
     const distance = haversine(point, snapped.pos)
     if (distance > maxDistanceM) {
-      setRouteError(`${pointLabel}距離可通行道路過遠（${Math.round(distance)} 公尺）`)
+      setRouteError(`${pointLabel}距離可通行道路過遠（${Math.round(distance)} 公尺）${recovery}`)
       return null
     }
     return snapped.pos
@@ -291,7 +292,7 @@ export function usePlanner(core: MapCore): Planner {
   }
 
   function setCurrentStart(position: [number, number]) {
-    const snapped = snapRoutePoint(position, 180, '目前位置')
+    const snapped = snapRoutePoint(position, 180, '目前位置', '，請改用地圖選擇起點')
     if (!snapped) return
     const next = withCurrentStart(stopsRef.current, snapped)
     setStops(next)

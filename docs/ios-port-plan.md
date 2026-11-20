@@ -130,7 +130,8 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | 第四階段：前期虛擬導航 | 獨立位置來源、選起終點、播放控制、1x／3x／8x、應轉未轉及訊號情境。 | 操作正常導航、偏航、暫停／恢復及抵達；核對倍速單位與訂閱；稽核正式包。 | 本輪結果見第四階段紀錄。 |
 | 第五階段：主要操作流程 | 本地搜尋、常用地點、起終點、停靠點、重規劃、導引、iPhone 觸控與原生 Google 搜尋。 | 實際操作，保留楠梓參考適用條件，驗證多次重算按同一趟行程順序保留待經停靠點。 | 本輪驗證見第五階段紀錄。 |
 | 第六階段：原生語音、設定與 App 生命週期 | 前景中文導航播報、iOS 設定入口與偏好持久化、防熄屏、定位／音訊中斷與 WebView 釋放。 | 在 Simulator 核對語音回呼、設定跨重開、Home 暫停／恢復及重載清理。人工聽音與鎖屏各有獨立紀錄。 | 見第六階段紀錄。 |
-| 第七階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
+| 第七階段：Simulator 完整驗收與回歸 | 分別驗收虛擬及系統定位，量測啟動、HUD 更新與偏航重算。 | 重跑 24＋35 組基準，保存測試指令、結果、畫面與實機清單。 | 見第七階段紀錄。 |
+| 第八階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
 各實作階段都要更新本文件、執行適當測試與建置，保存失敗與成功證據；不得只交計畫。只有本階段盤點需要的測試在這輪重新執行，未擅自推進功能實作。
@@ -225,7 +226,7 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 - 實體 iPhone 的 GPS、磁場干擾、初次授權彈窗、概略位置和全域服務設定切換待實際操作。iOS 16.4 執行需對應 runtime 或裝置，有簽章的 iPhone 安裝需 Team 與實體裝置。
 - Home 已驗證前景導航暫停與恢復。背景持續導航及鎖屏持續導航目前未支援，真正鎖屏的操作行為仍待獨立驗證。
-- 第四階段收斂為可移除的開發面板。第五階段串通主要操作，第六階段處理語音、設定與生命週期。進入第七階段時完整刪除虛擬來源再驗收實機。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍需要有效且受限制的金鑰。
+- 第四階段收斂為可移除的開發面板。第五階段串通主要操作，第六階段處理語音、設定與生命週期，第七階段做 Simulator 完整回歸。進入實體 iPhone 時完整刪除虛擬來源。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍需要有效且受限制的金鑰。
 
 ## 第四階段：前期虛擬導航
 
@@ -327,7 +328,82 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 首輪中斷測試發現回前景沿用舊合成器時，新指示可能收不到完成回呼。丟棄播報時同步釋放合成器，重跑通過。另一次 XCUITest 卡在等待 Simulator 動畫，重啟 Simulator 後通過完整回歸。
 
-下一階段進入實體 iPhone 前須按第四階段清單完整刪除虛擬導航。保留一般前景語音、手動試聽與系統定位測試，再以簽章裝置驗證真實音訊中斷、人工聽音、鎖屏與前景恢復。iOS 16.4 執行環境、簽章及實體裝置仍待安排。
+下一階段依使用者指定先完成 Simulator 完整回歸。進入實體 iPhone 前須按第四階段清單完整刪除虛擬導航。保留一般前景語音、手動試聽與系統定位測試，再以簽章裝置驗證真實音訊中斷、人工聽音、鎖屏與前景恢復。iOS 16.4 執行環境、簽章及實體裝置仍待安排。
+
+<a id="stage7"></a>
+
+## 第七階段：Simulator 完整驗收與回歸（2026-11-21）
+
+工作區與 `feat/ios-navigation` 維持原位。使用 iPhone 17 Pro Simulator、iOS 26.3.1（23D8133）、Xcode 26.2（17C52），Mac 為 Apple M4 Pro／24 GB，macOS 15.7.9（24G830），Node.js 26.0.0／npm 11.12.1。App 直接讀取打包資產。
+
+### 可重跑指令
+
+在 LaneDev 根目錄執行。先啟動測試用 iPhone Simulator，或設定 `LANE_SIMULATOR_UDID` 指向已啟動的裝置。各組會依序使用同一個 Simulator。
+
+```bash
+node ios/tools/build-web.mjs all
+node ios/tools/test-simulator.mjs system
+node ios/tools/test-simulator.mjs debug
+node ios/tools/test-simulator.mjs release
+node ios/tools/test-simulator.mjs denied
+(cd web-source && npm run build)
+node tools/sync-web-assets.mjs
+bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks
+```
+
+`system` 以 `simctl location` 注入固定軌跡，並用 `simctl privacy` 在導航中撤銷及授予權限。座標由 Core Location 進入原生橋接與共用核心。系統低精度與定位失敗由 XCTest 注入 delegate 輸入，精度恢復再由系統軌跡驗證。腳本測後清除系統軌跡並恢復測試 App 的定位授權。Debug 的虛擬案例由 App 內的 Simulator 定位來源供應；Release UI 驗證正式包的系統定位、觸控與啟動。
+
+Android 回歸使用 Gradle 8.14.3、JDK 21 與 Android SDK 36。首次安裝前端套件、Gradle 或 Android SDK 時須準備對應快取，再執行上方的離線 Gradle 指令。
+
+### 案例結果
+
+| 案例 | 虛擬定位 | Core Location |
+| --- | --- | --- |
+| 直行、轉彎、待轉、抵達、結束 | 虛擬車輛沿路網正常前進與轉向，機車顯示待轉，核心判定抵達，結束清除訂閱與計時器。 [導航](ios-evidence/stage7/virtual-navigation.png) · [抵達](ios-evidence/stage7/virtual-arrival.png) | 固定軌跡走援中國民小學至綜合籃球場，顯示待轉牌及後續右轉，再自然抵達。完成後結束亮屏控制，定位和播報清空。 [待轉](ios-evidence/stage7/system-two-stage.png) · [抵達](ios-evidence/stage7/system-arrival.png) |
+| 應轉未轉、偏航與接回 | 讓來源自己保持直行，重算後原始軌跡仍維持方向。另以同一來源回放獨立返程，確認接回後仍是同一筆導航訂閱。 [偏航](ios-evidence/stage7/virtual-reroute.png) · [接回](ios-evidence/stage7/virtual-rejoined.png) | 固定軌跡錯過左轉後觸發成功重算；另一段軌跡接回並真正靠近棒球場，HUD 才切換至高雄大學郵局。 [重算](ios-evidence/stage7/system-reroute.png) · [接回](ios-evidence/stage7/system-rejoined.png) |
+| 多停靠點 | 第一次通過產學育成中心後，連續重算兩次仍保留郵局。 | 規劃棒球場、郵局兩站，核對重規劃前後下一站及實際 GPS 座標。 |
+| 汽車／機車與禁行 | 操作兩車種重算。共用圖回歸另檢查國道 1 號 OSM way `25724914`，汽車路線使用該路段，機車走平行道路。 | 相同起終點的汽車步驟無待轉，機車步驟及 HUD 均有待轉。 |
+| 停車、抖動、中斷、低精度、恢復 | 停車為 0、固定 6 m 抖動、中斷及恢復均由虛擬來源實際送出；150 m 測試值驗證凍結進度。 [虛擬低精度](ios-evidence/stage7/virtual-low-accuracy.png) | `simctl set` 提供停車和位置抖動；XCTest 透過 Core Location delegate 注入 150 m 精度及錯誤，後續從 OS 軌跡恢復。 [低精度](ios-evidence/stage7/system-low-accuracy.png) · [中斷](ios-evidence/stage7/system-interruption.png) |
+| 定位拒絕、撤銷、重新授權 | 依賴系統權限的流程在 Core Location 驗證。 | 實際撤銷後顯示未授權並停定位，重新授權後同一個 watch 恢復。初次拒絕另跑 `denied`。 [撤銷畫面](ios-evidence/stage7/permission-revoked.png) |
+| 路網外、不可達及搜尋失敗 | 規劃與本地搜尋由共用前端驗證。 | 系統起點在路網外時保留目的地並顯示改用地圖選點。另驗證路網外終點、輸入查無地點，以及原路網上有起終點卻不可達的案例。 [起點](ios-evidence/stage7/start-outside-network.png) · [終點](ios-evidence/stage7/destination-outside-network.png) · [不可達](ios-evidence/stage7/unreachable-route.png) · [搜尋](ios-evidence/stage7/search-empty.png) |
+| 鍵盤、安全區、手動拖圖與重新置中 | XCUITest 操作鍵盤結果、手選起點、44 pt 開始／結束控制與拖圖後回置中。 [鍵盤](ios-evidence/stage7/keyboard.png) · [拖圖](ios-evidence/stage7/virtual-drag-recenter.png) | 正式包以系統定位實際拖圖，點「回到目前位置」恢復跟隨。鍵盤與安全區由同一套 WKWebView 介面覆蓋。 [正式包](ios-evidence/stage7/release-core-location.png) · [重新置中](ios-evidence/stage7/core-location-drag-recenter.png) |
+| 語音開關、插播及結束 | 實際虛擬導航啟動中文提示。原生 XCTest 覆蓋試聽、靜音、高優先插播、過期與清除。 | 系統定位驅動第一則待轉語音，收到原生播放開始回呼。完成導航後確認語音已停止。插播、靜音與中斷恢復沿用相同原生語音服務。 |
+| App 背景與返回 | XCUITest 按 Home 並回前景，重新接續並可結束。 | Core Location 整合 XCTest 驗證回前景等待新位置，Release UI 實際按 Home 後返回。 |
+
+### 本輪修正
+
+- 路網外的目前位置補上手動選起點的指示，原路網距離和通行限制沿用既有門檻。
+- 重算後遇到路線重疊時，路線里程曾提早跳過尚未到達的停靠點。新增可信定位、實際接近及匹配里程的確認，完成一站才允許確認下一站。合併路線使用該停靠點在實際合併幾何上的里程。修正後返程的 GPS 確實進入第一站附近，再顯示下一站。
+- iOS 導航跟隨有時會在 MapLibre 發出拖曳事件前打斷手勢。從首次觸碰就暫停鏡頭更新，後續能操作拖圖與「回到目前位置」。
+
+共用測試 313 項通過。24 組預計算路由一致，其中 22 組有解。35 組楠梓人工參考路線的路徑與車道帶通過。官方道路、待轉區與參考路線檔案維持原位元組，產物中只有路網 manifest 的建置輸入雜湊更新，導航和繪圖來源的 SHA-256 均保持一致。Android APK 與 1 項既有單元測試通過，iPhone 未簽章 Release arm64 建置通過。
+
+Simulator 共 32 項通過，包含 `system` 4 項、`debug` 17 項 XCTest 加 5 項 XCUITest、`release` 5 項 XCUITest 及 `denied` 1 項。各組 `results.xcresult` 及 `xcodebuild.log` 位於 `ios/.build/test-results/`，目錄為 `system-2026-11-20T17-57-53-760Z`、`debug-2026-11-20T17-50-28-868Z`、`release-2026-11-20T17-55-04-075Z`、`denied-2026-11-20T17-57-05-336Z`。系統截圖取自同組案例前次通過的 `system-2026-11-20T17-45-07-428Z`。目錄時間使用 UTC。
+
+### Simulator 量測
+
+| 項目 | 結果 |
+| --- | --- |
+| Release 啟動 | 終止 App 後重開 3 次，至「目前位置」可操作分別為 4,156、4,141、4,108 ms，中位數 4.14 秒。包含 XCUITest 啟動與無障礙查詢時間，OS 快取保留。 |
+| Core Location 正常導航 | 每次 49 筆 OS 定位，兩輪送達間隔中位數 804–805 ms。每次有 48 筆可觀察的 HUD 文字變更，更新中位數 1 ms。 |
+| Core Location 偏航與接回 | 每次 97 筆 OS 定位，兩輪送達間隔中位數 804–805 ms。每次有 46 筆 HUD 文字變更，更新中位數 1 ms。成功搜尋新路線兩輪分別耗時 43、49 ms。 |
+| App 虛擬來源偏航 | 8x 場景的 20 筆定位，送達間隔中位數 125 ms。16 筆有 HUD 文字變更，更新中位數 1 ms。成功搜尋新路線耗時 8 ms。 |
+
+HUD 用 WebView 的 `performance.now()` 量定位事件到可觀察的文字更新，每筆定位取一秒內最後一次相關更新。重算時間來自共用核心對同步各段搜尋的紀錄，包含該次路線搜尋，偏航等待、畫線及 GPU 顯示另有時間。量測使用上述 Simulator 注入頻率，留作後續裝置測量的對照。
+
+### 剩餘問題
+
+- 尚待驗證實體 iPhone、簽章、iOS 16.4 執行、實際 GPS／羅盤與真實中斷、音質及藍牙輸出。Simulator 的真實鎖屏操作仍未驗證，背景與鎖屏目前沒有持續導航。
+- Google 金鑰仍未配置，驗證範圍為本地搜尋與缺金鑰提示。實機效能、耗電及長時間道路表現留待實體裝置測試。
+
+### 實機驗收清單
+
+- [ ] 進入實體 iPhone 階段前依第四階段清單完整移除 App 虛擬來源及相關測試入口，重跑 iOS、共用、Android 建置，掃描成品。
+- [ ] 設定 Apple Development Team 與簽章，實機安裝並測最低支援 iOS 16.4。關閉 Mac 開發伺服器，核對本機包啟動、路網校驗、搜尋與重新開啟。
+- [ ] 實地走正常轉向、待轉、測速、應轉未轉、偏航接回與停靠點順序，核對現場汽機車與車道限制。
+- [ ] 測使用期間定位、拒絕、重新授權、精確位置開關、系統定位關閉與 GPS 中斷，核對裝置行進方向、羅盤與重新置中。
+- [ ] 人工聽中文播報及插播，在 iPhone 喇叭、藍牙、靜音開關與來電情境分別記錄聽音與回呼。測 Home、鎖屏、返回前景與防熄屏。
+- [ ] 使用有效且受限制的 Google iOS 金鑰驗證線上搜尋。以真實裝置記錄啟動、HUD、重算延遲、耗電與長時間導航。
 
 ## 先前實作與驗證紀錄（歷史，保留）
 

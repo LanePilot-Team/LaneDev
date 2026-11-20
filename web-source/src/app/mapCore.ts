@@ -201,8 +201,11 @@ export function useMapCore(
     map.touchZoomRotate.enableRotation()
     // 記錄縮放手勢時間：jumpTo 內部會 stop() 掉進行中的手勢動畫（handlers.stop），
     // 導航 30Hz 跟隨會把滾輪的平滑縮放掐死——跟隨迴圈靠這個時間戳暫時讓路
-    map.on('wheel', () => { lastGestureRef.current = performance.now() })
-    map.on('touchmove', () => { lastGestureRef.current = performance.now() })
+    const noteGesture = () => { lastGestureRef.current = performance.now() }
+    map.on('wheel', noteGesture)
+    // Stop follow updates from interrupting the initial touch before MapLibre emits dragstart.
+    map.on('touchstart', noteGesture)
+    map.on('touchmove', noteGesture)
     // 使用者「自己把鏡頭移開」＝要求自由瀏覽（Google 地圖的行為）。只認帶 originalEvent
     // 的事件——導航跟隨自己的 jumpTo 也會觸發 move/rotate，那不算使用者接管。
     // 縮放不算：導航中放大看路口是常態，不該因此中斷跟隨（滾輪另有 250ms 讓路）。

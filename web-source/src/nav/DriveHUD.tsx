@@ -187,7 +187,8 @@ export function DriveHUD({
   onRetry: () => void
 }) {
   const voice = useClientValue((s) => s.voice)
-  useSpeechGuidance({ drive, profile, twoStage, destinationName, enabled: voice })
+  const canSpeak = voice && (window.LanePlatform !== 'ios' || !gpsMsg || drive?.arrived === true)
+  useSpeechGuidance({ drive, profile, twoStage, destinationName, enabled: canSpeak })
 
   // ── GPS 導航還沒收到第一筆定位（或定位失敗）時的過渡畫面 ──
   if (!drive) {

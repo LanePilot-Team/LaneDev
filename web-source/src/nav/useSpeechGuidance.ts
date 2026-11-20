@@ -60,11 +60,11 @@ export function useSpeechGuidance({
     // 迫近（near/now）的轉向與抵達要插隊，不能排在測速提示或過時的遠距預告後面
     const urgent = (stage: SpeechStage | null) => stage === 'near' || stage === 'now'
 
-    if (!enabled) { stopSpeech(); return }
     if (!drive) {
       clearSession()
       return
     }
+    if (!enabled || (window.LanePlatform === 'ios' && drive.gpsWeak && !drive.arrived)) return
 
     resetIfProgressMovedBackwards(drive.traveledM)
 

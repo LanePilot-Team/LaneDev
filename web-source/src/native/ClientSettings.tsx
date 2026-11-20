@@ -5,6 +5,7 @@ import './client.css'
 
 export function ClientSettings({ navigating }: { navigating: boolean }) {
   const state = useClientState()
+  const ios = window.LanePlatform === 'ios'
   const detailsRef = useRef<HTMLDetailsElement>(null)
   useEffect(() => { nativeCommand('status') }, [])
   return <details ref={detailsRef} className={`client-settings${navigating ? ' navigating' : ''}`}>
@@ -31,10 +32,11 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
         <div className="settings-subsection-body">
           <p className="settings-status">{state.tts}</p>
           <div className="settings-actions">
-            {window.LanePlatform !== 'ios' && <button onClick={() => nativeCommand('ttsInstall')}>下載中文語音</button>}
-            <button onClick={() => nativeCommand('ttsSettings')}>{window.LanePlatform === 'ios' ? 'iOS 語音說明' : '系統語音設定'}</button>
+            {!ios && <button onClick={() => nativeCommand('ttsInstall')}>下載中文語音</button>}
+            <button onClick={() => nativeCommand('ttsSettings')}>{ios ? 'iOS 語音說明' : '系統語音設定'}</button>
             <button onClick={() => nativeCommand('ttsRefresh')}>重新檢查語音</button>
-            <button onClick={() => nativeCommand('ttsTest')}>試聽中文</button>
+            <button disabled={ios && !state.ttsReady} onClick={() => nativeCommand('ttsTest')}>試聽中文</button>
+            {ios && <button onClick={() => nativeCommand('stopSpeech')}>停止語音</button>}
           </div>
           <p className="settings-status" role="status">{state.speech}<br />{state.audio}</p>
         </div>
@@ -45,7 +47,7 @@ export function ClientSettings({ navigating }: { navigating: boolean }) {
         <div className="settings-subsection-body">
           <p className="settings-status">{state.location}</p>
           <div className="settings-actions">
-            <button onClick={() => nativeCommand('locationSettings')}>開啟手機定位設定</button>
+            <button onClick={() => nativeCommand('locationSettings')}>{ios ? 'iOS 定位服務說明' : '開啟手機定位設定'}</button>
             <button onClick={() => nativeCommand('appSettings')}>App 定位權限</button>
           </div>
           <p className="settings-status">{state.compass}{state.heading === null ? '' : ` · ${Math.round(state.heading) % 360}°`}</p>

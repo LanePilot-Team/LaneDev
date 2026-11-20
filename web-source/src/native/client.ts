@@ -60,7 +60,7 @@ export function setZoom(value: number) {
 export function speak(text: string, priority = false) {
   if (!state.voice) return
   // Navigation and speed camera speech share the native speech queue.
-  nativeCommand('speak', { text, priority })
+  nativeCommand('speak', window.LanePlatform === 'ios' ? { text, priority, issuedAt: Date.now() } : { text, priority })
 }
 export function stopSpeech() { nativeCommand('stopSpeech') }
 export function deviceHeading() {

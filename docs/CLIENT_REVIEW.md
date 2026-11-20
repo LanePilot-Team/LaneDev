@@ -1,5 +1,9 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-11-21 第六階段額外發現
+
+- iOS 26.3.1 Simulator 仍回報 `VoiceDBClient` 解碼失敗後使用 fallback，部分播放時也有 `AVAudioBuffer` 緩衝警告。中文合成回呼仍可完成。系統音訊日誌需與人工聽音分開，目前缺少實體 iPhone 的音訊輸出證據。
+
 ## 2026-11-21 第五階段額外發現
 
 - iOS 26.3.1 Simulator 輸入期間，系統日誌回報缺少 `hapticpatternlibrary.plist`。本輪用實際鍵盤與觸控執行操作，實體裝置的輸入觸覺回饋仍待確認。

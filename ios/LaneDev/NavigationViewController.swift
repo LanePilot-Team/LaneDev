@@ -10,7 +10,9 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     private let googlePlaces = GooglePlacesService()
     private(set) var navigating = false
     private var webReady = false
-    private var geocoder = CLGeocoder()
+    private var foregroundSince = Date()
+    private let geocoder = CLGeocoder()
+    private var documentGeneration = 0
     private var errorOverlay: UIView?
     #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
     private let simulatorPanel = SimulatorNavigationPanel()
@@ -144,12 +146,21 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     #endif
 
     func setForeground(_ active: Bool) {
-        if active { speech.refreshVoice() }
-        locations.setForeground(active)
+        if active && !locations.foreground { foregroundSince = Date() }
         speech.setForeground(active)
+        locations.setForeground(active)
         UIApplication.shared.isIdleTimerDisabled = active && navigating
         Logger(subsystem: "tw.lanepilot.lanedev.ios", category: "Lifecycle").info("foreground=\(active) locationUpdating=\(self.locations.updating) speechForeground=\(self.speech.foreground) idleDisabled=\(UIApplication.shared.isIdleTimerDisabled)")
         if active { status() }
+    }
+
+    func disconnect() {
+        setForeground(false)
+        resetDocument()
+        webView?.stopLoading()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "LaneNative")
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -167,22 +178,32 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         case "locationStart": if let id = command["id"] as? String { locations.start(id: id) }
         case "locationStop": if let id = command["id"] as? String { locations.stop(id: id) }
         case "speak":
+            guard navigating, let milliseconds = command["issuedAt"] as? Double, milliseconds.isFinite else { return }
+            let issuedAt = Date(timeIntervalSince1970: milliseconds / 1000)
+            let age = Date().timeIntervalSince(issuedAt)
+            guard issuedAt >= foregroundSince, age >= 0, age < SpeechService.promptLifetime else { return }
             let text = command["text"] as? String ?? ""
             let priority = command["priority"] as? Bool ?? false
             #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
-            if locations.virtual && locations.simulator.rate != .normal {
-                speech.speak(text, priority: priority, queueIfBusy: false)
-                return
-            }
+            let queueIfBusy = !locations.virtual || locations.simulator.rate == .normal
+            #else
+            let queueIfBusy = true
             #endif
-            speech.speak(text, priority: priority)
+            speech.speak(text, priority: priority, queueIfBusy: queueIfBusy, validFor: SpeechService.promptLifetime - age)
         case "stopSpeech": speech.stop()
         case "navigation": setNavigation(command["active"] as? Bool ?? false)
-        case "ttsTest": speech.stop(); speech.speak("語音導航測試，前方路口請右轉。")
-        case "ttsRefresh": speech.refreshVoice(); status()
-        case "ttsSettings", "ttsInstall": showNotice("iOS 聲音由系統管理。請到「設定 → 輔助使用 → 朗讀與語音」下載中文聲音，再回到 LaneDev 試聽。")
-        case "appSettings", "locationSettings":
-            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        case "ttsTest": speech.speak("語音導航測試，前方路口請右轉。", priority: true)
+        case "ttsRefresh": speech.refreshVoice()
+        case "ttsSettings", "ttsInstall":
+            showNotice("到「設定 → 輔助使用 → 朗讀與語音」（部分 iOS 版本稱為「語音內容」），從聲音列表下載中文聲音，再回到 LaneDev 重新檢查與試聽。")
+        case "locationSettings":
+            showNotice("到「設定 → 隱私權與安全性 → 定位服務」開啟手機的定位服務。")
+        case "appSettings":
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url) { [weak self] opened in
+                    if !opened { self?.showNotice("請到「設定 → 隱私權與安全性 → 定位服務 → LaneDev」，允許使用 App 期間取用精確位置。") }
+                }
+            }
         case "reverseGeocode": reverseGeocode(command)
         case "googlePlaceSearch": googlePlaces.search(command, from: self) { [weak self] in self?.emit($0) }
         case "googlePlaceCancel": if let id = command["id"] as? String { googlePlaces.cancel(id: id) }
@@ -220,10 +241,12 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
               abs(lat) <= 90, abs(lng) <= 180 else { return }
         // Optional online enrichment. The local search and route never wait for this.
         guard !geocoder.isGeocoding else { emit(["type": "addressResult", "id": id, "address": ""]); return }
+        let generation = documentGeneration
         geocoder.reverseGeocodeLocation(CLLocation(latitude: lat, longitude: lng), preferredLocale: Locale(identifier: "zh_TW")) { [weak self] places, _ in
+            guard let self, self.documentGeneration == generation else { return }
             let p = places?.first
             let address = [p?.administrativeArea, p?.locality, p?.subLocality, p?.thoroughfare, p?.subThoroughfare].compactMap { $0 }.joined()
-            self?.emit(["type": "addressResult", "id": id, "address": address])
+            self.emit(["type": "addressResult", "id": id, "address": address])
         }
     }
     func emit(_ data: [String: Any]) {
@@ -237,20 +260,31 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
             "speech": speech.speech, "audio": speech.audio, "location": locations.locationStatus,
             "compass": CLLocationManager.headingAvailable() ? "前景使用 iOS 方向感測器；低精度時隱藏朝向" : "方向感測器不可用，使用 GPS 行進方向"])
     }
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        webReady = false; googlePlaces.cancel(); locations.reset(); setNavigation(false)
+    private func resetDocument() {
+        webReady = false
+        documentGeneration += 1
+        geocoder.cancelGeocode()
+        googlePlaces.cancel()
+        locations.reset()
+        setNavigation(false)
         #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
         simulatorReady = false
         simulatorPicking = false
         updateSimulatorPanel()
         #endif
     }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { resetDocument() }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { webReady = true }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { locations.publishState(); status() }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failedLoad(error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failedLoad(error) }
+    private func failedLoad(_ error: Error) {
+        if (error as? URLError)?.code == .cancelled { return }
+        resetDocument()
+        showError(error.localizedDescription)
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webReady = false; googlePlaces.cancel(); locations.reset(); setNavigation(false)
+        resetDocument()
         showError("導航畫面已被系統終止，請重新載入並規劃路線。")
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

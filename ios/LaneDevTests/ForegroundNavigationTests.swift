@@ -1,6 +1,7 @@
 import XCTest
 import WebKit
 import CoreLocation
+import AVFAudio
 @testable import LaneDev
 
 @MainActor
@@ -241,13 +242,123 @@ final class ForegroundNavigationTests: XCTestCase {
 
     func testNativeSpeechCallbacks() async throws {
         guard controller.speech.ready else { throw XCTSkip("Simulator has no installed Chinese voice") }
-        let before = controller.speech.finishes
-        _ = try await js("window.LaneNative.postMessage(JSON.stringify({type:'ttsTest'}))")
-        let deadline = Date().addingTimeInterval(30)
-        while controller.speech.finishes == before && Date() < deadline { try await Task.sleep(for: .milliseconds(100)) }
-        XCTAssertGreaterThan(controller.speech.starts, 0)
-        XCTAssertGreaterThan(controller.speech.finishes, before)
+        let starts = controller.speech.starts
+        let finishes = controller.speech.finishes
+        let saved = try await js("return document.querySelector('.client-settings input[type=checkbox]').checked") as? Bool
+        addTeardownBlock { [weak self] in
+            if saved == true {
+                _ = try await self?.js("const voice = document.querySelector('.client-settings input[type=checkbox]'); if (voice && !voice.checked) voice.click()")
+            }
+        }
+        _ = try await js("""
+            document.querySelector('.client-settings').open = true;
+            [...document.querySelectorAll('.client-settings details')].find(d => d.querySelector('summary').textContent === '語音設定').open = true;
+            const voice = document.querySelector('.client-settings input[type=checkbox]');
+            if (voice.checked) voice.click();
+            """)
+        try await click("試聽中文")
+        try await waitForSpeech { self.controller.speech.finishes == finishes + 1 }
+        XCTAssertEqual(controller.speech.starts, starts + 1)
+        XCTAssertNil(controller.speech.currentText)
+        try await wait("document.querySelector('.settings-status[role=status]').textContent.includes('iOS 已完成播放')")
+        try await screenshot("stage6-speech-preview")
+        try await click("試聽中文")
+        try await waitForSpeech { self.controller.speech.currentText != nil }
+        try await click("停止語音")
+        try await waitForSpeech { self.controller.speech.currentText == nil }
+        XCTAssertEqual(controller.speech.queuedCount, 0)
+        XCTAssertEqual(controller.speech.finishes, finishes + 1)
+        _ = try await js("document.querySelector('.client-settings input[type=checkbox]').click()")
+        try await click("試聽中文")
+        try await waitForSpeech { self.controller.speech.currentText != nil }
+        _ = try await js("document.querySelector('.client-settings input[type=checkbox]').click()")
+        try await waitForSpeech { self.controller.speech.currentText == nil }
+        XCTAssertEqual(controller.speech.queuedCount, 0)
+        XCTAssertEqual(controller.speech.finishes, finishes + 1)
         print("IOS_SPEECH_CALLBACKS: starts=\(controller.speech.starts), finishes=\(controller.speech.finishes), \(controller.speech.audio)")
+    }
+
+    private func waitForSpeech(file: StaticString = #filePath, line: UInt = #line,
+                               _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(16)
+        while !condition() && Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        guard condition() else {
+            XCTFail("Timed out waiting for the native speech state", file: file, line: line)
+            throw NSError(domain: "LaneDevSpeechTest", code: 1)
+        }
+    }
+
+    func testSpeechExpiryPriorityAndAudioInterruption() async throws {
+        var now: TimeInterval = 0
+        let speech = SpeechService(uptime: { now })
+        defer { speech.stop() }
+        guard speech.ready else { throw XCTSkip("Simulator has no installed Chinese voice") }
+        let original = String(repeating: "前方請保持直行。", count: 12)
+        let obsolete = "前方有測速照相。"
+        speech.speak("請直行。")
+        speech.speak(obsolete)
+        XCTAssertEqual(speech.queuedCount, 1)
+        now = 6
+        try await waitForSpeech { speech.finishes == 1 }
+        XCTAssertEqual(speech.starts, 1)
+        XCTAssertNil(speech.currentText)
+        XCTAssertEqual(speech.queuedCount, 0)
+
+        speech.speak(original)
+        try await waitForSpeech { speech.starts == 2 }
+        speech.speak(obsolete)
+        let urgent = "前方路口請右轉。"
+        speech.speak(urgent, priority: true)
+        XCTAssertEqual(speech.currentText, urgent)
+        XCTAssertEqual(speech.queuedCount, 0)
+        try await waitForSpeech { speech.finishes == 2 }
+        XCTAssertEqual(speech.starts, 3, "Only the urgent prompt should start after the interrupted prompt")
+
+        func notify(_ type: AVAudioSession.InterruptionType) {
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(),
+                                            userInfo: [AVAudioSessionInterruptionTypeKey: type.rawValue])
+        }
+        defer { notify(.ended) }
+        speech.speak(original)
+        try await waitForSpeech { speech.starts == 4 }
+        speech.speak(obsolete)
+        notify(.began)
+        XCTAssertTrue(speech.interrupted)
+        XCTAssertNil(speech.currentText)
+        XCTAssertEqual(speech.queuedCount, 0)
+        speech.speak(urgent, priority: true)
+        XCTAssertNil(speech.currentText)
+        notify(.ended)
+        XCTAssertFalse(speech.interrupted)
+        XCTAssertNil(speech.currentText)
+        speech.speak(urgent)
+        try await waitForSpeech { speech.finishes == 3 }
+        XCTAssertEqual(speech.starts, 5)
+
+        notify(.began)
+        speech.setForeground(false)
+        speech.setForeground(true)
+        XCTAssertFalse(speech.interrupted, "Returning can recover when no ended notification was delivered")
+        speech.speak(urgent)
+        XCTAssertEqual(speech.currentText, urgent, speech.speech)
+        do {
+            try await waitForSpeech { speech.finishes == 4 }
+        } catch {
+            print("IOS_STAGE6_AUDIO_AFTER_RETURN: starts=\(speech.starts) finishes=\(speech.finishes) status=\(speech.speech)")
+            throw error
+        }
+        print("IOS_STAGE6_AUDIO: expired prompt skipped, urgent prompt preempted, injected interruption dropped pending speech, fresh prompts finished after ended and after returning")
+    }
+
+    func testMissingChineseSpeechShowsRecovery() {
+        let speech = SpeechService(availableVoices: { [] })
+        XCTAssertFalse(speech.ready)
+        XCTAssertTrue(speech.status.contains("重新檢查"))
+        speech.speak("請右轉。")
+        XCTAssertTrue(speech.speech.contains("缺少中文聲音"))
+        XCTAssertNil(speech.currentText)
+        XCTAssertEqual(speech.starts, 0)
+        print("IOS_STAGE6_MISSING_VOICE: empty voice inventory injected, no utterance submitted")
     }
 
     #if targetEnvironment(simulator)
@@ -460,6 +571,8 @@ final class ForegroundNavigationTests: XCTestCase {
 
         controller.handleSimulatorAction(.signal)
         try await wait("document.querySelector('.gps-weak')?.innerText.includes('GPS 訊號中斷')")
+        XCTAssertNil(controller.speech.currentText)
+        XCTAssertEqual(controller.speech.queuedCount, 0)
         try await screenshot("stage4-signal-outage")
         let outageDistance = simulator.distanceM
         let outageSamples = try await js("return window.stage4Samples.length") as? Int
@@ -616,16 +729,27 @@ final class ForegroundNavigationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(1250))
         let countWhilePaused = try await js("return window.systemFixes.length") as? Int
         XCTAssertEqual(countWhilePaused, pausedCount)
+        XCTAssertNil(controller.speech.currentText)
+        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
         controller.setForeground(true)
         try await wait("window.systemFixes.length > \(pausedCount) && !document.querySelector('.gps-weak')?.innerText.includes('已暫停')")
         XCTAssertEqual(controller.locations.watches.count, 1)
+        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled)
 
         _ = try await js("document.body.dataset.previousDocument='true'")
+        if controller.speech.ready {
+            controller.speech.speak(String(repeating: "前方請保持直行。", count: 12), priority: true)
+            controller.speech.speak("前方有測速照相。")
+            XCTAssertEqual(controller.speech.queuedCount, 1)
+        }
         controller.webView.reload()
         try await wait("!document.body.dataset.previousDocument && document.querySelector('.place-search-form input') && !document.querySelector('.loading')")
         XCTAssertTrue(controller.locations.watches.isEmpty)
         XCTAssertFalse(controller.locations.updating)
         XCTAssertFalse(controller.navigating)
+        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
+        XCTAssertNil(controller.speech.currentText)
+        XCTAssertEqual(controller.speech.queuedCount, 0)
         try await plan(useVirtual: false)
         _ = try await js("document.querySelector('.route-start-button').click()")
         try await wait("document.querySelector('.banner')")
@@ -634,6 +758,7 @@ final class ForegroundNavigationTests: XCTestCase {
         try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
         XCTAssertTrue(controller.locations.watches.isEmpty)
         XCTAssertFalse(controller.locations.updating)
+        print("IOS_STAGE6_LIFECYCLE: pause stopped Core Location and cleared idle timer; new fix resumed one watch; reload cleared speech, idle timer and watches; navigation started again")
     }
 
     /// Run separately after simctl privacy revoke location, then restore permission.

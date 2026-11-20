@@ -73,6 +73,122 @@ final class ForegroundUITests: XCTestCase {
         print("IOS_OFFLINE_MAP: drag, pinch, rotate, process relaunch, persisted and restored preference")
     }
 
+    @MainActor
+    func testNavigationSettingsSurviveProcessRelaunch() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["設定"]
+        let locate = web.buttons["目前位置"]
+        func openSettings() {
+            XCTAssertTrue(locate.waitForExistence(timeout: 30))
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)], timeout: 30), .completed)
+            settings.tap()
+        }
+        func zoomControl() -> XCUIElement {
+            let control = web.otherElements["導航視距"]
+            XCTAssertTrue(control.waitForExistence(timeout: 5), web.debugDescription)
+            return control
+        }
+        func chooseZoom(_ option: String) {
+            zoomControl().tap()
+            let menuOption = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", option)).firstMatch
+            if menuOption.waitForExistence(timeout: 3) {
+                menuOption.tap()
+            } else {
+                let wheel = app.pickerWheels.firstMatch
+                XCTAssertTrue(wheel.waitForExistence(timeout: 3), app.debugDescription)
+                wheel.adjust(toPickerWheelValue: option)
+                app.buttons["Done"].tap()
+            }
+        }
+        func openHomeEditor() -> XCUIElement {
+            web.buttons["常用地點"].tap()
+            web.buttons["編輯"].firstMatch.tap()
+            let field = web.textFields["住家地址"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5), web.debugDescription)
+            return field
+        }
+        func replaceAddress(_ field: XCUIElement, with text: String) {
+            let current = field.value as? String ?? ""
+            field.tap()
+            let end = field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+            end.tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + text)
+            XCTAssertEqual(field.value as? String, text)
+            web.buttons["只存地址文字"].tap()
+        }
+        openSettings()
+        let checkbox = web.checkBoxes["語音導航"]
+        let voice = checkbox.exists ? checkbox : web.switches["語音導航"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 5), web.debugDescription)
+        let initialVoice = try XCTUnwrap(voice.value as? String)
+        voice.tap()
+        let changedVoice = try XCTUnwrap(voice.value as? String)
+        XCTAssertNotEqual(changedVoice, initialVoice)
+        let initialZoom = try XCTUnwrap(zoomControl().value as? String)
+        let changedZoom = initialZoom == "遠景 · 16" ? "遠景 · 17" : "遠景 · 16"
+        chooseZoom(changedZoom)
+        XCTAssertEqual(zoomControl().value as? String, changedZoom)
+        let field = openHomeEditor()
+        let original = try XCTUnwrap(field.value as? String)
+        let address = "LaneDev Stage 6"
+        replaceAddress(field, with: address)
+        app.terminate()
+        app.launch()
+        openSettings()
+        XCTAssertEqual(voice.value as? String, changedVoice)
+        XCTAssertEqual(zoomControl().value as? String, changedZoom)
+        web.buttons["常用地點"].tap()
+        XCTAssertTrue(web.staticTexts[address].waitForExistence(timeout: 5), web.debugDescription)
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "stage6-relaunched-settings"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        web.buttons["編輯"].firstMatch.tap()
+        let home = web.textFields["住家地址"]
+        replaceAddress(home, with: original)
+        XCTAssertTrue(web.staticTexts[original].waitForExistence(timeout: 5), web.debugDescription)
+        web.buttons["常用地點"].tap()
+        chooseZoom(initialZoom)
+        voice.tap()
+        XCTAssertEqual(zoomControl().value as? String, initialZoom)
+        XCTAssertEqual(voice.value as? String, initialVoice)
+        print("IOS_STAGE6_PREFERENCES: changed voice, zoom and saved home; all three persisted after terminating and relaunching the process")
+    }
+
+    @MainActor
+    func testIOSSettingsEntrypoints() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["設定"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 30))
+        settings.tap()
+        func dismissHelp(containing text: String) {
+            let help = app.alerts["LaneDev"]
+            XCTAssertTrue(help.waitForExistence(timeout: 5))
+            let message = help.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+            XCTAssertTrue(message.exists, help.debugDescription)
+            help.buttons["好"].tap()
+        }
+        web.buttons["語音設定"].tap()
+        web.buttons["iOS 語音說明"].tap()
+        dismissHelp(containing: "輔助使用")
+        web.buttons["語音設定"].tap()
+        web.buttons["定位與方向"].tap()
+        web.buttons["iOS 定位服務說明"].tap()
+        dismissHelp(containing: "隱私權與安全性")
+        web.buttons["App 定位權限"].tap()
+        let systemSettings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        XCTAssertTrue(systemSettings.wait(for: .runningForeground, timeout: 10))
+        app.activate()
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        print("IOS_STAGE6_SETTINGS_ENTRIES: voice and device location instructions displayed; LaneDev's settings opened in Settings and returned to the app")
+    }
+
     #if DEBUG
     @MainActor
     func testMainFlowKeyboardMapStartAndEndButtons() throws {

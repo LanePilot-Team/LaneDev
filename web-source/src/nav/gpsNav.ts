@@ -171,7 +171,7 @@ export class GpsDriver {
       const wl = (navigator as Navigator & {
         wakeLock?: { request: (t: 'screen') => Promise<WakeLockSentinelLike> }
       }).wakeLock
-      if (wl) this.wakeLock = await wl.request('screen')
+      if (wl && globalThis.window?.LanePlatform !== 'ios') this.wakeLock = await wl.request('screen')
     } catch { /* 拿不到 wake lock 也沒關係，不影響導航 */ }
     if (this.finished) { await this.wakeLock?.release().catch(() => {}); this.wakeLock = null; return }
     const watchId = this.geolocation!.watchPosition(

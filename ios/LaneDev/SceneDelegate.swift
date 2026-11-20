@@ -5,7 +5,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: scene)
-        window.rootViewController = NavigationViewController()
+        let controller = NavigationViewController()
+        controller.setForeground(false)
+        window.rootViewController = controller
         self.window = window
         (UIApplication.shared.delegate as? AppDelegate)?.window = window
         window.makeKeyAndVisible()
@@ -15,5 +17,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     func sceneWillResignActive(_ scene: UIScene) {
         (window?.rootViewController as? NavigationViewController)?.setForeground(false)
+    }
+    func sceneDidDisconnect(_ scene: UIScene) {
+        (window?.rootViewController as? NavigationViewController)?.disconnect()
+        if let delegate = UIApplication.shared.delegate as? AppDelegate, delegate.window === window {
+            delegate.window = nil
+        }
+        window = nil
     }
 }

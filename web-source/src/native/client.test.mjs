@@ -26,6 +26,23 @@ test('語音開關會停止正在播放的語音，關閉後不傳送播報', ()
   assert.equal(messages.length, count)
 })
 
+test('iOS 播報帶發出時間，Android 維持原本格式', () => {
+  client.setVoice(true)
+  try {
+    window.LanePlatform = 'ios'
+    const before = Date.now()
+    client.speak('前方請右轉', true)
+    const { issuedAt, ...command } = messages.at(-1)
+    assert.ok(issuedAt >= before && issuedAt <= Date.now())
+    assert.deepEqual(command, { type: 'speak', text: '前方請右轉', priority: true })
+    delete window.LanePlatform
+    client.speak('前方請右轉', true)
+    assert.deepEqual(messages.at(-1), command)
+  } finally {
+    delete window.LanePlatform
+  }
+})
+
 test('視距限制在有效範圍，與速度無關並保存設定', () => {
   client.setZoom(19)
   assert.equal(client.clientState().zoom, 19)

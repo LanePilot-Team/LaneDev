@@ -14,7 +14,7 @@ import {
 } from '../core/graph.ts'
 import { activeElevatedLayer } from '../core/elevated3d.ts'
 import type { DriveState } from './driveState.ts'
-import { clientState, ensureLocation, nativeCommand } from '../native/client.ts'
+import { clientState, ensureLocation, nativeCommand, stopSpeech } from '../native/client.ts'
 import { GpsDriver, noteRerouteFinished, type RerouteClock } from './gpsNav.ts'
 import { gpsLog } from './gpsDebug.ts'
 import { GpsAnimation } from './gpsAnimation.ts'
@@ -241,10 +241,10 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
   }
 
   /** 依目前里程/車速更新測速提示＋語音。距離每變 10m 才換 state，免得整個 HUD 一直重畫。 */
-  function updateSpeedCameraAlert(s: DriveState) {
+  function updateSpeedCameraAlert(s: DriveState, announce = true) {
     if (routeCamerasRef.current.length === 0) return
     const next = s.arrived ? null : speedCameraAlertAt(routeCamerasRef.current, s.traveledM, s.speedKmh)
-    voiceRef.current.say(speedCameraAnnouncement(next))
+    if (announce) voiceRef.current.say(speedCameraAnnouncement(next))
     setCameraAlert((prev) => {
       if (prev === next) return prev
       if (prev && next
@@ -313,6 +313,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     // WebView 的定位 provider 冷啟動，手機實測幾十秒等不到下一筆定位（看起來像 GPS 斷線）。
     const current = resume ? gpsDriverRef.current : null
     if (current && rebaseVisualRef.current) {
+      if (window.LanePlatform === 'ios') stopSpeech()
       current.replaceRoute(route)
       if (import.meta.env.MODE === 'ios-simulator') window.LaneSimulator?.noteReroute()
       rebaseVisualRef.current(current.displayPath)
@@ -373,9 +374,17 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       animation = next
       if (last) animation.seed(last.pos, last.bearing, last.elevM)
     }
+    const ios = window.LanePlatform === 'ios'
+    let guidanceSuspended = false
+    const suspendGuidance = () => {
+      if (ios && !guidanceSuspended) stopSpeech()
+      guidanceSuspended = true
+    }
     const gps = new GpsDriver(
       route,
       (s, fix) => {
+        if (s.gpsWeak) suspendGuidance()
+        else if (fix) guidanceSuspended = false
         if (import.meta.env.MODE === 'ios-simulator' && s.arrived) window.LaneSimulator?.arrive()
         lastDriveRef.current = s
         routeProgressRef.current = Math.max(routeProgressRef.current, s.traveledM)
@@ -388,10 +397,15 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
         setGpsMsg(rerouteErrorRef.current)
         setCanRetry(false)
         setDrive(s)
-        updateSpeedCameraAlert(s)
+        updateSpeedCameraAlert(s, !ios || !guidanceSuspended)
       },
       (pos, bearing) => rerouteFrom(pos, bearing),
-      (msg) => { freeze(); setGpsMsg(msg); if (!lastDriveRef.current) setCanRetry(true) },
+      (msg) => {
+        suspendGuidance()
+        freeze()
+        setGpsMsg(msg)
+        if (!lastDriveRef.current) setCanRetry(true)
+      },
       rerouteClockRef.current,
       { graph: p.graphRef.current, profile: p.profileRef.current },
     )

@@ -129,7 +129,8 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | 第三階段：平台介面與 iOS 原生定位 | 單次、持續定位與授權；精度、時間、行進方向與羅盤；中斷、恢復及取消訂閱。 | Simulator 系統注入經 Core Location、橋接、共用核心進入導航 HUD；權限與生命週期測試；重跑 24＋35 路由基準與 Android 建置。 | 本輪實作與操作結果見第三階段紀錄。 |
 | 第四階段：前期虛擬導航 | 獨立位置來源、選起終點、播放控制、1x／3x／8x、應轉未轉及訊號情境。 | 操作正常導航、偏航、暫停／恢復及抵達；核對倍速單位與訂閱；稽核正式包。 | 本輪結果見第四階段紀錄。 |
 | 第五階段：主要操作流程 | 本地搜尋、常用地點、起終點、停靠點、重規劃、導引、iPhone 觸控與原生 Google 搜尋。 | 實際操作，保留楠梓參考適用條件，驗證多次重算按同一趟行程順序保留待經停靠點。 | 本輪驗證見第五階段紀錄。 |
-| 第六階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
+| 第六階段：原生語音、設定與 App 生命週期 | 前景中文導航播報、iOS 設定入口與偏好持久化、防熄屏、定位／音訊中斷與 WebView 釋放。 | 在 Simulator 核對語音回呼、設定跨重開、Home 暫停／恢復及重載清理。人工聽音與鎖屏各有獨立紀錄。 | 見第六階段紀錄。 |
+| 第七階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
 各實作階段都要更新本文件、執行適當測試與建置，保存失敗與成功證據；不得只交計畫。只有本階段盤點需要的測試在這輪重新執行，未擅自推進功能實作。
@@ -224,7 +225,7 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 - 實體 iPhone 的 GPS、磁場干擾、初次授權彈窗、概略位置和全域服務設定切換待實際操作。iOS 16.4 執行需對應 runtime 或裝置，有簽章的 iPhone 安裝需 Team 與實體裝置。
 - Home 已驗證前景導航暫停與恢復。背景持續導航及鎖屏持續導航目前未支援，真正鎖屏的操作行為仍待獨立驗證。
-- 第四階段收斂為可移除的開發面板。第五階段串通主要操作並以 Simulator 驗證，第六階段執行完整刪除與實機驗收。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍需要有效且受限制的金鑰。
+- 第四階段收斂為可移除的開發面板。第五階段串通主要操作，第六階段處理語音、設定與生命週期。進入第七階段時完整刪除虛擬來源再驗收實機。系統注入測試的結果屬 Simulator 操作證據。Google Places 仍需要有效且受限制的金鑰。
 
 ## 第四階段：前期虛擬導航
 
@@ -263,7 +264,7 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 - iPhone arm64 Debug 和 Release 的未簽章建置成功。掃描兩個 iPhone App 及 Simulator Release 的 native executable、Debug dylib 及 Web 資產，確認皆使用 `ios-release`，腳本 SHA-256 正確，未含虛擬來源、命令、面板、時計及倍率標記。Simulator Debug 的相同掃描確實找到工具。另把開發旗標傳給 Release 的資產校驗，確認建置校驗會拒絕組態不一致。
 - Gradle Wrapper 8.14.3、JDK 21、Android SDK 36 執行 `assembleDebug testDebugUnitTest --offline --rerun-tasks` 成功，APK 內的資產政策及實際 JS 均排除 iOS 開發功能，1 項 Android 單元測試通過。Android 裝置操作待實機驗證。
 
-首輪建置修正了 Swift 非同步測試輔助函式的逃逸 closure。首輪操作時這個 Simulator 的語音偏好原本關閉，測試已改為開啟並於結束時還原，重跑收到原生導航語音回呼。實體 iPhone 的 GPS、喇叭或藍牙輸出、簽章和道路驗收待第六階段。背景及鎖屏持續導航目前仍屬前景範圍之外，這一輪的 Home 復原測試只證明回前景可接續。
+首輪建置修正了 Swift 非同步測試輔助函式的逃逸 closure。首輪操作時這個 Simulator 的語音偏好原本關閉，測試已改為開啟並於結束時還原，重跑收到原生導航語音回呼。實體 iPhone 的 GPS、喇叭或藍牙輸出、簽章和道路驗收留到實機階段。背景及鎖屏持續導航目前仍屬前景範圍之外，這一輪的 Home 復原測試只證明回前景可接續。
 
 ---
 
@@ -294,7 +295,39 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 - `LaneDevRelease` 的 `generic/platform=iOS` 未簽章 arm64 建置通過，`MinimumOSVersion` 為 16.4。成品含 `ios-release` 前端與原生 Google SDK，資產稽核確認排除 Simulator 虛擬導航入口。
 - Android 前端用 `npm run build` 與 `node tools/sync-web-assets.mjs` 重新打包。Gradle `assembleDebug testDebugUnitTest --offline --rerun-tasks` 通過並產出 `app/build/outputs/apk/debug/app-debug.apk`，既有 1 項 JUnit 通過。APK 保留 Android 的 Google JavaScript 載入路徑。未使用 Android 裝置操作。
 
-下一階段依第四階段清單刪除 Simulator 虛擬工具，並將本輪使用該來源的測試改為適合正式成品的系統定位或實機案例。iOS 16.4 仍只有部署編譯目標，實體 iPhone、簽章、真正鎖屏與 Google 成功授權的驗證各自待補。背景與鎖屏持續導航目前未支援。
+使用者指定第六階段先完成原生語音、設定與 App 生命週期。轉入實體 iPhone 時，依第四階段清單刪除 Simulator 虛擬工具，並將相關測試改為系統定位或實機案例。iOS 16.4 目前是部署編譯目標，實體 iPhone、簽章、真正鎖屏與 Google 成功授權的驗證各自待補。
+
+<a id="stage6"></a>
+
+## 第六階段：原生語音、設定與 App 生命週期（2026-11-21）
+
+- iOS 以 `AVSpeechSynthesizer` 使用已安裝的 zh-TW 聲音，找不到時使用已安裝的其他中文聲音。轉向、待轉、車道、測速及抵達的文案和優先順序沿用共用核心。iOS 逐則交給合成器，待播最多兩則，指示從發出起超過五秒即捨棄。迫近轉向及抵達沿用原有高優先旗標，插播時中斷現有語音並清除排隊項目。
+- 導航靜音立即停止自動播報，設定內可手動試聽或停止。音訊中斷會丟棄現有與待播指示，新的指示在中斷結束或 App 回到前景後重新取得音訊工作階段。App 也在重規劃換線及定位中斷時清除舊語音。 [Apple 音訊中斷文件](https://developer.apple.com/documentation/avfaudio/handling-audio-interruptions)
+- iOS 語音下載及全機定位服務各顯示對應設定路徑，LaneDev 定位權限按鈕使用公開的 App 設定入口。導引視距、語音開關及常用地點沿用自訂來源的本機偏好。 [設定操作](../ios/README.md#語音定位與前景導航)
+- 防熄屏由原生在前景導航控制。Scene inactive 時停止定位及語音並恢復自動休眠，返回前景的同一導航等待新位置。WKWebView 重載、失敗、程序終止或 Scene 斷開會撤銷原文件的定位、語音、反查地址與搜尋回呼，重新載入後可再規劃。
+
+### Simulator 證據與限制
+
+| 驗證 | 實際結果 |
+| --- | --- |
+| 中文試聽與語音回呼 | 使用 iPhone 17 Pro Simulator（iOS 26.3.1、Xcode 26.2）。在語音導航關閉時手動試聽收到 AVSpeechSynthesizer 的 `didStart`、`didFinish` 回呼。第二次試聽使用停止按鈕，另一次在試聽中關閉語音開關，兩次均清除當前及待播項目。系統回報 zh-TW 可用、輸出 Speaker、音量 60%。 [試聽畫面](ios-evidence/stage6/speech-preview.png) |
+| 插播、過期與音訊中斷 | 實際合成器確認迫近轉向覆蓋正在播的指令及待播測速提示。利用測試時鐘推進六秒，確認排隊提示無開始回呼。注入 iOS 音訊中斷通知，驗證清空待播，收到結束通知後下一則可播；另測沒有結束通知而回前景時仍能播放新提示。空聲音清單也以測試注入，確認提示下載、沒有啟動播放。 |
+| iOS 設定入口 | XCUITest 實際點按語音說明、全機定位服務說明及 App 定位權限。兩個說明各顯示 iOS 設定路徑。App 定位權限按鈕開啟 iOS 的「設定」App，可返回 LaneDev。 |
+| 偏好持久化 | 以 XCUITest 實際切換語音、改導航視距、編輯住家地址。終止並重新啟動 App 後，三項設定在畫面上皆保留。測後還原偏好。 [重開後的設定](ios-evidence/stage6/relaunched-settings.png) |
+| Home、定位中斷與重載 | XCUITest 按 Home，確認 App 進入背景，回前景仍可接續導航。系統位置注入配合 hosted XCTest 確認離開前景無新定位且防熄屏解除，返回由新定位恢復一個訂閱。模擬訊號中斷會清除待播，WebView 實際重載會清空定位訂閱、語音與防熄屏，可以重新導航。 |
+| 人工聽音 | 未執行。回呼與 Speaker 路由是系統紀錄，尚未確認喇叭實際可聽、語音清晰度、實體靜音開關或藍牙的表現。來電等真實音訊中斷未測，通知注入只驗證 App 如何處理。 |
+| 背景與鎖屏 | 已以 Home 驗證背景暫停及返回。Simulator 的鎖定選單無法由本機自動化操作，macOS 拒絕輔助取用（`-1719`），本輪未實測鎖屏。未配置背景定位或背景音訊，背景與鎖屏持續導航目前未支援。 |
+
+### 建置與回歸
+
+- `node ios/tools/build-web.mjs all` 通過 312 項共用測試，涵蓋 35 組楠梓參考路線。24 組預計算前後的路由一致，其中 22 組有解。兩種 iOS 資產通過校驗，官方道路、待轉區及參考路線檔案無差異。
+- `node ios/tools/test-simulator.mjs debug` 通過 17 項 XCTest 與 5 項 XCUITest。`release` 通過 4 項 XCUITest，包含系統定位、離線地圖、設定與回前景。`denied` 通過 1 項定位拒絕測試。各組的 `xcodebuild.log` 和 `results.xcresult` 位於 `ios/.build/test-results/` 的 `debug-2026-11-20T17-14-28-217Z`、`release-2026-11-20T17-19-03-308Z`、`denied-2026-11-20T17-20-45-924Z`，時間戳使用 UTC。
+- `npm run build` 與 `node tools/sync-web-assets.mjs` 已更新 Android 前端。以 JDK 21、Android SDK 36 及 Gradle 8.14.3 跑 `bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks`，產出 Debug APK，既有 1 項 Android 單元測試通過。本輪未在 Android 裝置操作。
+- `LaneDevRelease` 通過未簽章的 `generic/platform=iOS` arm64 建置。最低部署版本為 iOS 16.4，Release App 及其前端包的虛擬導航入口排除稽核通過。
+
+首輪中斷測試發現回前景沿用舊合成器時，新指示可能收不到完成回呼。丟棄播報時同步釋放合成器，重跑通過。另一次 XCUITest 卡在等待 Simulator 動畫，重啟 Simulator 後通過完整回歸。
+
+下一階段進入實體 iPhone 前須按第四階段清單完整刪除虛擬導航。保留一般前景語音、手動試聽與系統定位測試，再以簽章裝置驗證真實音訊中斷、人工聽音、鎖屏與前景恢復。iOS 16.4 執行環境、簽章及實體裝置仍待安排。
 
 ## 先前實作與驗證紀錄（歷史，保留）
 

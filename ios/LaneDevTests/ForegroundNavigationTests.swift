@@ -127,6 +127,83 @@ final class ForegroundNavigationTests: XCTestCase {
         XCTAssertNil(handler.resource(for: URL(string: "lanedev://app/../Info.plist")!))
         XCTAssertNil(handler.resource(for: URL(string: "lanedev://evil/index.html")!))
         XCTAssertNil(handler.resource(for: URL(string: "https://app/index.html")!))
+        XCTAssertNoThrow(try handler.validateBundle())
+    }
+
+    func testWebKitLoadsPackagedModulesWorkerAndWebGL() async throws {
+        let result = try await js("""
+            const entry = document.querySelector('script[type=module][src]');
+            const manifestURL = new URL('./data/runtime/manifest.json', location.href);
+            const manifest = await (await fetch(manifestURL)).json();
+            const workerURL = URL.createObjectURL(new Blob([`
+                self.onmessage = async ({data}) => {
+                    try {
+                        const response = await fetch(data);
+                        self.postMessage(response.ok ? (await response.json()).format : 'HTTP ' + response.status);
+                    } catch (e) { self.postMessage(String(e)); }
+                };
+            `], {type:'text/javascript'}));
+            const worker = new Worker(workerURL);
+            let workerFormat;
+            try {
+                workerFormat = await new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => reject(new Error('Worker timed out')), 5000);
+                    worker.onmessage = e => { clearTimeout(timer); resolve(e.data); };
+                    worker.onerror = e => { clearTimeout(timer); reject(new Error(e.message)); };
+                    worker.postMessage(manifestURL.href);
+                });
+            } finally { worker.terminate(); URL.revokeObjectURL(workerURL); }
+            const policy = await (await fetch('./client-policy.json')).json();
+            return {
+                module: entry?.src.startsWith('lanedev://app/assets/') === true && !!document.querySelector('.app'),
+                workerFormat, mode: policy.mode, simulator: !!window.LaneSimulator,
+                webgl2: !!document.querySelector('.maplibregl-canvas')?.getContext('webgl2'),
+                font: getComputedStyle(document.querySelector('.place-search-form input')).fontFamily,
+                glyphs: document.fonts.check('16px "PingFang TC"', '路線導航'),
+                measurements: performance.getEntriesByType('measure').map(p => p.name),
+                sources: Object.keys(manifest.sources).sort(),
+                remoteResources: performance.getEntriesByType('resource').filter(p => /^https?:/.test(p.name)).length,
+            };
+            """) as! [String: Any]
+        XCTAssertEqual(result["module"] as? Bool, true)
+        XCTAssertEqual(result["workerFormat"] as? String, "lanedev-precomputed-v1")
+        XCTAssertEqual(result["mode"] as? String, BundleSchemeHandler.expectedMode)
+        XCTAssertEqual(result["simulator"] as? Bool, BundleSchemeHandler.expectedMode == "ios-simulator")
+        XCTAssertEqual(result["webgl2"] as? Bool, true)
+        XCTAssertTrue((result["font"] as? String)?.contains("PingFang TC") == true)
+        XCTAssertEqual(result["glyphs"] as? Bool, true)
+        XCTAssertTrue((result["measurements"] as? [String])?.contains("lanedev-boot:map-sources-ready") == true)
+        XCTAssertEqual(result["sources"] as? [String], ["buildings", "dividers", "medians", "roadSurfaces", "roadlabels", "roads", "roadtext", "turnbays", "zones"])
+        XCTAssertEqual(result["remoteResources"] as? Int, 0)
+        print("IOS_WEBKIT: \(result)")
+    }
+
+    func testInvalidRoadVersionShowsProgressErrorAndRetry() async throws {
+        let key = "lanedev.test.invalid-manifest-once"
+        let controller = self.controller!
+        controller.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
+            if (location.search === '?test-invalid-manifest' && !sessionStorage.getItem('\(key)')) {
+                sessionStorage.setItem('\(key)', '1');
+                const load = window.fetch.bind(window);
+                window.fetch = async (url, ...args) => {
+                    if (!String(url).endsWith('/data/runtime/manifest.json')) return load(url, ...args);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    return new Response('{"format":"invalid-test-version"}');
+                };
+            }
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        defer {
+            controller.webView.evaluateJavaScript("sessionStorage.removeItem('\(key)')", completionHandler: nil)
+        }
+        controller.webView.load(URLRequest(url: URL(string: "lanedev://app/index.html?test-invalid-manifest")!))
+        try await wait("document.querySelector('.loading progress')")
+        try await screenshot("map-loading-progress")
+        try await wait("document.querySelector('.loading[role=alert]')?.innerText.includes('預計算路網版本不相容')")
+        try await screenshot("map-loading-error")
+        try await click("重新載入")
+        try await wait("document.querySelector('.app') && !document.querySelector('.loading')")
+        try await screenshot("map-recovered")
+        print("IOS_MAP_RETRY: invalid test manifest rejected and rebuilt the map after reload")
     }
 
     func testNativeSpeechCallbacks() async throws {

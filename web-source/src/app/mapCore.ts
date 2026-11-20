@@ -80,6 +80,7 @@ export interface MapCore {
 export interface MapCoreState {
   core: MapCore
   loading: boolean
+  loadStep: number
   loadError: string | null
   zoneTick: number
 }
@@ -102,6 +103,7 @@ export function useMapCore(
   const speedCamerasRef = useRef<SpeedCamera[]>([])
 
   const [loading, setLoading] = useState(true)
+  const [loadStep, setLoadStep] = useState(1)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [zoneTick, setZoneTick] = useState(0)
 
@@ -149,14 +151,18 @@ export function useMapCore(
   useEffect(() => {
     const abort = new AbortController()
     let disposed = false
+    let ready = false
+    const fail = (cause: unknown) => {
+      if (disposed || ready || abort.signal.aborted) return
+      clearTimeout(bootTimeout)
+      console.error('[startup] failed', cause)
+      setLoadError(cause instanceof Error ? cause.message : '路網載入失敗')
+      abort.abort()
+    }
+    const bootTimeout = window.setTimeout(() => fail(new Error('載入路網逾時，請重新載入。')), 30000)
     // Begin reading navigation data while the map style and icons initialize.
     const runtimePromise = loadRuntimeData(abort.signal)
-    void runtimePromise.catch(() => {})
-    const bootTimeout = window.setTimeout(() => {
-      if (disposed) return
-      setLoadError('載入路網逾時，請重新載入；若持續失敗請重新安裝完整版本')
-      abort.abort()
-    }, 30000)
+    void runtimePromise.catch(fail)
     let bootPhase = performance.now()
     function bootMeasure(name: string) {
       const end = performance.now()
@@ -164,7 +170,9 @@ export function useMapCore(
       console.info('[startup]', name, Math.round(end - bootPhase) + 'ms')
       bootPhase = end
     }
-    const map = new maplibregl.Map({
+    let map: MLMap
+    try {
+      map = new maplibregl.Map({
       container: containerRef.current!,
       style: buildStyle(),
       center: NANZI_CENTER,
@@ -177,7 +185,13 @@ export function useMapCore(
       // 效能：不開 MSAA 與 preserveDrawingBuffer（內顯上很貴）
       // 所有字形本機繪製，不等待外部字型服務。
       localIdeographFontFamily: '"Microsoft JhengHei", "PingFang TC", sans-serif',
-    })
+      })
+    } catch (cause) {
+      fail(new Error('無法初始化地圖繪圖（WebGL）。', { cause }))
+      return () => { disposed = true }
+    }
+    const onBootMapError = (event: { error: Error }) => fail(event.error)
+    map.on('error', onBootMapError)
     map.addControl(new AttributionControl({
       compact: true,
       customAttribution: '© OpenStreetMap contributors',
@@ -202,8 +216,10 @@ export function useMapCore(
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__map = map
 
     map.on('load', async () => {
+      if (disposed || abort.signal.aborted) return
       try {
       bootMeasure('map-style-load')
+      setLoadStep(2)
       const icons = makeIcons()
       for (const [name, img] of Object.entries(icons)) map.addImage(name, img)
       const loadSvg = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -234,8 +250,9 @@ export function useMapCore(
       })
 
       const { manifest, navigation } = await runtimePromise
-      if (disposed) return
+      if (disposed || abort.signal.aborted) return
       bootMeasure('read-precomputed-navigation')
+      setLoadStep(3)
       laneBaseIndexRef.current = navigation.laneBaseIndex
       zoneFeatureIdsRef.current = navigation.zoneFeatureIds
       zonesRef.current = navigation.zones
@@ -261,7 +278,7 @@ export function useMapCore(
       const buildingsResponse = await fetch(runtimeAsset(manifest.sources.buildings.file), { signal: abort.signal })
       if (!buildingsResponse.ok) throw new Error('無法讀取建築資料')
       const buildings = await buildingsResponse.json() as FeatureCollection<Polygon>
-      if (disposed) return
+      if (disposed || abort.signal.aborted) return
       const occlusion = new NavigationOcclusion(map, buildings.features as never)
       setActiveNavigationOcclusion(occlusion)
       bootMeasure('submit-precomputed-layers')
@@ -293,17 +310,15 @@ export function useMapCore(
       occlusion.updateCamera(map, true)
       bootMeasure('map-sources-ready')
       clearTimeout(bootTimeout)
+      ready = true
+      map.off('error', onBootMapError)
       setLoading(false)
       } catch (cause) {
-        if (disposed) return
-        clearTimeout(bootTimeout)
-        console.error('[startup] failed', cause)
-        if (!abort.signal.aborted) setLoadError(cause instanceof Error ? cause.message : '路網載入失敗')
-        // Keep navigation disabled; never fall back to expensive recomputation.
+        fail(cause)
       }
     })
 
-    map.on('click', (e) => clickRef.current(e, map))
+    map.on('click', (e) => { if (ready) clickRef.current(e, map) })
 
     return () => {
       disposed = true
@@ -318,6 +333,6 @@ export function useMapCore(
 
   return {
     core: coreRef.current,
-    loading, loadError, zoneTick,
+    loading, loadStep, loadError, zoneTick,
   }
 }

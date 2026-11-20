@@ -6,6 +6,73 @@ final class ForegroundUITests: XCTestCase {
         let shot = XCTAttachment(screenshot: XCUIApplication().screenshot())
         shot.name = "final-screen"; shot.lifetime = .keepAlways; add(shot)
     }
+
+    @MainActor
+    func testOfflineMapGesturesAndPreferenceAfterRelaunch() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let locate = app.webViews.buttons["目前位置"]
+        func waitForMap() {
+            XCTAssertTrue(locate.waitForExistence(timeout: 30))
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        }
+        func capture(_ name: String) throws -> Data {
+            let shot = app.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let image = try XCTUnwrap(shot.image.cgImage)
+            let mapContent = CGRect(x: image.width / 5, y: image.height / 4,
+                                    width: image.width * 3 / 5, height: image.height / 2)
+            return try XCTUnwrap(try XCTUnwrap(image.cropping(to: mapContent)).dataProvider?.data) as Data
+        }
+        waitForMap()
+        let start = try capture("offline-map-start")
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.54, dy: 0.59))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.33, dy: 0.43))
+        from.press(forDuration: 0.08, thenDragTo: to)
+        let dragged = try capture("offline-map-drag")
+        XCTAssertNotEqual(start, dragged)
+
+        // The canvas has a thin accessibility wrapper. Target the enclosing WebView's center.
+        let map = app.webViews.firstMatch
+        XCTAssertGreaterThan(map.frame.height, 200)
+        map.pinch(withScale: 1.8, velocity: 0.8)
+        let zoomed = try capture("offline-map-zoom")
+        XCTAssertNotEqual(dragged, zoomed)
+        map.rotate(CGFloat.pi / 3, withVelocity: 0.8)
+        let rotated = try capture("offline-map-rotate")
+        XCTAssertNotEqual(zoomed, rotated)
+
+        let settings = app.webViews.buttons["設定"]
+        func voiceControl() throws -> XCUIElement {
+            settings.tap()
+            let checkbox = app.webViews.checkBoxes["語音導航"]
+            if checkbox.exists { return checkbox }
+            let toggle = app.webViews.switches["語音導航"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
+            return toggle
+        }
+        let voice = try voiceControl()
+        let saved = try XCTUnwrap(voice.value as? String)
+        voice.tap()
+        let changed = try XCTUnwrap(voice.value as? String)
+        XCTAssertNotEqual(saved, changed)
+        app.terminate()
+        app.launch()
+        waitForMap()
+        let reopenedVoice = try voiceControl()
+        XCTAssertEqual(reopenedVoice.value as? String, changed, "localStorage must retain the preference across process restarts")
+        reopenedVoice.tap()
+        XCTAssertEqual(reopenedVoice.value as? String, saved)
+        settings.tap()
+        _ = try capture("offline-map-reopened")
+        print("IOS_OFFLINE_MAP: drag, pinch, rotate, process relaunch, persisted and restored preference")
+    }
+
     #if DEBUG
     @MainActor
     func testTouchNavigationAndHomeResume() throws {

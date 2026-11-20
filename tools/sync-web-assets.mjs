@@ -1,21 +1,29 @@
-import { readFile, writeFile, readdir, cp, rm } from 'node:fs/promises'
+import { readFile, writeFile, readdir, cp, rm, mkdir, mkdtemp, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-// Cross-platform equivalent of import-web-assets.ps1. Xcode and Gradle both bundle this directory.
+// With no argument, this is the macOS equivalent of import-web-assets.ps1.
 const root = fileURLToPath(new URL('../', import.meta.url))
-const source = path.join(root, 'web-source/dist')
-const target = path.join(root, 'app/src/main/assets/public')
+const mode = process.argv[2] ?? 'android'
+if (!['android', 'ios-simulator', 'ios-release'].includes(mode)) throw new Error(`Unknown asset destination: ${mode}`)
+const ios = mode !== 'android'
+const source = path.join(root, ios ? `web-source/.ios-dist/${mode}` : 'web-source/dist')
+const androidAssets = path.join(root, 'app/src/main/assets/public')
+const target = ios ? path.join(root, `ios/.web/${mode}/public`) : androidAssets
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const policy = JSON.parse(await readFile(path.join(source, 'client-policy.json')))
-if (policy.format !== 'lanedev-android-client-v1' || policy.editor !== false
+const format = ios ? 'lanedev-ios-client-v1' : 'lanedev-android-client-v1'
+if (policy.format !== format || policy.editor !== false
   || policy.simulation !== false || policy.transit !== false) throw new Error('Invalid client policy')
+if (ios && (policy.mode !== mode || policy.simulatorTools !== (mode === 'ios-simulator'))) throw new Error('iOS asset mode mismatch')
 await readFile(path.join(source, 'index.html'))
 const scripts = (await readdir(path.join(source, 'assets'))).filter(n => n.endsWith('.js'))
 if (!scripts.length || scripts.length !== Object.keys(policy.scripts).length) throw new Error('Invalid script list')
 for (const script of scripts) {
-  if (hash(await readFile(path.join(source, 'assets', script))) !== policy.scripts[script]) throw new Error('Invalid script checksum: ' + script)
+  const bytes = await readFile(path.join(source, 'assets', script))
+  if (hash(bytes) !== policy.scripts[script]) throw new Error('Invalid script checksum: ' + script)
+  if (mode !== 'ios-simulator' && bytes.includes('LaneSimulator')) throw new Error('Simulator hook in formal client')
 }
 const dataFiles = await readdir(path.join(source, 'data'))
 if (dataFiles.some(n => /^transit.*\.json$/.test(n))) throw new Error('Transit data forbidden')
@@ -34,14 +42,33 @@ const normalize = bytes => bytes.toString('utf8').replace(/^\uFEFF/, '').replace
 for (const name of await readdir(path.join(source, 'data'), { recursive: true })) {
   if (name.startsWith('runtime' + path.sep) || !/\.(json|geojson|jsonl|md)$/.test(name)) continue
   try {
-    const previous = await readFile(path.join(target, 'data', name))
+    const previous = await readFile(path.join(androidAssets, 'data', name))
     const next = await readFile(path.join(source, 'data', name))
     if (!previous.equals(next) && normalize(previous) === normalize(next)) preserved.push([name, previous])
   } catch (error) { if (error.code !== 'ENOENT') throw error }
 }
-await rm(target, { recursive: true, force: true })
-await cp(source, target, { recursive: true })
-for (const [name, bytes] of preserved) {
-  await writeFile(path.join(target, 'data', name), bytes)
+await mkdir(path.dirname(target), { recursive: true })
+// Keep the previous bundle available until the entire new copy is ready.
+const scratch = await mkdtemp(path.join(path.dirname(target), '.assets-'))
+const staged = path.join(scratch, 'staged')
+const backup = path.join(scratch, 'previous')
+let keepBackup = false
+try {
+  await cp(source, staged, { recursive: true })
+  for (const [name, bytes] of preserved) await writeFile(path.join(staged, 'data', name), bytes)
+  try { await rename(target, backup) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  try {
+    await rename(staged, target)
+  } catch (error) {
+    try { await rename(backup, target) } catch (restoreError) {
+      if (restoreError.code !== 'ENOENT') {
+        keepBackup = true
+        throw new Error(`Failed to restore previous assets. Backup: ${backup}`, { cause: restoreError })
+      }
+    }
+    throw error
+  }
+} finally {
+  if (!keepBackup) await rm(scratch, { recursive: true, force: true })
 }
-console.log('Verified shared web assets updated for Android and iOS: ' + target)
+console.log(`Verified ${mode} web assets: ${target}`)

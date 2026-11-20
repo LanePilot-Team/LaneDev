@@ -153,6 +153,41 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 
 尚未確認：iOS 16.4 真實執行、localStorage 跨程序／升級、Google key／來源授權及 iOS 注入、反查地址並行降級、實機朝向與精度／音訊／效能、有簽章安裝與真正鎖屏行為。Simulator runtime 的 Emoji 字型、來源顯名框與其他既有非本次盤點修正事項保留在 [CLIENT_REVIEW.md](CLIENT_REVIEW.md)。本輪不調整官方資料、不放寬通行規則、不更換路由／參考資料、不修改 App 功能。
 
+## 第二階段：iOS 容器與可重複打包（2026-11-20）
+
+延用 `feat/ios-navigation` 上的 Swift＋WKWebView 專案與共享 `LaneDev`、`LaneDevRelease` schemes。App、測試 targets 與 `ios/generate-project.rb` 已對齊 iOS 16.4。操作使用 iPhone 17 Pro Simulator，runtime iOS 26.3.1（23D8133），Xcode 26.2（17C52）。iOS 16.4 操作仍需環境或裝置。
+
+| Xcode 組態 | Vite 模式 | 資產 | Simulator 能力 |
+| --- | --- | --- | --- |
+| Debug ＋ `iphonesimulator` | `ios-simulator` | `ios/.web/ios-simulator/public` | Swift 限 `DEBUG && targetEnvironment(simulator)`，網頁接點由 `import.meta.env.MODE` 明確啟用 |
+| Release（任一 SDK）、Debug ＋ `iphoneos` | `ios-release` | `ios/.web/ios-release/public` | 前端及 Swift 都排除 App 虛擬導航接點 |
+| Android APK | `production` | `app/src/main/assets/public` | 沿用 Android 原生與正式前端打包 |
+
+- `node ios/tools/build-web.mjs all` 依 lockfile 安裝套件、執行測試、生成預計算路網，接著做 TypeScript／Vite 建置與模組稽核。兩種 iOS 模式都是靜態 production build，`import.meta.env.DEV` 均為 false。`node tools/sync-web-assets.mjs ios-simulator` 與 `ios-release` 可分開驗證並同步現有成品。iOS 產物存放在忽略目錄，Android 繼續提交其前端成品。
+- Xcode 依 SDK／config 選 `public/`，驗證模式與工具旗標後由內建資源階段複製。Swift 再檢查包種、模式及路網 manifest SHA-256。前端核對路網格式、必要的 9 個來源、檔名雜湊及導航資料 SHA-256。道路、車道、建築、高架、地標及導航圖沿用目前輸入。
+- 定案使用 `WKURLSchemeHandler` 的唯讀 `lanedev://app`，能以相對 URL 載入 ES module、Worker、JSON／GeoJSON、樣式及圖示。App 顯示地圖初始化、路網校驗、圖層載入三步。錯誤會阻止導航並提供「重新載入」。如果錯的是打包資產本身，仍需重建或重新安裝。
+- 虛擬來源、橋接與測試仍屬前期例外，實體 iPhone 階段依上方清單完整刪除。正式包測試使用 Simulator 系統定位時，該系統測試工具與 App 本身的虛擬來源分開。
+
+可執行的建置、安裝、啟動命令見 [iOS README](../ios/README.md)。Android 以相容 Gradle 8.14.3／JDK 21／API 36 實際完成 `assembleDebug`、`testDebugUnitTest`。工作區原有 wrapper 已改為 9.7.1，同一命令會因 AGP 8.13.0 依賴已移除的 Gradle 內部 API 而失敗。這次回歸直接用 8.14.3，保留 wrapper 變動。現有 Android JUnit 共 1 項。
+
+本輪實際驗收如下。
+
+| 項目 | 結果 |
+| --- | --- |
+| 共用前端與路網 | 302 項測試通過，含 35 組楠梓參考路線。24 組預計算前後路由一致，其中 22 組有解。內建 11,033 道路、346 待轉區及 9 組繪圖來源。官方道路、待轉區與參考資料維持原位元組。 |
+| 自訂來源 | Debug WKWebView 成功執行包內 module、`fetch` 與 blob Worker；Worker 從 `lanedev://app` 讀回 `lanedev-precomputed-v1`，地圖完成全部來源初始化。實際 canvas 為 WebGL2，資源紀錄沒有 HTTP(S) 載入，非 GET 回 403。 |
+| 字型 | WKWebView 通過 PingFang TC 字型檢查，實際畫面有繁中地標。此 Simulator 的 `AppleColorEmoji.ttc` 缺檔，部分圖示出現替代字元，見 CLIENT_REVIEW。 |
+| 進度／錯誤／重試 | XCTest 只在 WebView 內注入一次不相容 manifest 回應。實測顯示進度與版本錯誤，點重試後從原 bundle 恢復。正式路網檔案未被測試覆寫。 |
+| Vite 停止後操作 | 實際開啟 Vite（HTTP 200）後關閉（連線被拒）。Debug／Release 的 XCUITest 均以實際拖曳、雙指捏合與旋轉操作地圖，逐步擷取畫面並比較地圖區域。`localStorage` 語音偏好在 App 終止重開後保留，測試最後還原原值。 |
+| App／組態 | Debug 9 項、Release 2 項測試通過。另以 `simctl install`、`simctl launch --terminate-running-process` 獨立啟動 Release，確認進度結束後顯示可操作地圖。Release 驗證腳本拒絕使用 Simulator 開發套件，兩個 Release 成品都沒有虛擬工具的 Swift 字串或 JS 接點。 |
+| 實機目標 | `generic/platform=iOS` Release arm64 未簽章建置通過。iOS 16.4 裝置執行、iPhone 簽章與實機驗證仍待安排。 |
+
+- [正式包獨立啟動](ios-evidence/stage2/standalone-release.png)、[拖曳後](ios-evidence/stage2/offline-map-drag.png)、[縮放後](ios-evidence/stage2/offline-map-zoom.png)、[旋轉後](ios-evidence/stage2/offline-map-rotate.png)、[終止後重開](ios-evidence/stage2/offline-map-reopened.png)。
+- [載入進度](ios-evidence/stage2/map-loading-progress.png)、[版本錯誤與重試](ios-evidence/stage2/map-loading-error.png)、[重試恢復](ios-evidence/stage2/map-recovered.png)。
+- [執行紀錄](ios-evidence/stage2/verification.txt) 與 [成品模式／雜湊稽核](ios-evidence/stage2/package-audit.json)。
+
+第三階段接續既有前景導航，按第一階段的操作門檻驗收與補測。iOS 16.4 runtime 缺席、實體 iPhone、簽章、Google Places 授權，以及實際鎖屏仍是獨立項目。
+
 ---
 
 ## 先前實作與驗證紀錄（歷史，保留）

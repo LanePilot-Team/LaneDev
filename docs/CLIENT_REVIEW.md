@@ -1,5 +1,10 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-11-20：第二階段額外發現
+
+- 工作區原有 Gradle wrapper 9.7.1 搭配 AGP 8.13.0 時，Gradle 在套用 `com.android.application` 階段回報 `InternalProblems` API 已移除。保留既有 wrapper 修改，同一 Android 專案用 Gradle 8.14.3／JDK 21／API 36 完成 APK 建置與單元測試。
+- 本輪 Simulator 的繁中地圖與表單字型通過，WebKit 仍紀錄缺少 `AppleColorEmoji.ttc`，搜尋與設定等部分圖示顯示替代字元。保留為既有 runtime 問題，實際畫面見第二階段證據。
+
 ## 2026-11-18：第一階段盤點補充（本輪未修正程式）
 
 - 本輪開始時已有的 iOS 反查地址使用單一 CLGeocoder，busy 直接回空字串；共用 `PlaceAddress.tsx` 則允許兩筆查詢並行。已確認程式上的容量差異，尚未用真實反查服務操作重現，可能讓同時出現的缺地址地點提早降級為無地址。列入後續單獨驗證，不擅自改排程或地址資料。

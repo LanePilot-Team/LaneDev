@@ -47,7 +47,7 @@
 		193A76565597487A07E8E50F /* SimulatorLocationSource.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SimulatorLocationSource.swift; sourceTree = "<group>"; };
 		24255DF7228109EE5461F1CD /* ForegroundUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ForegroundUITests.swift; sourceTree = "<group>"; };
 		4FF6ADA1C8FB5ED394811B24 /* BundleSchemeHandler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BundleSchemeHandler.swift; sourceTree = "<group>"; };
-		691E4F966E48F9943DF4D6CF /* public */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = public; path = ../app/src/main/assets/public; sourceTree = "<group>"; };
+		691E4F966E48F9943DF4D6CF /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; name = public; path = ".web/$(LANE_WEB_MODE)/public"; sourceTree = SOURCE_ROOT; };
 		6D4FF0312090E2E29009FB2E /* Bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; path = Bridge.js; sourceTree = "<group>"; };
 		794D99F1787A2A3411D06A23 /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		80C9AA46F13C24B6EB4BD091 /* SpeechService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
@@ -206,6 +206,7 @@
 				5C700912F63A7B677E6F17BD /* Sources */,
 				EF8E4F009148FCC0EE7D035F /* Frameworks */,
 				4E23C24915CBC4F8A6442882 /* Resources */,
+				926645953204A2B3B88EBE31 /* Verify web asset mode */,
 			);
 			buildRules = (
 			);
@@ -273,6 +274,23 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		926645953204A2B3B88EBE31 /* Verify web asset mode */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/tools/verify-web-mode.sh",
+				"$(SRCROOT)/.web/$(LANE_WEB_MODE)/public/client-policy.json",
+			);
+			name = "Verify web asset mode";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$SCRIPT_INPUT_FILE_0\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		17D7DCBA583CE1F31EA29DD3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -327,7 +345,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios.uitests;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
@@ -347,7 +365,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = LaneDev/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LANE_WEB_MODE = "ios-release";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios;
 				SDKROOT = iphoneos;
@@ -364,7 +383,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios.uitests;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -495,7 +514,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios.tests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -513,7 +532,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = LaneDev/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LANE_WEB_MODE = "ios-release";
+				"LANE_WEB_MODE[sdk=iphonesimulator*]" = "ios-simulator";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios;
 				SDKROOT = iphoneos;
@@ -530,7 +551,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios.tests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;

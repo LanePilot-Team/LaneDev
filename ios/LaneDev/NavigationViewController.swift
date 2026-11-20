@@ -10,7 +10,7 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     private(set) var navigating = false
     private var webReady = false
     private var geocoder = CLGeocoder()
-    private var bundleHandler: BundleSchemeHandler!
+    private var errorOverlay: UIView?
     #if DEBUG && targetEnvironment(simulator)
     private let sourcePicker = UISegmentedControl(items: ["Core Location", "虛擬定位"])
     private let playButton = UIButton(type: .system)
@@ -19,24 +19,38 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        openBundle()
+    }
+
+    private func openBundle() {
+        errorOverlay?.removeFromSuperview()
+        errorOverlay = nil
+        if let webView {
+            webView.load(URLRequest(url: BundleSchemeHandler.origin))
+            return
+        }
+        guard let root = Bundle.main.url(forResource: "public", withExtension: nil),
+              let bridge = Bundle.main.url(forResource: "Bridge", withExtension: "js"),
+              let script = try? String(contentsOf: bridge, encoding: .utf8) else {
+            showError(BundleSchemeHandler.ValidationError.missing.localizedDescription)
+            return
+        }
+        let handler = BundleSchemeHandler(root: root)
+        do { try handler.validateBundle() }
+        catch { showError(error.localizedDescription); return }
+
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "LaneNative")
         config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.dataset.platform='ios'",
             injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        if let url = Bundle.main.url(forResource: "Bridge", withExtension: "js"), let script = try? String(contentsOf: url, encoding: .utf8) {
-            config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
+        config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         #if DEBUG && targetEnvironment(simulator)
         config.userContentController.addUserScript(WKUserScript(source: """
             Object.defineProperty(window, 'LaneSimulator', {value: Object.freeze({setRoute: coords =>
               window.LaneNative.postMessage(JSON.stringify({type:'simRoute', coords}))})});
             """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         #endif
-        guard let root = Bundle.main.url(forResource: "public", withExtension: nil) else {
-            showError("缺少內建網頁資產，請先執行 node tools/sync-web-assets.mjs 並重新建置"); return
-        }
-        bundleHandler = BundleSchemeHandler(root: root)
-        config.setURLSchemeHandler(bundleHandler, forURLScheme: "lanedev")
+        config.setURLSchemeHandler(handler, forURLScheme: "lanedev")
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -164,9 +178,10 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { webReady = true; status() }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { showError(error.localizedDescription) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         locations.reset(); setNavigation(false)
-        showError("導航畫面已被系統終止，請重新啟動 App 並重新規劃路線")
+        showError("導航畫面已被系統終止，請重新載入並規劃路線。")
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
@@ -185,11 +200,32 @@ final class NavigationViewController: UIViewController, WKNavigationDelegate, WK
         present(alert, animated: true)
     }
     private func showError(_ text: String) {
-        let label = UILabel(); label.numberOfLines = 0; label.textAlignment = .center
-        label.text = text; label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-        NSLayoutConstraint.activate([label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
-            label.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24)])
+        errorOverlay?.removeFromSuperview()
+        let overlay = UIView()
+        overlay.backgroundColor = .systemBackground
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.text = text
+        let retry = UIButton(type: .system)
+        retry.setTitle("重新載入", for: .normal)
+        retry.addAction(UIAction { [weak self] _ in self?.openBundle() }, for: .touchUpInside)
+        let stack = UIStackView(arrangedSubviews: [label, retry])
+        stack.axis = .vertical
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlay)
+        overlay.addSubview(stack)
+        errorOverlay = overlay
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            stack.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+        ])
     }
 }

@@ -301,7 +301,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     const current = resume ? gpsDriverRef.current : null
     if (current && rebaseVisualRef.current) {
       current.replaceRoute(route)
-      window.LaneSimulator?.setRoute(current.displayPath.coords)
+      if (import.meta.env.MODE === 'ios-simulator') window.LaneSimulator?.setRoute(current.displayPath.coords)
       rebaseVisualRef.current(current.displayPath)
       return
     }
@@ -382,7 +382,7 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum, deviationFeatures().smooth)
     if (lastDisplay) animation.seed(lastDisplay.pos, lastDisplay.bearing, lastDisplay.elevM)
     gpsDriverRef.current = gps
-    window.LaneSimulator?.setRoute(gps.displayPath.coords)
+    if (import.meta.env.MODE === 'ios-simulator') window.LaneSimulator?.setRoute(gps.displayPath.coords)
     gps.start()
   }
 

@@ -26,6 +26,16 @@ html[data-platform="ios"] select {
   background: rgba(233, 237, 242, 0.9); font-size: 18px; color: #3d4a5c;
   z-index: 30;
 }
+.map-load-panel {
+  width: min(86%, 360px); padding: 18px; text-align: center;
+  border-radius: 12px; background: white; box-shadow: 0 4px 22px #15283b20;
+}
+.map-load-panel p { margin: 6px 0; }
+.map-load-panel progress { width: 100%; height: 8px; accent-color: #1769e8; }
+.map-load-panel button {
+  margin-top: 12px; padding: 10px 16px; border: 0; border-radius: 8px;
+  background: #1058b8; color: white; font-size: 16px; cursor: pointer;
+}
 
 /* ── 頂部導航看板（高德式）── */
 .banner {

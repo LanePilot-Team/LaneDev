@@ -34,6 +34,8 @@ import { SIM, SimControls } from './dev/index.ts'
 
 import './App.css'
 
+const loadSteps = ['初始化地圖', '驗證並讀取導航路網', '載入道路、建築與地圖圖層']
+
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [mode, setModeState] = useState<Mode>('browse')
@@ -46,7 +48,7 @@ export default function App() {
 
 
   // ── 點擊分派 ──
-  const { core, loading, loadError, zoneTick } =
+  const { core, loading, loadStep, loadError, zoneTick } =
     useMapCore(containerRef, (e, map) => {
       const m = modeRef.current
       const p: [number, number] = [e.lngLat.lng, e.lngLat.lat]
@@ -202,9 +204,16 @@ export default function App() {
           <button type="button" onClick={cancelSavedPlacePick}>取消</button>
         </div>
       )}
-      {loading && <div className="loading" role={loadError ? 'alert' : 'status'}>
-        {loadError ? <><p>{loadError}</p><button onClick={() => location.reload()}>重新載入</button></>
-          : '載入楠梓＋左營路網中…'}
+      {loading && <div className="loading" role={loadError ? 'alert' : undefined}>
+        <div className="map-load-panel">
+          {loadError ? <>
+            <div><strong>無法載入地圖</strong><p>{loadError}</p></div>
+            <button onClick={() => location.reload()}>重新載入</button>
+          </> : <>
+            <p role="status">{loadSteps[loadStep - 1]}（{loadStep}/{loadSteps.length}）</p>
+            <progress aria-label="地圖載入階段" max={loadSteps.length} value={loadStep} />
+          </>}
+        </div>
       </div>}
 
       {mode === 'browse' && (

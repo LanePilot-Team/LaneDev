@@ -1,22 +1,44 @@
 # LaneDev iOS（前景導航）
 
-以 Xcode 26.2 開啟 `LaneDev.xcodeproj`，選 LaneDev scheme 及 iOS Simulator，Build / Run。
-第一階段盤點將最低支援基線定為 **iOS 16.4**，與目前 Vite 的 Safari／iOS 16.4 打包目標一致。現有 Xcode／產生器的 deployment target 仍是 16.0，須在下一實作階段對齊；目前沒有 16.x runtime 的操作驗證，不宣稱最低版本已驗收。無第三方原生依賴、無開發伺服器、無本機 HTTP server。
-Xcode 直接將已提交的 `../app/src/main/assets/public/` 打包進 App；Android 與 iOS 共用同一份前端與預計算路網。
+最低目標為 **iOS 16.4**，與 Vite 的打包目標一致。目前操作驗證使用 iOS 26.3.1 Simulator。App 在 WKWebView 從 `lanedev://app` 讀取內建資源。
 
-更新前端：
+在 repository 根目錄準備資產。工具會依 lockfile 安裝套件、執行共用測試、預計算路網、建置前端，再驗證雜湊並同步到 `ios/.web/`。可用 `simulator` 或 `release` 只更新一種模式。
 
 ```sh
-cd web-source
-npm ci --ignore-scripts
-npm test
-npm run build
-cd ..
-node tools/sync-web-assets.mjs
-xcodebuild -project ios/LaneDev.xcodeproj -scheme LaneDev -sdk iphonesimulator -configuration Debug -derivedDataPath ios/.build build CODE_SIGNING_ALLOWED=NO
+node ios/tools/build-web.mjs all
 ```
 
-已啟動 iPhone Simulator 後，可重跑整合驗證（僅測試需要 Node；App 啟動不需要）：
+| 共用 Xcode scheme | Xcode 組態／SDK | Vite 模式 | 虛擬定位 |
+| --- | --- | --- | --- |
+| `LaneDev` | Debug／`iphonesimulator` | `ios-simulator` | 開發用來源選擇及既有手動前進／偏航 |
+| `LaneDevRelease` | Release／`iphonesimulator` 或 `iphoneos` | `ios-release` | 排除 Swift 能力與前端接點 |
+| `LaneDev`（選實機 SDK） | Debug／`iphoneos` | `ios-release` | 排除 Swift 能力與前端接點 |
+
+兩種 iOS 前端都是 `vite build` 的靜態成品，`import.meta.env.DEV` 在兩種模式均為 `false`。Xcode 依 SDK／組態複製對應的 `public/`，並拒絕模式不符的驗證清單。Android 維持 `npm run build` → `node tools/sync-web-assets.mjs`（或 PowerShell）的正式資產流程。
+
+準備資產後可直接開啟 `ios/LaneDev.xcodeproj`，選 scheme 與 iPhone Simulator 後按 Run。命令列建置、安裝、啟動與截圖如下。若使用其他手機，從 `simctl list devices available` 取代 `LANE_DEVICE`。
+
+```sh
+xcrun simctl list devices available
+LANE_DEVICE=6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981
+xcrun simctl bootstatus "$LANE_DEVICE" -b
+xcodebuild -project ios/LaneDev.xcodeproj -scheme LaneDev -configuration Debug \
+  -destination "id=$LANE_DEVICE" -derivedDataPath ios/.build build CODE_SIGNING_ALLOWED=NO
+xcrun simctl install "$LANE_DEVICE" ios/.build/Build/Products/Debug-iphonesimulator/LaneDev.app
+xcrun simctl launch "$LANE_DEVICE" tw.lanepilot.lanedev.ios
+xcrun simctl io "$LANE_DEVICE" screenshot /tmp/lanedev-ios.png
+```
+
+正式 Simulator 包使用 `-scheme LaneDevRelease -configuration Release`，安裝路徑改為 `ios/.build/Build/Products/Release-iphonesimulator/LaneDev.app`。
+
+關閉 Vite 後，可重跑離線地圖、手勢及重開驗證。Debug 另檢查 WKWebView 資源能力、錯誤及重試。
+
+```sh
+node ios/tools/test-simulator.mjs map
+node ios/tools/test-simulator.mjs release-map
+```
+
+前景導航整合測試可執行下列指令。
 
 ```sh
 node ios/tools/test-simulator.mjs debug

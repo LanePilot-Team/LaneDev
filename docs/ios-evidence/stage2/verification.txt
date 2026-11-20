@@ -1,0 +1,54 @@
+2026-11-20 Asia/Taipei
+Branch feat/ios-navigation, base commit 3474aa9
+Xcode 26.2 (17C52), iPhone 17 Pro Simulator, iOS 26.3.1 (23D8133)
+
+Web and staging
+  node ios/tools/build-web.mjs all
+  npm test: 302 passed, 0 failed. Includes all 35 Nanzih reference cases.
+  Precomputed 13096 ms; 11033 roads, 346 zones, 24 identical route results (22 successful).
+  Verified ios-simulator web assets at ios/.web/ios-simulator/public
+  Verified ios-release web assets at ios/.web/ios-release/public
+  Android npm run build and node tools/sync-web-assets.mjs also completed.
+
+Vite was started and stopped before Simulator validation
+  Vite started: GET 127.0.0.1:5190/ -> 200
+  Vite stopped: GET 127.0.0.1:5190/ -> connection refused
+
+Debug (node ios/tools/test-simulator.mjs debug)
+  TEST BUILD SUCCEEDED, TEST EXECUTE SUCCEEDED
+  7 hosted XCTest + 2 XCUITest passed. Separate permission-denied case was excluded.
+  IOS_MAP_RETRY: invalid test manifest rejected and rebuilt the map after reload
+  IOS_BUNDLE_CHECK: bundle navigation SHA-256 matched, POST 403, no HTTP(S) resources
+  IOS_WEBKIT: module=true, Worker fetch returned lanedev-precomputed-v1, WebGL2=true,
+              PingFang TC selected, CJK font check=true, map-sources-ready observed,
+              all 9 required map sources declared, mode ios-simulator, simulator hook=true.
+  IOS_OFFLINE_MAP: drag, pinch, rotate, process relaunch, persisted and restored preference
+  Foreground navigation, reroute/arrival, voice callbacks and Home resume regressions passed.
+  Full result: ios/.build/test-results/debug-2026-11-20T14-42-47-945Z/results.xcresult
+
+Release (node ios/tools/test-simulator.mjs release)
+  TEST BUILD SUCCEEDED, TEST EXECUTE SUCCEEDED
+  2 XCUITest passed. Offline map gestures and preference relaunch passed.
+  Release navigation via system-injected Simulator location passed, no virtual-source control.
+  Full result: ios/.build/test-results/release-2026-11-20T14-45-01-091Z/results.xcresult
+  xcrun simctl install 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981 ios/.build/Build/Products/Release-iphonesimulator/LaneDev.app
+  xcrun simctl launch --terminate-running-process 6CDD24DC-9DEE-4DDD-A9E5-2EAF4E61D981 tw.lanepilot.lanedev.ios
+  tw.lanepilot.lanedev.ios: 14833
+  Confirmed standalone-release.png shows the loaded map.
+
+Unsigned iPhone architecture and artifact audit
+  xcodebuild -project ios/LaneDev.xcodeproj -scheme LaneDevRelease -destination 'generic/platform=iOS' -configuration Release -derivedDataPath ios/.build-device build CODE_SIGNING_ALLOWED=NO
+  BUILD SUCCEEDED. MinimumOSVersion is 16.4 in Debug Simulator, Release Simulator and Release device artifacts.
+  All three iOS bundles verified against staged policy, script digest and all 10 runtime data checksums.
+  Release verifier was called with Debug Simulator assets and rejected them with exit 1.
+  No native simulator markers or JS LaneSimulator hook in either Release bundle. See package-audit.json.
+
+Android
+  Existing modified Gradle 9.7.1 wrapper failed applying AGP 8.13.0 (removed InternalProblems API).
+  Compatible Gradle 8.14.3 with JDK 21 and Android API 36 ran assembleDebug testDebugUnitTest.
+  BUILD SUCCESSFUL, 40 actionable tasks executed, existing JUnit: 1 passed.
+  APK JavaScript and runtime-manifest checksums verified, no app Simulator hook.
+
+Limits
+  Device and Simulator tests were executed using iOS 26.3.1 Simulator only. The iPhone arm64 build was unsigned.
+  This runtime's AppleColorEmoji.ttc is absent. The CJK font test passed and some icons show replacement glyphs.

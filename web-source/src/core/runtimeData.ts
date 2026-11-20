@@ -20,11 +20,17 @@ export async function loadRuntimeData(signal: AbortSignal) {
   const response = await fetch(asset('/data/runtime/manifest.json'), { signal })
   if (!response.ok) throw new Error('找不到預計算路網，請重新安裝完整版本')
   const manifest = await response.json() as RuntimeManifest
-  if (manifest.format !== RUNTIME_FORMAT || !manifest.sources?.zones || !manifest.sources.buildings) {
+  if (manifest?.format !== RUNTIME_FORMAT || !/^[a-f0-9]{64}$/.test(manifest.inputHash ?? '') || !manifest.sources) {
     throw new Error('預計算路網版本不相容')
   }
-  for (const id of ['roads', 'roadSurfaces', 'dividers', 'turnbays', 'medians', 'roadtext', 'roadlabels']) {
+  for (const id of ['roads', 'roadSurfaces', 'dividers', 'turnbays', 'medians', 'roadtext', 'roadlabels', 'zones', 'buildings']) {
     if (!manifest.sources[id]) throw new Error('地圖資料缺少：' + id)
+  }
+  for (const record of [manifest.navigation, ...Object.values(manifest.sources)]) {
+    if (!record || !/^[a-f0-9]{64}$/.test(record.sha256) || !record.file?.endsWith(`.${record.sha256}.json`)) {
+      throw new Error('預計算路網清單不完整或版本不相容')
+    }
+    runtimeAsset(record.file)
   }
   const navResponse = await fetch(runtimeAsset(manifest.navigation.file), { signal })
   if (!navResponse.ok) throw new Error('無法讀取導航資料')
@@ -32,7 +38,7 @@ export async function loadRuntimeData(signal: AbortSignal) {
   const hash = await responseSHA256(navResponse, bytes)
   if (hash !== manifest.navigation.sha256) throw new Error('導航資料校驗失敗，請重新安裝')
   const navigation = JSON.parse(new TextDecoder().decode(bytes), runtimeReviver) as RuntimeNavigation
-  if (!navigation.roads?.length || !(navigation.laneBaseIndex.approachByKey instanceof Map)) {
+  if (!navigation?.roads?.length || !(navigation.laneBaseIndex?.approachByKey instanceof Map)) {
     throw new Error('導航資料不完整')
   }
   return { manifest, navigation }

@@ -11,6 +11,7 @@
 - web-source 是 64a1fd8 的 Android 客戶端衍生來源。修改來源後重新打包，不手改 minified JS。一般 Android Studio 建置仍只依赖已提交的 APK assets。
 - 前端更新：在 web-source 執行 npm ci --ignore-scripts、npm test、npm run build；在根目錄執行 tools/import-web-assets.ps1 -WebProject ./web-source。
   - Mac 可使用等價的 `node tools/sync-web-assets.mjs` 校驗並匯入共用資產；保留 Windows PowerShell 入口。iOS 與 Android 均須打包已驗證前端及預計算路網，不能依賴 Mac 開發伺服器才能啟動。
+  - iOS 前端使用 `node ios/tools/build-web.mjs all` 準備 `ios/.web/`。Xcode 的 Debug Simulator 使用 `ios-simulator` 模式，其餘使用 `ios-release`，兩者都以 `vite build` 產生。以明確模式控制 iOS Simulator 接點，不能用 Xcode Debug 推論 `import.meta.env.DEV`。
 - Android 驗證：tools/gradle.ps1 assembleDebug 與 tools/gradle.ps1 testDebugUnitTest；裝置能力變動需在模擬器／實機測試，清楚區分已測試及待驗證項目。
 - 保留使用者的 .idea 設定與未提交變動。道路、待轉區的官方內建資料須保留作為唯讀導航輸入。
 - iOS 各階段須實際執行適當的檢查／測試／建置／操作驗證，並更新 `docs/ios-port-plan.md` 的完成項目、證據、問題與下一階段；盤點階段不得把既有測試紀錄寫成本輪新執行結果。缺少 key、簽章、runtime 或實體裝置時列出受阻項目，不用 Simulator 結果宣稱實機完成。

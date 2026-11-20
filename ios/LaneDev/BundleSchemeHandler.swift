@@ -5,8 +5,53 @@ import UniformTypeIdentifiers
 /// Read-only, local bundle origin. No HTTP server, writes, or private WebKit preferences.
 final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
     static let origin = URL(string: "lanedev://app/index.html")!
+    #if DEBUG && targetEnvironment(simulator)
+    static let expectedMode = "ios-simulator"
+    #else
+    static let expectedMode = "ios-release"
+    #endif
+
+    private struct Policy: Decodable {
+        let format: String
+        let mode: String
+        let editor: Bool
+        let simulation: Bool
+        let transit: Bool
+        let simulatorTools: Bool
+        let runtimeManifest: String
+    }
+
+    enum ValidationError: LocalizedError {
+        case missing, incompatible, checksum
+
+        var errorDescription: String? {
+            switch self {
+            case .missing: return "內建導航資源不完整，請重新建置或安裝 LaneDev。"
+            case .incompatible: return "內建前端版本或組態不相容，請重新建置或安裝 LaneDev。"
+            case .checksum: return "路網版本清單校驗失敗，請重新建置或安裝 LaneDev。"
+            }
+        }
+    }
+
     let root: URL
     init(root: URL) { self.root = root.standardizedFileURL.resolvingSymlinksInPath() }
+
+    func validateBundle() throws {
+        guard resource(for: Self.origin) != nil,
+              let policyBytes = try? Data(contentsOf: root.appendingPathComponent("client-policy.json")),
+              let manifestBytes = try? Data(contentsOf: root.appendingPathComponent("data/runtime/manifest.json"))
+        else { throw ValidationError.missing }
+        guard let policy = try? JSONDecoder().decode(Policy.self, from: policyBytes),
+              policy.format == "lanedev-ios-client-v1", policy.mode == Self.expectedMode,
+              !policy.editor, !policy.simulation, !policy.transit,
+              policy.simulatorTools == (Self.expectedMode == "ios-simulator")
+        else { throw ValidationError.incompatible }
+        guard Self.sha256(manifestBytes) == policy.runtimeManifest else { throw ValidationError.checksum }
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
 
     func resource(for url: URL) -> URL? {
         guard url.scheme == "lanedev", url.host == "app", url.user == nil, url.password == nil,
@@ -41,7 +86,7 @@ final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
                 "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-Lane-SHA256",
                 "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"]
             if file.pathExtension == "json" {
-                headers["X-Lane-SHA256"] = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                headers["X-Lane-SHA256"] = Self.sha256(data)
             }
             task.didReceive(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!)
             task.didReceive(data)

@@ -1,0 +1,45 @@
+{
+  "packages": {
+    "simulatorDebug": {
+      "mode": "ios-simulator",
+      "minimumOS": "16.4",
+      "runtimeSHA256": "f59eecdd6d6c5f25e06febc06d8c022fa5807287929da150ce3c4d118e81ad13",
+      "verifiedRoadFiles": 10,
+      "scripts": {
+        "index-D4jWXk82.js": "236fb902a05714338f9b15f1028d937fecd3610876df051ce9b5ccf2e8c3e43d"
+      },
+      "hasHook": true,
+      "nativeSimulatorSymbols": null
+    },
+    "simulatorRelease": {
+      "mode": "ios-release",
+      "minimumOS": "16.4",
+      "runtimeSHA256": "f59eecdd6d6c5f25e06febc06d8c022fa5807287929da150ce3c4d118e81ad13",
+      "verifiedRoadFiles": 10,
+      "scripts": {
+        "index-Dquh73M8.js": "97d6f3f62692c6fd6e96f3e94a923c0823a32cee68f0c6f12c35826133ea45e9"
+      },
+      "hasHook": false,
+      "nativeSimulatorSymbols": []
+    },
+    "deviceArm64Release": {
+      "mode": "ios-release",
+      "minimumOS": "16.4",
+      "runtimeSHA256": "f59eecdd6d6c5f25e06febc06d8c022fa5807287929da150ce3c4d118e81ad13",
+      "verifiedRoadFiles": 10,
+      "scripts": {
+        "index-Dquh73M8.js": "97d6f3f62692c6fd6e96f3e94a923c0823a32cee68f0c6f12c35826133ea45e9"
+      },
+      "hasHook": false,
+      "nativeSimulatorSymbols": []
+    },
+    "androidDebug": {
+      "mode": "production",
+      "scripts": {
+        "index-Dquh73M8.js": "97d6f3f62692c6fd6e96f3e94a923c0823a32cee68f0c6f12c35826133ea45e9"
+      },
+      "runtimeSHA256": "f59eecdd6d6c5f25e06febc06d8c022fa5807287929da150ce3c4d118e81ad13",
+      "hasHook": false
+    }
+  }
+}

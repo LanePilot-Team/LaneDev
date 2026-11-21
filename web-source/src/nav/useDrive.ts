@@ -315,7 +315,6 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     if (current && rebaseVisualRef.current) {
       if (window.LanePlatform === 'ios') stopSpeech()
       current.replaceRoute(route)
-      if (import.meta.env.MODE === 'ios-simulator') window.LaneSimulator?.noteReroute()
       rebaseVisualRef.current(current.displayPath)
       return
     }
@@ -385,7 +384,6 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
       (s, fix) => {
         if (s.gpsWeak) suspendGuidance()
         else if (fix) guidanceSuspended = false
-        if (import.meta.env.MODE === 'ios-simulator' && s.arrived) window.LaneSimulator?.arrive()
         lastDriveRef.current = s
         passedViaRef.current = s.passedViaCount ?? 0
         publishNextStop()
@@ -412,7 +410,6 @@ export function useDrive(p: UseDriveParams): UseDriveResult {
     animation = new GpsAnimation(gps.displayPath.coords, gps.displayPath.cum, deviationFeatures().smooth)
     if (lastDisplay) animation.seed(lastDisplay.pos, lastDisplay.bearing, lastDisplay.elevM)
     gpsDriverRef.current = gps
-    if (import.meta.env.MODE === 'ios-simulator') window.LaneSimulator?.prepare(gps.displayPath.coords)
     gps.start()
   }
 

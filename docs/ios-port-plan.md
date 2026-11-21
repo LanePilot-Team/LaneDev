@@ -1,5 +1,7 @@
 # iOS 移植計畫與階段紀錄
 
+目前的建置與驗收以[第九階段](#stage9)及 [iOS README](../ios/README.md) 為準。第一至八階段的命令、畫面與設定保留當時的驗證紀錄。
+
 ## 本輪第一階段：環境與移植盤點（2026-11-18）
 
 本節回應本輪「先完成環境與移植盤點」的 8 項要求。工作區仍為 `/Users/wang/Desktop/iosdev/LaneDev`、分支 `feat/ios-navigation`、基底 HEAD `69cbd15`。開始時已有前次移植的未提交程式、資產及 `ios/` 專案；全部保留。本輪只更新規範、盤點文件與證據，不新增或修改 App 功能，不另開分支／worktree。
@@ -131,25 +133,24 @@ node --test src/core/nanzihPreferred.test.mjs src/core/nanzihConnections.test.mj
 | 第五階段：主要操作流程 | 本地搜尋、常用地點、起終點、停靠點、重規劃、導引、iPhone 觸控與原生 Google 搜尋。 | 實際操作，保留楠梓參考適用條件，驗證多次重算按同一趟行程順序保留待經停靠點。 | 本輪驗證見第五階段紀錄。 |
 | 第六階段：原生語音、設定與 App 生命週期 | 前景中文導航播報、iOS 設定入口與偏好持久化、防熄屏、定位／音訊中斷與 WebView 釋放。 | 在 Simulator 核對語音回呼、設定跨重開、Home 暫停／恢復及重載清理。人工聽音與鎖屏各有獨立紀錄。 | 見第六階段紀錄。 |
 | 第七階段：Simulator 完整驗收與回歸 | 分別驗收虛擬及系統定位，量測啟動、HUD 更新與偏航重算。 | 重跑 24＋35 組基準，保存測試指令、結果、畫面與實機清單。 | 見第七階段紀錄。 |
-| 第八階段：移除虛擬功能與實機 | 完整刪除第四階段盤點項目，再處理 Team、簽章、iPhone 安裝及道路／音訊／效能驗證。 | 重建前端與 Xcode 專案，掃描原始碼與成品，執行共用、iOS、Android 回歸，保存實際道路與語音驗證。 | 實體 iPhone 與簽章仍待安排。 |
+| 第八階段：移除虛擬功能與實機 | 移除 App 內的虛擬導航，統一成品並處理真機簽章與驗收。 | 掃描成品、執行共用、iOS、Android 回歸，保存真機道路、語音和效能實測。 | 見第八階段裝置及簽章紀錄。 |
 | 背景／鎖屏另案 | 不在本輪前景範圍內。 | 若需求成立，另設計 JS 核心被暫停時的執行方式、定位／音訊權限、電量及真正 Home／鎖屏／恢復測試。 | **未支援持續導航，未完成實際鎖屏測試**；不能只加 Background Modes 就視為完成。 |
 
 各實作階段都要更新本文件、執行適當測試與建置，保存失敗與成功證據；不得只交計畫。只有本階段盤點需要的測試在這輪重新執行，未擅自推進功能實作。
 
 ### 8. 實體 iPhone 階段前的虛擬功能移除清單
 
-以下是尚待實際刪除的範圍。第四階段的表格補列本輪檔案、旗標和入口。
+第八階段使用下列核對項目。第四階段的表格保留原始檔案、旗標及入口名稱供稽核比對。
 
-- [ ] 刪除 `ios/LaneDev/SimulatorLocationSource.swift`、`SimulatorNavigationPanel.swift`、軌跡、倍速與各情境控制。
-- [ ] 刪除 `LocationService.swift` 的 simulator property、virtual selector、導航鎖定狀態及所有 Simulator 分支，只剩 Core Location 提供器。
-- [ ] 刪除 `NavigationViewController.swift` 中的面板、控制 handler、`LaneSimulator` 注入與第四階段列出的全部橋接入口。
-- [ ] 刪除 `platform.ts` 的 `LaneSimulator` 型別，以及 `App.tsx`、`PlanPanel.tsx` 和 `nav/` 的面板、樣本時計與播放接點。保留取消待執行重規劃這類共用定位生命週期修正。
-- [ ] 移除／改寫 `ForegroundNavigationTests.swift`、`ForegroundUITests.swift` 中依賴虛擬前進／偏航／控制項的測試；保留可驗證真實定位契約的測試，不留下另一套模擬導航。
-- [ ] 移除／改寫 `ios/tools/test-simulator.mjs` 相關虛擬導航與座標情境入口；清除 Simulator 測試定位情境。純測試 Geolocation contract 的 `iosBridge.test.mjs` 應先確認沒有虛擬導航依賴，避免誤刪必要回歸。
-- [ ] 從 `ios/generate-project.rb` 產生的 Xcode source／resource references 與專案中移除相關檔案，再檢查產生器不會重新帶回；調整 simulator-specific scheme／測試選取。
-- [ ] 更新 `ios/README.md`、本文件與 AGENTS 的前期例外狀態；移除可操作入口指令，過去截圖／日誌可留歷史標示，不當作正式功能。
-- [ ] 重新執行 npm test／build、資產政策與 SHA-256 校驗、24＋35 路線、iOS Debug／Release／arm64、Android assembleDebug／testDebugUnitTest。掃描原始碼與實際 bundle，確認沒有虛擬來源、hook、指令、控制項或隱藏入口；先前 `src/dev/?sim` 的 Web 開發例外仍須保持不進正式包。
-- [ ] 才進行有簽章的 iPhone 安裝、定位權限、真實 GPS／磁場、待轉／偏航、語音輸出與前景生命週期驗證；缺少裝置／簽章時保持受阻標示。
+- [x] 刪除 `ios/LaneDev/SimulatorLocationSource.swift`、`SimulatorNavigationPanel.swift` 與內建軌跡、倍速及各情境控制。
+- [x] 刪除 `LocationService.swift` 的替代來源、切換狀態與特殊時計，唯一位置來源為 `CLLocationManager`。
+- [x] 刪除 `NavigationViewController.swift` 的面板、控制 handler、`LaneSimulator` 注入及相關橋接入口。
+- [x] 刪除 `platform.ts` 的虛擬型別及 `App.tsx`、`PlanPanel.tsx`、`nav/` 的操作、時鐘及動畫播放接點。保留共用導航與定位生命週期。
+- [x] 改寫 XCTest／XCUITest 為 Core Location，保留 App 外的測試工具、系統注入軌跡及 geolocation 契約測試。
+- [x] 從 Xcode、專案產生器和前端打包移除 Simulator 能力旗標及分支，Debug 與 Release 採同一份 iOS 靜態資源。共用 scheme 關閉 Xcode 啟動定位模擬。
+- [x] 清理前期專用產物及現行文件。歷史截圖和實測紀錄留在原階段。
+- [x] 完成共用、Android、iOS 回歸及獨立 App 成品稽核。
+- [ ] 完成 iPhone 開發簽章、安裝與實地驗收。
 
 ### 9. 本階段結論與未確認事項
 
@@ -404,6 +405,86 @@ HUD 用 WebView 的 `performance.now()` 量定位事件到可觀察的文字更�
 - [ ] 測使用期間定位、拒絕、重新授權、精確位置開關、系統定位關閉與 GPS 中斷，核對裝置行進方向、羅盤與重新置中。
 - [ ] 人工聽中文播報及插播，在 iPhone 喇叭、藍牙、靜音開關與來電情境分別記錄聽音與回呼。測 Home、鎖屏、返回前景與防熄屏。
 - [ ] 使用有效且受限制的 Google iOS 金鑰驗證線上搜尋。以真實裝置記錄啟動、HUD、重算延遲、耗電與長時間導航。
+
+<a id="stage8"></a>
+
+## 第八階段：實體 iPhone 與虛擬功能移除（2026-11-21）
+
+### 移除與成品核對
+
+已刪除 App 內的替代定位來源、面板、軌跡、倍速、狀態與橋接。iOS 只有 `CLLocationManager` 的位置更新，經 `LaneGeolocation` 進入共用導航核心。時間、速度、動畫、抵達及 ETA 使用原有 GPS 或系統時間。iOS Vite 成品剔除瀏覽器開發模組，Debug 和 Release 的 Xcode 啟動設定也關閉定位模擬。
+
+| 移除項目 | 結果 |
+| --- | --- |
+| 位置來源與面板 | 刪除 `SimulatorLocationSource.swift`、`SimulatorNavigationPanel.swift` 及 Xcode 專案引用。 |
+| 橋接與導航狀態 | 移除來源切換、控制指令、`window.LaneSimulator`、虛擬計時、倍速和語音佇列接點。 |
+| 網頁入口與建置 | iOS 已移除 `?sim` 使用路徑。刪除專用 Vite 模式、旗標、Xcode 驗證腳本和舊資產目錄。 |
+| 驗證 | 獨立 App 已通過舊入口與測試資源稽核。Simulator 系統位置測試及 XCTest 保留於 App 之外。 |
+
+前端改用單一 `ios` production build，Xcode 全組態打包 `ios/.web/public`。重建前刪除前期兩種資產輸出及本工作區的舊 App 產品。Xcode build phase 與 App 啟動同時要求 v2 資產政策。XCTest 實際確認 v1 包被拒絕，載入帶舊查詢參數的頁面及發送舊橋接請求也無法建立導航或定位訂閱。
+
+獨立成品可執行 `node ios/tools/audit-app.mjs <LaneDev.app>`。稽核比較包內每個前端檔案與新產物的 SHA-256，掃描前端、Bridge.js、Swift 主程式的舊入口，並檢查測試插件與軌跡未出貨。Hosted XCTest 的 `build-for-testing` 會注入測試插件，出貨稽核採用獨立 `build`。
+
+### 建置與 Simulator 回歸
+
+- `node ios/tools/build-web.mjs` 通過 313 項共用測試，24 組預計算路由結果一致（22 組有解），35 組楠梓人工參考路線驗證通過。官方資料及參考路線皆唯讀。
+- Android 正式包資產已重建，`bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks` 通過，含 1 項既有單元測試。
+- Simulator 共 31 項通過。`debug` 為 14 項 XCTest 加 5 項 XCUITest，`system` 為 5 項、`release` 為 6 項、`denied` 為 1 項。系統定位案例包括待轉、抵達、語音、偏航及停靠點、低精度、中斷、撤銷及恢復授權、規劃失敗及測速。這些操作由 Simulator OS 或 XCTest 提供位置資料。 [Simulator 抵達](ios-evidence/stage8/simulator-core-location-arrival.png) · [Simulator 測速提醒](ios-evidence/stage8/simulator-core-location-speed-camera.png)
+- 原始 Simulator 日誌及測試結果在 `ios/.build/test-results/` 的 `debug-2026-11-21T07-44-01-407Z`、`system-2026-11-21T07-48-34-303Z`、`release-2026-11-21T07-51-11-359Z`、`denied-2026-11-21T07-53-43-720Z`，目錄時間使用 UTC。Release Simulator 的三次重開至可操作測值為 4,290、4,131、4,135 ms。
+- 獨立 Debug／Release Simulator 與未簽章 iPhone Release arm64 建置已完成。各成品稽核均核對 45 個前端檔案。
+
+### 實體 iPhone 12 與開發簽章
+
+| 項目 | 實際結果 |
+| --- | --- |
+| iPhone 12（iOS 18.3、22D63） | USB 辨識、信任及 Xcode 配對完成。`devicectl` 確認 `pairingState: paired`、`developerModeStatus: enabled`、`ddiServicesAvailable: true`、`tunnelState: connected`。 |
+| Bundle Identifier、佈建與定位設定 | 預設 `tw.lanepilot.lanedev.ios`。專案為自動簽章，可透過機器本機的 `Signing.local.xcconfig` 指定開發 Team。保留使用期間定位用途及精確定位提示，無 Always 定位權限、背景定位或音訊模式。 [實機安裝步驟](../ios/README.md#實體-iphone-安裝) |
+| 簽章、安裝與啟動 | Apple Account 登入後使用有效的 Apple Development 憑證與本機 Team 設定。iPhone 12 Debug 自動佈建、簽章建置、macOS 簽章校驗、45 個前端檔案稽核及 USB 安裝均通過。首次啟動遇到裝置信任檢查，16:11 重試已由 `devicectl` 確認啟動成功。 [真機連線、建置與安裝輸出摘要](ios-evidence/stage8/iphone12-readiness.txt) |
+| 搜尋、規劃與常用地點 | 真機 XCTest 通過本地搜尋、手動起點、加入兩個停靠點後排序、轉向步驟及汽機車預覽。真機 XCUITest 通過鍵盤開啟時點按住家、學校、公司捷徑，三個地點均帶入路線終點。 [iPhone 12 離線路線畫面](ios-evidence/stage8/iphone12-offline-route-preview.png) |
+| 實際定位、語音與效能 | iPhone 12 的 Core Location 經 WKWebView 橋接回傳位置，單次請求 24 ms，水平精度 13.1 m；可能使用啟動後取得的系統位置。WebView 重新載入到地圖來源就緒 4,487 ms（Debug、單次）。中文試聽收到一次開始及完成回呼，停止後清空佇列，系統回報擴音輸出。人工聽音、實際行進方向、導航更新和偏航重算耗時仍待測。 |
+| iPhone 生命週期 | 真機尚未操作低精度、權限變更、Home、鎖屏、音訊中斷及防熄屏。前景退回會暫停定位與語音是目前的實作及 Simulator 結果。背景及鎖屏持續導航未支援。 |
+
+使用者回報的捷徑問題在 iPhone 12 重現。搜尋欄在點按時先失焦，React 會移除捷徑，按鈕未收到 click。讓搜尋欄保有焦點直到捷徑完成選取後，同一真機測試通過，已重新簽章、稽核、安裝並啟動修正版。iPhone 17 Pro Simulator 也通過同一觸控測試，結果在 `ios/.build/stage8-saved-shortcuts-simulator.xcresult`。修正版再次通過 313 項共用測試、24 組路線基準及 Android Debug APK 與單元測試。原始真機結果在 `ios/.build-device/stage8-iphone12-{followup,saved-before,saved-after}.xcresult`。 [真機輸出摘要](ios-evidence/stage8/iphone12-readiness.txt)
+
+Google Places 首次真機查詢在 iPhone 12 遇到身分驗證失敗，同一 App 內的 Places API (New) 診斷也回報呼叫者沒有權限。使用者調整 Cloud 設定後，沿用本機金鑰及 Bundle ID `tw.lanepilot.lanedev.ios` 重測。Places UI Kit 回傳「國立高雄大學 楠梓」的結果，點選後 LaneDev 顯示 Google Maps 來源，並將該地點帶入路線終點。XCUITest 在 iPhone 12（iOS 18.3）通過。 [Google Places 設定](../ios/README.md#google-places可選) · [真機輸出摘要](ios-evidence/stage8/iphone12-readiness.txt)
+
+依第七階段的實機清單驗證實際走行、偏航恢復與抵達。iPhone 12 的 iOS 18.3 也無法驗收最低支援版本 iOS 16.4。內建地標和常用地點可離線使用。
+
+<a id="stage9"></a>
+
+## 第九階段：正式版本整理與交付（2026-11-21）
+
+交付在原工作區及 `feat/ios-navigation` 完成。環境為 macOS 15.7.9 arm64、Xcode 26.2（17C52）、iOS SDK 26.2、Node 26.0.0、npm 11.12.1、Temurin JDK 21.0.13.1、Android Platform 36／Build Tools 35.0.0。
+
+### 重建順序與產物
+
+1. 取得包含本階段變更的原始碼，依 [根 README](../README.md) 安裝環境。執行 `node ios/tools/build-web.mjs` 安裝 lockfile 依賴、跑共用測試、生成路網、打包並同步 iOS 資源。Xcode 開啟 [LaneDev.xcodeproj](../ios/LaneDev.xcodeproj)，依 `Package.resolved` 解析 GooglePlacesSwift。
+2. 在 [iOS README](../ios/README.md) 選擇 iPhone 17 Pro Simulator 或 iPhone 12 實機指令。兩者都使用 `LaneDevRelease` 和 Release 組態，驗收個別使用 `simctl` 或 `devicectl` 安裝啟動。
+3. 共用來源更新時，在 `web-source/` 執行 `npm run build`，再執行 `node tools/sync-web-assets.mjs` 和 `bash gradlew assembleDebug testDebugUnitTest`。Android 也保留原有 PowerShell 入口。
+
+| 本機成品 | 路徑與用途 |
+| --- | --- |
+| iPhone 17 Pro Simulator | `ios/.build/stage9-standalone/Build/Products/Release-iphonesimulator/LaneDev.app`。Simulator 操作與回歸使用。 |
+| iPhone 12 | `ios/.build-device/stage9-standalone/Build/Products/Release-iphoneos/LaneDev.app`。開發簽章，用於已佈建裝置的實機操作。 |
+| Android | `app/build/outputs/apk/debug/app-debug.apk`。Android 建置回歸與本機安裝。 |
+
+兩個獨立 iOS 成品皆核對 45 個包內前端檔案及資源版本。已稽核前端、Swift 執行檔、橋接、測試資源和兩份 scheme，確認虛擬導航、倍速、舊入口及測試軌跡均已排除。共用 HTML 頁面標題已從 NavSim 更新為 LaneDev。 [第九階段驗證證據](ios-evidence/stage9/verification.txt)
+
+### 功能驗收表
+
+| 功能 | 完成項目 | 驗證證據 | 已知限制與待辦 |
+| --- | --- | --- | --- |
+| 打包與重建 | iOS Release 共用 scheme、鎖定的 JS／Swift 依賴、預計算路網、校驗及同步工具。 | 重跑來源流程與兩種 iOS Release 建置。實機成品通過簽章及資產校驗。 | 開發簽章供已佈建裝置使用。公開發佈需另外 Archive、發佈簽章及 App Store Connect。 |
+| 本機啟動、地圖、搜尋、常用地點、規劃 | App 內建地圖、地標、字型、路網與設定。 | Mac 未運行開發伺服器時，Simulator Release 完成啟動、搜尋與規劃，iPhone 12 Release 完成啟動、拖曳、縮放、旋轉及住家／學校／公司捷徑帶入終點。第八階段 iPhone 12 已驗證完整離線手動規劃。 | 路網覆蓋以內建資料範圍為準。地址反查取決於系統服務。 |
+| 路由與 Android 回歸 | 共用路由、汽機車限制、車道、待轉與楠梓路線規則。 | 313 項共用測試、24 組路線基準（22 組有解）、35 組楠梓人工參考路線、Android Debug APK 和 1 項 JUnit 測試通過。官方資料差異檢查通過。 | Android 實機本階段未操作。 |
+| 前景定位與導航 | Core Location 唯一來源，沿用車道、測速、偏航、停靠點及抵達判斷。 | Simulator 以 OS 位置驗證前景導航、應轉未轉後重算、保留停靠點與抵達。第八階段 iPhone 12 實際位置通過原生橋接。 | 實際道路移動、羅盤、低精度、偏航回程及抵達仍待道路驗收。 |
+| 中文語音與生命週期 | 原生中文語音、停止與設定持久化。離開前景暫停位置、語音及防熄屏，返回等待新定位。 | Simulator 的導航按 Home 後返回通過；第八階段 iPhone 12 通過中文語音回呼。本階段 iPhone 12 先退到主畫面再終止重開，保留了新語音設定。 | 語音設定剛切換便由 XCTest 終止程序時，兩次讀回舊值。完整偏好測試在實機編輯住家時遇到 XCTest 未取得鍵盤焦點，待人工確認。實機聽音、導航時的背景恢復、音訊中斷、鎖屏及防熄屏仍待驗證。背景及鎖屏持續導航目前未支援。 |
+| Google Places | 原生 Places UI Kit 選配，回傳當次規劃所需的地點。 | 第八階段 iPhone 12 線上查詢成功，結果帶入路線終點。 | 需有效 iOS 金鑰、啟用相應 API、連網。 |
+| 憑證與版本相容 | 本機設定、簽章資料及成品由 Git 排除。 | 檢查交付候選內容與目前分支 69 筆提交的程式及設定歷史，未發現金鑰或私人簽章資料。 | iOS 16.4 是部署目標，實機操作證據使用 iOS 18.3。 |
+
+Simulator 此階段共 16 項通過（Release 7、system 5、map 4）。XCTest 從啟動到「目前位置」啟用的三次量測，iPhone 17 Pro Simulator 為 4,119、4,108、4,098 ms，iPhone 12 為 6,501、6,593、6,696 ms。兩個環境測試期間均未啟動 Mac 開發伺服器。iPhone 定位或反查服務的飛航模式行為仍待測。
+
+測試後恢復 iPhone 12 原有的語音與視距設定，並以 `devicectl` 安裝、啟動已稽核的獨立 Release 成品。下次實機驗收先確認強制結束前的設定寫入與常用地點編輯焦點，再到路網涵蓋的道路測試方向、偏航、停靠點及抵達，並單獨記錄人工聽音、背景返回和鎖屏。 [第七階段實機驗收清單](#stage7)
 
 ## 先前實作與驗證紀錄（歷史，保留）
 

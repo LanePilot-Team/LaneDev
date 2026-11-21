@@ -10,7 +10,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>LaneGooglePlacesAPIKey</key><string>$(LANE_IOS_GOOGLE_PLACES_API_KEY)</string>
-  <key>NSLocationWhenInUseUsageDescription</key><string>LaneDev 使用您的精確位置顯示目前車道、導航指引與偏航重規劃。僅在 App 前景取得位置。</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>LaneDev 在您使用 App 時取得精確位置，用來顯示目前位置、提供車道與轉向指引，以及偏航時重新規劃。</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key><dict>
     <key>UIApplicationSupportsMultipleScenes</key><false/>

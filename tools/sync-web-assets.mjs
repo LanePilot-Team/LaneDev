@@ -6,24 +6,22 @@ import path from 'node:path'
 // With no argument, this is the macOS equivalent of import-web-assets.ps1.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mode = process.argv[2] ?? 'android'
-if (!['android', 'ios-simulator', 'ios-release'].includes(mode)) throw new Error(`Unknown asset destination: ${mode}`)
+if (!['android', 'ios'].includes(mode)) throw new Error(`Unknown asset destination: ${mode}`)
 const ios = mode !== 'android'
-const source = path.join(root, ios ? `web-source/.ios-dist/${mode}` : 'web-source/dist')
+const source = path.join(root, ios ? 'web-source/.ios-dist' : 'web-source/dist')
 const androidAssets = path.join(root, 'app/src/main/assets/public')
-const target = ios ? path.join(root, `ios/.web/${mode}/public`) : androidAssets
+const target = ios ? path.join(root, 'ios/.web/public') : androidAssets
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const policy = JSON.parse(await readFile(path.join(source, 'client-policy.json')))
-const format = ios ? 'lanedev-ios-client-v1' : 'lanedev-android-client-v1'
+const format = ios ? 'lanedev-ios-client-v2' : 'lanedev-android-client-v1'
 if (policy.format !== format || policy.editor !== false
   || policy.simulation !== false || policy.transit !== false) throw new Error('Invalid client policy')
-if (ios && (policy.mode !== mode || policy.simulatorTools !== (mode === 'ios-simulator'))) throw new Error('iOS asset mode mismatch')
 await readFile(path.join(source, 'index.html'))
 const scripts = (await readdir(path.join(source, 'assets'))).filter(n => n.endsWith('.js'))
 if (!scripts.length || scripts.length !== Object.keys(policy.scripts).length) throw new Error('Invalid script list')
 for (const script of scripts) {
   const bytes = await readFile(path.join(source, 'assets', script))
   if (hash(bytes) !== policy.scripts[script]) throw new Error('Invalid script checksum: ' + script)
-  if (mode !== 'ios-simulator' && bytes.includes('LaneSimulator')) throw new Error('Simulator hook in formal client')
 }
 const dataFiles = await readdir(path.join(source, 'data'))
 if (dataFiles.some(n => /^transit.*\.json$/.test(n))) throw new Error('Transit data forbidden')

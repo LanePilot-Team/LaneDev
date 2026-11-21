@@ -1,0 +1,55 @@
+LaneDev stage 9, 2026-11-21 Asia/Taipei
+Branch feat/ios-navigation, same working tree. No commit or push.
+macOS 15.7.9 arm64, Xcode 26.2 (17C52), SDK 26.2, Node 26.0.0, npm 11.12.1.
+
+Source and Android
+  npm ci and common tests via node ios/tools/build-web.mjs: 313 passed.
+  All 35 Nanzih reference paths and lane bands passed.
+  Precomputed 11,033 roads and 346 waiting zones; 24 identical route results, 22 reachable.
+  TypeScript, iOS Vite build, packaging, asset sync and Xcode Swift package resolution passed.
+  Android npm run build and asset sync passed.
+  JDK 21.0.13.1, Android Platform 36 / Build Tools 35.0.0:
+  bash gradlew assembleDebug testDebugUnitTest --offline --rerun-tasks: BUILD SUCCESSFUL.
+  JUnit: 1 test passed. No Android device operation in stage 9.
+  Canonical road, waiting-zone and manual reference inputs remain byte-identical to HEAD.
+
+Standalone Release
+  LaneDevRelease / Release built for iPhone 17 Pro Simulator and iPhone 12.
+  Both audits: 45 web files match staging; retired app markers and test fixtures excluded.
+  Bundle identifier tw.lanepilot.lanedev.ios, deployment target 16.4, title LaneDev.
+  Both schemes disable Xcode location simulation. App permission is When In Use.
+  Simulator build omitted the Google key and skipped device signing.
+  iPhoneOS arm64 build passed strict code signature verification using development signing.
+  The configured key matched the local config in memory; it was not printed.
+  No Node/Vite listener or listener on TCP 5173, 5190 or 4173 before and after regression.
+
+Simulator operation, iPhone 17 Pro iOS 26.3.1
+  Release: 7 XCUITests passed (navigation, Home return, settings, search, map gestures, startup, shortcuts).
+  Startup to enabled location button in three Release launches: 4,119 / 4,108 / 4,098 ms.
+  System: 5 XCTest cases passed, including missed turn, reroute, stops, permissions, arrival and camera.
+  Map: 4 cases passed, including WebKit modules/Worker/WebGL, stale data validation and read-only bundle.
+  The WebKit read-only bundle test found zero HTTP or HTTPS startup resource entries.
+  Standalone Release installed with simctl and launched. Test locations came from Simulator OS.
+  Results under ios/.build/test-results/ (UTC directories):
+  release-2026-11-21T09-01-19-901Z, system-2026-11-21T09-04-21-268Z, map-2026-11-21T09-06-59-429Z.
+
+Physical operation, iPhone 12 iOS 18.3
+  Release startup and three saved-place shortcut operations passed.
+  Startup to enabled location button in three Release launches: 6,501 / 6,593 / 6,696 ms.
+  Drag, pinch and rotation assertions passed before the preference assertion.
+  Changing the voice switch and immediately terminating the app from XCTest lost the last change twice.
+  Going to the Home screen before termination retained the changed setting after relaunch.
+  The full preference test stopped while typing into the home editor because XCTest had no keyboard focus.
+  Device results under ios/.build-device:
+  stage9-release-iphone12.xcresult, stage9-release-iphone12-settings-retry.xcresult,
+  stage9-release-iphone12-home-relaunch.xcresult and stage9-release-iphone12-restore-settings.xcresult.
+  Original device voice and zoom preferences were restored after the tests.
+  Signed standalone Release installed through devicectl and launched on iPhone 12.
+  Stage 8 records the live Core Location fix, offline manual planning, speech callbacks and Google Places.
+  No navigation drive, hardware speaker listening, audio interruption or lock screen run in stage 9.
+
+Source hygiene
+  Inspected delivery candidates and HEAD for the local API key, team ID and credential patterns.
+  Also inspected source and configuration history across 69 commits reachable from this branch.
+  No credential matches. Local signing and key filenames absent from index and current branch history.
+  Both xcconfig files are ignored. No key appeared in stage 9 Xcode build or test logs.

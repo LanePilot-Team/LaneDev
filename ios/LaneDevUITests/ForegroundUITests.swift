@@ -207,7 +207,6 @@ final class ForegroundUITests: XCTestCase {
         print("IOS_STAGE6_SETTINGS_ENTRIES: voice and device location instructions displayed; LaneDev's settings opened in Settings and returned to the app")
     }
 
-    #if DEBUG
     @MainActor
     func testMainFlowKeyboardMapStartAndEndButtons() throws {
         continueAfterFailure = false
@@ -218,7 +217,6 @@ final class ForegroundUITests: XCTestCase {
         let locate = web.buttons["目前位置"]
         XCTAssertTrue(search.waitForExistence(timeout: 30))
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)], timeout: 30), .completed)
-        app.segmentedControls["location-source"].buttons["虛擬定位"].tap()
         search.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), app.debugDescription)
@@ -269,76 +267,49 @@ final class ForegroundUITests: XCTestCase {
         XCTAssertTrue(end.isHittable)
         XCTAssertGreaterThanOrEqual(end.frame.height, 44)
         XCTAssertLessThanOrEqual(end.frame.maxY, web.frame.maxY)
-        assertRecenterInNavigation(app, source: "virtual")
+        assertRecenterInNavigation(app, source: "keyboard-flow")
         end.tap()
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         print("IOS_STAGE5_TOUCH: keyboard results reachable, selected location, current start then replaced with map point, preview/exit controls >=44pt")
     }
 
     @MainActor
-    func testTouchNavigationAndHomeResume() throws {
+    func testTapSavedPlaceShortcutsWithKeyboardOpen() {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.segmentedControls["location-source"].waitForExistence(timeout: 10))
-        let search = app.webViews.textFields.firstMatch
+        let web = app.webViews.firstMatch
+        let search = web.textFields["搜尋地點或地址"]
+        let locate = web.buttons["目前位置"]
         XCTAssertTrue(search.waitForExistence(timeout: 30))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.webViews.buttons["目前位置"])
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: locate)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
-        app.segmentedControls["location-source"].buttons["虛擬定位"].tap()
-        app.buttons["sim-choose"].tap()
-        XCTAssertTrue(app.webViews.buttons["更換起點"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.webViews.buttons["更換終點"].exists)
-        XCTAssertTrue(app.staticTexts["sim-status"].label.contains("點地圖選起點與終點"))
-        func choose(_ endpoint: String, query: String, name: String) {
-            app.webViews.buttons["更換\(endpoint)"].tap()
-            let field = app.webViews.textFields["搜尋\(endpoint)地點或地址"]
-            XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
-            field.tap()
-            field.typeText(query)
-            if app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
-            let result = app.webViews.otherElements.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
-            XCTAssertTrue(result.waitForExistence(timeout: 10), app.debugDescription)
-            result.tap()
+
+        let keyboard = app.keyboards.firstMatch
+        let route = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "路線")).firstMatch
+        for label in ["住家", "學校", "公司"] {
+            search.tap()
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+            let shortcut = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+            XCTAssertTrue(shortcut.waitForExistence(timeout: 5), app.debugDescription)
+            if !shortcut.isHittable {
+                let school = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "學校")).firstMatch
+                school.swipeLeft()
+            }
+            shortcut.tap()
+            XCTAssertTrue(route.waitForExistence(timeout: 8), app.debugDescription)
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+            route.tap()
+            let destination = web.textFields["終點"]
+            XCTAssertTrue(destination.waitForExistence(timeout: 8), app.debugDescription)
+            XCTAssertTrue((destination.value as? String)?.hasPrefix(label) == true, app.debugDescription)
+            web.buttons["關閉路線"].tap()
         }
-        choose("起點", query: "高雄大學產學育成中心", name: "高雄大學產學育成中心")
-        choose("終點", query: "國立高雄大學", name: "國立高雄大學 81148")
-        let playback = app.buttons["sim-playback"]
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: playback)], timeout: 15), .completed)
-        app.segmentedControls["sim-rate"].buttons["3x"].tap()
-        playback.tap()
-        let end = app.webViews.buttons["✕ 結束"]
-        XCTAssertTrue(end.waitForExistence(timeout: 15), app.debugDescription)
-        let direction = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "前方 ")).firstMatch
-        XCTAssertTrue(direction.waitForExistence(timeout: 15), app.debugDescription)
-        func capture(_ name: String) {
-            let nav = XCTAttachment(screenshot: app.screenshot())
-            nav.name = name; nav.lifetime = .keepAlways; add(nav)
-        }
-        capture("stage4-panel-driving")
-        playback.tap()
-        XCTAssertEqual(playback.label, "繼續")
-        XCTAssertTrue(app.staticTexts["sim-status"].label.hasPrefix("已暫停"))
-        let pauseNotice = app.webViews.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "虛擬導航已暫停")).firstMatch
-        XCTAssertTrue(pauseNotice.waitForExistence(timeout: 5))
-        capture("stage4-panel-paused")
-        app.segmentedControls["sim-rate"].buttons["1x"].tap()
-        playback.tap()
-        XCTAssertEqual(playback.label, "暫停")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: pauseNotice)], timeout: 10), .completed)
-        capture("stage4-panel-resumed")
-        XCUIDevice.shared.press(.home)
-        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5) || app.state == .runningBackgroundSuspended)
-        app.activate()
-        XCTAssertTrue(end.waitForExistence(timeout: 15))
-        app.buttons["sim-end"].tap()
-        XCTAssertTrue(app.webViews.textFields.firstMatch.waitForExistence(timeout: 10))
-        app.segmentedControls["location-source"].buttons["Core Location"].tap()
-        XCTAssertFalse(app.buttons["sim-playback"].isHittable)
     }
-    #else
+
+    #if !DEBUG
     @MainActor
-    func testStage7ReleaseStartupTiming() {
+    func testReleaseStartupTiming() {
         continueAfterFailure = false
         let app = XCUIApplication()
         var samples: [Int] = []
@@ -352,11 +323,13 @@ final class ForegroundUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [usable], timeout: 30), .completed)
             samples.append(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000))
         }
-        print("IOS_STAGE7_STARTUP_MS: \(samples)")
+        print("IOS_STARTUP_MS: \(samples)")
     }
 
+    #endif
+
     @MainActor
-    func testReleaseBundleWithSystemLocation() throws {
+    func testCoreLocationNavigationAndHomeResume() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
@@ -392,7 +365,7 @@ final class ForegroundUITests: XCTestCase {
         let direction = app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "前方 ")).firstMatch
         XCTAssertTrue(direction.waitForExistence(timeout: 20), app.debugDescription)
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "release-core-location-navigation"; shot.lifetime = .keepAlways; add(shot)
+        shot.name = "core-location-navigation"; shot.lifetime = .keepAlways; add(shot)
         assertRecenterInNavigation(app, source: "core-location")
         XCUIDevice.shared.press(.home)
         XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5) || app.state == .runningBackgroundSuspended)
@@ -403,5 +376,4 @@ final class ForegroundUITests: XCTestCase {
         end.tap()
         XCTAssertTrue(app.webViews.textFields.firstMatch.waitForExistence(timeout: 10))
     }
-    #endif
 }

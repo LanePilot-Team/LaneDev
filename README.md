@@ -1,12 +1,18 @@
-# LaneDev Android 用戶端
+# LaneDev 導航用戶端
 
-iOS 前景導航專案位於 [`ios/LaneDev.xcodeproj`](ios/LaneDev.xcodeproj)，使用 Swift＋WKWebView、Core Location 與原生中文語音，內建共用前端與預計算路網。開啟與 Simulator 操作方式見 [iOS 說明](ios/README.md)，驗證範圍與限制見 [移植紀錄](docs/ios-port-plan.md)。
+LaneDev 在 Android 與 iOS 共用 React、MapLibre、路由、車道與待轉指引，以及預計算路網。iOS 前景導航使用 Swift＋WKWebView、Core Location 和原生中文語音。兩個用戶端均從 App 內建資源載入地圖、地標和路網。
+
+```sh
+git clone --branch feat/ios-navigation https://github.com/LanePilot-Team/LaneDev.git
+cd LaneDev
+```
+
+使用含第九階段交付內容的修訂版本。在 Mac 依 iOS 文件安裝 Node、產生資源，再開啟 `ios/LaneDev.xcodeproj`。正式組態的 scheme 為 `LaneDevRelease`，一般開發為 `LaneDev`。 [iOS 重建及安裝](ios/README.md) · [功能驗收與待辦](docs/ios-port-plan.md#stage9)
+
+## Android 建置
 
 在 Android Studio 開啟本資料夾，Gradle Sync 後選取裝置並執行 app。
-一般 APK 建置只需要 Android SDK 36 與 Android Studio 內建 JDK 21，
-不需要 Node.js，也不需要另一份網頁專案。
-
-## 建置
+一般 APK 建置使用已提交的前端資產、Android SDK Platform 36、Build Tools 35.0.0 和 JDK 21。
 
 專案使用 Android Gradle Plugin 8.13.0 與 Gradle Wrapper 8.14.3。Android Studio 的 Gradle JDK 請選 JDK 21。
 
@@ -25,14 +31,14 @@ bash gradlew assembleDebug testDebugUnitTest
 
 APK：`app/build/outputs/apk/debug/app-debug.apk`。
 
-## Google Maps API Key（本機 Demo）
+## Android Google Maps API 金鑰
 
 Android APK 建置時，請把組員提供的「已限制」Key 放在工作區根目錄的
 `local.properties`；這個檔案已被 Git 忽略，不要把 Key 貼到程式碼、README 或對話中：
 
 ```properties
 sdk.dir=C:\\Users\\你的帳號\\AppData\\Local\\Android\\Sdk
-GOOGLE_MAPS_API_KEY=AIzaSy...
+GOOGLE_MAPS_API_KEY=YOUR_RESTRICTED_ANDROID_KEY
 ```
 
 接著重新建置 APK：
@@ -41,9 +47,7 @@ GOOGLE_MAPS_API_KEY=AIzaSy...
 .\tools\gradle.ps1 assembleDebug
 ```
 
-建置時 Android 會把 Key 注入 APK 內的 WebView 首頁；安裝到手機後不需要攜帶
-`local.properties`。這只是 Demo 的便利做法，APK 內的 client-side Key 仍可能被取出，
-所以 Google Cloud 至少要設定 API 限制，並使用專門給這個 Demo 的 Key。
+建置時 Android 會將金鑰編譯進 APK，App 供應 WebView 首頁時再替換金鑰占位符。請在 Google Cloud 設定適用的限制，使用此用戶端專用金鑰。
 
 注意：目前搜尋使用的是 WebView 內的 Maps JavaScript API／Places API (New) Text Search，
 不是原生 Maps SDK；因此 Google Cloud 需要啟用 Maps JavaScript API 與 Places API (New)，
@@ -56,7 +60,7 @@ GOOGLE_MAPS_API_KEY=AIzaSy...
 若只在 `web-source` 瀏覽器開發伺服器測試，可另外建立未追蹤的 `web-source/.env.local`：
 
 ```properties
-VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
+VITE_GOOGLE_MAPS_API_KEY=YOUR_RESTRICTED_BROWSER_KEY
 ```
 
 ## 修改前端
@@ -71,7 +75,15 @@ VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
 
 此步驟需要 Node.js（建議 22.18+）。它會安裝 lockfile 依賴、測試、預計算唯讀路網及繪圖資料、建置、
 排除開發版模組與大眾運輸資料，再匯入 `app/src/main/assets/public`。
-將來源與打包結果一起提交。只建 APK 的人不需執行前端建置。
+將來源與打包結果一起提交。macOS 終端機可執行同一套共用前端回歸和資產同步，再建置 APK。
+
+```sh
+npm --prefix web-source ci --ignore-scripts
+npm --prefix web-source test
+npm --prefix web-source run build
+node tools/sync-web-assets.mjs
+bash gradlew assembleDebug testDebugUnitTest
+```
 
 `npm run build` 會先執行 `tools/build-runtime.mjs`（本機約 45–50 秒），
 產生 `public/data/runtime`，並比對 24 組汽機車路線、圖結構與高架高度。
@@ -83,7 +95,7 @@ VITE_GOOGLE_MAPS_API_KEY=AIzaSy...
 未經用戶端處理的網頁開發版。原有官方道路／待轉區資料保留為唯讀導航輸入；
 舊版手機 localStorage 的編輯不再套用。
 
-## 用戶端功能
+## Android 用戶端功能
 
 - 首次啟動要求定位權限；請選擇精確位置。GPS 總開關須由使用者在系統設定開啟。
 - 「目前位置」以藍點顯示位置、扇形顯示手機朝向；無可靠方向時隱藏扇形。

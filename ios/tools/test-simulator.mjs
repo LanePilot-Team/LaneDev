@@ -26,7 +26,8 @@ await mkdir(output, { recursive: true })
 const log = path.join(output, 'xcodebuild.log')
 await writeFile(log, '')
 const base = ['-project', 'ios/LaneDev.xcodeproj', '-scheme', scheme, '-configuration', config,
-  '-destination', `id=${device}`, '-derivedDataPath', 'ios/.build', '-parallel-testing-enabled', 'NO', 'CODE_SIGNING_ALLOWED=NO']
+  '-destination', `id=${device}`, '-derivedDataPath', 'ios/.build', '-parallel-testing-enabled', 'NO',
+  '-hideShellScriptEnvironment', 'CODE_SIGNING_ALLOWED=NO', 'LANE_IOS_GOOGLE_PLACES_API_KEY=']
 const inject = () => run('xcrun', ['simctl', 'location', device, 'start', '--speed=1', '--interval=1',
   '22.7327,120.2758', '22.7347,120.2758', '22.7327,120.2758'])
 const appId = 'tw.lanepilot.lanedev.ios'
@@ -34,6 +35,7 @@ const school = '22.729232,120.277426'
 const home = '22.732700,120.275800'
 const systemFixtures = {
   school: ['set', school],
+  camera: ['set', '22.723815,120.276760'],
   jitterwest: ['set', '22.729232,120.277393'],
   jittereast: ['set', '22.729232,120.277459'],
   outside: ['set', '25.033000,121.565400'],
@@ -97,7 +99,7 @@ if (!mapOnly) {
 }
 try {
   const systemCases = ['testStage7SystemDrive', 'testStage7SystemReroute', 'testStage7SystemPermissionCycle',
-    'testStage7SystemPlanningFailures']
+    'testStage7SystemPlanningFailures', 'testSystemSpeedCameraGuidance']
   const selection = (action, name) => `-${action}-testing:LaneDevTests/ForegroundNavigationTests/${name}`
   let selected = mode === 'denied'
     ? [selection('only', 'testDeniedLocationPermission')]

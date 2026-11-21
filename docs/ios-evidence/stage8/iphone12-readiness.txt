@@ -1,0 +1,93 @@
+2026-11-21 Asia/Taipei
+Xcode 26.2 (17C52)
+
+xcrun devicectl list devices
+iPhone 12 (iPhone13,2)  available (paired)
+
+xcrun devicectl device info details
+ddiServicesAvailable: true
+developerModeStatus: enabled
+osVersionNumber: 18.3
+pairingState: paired
+transportType: wired
+tunnelState: connected
+
+Initial signing check before Xcode account sign-in
+security find-identity -v -p codesigning
+0 valid identities found
+
+xcodebuild LaneDev Debug, iPhone 12 destination, code signing enabled
+Signing for "LaneDev" requires a development team.
+BUILD FAILED
+
+xcrun devicectl device info apps, filtered by tw.lanepilot.lanedev.ios
+No matching app installed.
+
+After Xcode account sign-in
+security find-identity -v -p codesigning
+1 valid Apple Development identity found
+
+xcodebuild LaneDev Debug, iPhone 12 destination, automatic provisioning and code signing enabled
+BUILD SUCCEEDED
+
+codesign --verify --deep --strict LaneDev.app
+Exit 0 via macOS trust services
+
+node ios/tools/audit-app.mjs LaneDev.app
+45 web files match staging, retired markers absent, test fixtures excluded.
+
+xcrun devicectl device install app (wired iPhone 12)
+App installed: tw.lanepilot.lanedev.ios
+
+xcrun devicectl device process launch (wired iPhone 12)
+First launch: CoreDevice error 10002, FBSOpenApplication Service Security.
+The system reported invalid signing, inadequate entitlements or an untrusted profile.
+Retry at 16:11:26 Asia/Taipei:
+Launched application with tw.lanepilot.lanedev.ios bundle identifier.
+
+Second launch at 16:13:57 Asia/Taipei (attached console):
+Launched application with tw.lanepilot.lanedev.ios bundle identifier.
+The following device process query found one running LaneDev.app/LaneDev.
+
+Device XCTest build-for-testing (arm64, code signing disabled):
+TEST BUILD SUCCEEDED
+The first signed XCTest build reached codesign and waited for macOS Keychain access.
+
+After the user granted precise location, iPhone 12 iOS 18.3, Xcode 26.2
+Result: ios/.build-device/stage8-iphone12-followup.xcresult
+testDeviceCoreLocationFix: passed, real Core Location fix returned through the web bridge in
+24 ms (13.1 m horizontal accuracy). This measures one fix request, including possible OS cache.
+testDeviceOfflineRoutePreview: passed, WebView reload to map sources ready 4,487 ms.
+Local result selected, manual origin entered, two waypoints reordered and car/motorcycle previews rendered.
+Screenshot: iphone12-offline-route-preview.png
+testNativeSpeechCallbacks: passed, start and finish callbacks and playback cancellation verified.
+Audio route: speaker. Audible speech was not independently checked.
+TEST SUCCEEDED (3 tests)
+
+Saved place shortcut, physical iPhone 12 XCUITest:
+stage8-iphone12-saved-before.xcresult: tap on home while keyboard open did not present route action.
+stage8-iphone12-saved-after.xcresult: home, school and work taps closed the keyboard,
+opened the route action and set the matching destination in all three cases. TEST SUCCEEDED.
+
+Rebuilt signed standalone app after the saved-place fix:
+BUILD SUCCEEDED, codesign strict verification passed, 45 web files match staging.
+xcrun devicectl: app installed and launched with tw.lanepilot.lanedev.ios.
+No live road movement, arrival, lock screen or audio interruption result was recorded.
+
+Google Places live follow-up, iPhone 12 iOS 18.3, 2026-11-21 Asia/Taipei:
+The device test build uses bundle ID tw.lanepilot.lanedev.ios and matches the locally configured key.
+The UI test tapped Google Places search for a public landmark and the native sheet opened.
+The UI Kit SDK reported an authentication error and returned no result.
+Separate native Places API (New) probe from the same app and key: caller does not have permission.
+Local XCTest results: stage8-iphone12-google-places.xcresult,
+stage8-iphone12-google-places-diagnostic.xcresult and stage8-iphone12-google-places-api-probe.xcresult.
+The standalone app containing the verified local configuration passed code signing and asset audit,
+then installed and launched on iPhone 12 at 16:47 Asia/Taipei.
+
+Google Places retest after the user updated Cloud settings, 16:54 Asia/Taipei:
+iPhone 12 iOS 18.3, same local key and bundle ID.
+Search for 國立高雄大學 楠梓 returned a live Places UI Kit result.
+The UI test selected the result, confirmed Google Maps attribution in LaneDev,
+and verified the chosen place became the route destination.
+TEST SUCCEEDED (1 XCUITest, 21.832 s).
+Local XCTest result: ios/.build-device/stage8-iphone12-google-places-retest.xcresult.

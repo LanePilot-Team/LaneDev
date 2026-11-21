@@ -3,7 +3,6 @@ import { angleDelta, haversine } from '../core/geo.ts'
 export interface GpsDisplayFix {
   distanceM: number
   timestamp: number
-  playbackRate?: 1 | 3 | 8
   bearing: number
   elevM: number
   /**
@@ -127,8 +126,7 @@ export class GpsAnimation {
     const current = this.sampleStored(now)
     const seeded = previous !== null && !Number.isFinite(previous.timestamp)
     const interval = previous && !seeded ? fix.timestamp - previous.timestamp : 0
-    const rate = (import.meta.env?.MODE === 'ios-simulator' ? fix.playbackRate : undefined) ?? 1
-    if (this.smoothSwitch && current && this.pushSmooth(current, next, seeded, interval, now, rate)) return true
+    if (this.smoothSwitch && current && this.pushSmooth(current, next, seeded, interval, now)) return true
     const onRoute = !!current && !current.pos && !next.pos
     // Discontinuities/long gaps are real corrections, never animate across a city.
     const snap = !current || interval > 3000 || (onRoute
@@ -137,7 +135,7 @@ export class GpsAnimation {
     this.from = snap ? next : current
     this.to = next
     this.started = now
-    this.duration = snap ? 0 : seeded ? SEED_BLEND_MS / rate : Math.max(150 / rate, Math.min(1000 / rate, interval))
+    this.duration = snap ? 0 : seeded ? SEED_BLEND_MS : Math.max(150, Math.min(1000, interval))
     return true
   }
 
@@ -148,7 +146,7 @@ export class GpsAnimation {
    * 回傳 true 表示已處理。
    */
   private pushSmooth(
-    current: StoredFix & { t: number }, next: StoredFix, seeded: boolean, interval: number, now: number, rate: number,
+    current: StoredFix & { t: number }, next: StoredFix, seeded: boolean, interval: number, now: number,
   ): boolean {
     const k = this.blendK(now)
     const shown: [number, number] = this.blend
@@ -160,10 +158,10 @@ export class GpsAnimation {
       const v = haversine(this.to.pt, next.pt) / interval
       this.speedEst = this.speedEst ? this.speedEst * 0.6 + v * 0.4 : v
     }
-    const dur = Math.max(300 / rate, Math.min(1000 / rate, seeded ? 1000 / rate : interval))
+    const dur = Math.max(300, Math.min(1000, seeded ? 1000 : interval))
     /** 走 distM 需要的補間時間：不讓畫面車速超過估計車速太多（多的時間最多拉到 2 秒） */
     const capped = (distM: number) => this.speedEst > 0.001
-      ? Math.min(2000 / rate, Math.max(dur, distM / (this.speedEst * GpsAnimation.CATCHUP_FACTOR))) : dur
+      ? Math.min(2000, Math.max(dur, distM / (this.speedEst * GpsAnimation.CATCHUP_FACTOR))) : dur
     if (curFree && !next.pos) {
       // 進路線帶：從投影點沿帶走到這筆的里程（不倒退）。前進量不超過原本車速能走的距離，
       // 落後的部分併進殘差慢慢收，不要一口氣追上去（看起來像暴衝）
@@ -174,7 +172,7 @@ export class GpsAnimation {
       const startPt = this.positionAt(d)
       this.from = { ...next, distanceM: d, pt: startPt, bearing: shownBrg, pos: undefined, timestamp: next.timestamp - dur }
       this.to = next
-      this.blend = { dx: shown[0] - startPt[0], dy: shown[1] - startPt[1], dBrg: 0, start: now, dur: SWITCH_BLEND_MS / rate }
+      this.blend = { dx: shown[0] - startPt[0], dy: shown[1] - startPt[1], dBrg: 0, start: now, dur: SWITCH_BLEND_MS }
       this.started = now
       this.duration = dur
       return true

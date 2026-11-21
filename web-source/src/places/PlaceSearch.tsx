@@ -247,8 +247,10 @@ export function PlaceSearch({
           {SAVED_PLACE_KINDS.map((kind) => {
             const place = saved.places[kind]
             const meta = SAVED_PLACE_META[kind]
+            // Keep the input focused until the click selects the place. WebKit can blur it before click.
             return <button type="button" key={kind} className="saved-place-chip"
               disabled={mapLoading}
+              onPointerDown={(event) => event.preventDefault()}
               onClick={() => { setFocused(false); showPlace(savedPlaceRecord(place)) }}>
               <span aria-hidden="true">{meta.icon}</span>
               <span className="saved-place-chip-copy">

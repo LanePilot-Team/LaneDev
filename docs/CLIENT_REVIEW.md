@@ -1,8 +1,12 @@
 # Android 用戶端驗證與待確認事項
 
+## 2026-11-21 第九階段額外發現
+
+- npm 安裝既有鎖定相依套件時回報 `@xmldom/xmldom@0.8.3` 已淘汰。Android Gradle 也回報部分 API 在 Gradle 9 會不相容。依賴與工具版本維持本次已驗證的組合，升級需另外做回歸。
+
 ## 2026-11-21 第七階段額外發現
 
-- Simulator 的 WebView 無障礙樹仍讀出舊頁面標題「NavSim v0.2 — 楠梓＋左營」。App 名稱顯示 LaneDev，頁面標題與 VoiceOver 讀法留待獨立調整。
+- Simulator 的 WebView 無障礙樹原先讀出舊頁面標題「NavSim v0.2 — 楠梓＋左營」。第九階段將共用 HTML 頁面標題改為 LaneDev。
 
 ## 2026-11-21 第六階段額外發現
 

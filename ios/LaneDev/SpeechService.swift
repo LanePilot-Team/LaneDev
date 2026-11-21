@@ -95,7 +95,7 @@ final class SpeechService: NSObject, @preconcurrency AVSpeechSynthesizerDelegate
         }
     }
 
-    func speak(_ text: String, priority: Bool = false, queueIfBusy: Bool = true,
+    func speak(_ text: String, priority: Bool = false,
                validFor: TimeInterval = SpeechService.promptLifetime) {
         guard foreground, !interrupted, !text.isEmpty, text.count <= 1000, validFor > 0 else { return }
         guard ready else { updateStatus("無法播放：缺少中文聲音"); return }
@@ -103,7 +103,7 @@ final class SpeechService: NSObject, @preconcurrency AVSpeechSynthesizerDelegate
         let now = uptime()
         queue.removeAll { $0.expiresAt <= now }
         // Only hand one utterance to iOS at a time so a queued prompt can expire before it starts.
-        if current != nil && (!queueIfBusy || queue.count >= 2) { return }
+        if current != nil && queue.count >= 2 { return }
         queue.append(Prompt(text: text, expiresAt: now + validFor))
         playNext()
     }

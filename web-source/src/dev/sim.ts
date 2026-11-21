@@ -4,6 +4,7 @@
 // prod build 時 vite.config.ts 把 src/dev/index.ts alias 成 src/devStub.ts，
 // 這個目錄不會進 prod 模組圖；tools/package-client.mjs 也會擋下混進 bundle 的 src/dev/。
 export const SIM = import.meta.env.DEV
+  && typeof window !== 'undefined' && window.LanePlatform !== 'ios'
   && typeof location !== 'undefined'
   && new URLSearchParams(location.search).has('sim')
 

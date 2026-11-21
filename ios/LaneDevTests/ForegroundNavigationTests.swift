@@ -68,11 +68,7 @@ final class ForegroundNavigationTests: XCTestCase {
         try await selectLocalResult(name, within: ".stop-place-search")
         try await wait("!document.querySelector('.stop-place-search')")
     }
-    func plan(useVirtual: Bool = true) async throws {
-        #if targetEnvironment(simulator)
-        XCTAssertTrue(controller.locations.selectVirtual(useVirtual))
-        if useVirtual { controller.locations.simulator.setRate(.normal) }
-        #endif
+    func plan() async throws {
         _ = try await js("""
             const input = document.querySelector('.place-search-form input');
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '高雄大學');
@@ -110,11 +106,6 @@ final class ForegroundNavigationTests: XCTestCase {
         try await wait("document.querySelector('.banner')")
         XCTAssertTrue(controller.navigating)
         XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled)
-        #if targetEnvironment(simulator)
-        XCTAssertTrue(controller.locations.virtual)
-        XCTAssertFalse(controller.locations.selectVirtual(false), "Source cannot switch during navigation")
-        XCTAssertGreaterThan(controller.locations.simulator.track.count, 2)
-        #endif
         let before = try await js("return document.querySelector('.drive-hud')?.innerText ?? document.body.innerText")
         try await Task.sleep(for: .seconds(4))
         try await screenshot("foreground-navigation")
@@ -148,7 +139,7 @@ final class ForegroundNavigationTests: XCTestCase {
             try { denied = (await fetch('./data/road_database.json', {method:'POST', body:'{}'})).status; }
             catch { denied = 'blocked-by-webkit'; }
             return {format:manifest.format, hash:r.headers.get('X-Lane-SHA256'), expected:manifest.navigation.sha256,
-              denied, simulator:!!window.LaneSimulator,
+              denied,
               resources:performance.getEntriesByType('resource').filter(r => /https?:/.test(r.name)).map(r => r.name)};
             """) as! [String: Any]
         XCTAssertEqual(result["format"] as? String, "lanedev-precomputed-v1")
@@ -162,6 +153,50 @@ final class ForegroundNavigationTests: XCTestCase {
         XCTAssertNil(handler.resource(for: URL(string: "lanedev://evil/index.html")!))
         XCTAssertNil(handler.resource(for: URL(string: "https://app/index.html")!))
         XCTAssertNoThrow(try handler.validateBundle())
+    }
+
+    func testLegacyWebBundleIsRejected() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let runtime = root.appendingPathComponent("data/runtime")
+        try FileManager.default.createDirectory(at: runtime, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("old web bundle".utf8).write(to: root.appendingPathComponent("index.html"))
+        try Data("{}".utf8).write(to: runtime.appendingPathComponent("manifest.json"))
+        try Data("""
+            {"format":"lanedev-ios-client-v1","editor":false,"simulation":false,"transit":false,"runtimeManifest":""}
+            """.utf8).write(to: root.appendingPathComponent("client-policy.json"))
+        XCTAssertThrowsError(try BundleSchemeHandler(root: root).validateBundle()) {
+            XCTAssertEqual($0 as? BundleSchemeHandler.ValidationError, .incompatible)
+        }
+    }
+
+    func testRetiredNavigationEntrypointsAreUnavailable() async throws {
+        _ = try await js("document.body.dataset.previousDocument='true'")
+        controller.webView.load(URLRequest(url: URL(string: "lanedev://app/index.html?sim=1")!))
+        try await wait("!document.body.dataset.previousDocument && document.querySelector('.place-search-form input') && !document.querySelector('.loading')")
+        let result = try await js("""
+            await new Promise(resolve => {
+              const done = ({detail}) => {
+                if (detail.type !== 'status') return;
+                window.removeEventListener('lane-native', done);
+                resolve();
+              };
+              window.addEventListener('lane-native', done);
+              for (const type of ['simulatorPrepare','simulatorRouteChanged','simulatorPlanStatus','simulatorArrived','status']) {
+                window.LaneNative.postMessage(JSON.stringify({type,coords:[[120.2758,22.7327],[120.276,22.733]]}));
+              }
+            });
+            for (const action of ['pick','start','end']) {
+              window.dispatchEvent(new CustomEvent('lane-native', {detail:{type:'simulatorControl',action}}));
+            }
+            return location.search === '?sim=1' && typeof window.LaneSimulator === 'undefined'
+              && typeof window.LaneGeolocation.watchPosition === 'function'
+              && document.querySelector('.app')?.dataset.mode === 'browse';
+            """) as? Bool
+        XCTAssertEqual(result, true)
+        XCTAssertTrue(controller.locations.watches.isEmpty)
+        XCTAssertFalse(controller.navigating)
+        print("IOS_CORE_ONLY: retired URL and bridge requests could not start navigation")
     }
 
     func testWebKitLoadsPackagedModulesWorkerAndWebGL() async throws {
@@ -190,7 +225,7 @@ final class ForegroundNavigationTests: XCTestCase {
             const policy = await (await fetch('./client-policy.json')).json();
             return {
                 module: entry?.src.startsWith('lanedev://app/assets/') === true && !!document.querySelector('.app'),
-                workerFormat, mode: policy.mode, simulator: !!window.LaneSimulator,
+                workerFormat, format: policy.format,
                 webgl2: !!document.querySelector('.maplibregl-canvas')?.getContext('webgl2'),
                 font: getComputedStyle(document.querySelector('.place-search-form input')).fontFamily,
                 glyphs: document.fonts.check('16px "PingFang TC"', '路線導航'),
@@ -201,8 +236,7 @@ final class ForegroundNavigationTests: XCTestCase {
             """) as! [String: Any]
         XCTAssertEqual(result["module"] as? Bool, true)
         XCTAssertEqual(result["workerFormat"] as? String, "lanedev-precomputed-v1")
-        XCTAssertEqual(result["mode"] as? String, BundleSchemeHandler.expectedMode)
-        XCTAssertEqual(result["simulator"] as? Bool, BundleSchemeHandler.expectedMode == "ios-simulator")
+        XCTAssertEqual(result["format"] as? String, "lanedev-ios-client-v2")
         XCTAssertEqual(result["webgl2"] as? Bool, true)
         XCTAssertTrue((result["font"] as? String)?.contains("PingFang TC") == true)
         XCTAssertEqual(result["glyphs"] as? Bool, true)
@@ -361,9 +395,70 @@ final class ForegroundNavigationTests: XCTestCase {
         print("IOS_STAGE6_MISSING_VOICE: empty voice inventory injected, no utterance submitted")
     }
 
+    private func waitForNativeState(seconds: Double = 10, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition() && Date() < deadline { try await Task.sleep(for: .milliseconds(35)) }
+        guard condition() else {
+            XCTFail("Timed out waiting for native navigation state")
+            throw NSError(domain: "LaneDevTests", code: 1)
+        }
+    }
+
+    #if !targetEnvironment(simulator)
+    func testDeviceOfflineRoutePreview() async throws {
+        XCTAssertEqual(controller.webView.url?.scheme, "lanedev")
+        let boot = try await js("""
+            return performance.getEntriesByName('lanedev-boot:map-sources-ready')
+              .map(entry => Math.round(entry.startTime + entry.duration));
+            """) as? [Int]
+        XCTAssertEqual(boot?.count, 1)
+        print("IOS_DEVICE_WEB_MAP_READY_MS: \(boot ?? [])")
+
+        try await setSearch(".place-search-form input", "高雄大學")
+        try await selectLocalResult("國立高雄大學")
+        try await wait("document.querySelector('.place-route-methods button')")
+        _ = try await js("document.querySelector('.place-route-methods button').click()")
+        try await editLocalStop("起點", as: "高雄大學產學育成中心")
+        try await addLocalStop("高雄大學郵局")
+        try await addLocalStop("國立高雄大學游泳池")
+        _ = try await js("document.querySelector('button[aria-label=\"停靠點 2上移\"]').click()")
+        try await wait("document.querySelector('input[aria-label=\"停靠點 1\"]')?.value === '國立高雄大學游泳池' && document.querySelector('input[aria-label=\"停靠點 2\"]')?.value === '高雄大學郵局'")
+        try await wait("document.querySelector('.route-start-button')?.disabled === false && document.querySelector('.route-steps .mlist-item')")
+        try await click("🛵 機車")
+        try await wait("document.querySelector('button[aria-label=機車]').getAttribute('aria-pressed') === 'true' && document.querySelector('.route-start-button')?.disabled === false")
+        try await screenshot("iphone-offline-route-preview")
+        print("IOS_DEVICE_ROUTE: local result, manual start, two reordered stops, turn steps, car and motorcycle previews")
+    }
+
+    func testDeviceCoreLocationFix() async throws {
+        let status = controller.locations.manager.authorizationStatus
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+            throw XCTSkip("Open LaneDev, tap 目前位置 and allow location before running this test")
+        }
+        let started = ProcessInfo.processInfo.systemUptime
+        let fix = try await js("""
+            return await new Promise((resolve, reject) => window.LaneGeolocation.getCurrentPosition(
+              p => resolve({longitude:p.coords.longitude, latitude:p.coords.latitude,
+                            accuracy:p.coords.accuracy, timestamp:p.timestamp}),
+              e => reject(new Error(e.message)), {timeout:30000}));
+            """)
+        let position = try XCTUnwrap(fix as? [String: Double])
+        let longitude = try XCTUnwrap(position["longitude"])
+        let latitude = try XCTUnwrap(position["latitude"])
+        let accuracy = try XCTUnwrap(position["accuracy"])
+        let timestamp = try XCTUnwrap(position["timestamp"])
+        XCTAssertTrue((-180...180).contains(longitude))
+        XCTAssertTrue((-90...90).contains(latitude))
+        XCTAssertGreaterThanOrEqual(accuracy, 0)
+        XCTAssertLessThan(abs(Date().timeIntervalSince1970 * 1000 - timestamp), 30_000)
+        try await waitForNativeState { self.controller.locations.watches.isEmpty && !self.controller.locations.updating }
+        let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+        print("IOS_DEVICE_CORE_LOCATION: fix received in \(elapsed) ms; horizontal accuracy \(accuracy) m")
+    }
+    #endif
+
     #if targetEnvironment(simulator)
     func testLocalSearchSavedPlacesAndEditingStops() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(true))
         let saved = try await js("return localStorage.getItem('client.savedPlaces')") as? String
         let savedJSON = String(data: try JSONEncoder().encode(saved), encoding: .utf8)!
         addTeardownBlock { [weak self] in
@@ -443,233 +538,12 @@ final class ForegroundNavigationTests: XCTestCase {
         print("IOS_STAGE5_GOOGLE: no key, native refusal, no JS loader, offline result selected")
     }
 
-    func testRouteGuidanceUsesBundledTwoStageAndSpeedCameraData() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(true))
-        try await plan()
-        _ = try await js("document.querySelector('button[aria-label=機車]').click()")
-        try await editLocalStop("起點", as: "高雄市楠梓區援中國民小學", query: "援中國民小學")
-        try await editLocalStop("終點", as: "綜合籃球場")
-        try await wait("document.querySelector('.mlist-item.two-stage')?.innerText.includes('待轉')")
-        _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.two-stage-sign') && document.querySelector('.lane-preview') && document.querySelector('.trip-eta')?.innerText.includes('抵達')")
-        try await screenshot("stage5-two-stage-guidance")
-        try await click("✕ 結束")
-        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
-        try await plan()
-        _ = try await js("document.querySelector('button[aria-label=汽車]').click()")
-        try await editLocalStop("起點", as: "中和里里辦公室")
-        try await editLocalStop("終點", as: "中和兒童公園")
-        controller.handleSimulatorAction(.rate(.fastest))
-        _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.camera-card:not(.camera-passed)')?.innerText.includes('測速') && document.querySelector('.trip b')?.innerText.includes('公尺')", seconds: 18)
-        try await screenshot("stage5-speed-camera-alert")
-        let alert = try await js("return document.querySelector('.camera-card').innerText")
-        print("IOS_STAGE5_GUIDANCE: node 2601136103 two-stage, camera \(alert ?? "")")
-        try await click("✕ 結束")
-        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
-    }
-
-    func testRepeatedReroutesKeepOnlyUpcomingStops() async throws {
-        try await plan()
-        try await addLocalStop("高雄大學產學育成中心")
-        try await addLocalStop("高雄大學郵局")
-        try await wait("document.querySelector('.route-start-button')?.disabled === false")
-        let simulator = controller.locations.simulator
-        controller.handleSimulatorAction(.rate(.fastest))
-        _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.trip-stop')?.innerText.includes('產學育成中心')", seconds: 15)
-        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')", seconds: 15)
-        controller.handleSimulatorAction(.straight)
-        try await waitForSimulator(seconds: 25) { simulator.reroutes >= 1 }
-        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')")
-        try await waitForSimulator(seconds: 25) { simulator.reroutes >= 2 }
-        try await wait("document.querySelector('.trip-stop')?.innerText.includes('高雄大學郵局')")
-        XCTAssertEqual(controller.locations.watches.count, 1)
-        try await screenshot("stage5-reroute-keeps-waypoint")
-        print("IOS_STAGE5_VIA: completed 高雄大學產學育成中心, pending 高雄大學郵局 after \(simulator.reroutes) reroutes")
-        controller.handleSimulatorAction(.end)
-        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
-    }
-
-    func testSimulatorMissedTurnKeepsTrackThroughReroute() async throws {
-        try await plan()
-        try await observeAcceptance()
-        _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.banner-dist span')?.innerText.includes('左轉')")
-        let simulator = controller.locations.simulator
-        controller.handleSimulatorAction(.rate(.fastest))
-        try await waitForSimulator { simulator.distanceM >= 32 }
-        let originalTrack = simulator.track
-        let track = originalTrack.map { [$0.longitude, $0.latitude] }
-        let before = simulator.coordinate
-        controller.handleSimulatorAction(.straight)
-        let bearing = try XCTUnwrap(simulator.straightBearing)
-        try await waitForSimulator(seconds: 30) { simulator.reroutes > 0 }
-        let atReroute = simulator.distanceM
-        try await waitForSimulator { simulator.distanceM >= atReroute + 24 }
-        XCTAssertGreaterThan(SimulatorLocationSource.distance(before, simulator.coordinate), 50)
-        XCTAssertEqual(simulator.straightBearing, bearing)
-        XCTAssertEqual(simulator.track.map { [$0.longitude, $0.latitude] }, track)
-        XCTAssertEqual(controller.locations.watches.count, 1)
-        try await acceptanceMetrics("virtual-reroute", virtual: true)
-        print("IOS_STAGE4_MISSED_TURN: reroutes=\(simulator.reroutes) bearing=\(bearing) moved=\(Int(atReroute))m originalTrack=\(track.count) nextFixes=\(Int(simulator.distanceM - atReroute))m watches=1")
-        try await screenshot("stage4-missed-turn-after-reroute")
-        let reentry = try XCTUnwrap(originalTrack.indices.min(by: {
-            SimulatorLocationSource.distance(originalTrack[$0], before) < SimulatorLocationSource.distance(originalTrack[$1], before)
-        }))
-        let now = simulator.coordinate
-        let joinPath = [[now.longitude, now.latitude]] + Array(track.dropFirst(reentry))
-        XCTAssertTrue(simulator.prepare(joinPath), "Replay a return to the original corridor without installing an app route")
-        try await waitForSimulator { simulator.distanceM > 160 }
-        try await wait("document.querySelector('.banner') && !document.querySelector('.gps-weak')", seconds: 15)
-        XCTAssertEqual(controller.locations.watches.count, 1)
-        try await screenshot("stage7-virtual-rejoined")
-        print("IOS_STAGE7_VIRTUAL_REJOIN: replayed independent return and resumed matched fixes on one subscription")
-        controller.handleSimulatorAction(.end)
-        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
-        try await waitForSimulator { self.controller.locations.watches.isEmpty && !simulator.hasPendingWork }
-        XCTAssertTrue(controller.locations.selectVirtual(false))
-        XCTAssertFalse(controller.locations.updating)
-    }
-
-    func testSimulatorNavigationScenariosAndNaturalArrival() async throws {
-        let voiceWasEnabled = try await js("return document.querySelector('.client-settings input[type=checkbox]').checked") as? Bool
-        if voiceWasEnabled == false {
-            _ = try await js("document.querySelector('.client-settings input[type=checkbox]').click()")
-            addTeardownBlock { [weak self] in
-                _ = try await self?.js("const voice = document.querySelector('.client-settings input[type=checkbox]'); if (voice?.checked) voice.click()")
-            }
-        }
-        try await plan()
-        let simulator = controller.locations.simulator
-        let speechBefore = controller.speech.starts
-        _ = try await js("""
-            window.stage4Samples = [];
-            window.addEventListener('lane-native', ({detail}) => {
-              if (detail.type === 'position' && detail.motionTimestamp) {
-                window.stage4Samples.push(detail.coords);
-                window.stage4LastMotion = detail.motionTimestamp;
-              }
-            });
-            """)
-        _ = try await js("document.querySelector('.route-start-button').click()")
-        try await wait("document.querySelector('.banner') && document.querySelector('.speed-num')?.innerText === '29'")
-        print("IOS_STAGE4_DRIVING: voiceWasEnabled=\(voiceWasEnabled ?? false) voiceReady=\(controller.speech.ready) speech=\(controller.speech.speech)")
-        if controller.speech.ready { try await waitForSimulator { self.controller.speech.starts > speechBefore } }
-        try await screenshot("stage4-normal-navigation")
-
-        controller.handleSimulatorAction(.pause)
-        try await wait("document.querySelector('.gps-weak')?.innerText.includes('虛擬導航已暫停')")
-        let pausedAt = simulator.elapsedSeconds
-        let pausedDistance = simulator.distanceM
-        XCTAssertFalse(simulator.hasPendingWork)
-        try await Task.sleep(for: .milliseconds(1250))
-        XCTAssertEqual(simulator.elapsedSeconds, pausedAt)
-        XCTAssertEqual(simulator.distanceM, pausedDistance)
-        XCTAssertEqual(controller.locations.watches.count, 1)
-        try await screenshot("stage4-paused-hud")
-
-        controller.handleSimulatorAction(.park)
-        controller.handleSimulatorAction(.jitter)
-        controller.handleSimulatorAction(.rate(.fast))
-        controller.handleSimulatorAction(.resume)
-        try await wait("document.querySelector('.speed-num')?.innerText === '0' && !document.querySelector('.gps-weak')?.innerText.includes('已暫停')")
-        try await waitForSimulator { simulator.elapsedSeconds >= pausedAt + 3 }
-        try await wait("stage4Samples.filter(c => c.speed === 0 && c.accuracy === 14).length >= 2")
-        XCTAssertEqual(simulator.distanceM, pausedDistance)
-        let jittered = try await js("""
-            return window.stage4Samples.filter(c => c.speed === 0 && c.accuracy === 14).slice(-2)
-              .map(c => [c.longitude, c.latitude]);
-            """) as? [[Double]]
-        XCTAssertEqual(jittered?.count, 2)
-        XCTAssertNotEqual(jittered?.first, jittered?.last)
-        simulator.stop()
-        let motionTime = try await js("return window.stage4LastMotion") as? Double ?? 0
-        XCTAssertGreaterThan(motionTime, 0)
-        let lowAccuracy = CLLocation(coordinate: simulator.coordinate, altitude: 0,
-                                     horizontalAccuracy: 150, verticalAccuracy: -1, timestamp: Date())
-        simulator.onFix(lowAccuracy, motionTime + 500)
-        try await wait("document.querySelector('.gps-weak')?.textContent.includes('訊號較弱')", seconds: 5)
-        XCTAssertEqual(simulator.distanceM, pausedDistance)
-        try await screenshot("stage7-virtual-low-accuracy")
-        simulator.start()
-        try await wait("!document.querySelector('.gps-weak')?.textContent.includes('訊號較弱')", seconds: 5)
-        print("IOS_STAGE7_VIRTUAL_ACCURACY: 150m fixture froze progress; ordinary virtual fixes recovered")
-        controller.handleSimulatorAction(.jitter)
-        controller.handleSimulatorAction(.park)
-
-        controller.handleSimulatorAction(.signal)
-        try await wait("document.querySelector('.gps-weak')?.innerText.includes('GPS 訊號中斷')")
-        XCTAssertNil(controller.speech.currentText)
-        XCTAssertEqual(controller.speech.queuedCount, 0)
-        try await screenshot("stage4-signal-outage")
-        let outageDistance = simulator.distanceM
-        let outageSamples = try await js("return window.stage4Samples.length") as? Int
-        try await waitForSimulator { simulator.distanceM >= outageDistance + 16 }
-        let samplesAfterOutage = try await js("return window.stage4Samples.length") as? Int
-        XCTAssertEqual(outageSamples, samplesAfterOutage)
-        controller.handleSimulatorAction(.signal)
-        try await wait("!document.querySelector('.gps-weak')?.innerText.includes('GPS 訊號中斷') && document.querySelector('.speed-num')?.innerText === '29'")
-        try await screenshot("stage4-resumed-hud")
-
-        controller.handleSimulatorAction(.rate(.fastest))
-        try await wait("document.querySelector('.arrival-card')", seconds: 50)
-        try await waitForSimulator { self.controller.locations.watches.isEmpty && !simulator.hasPendingWork }
-        XCTAssertEqual(simulator.state, .arrived)
-        XCTAssertNil(simulator.straightBearing)
-        XCTAssertGreaterThan(simulator.distanceM, 850)
-        print("IOS_STAGE4_NATURAL_ARRIVAL: elapsed=\(simulator.elapsedSeconds)s distance=\(Int(simulator.distanceM))m speechStarts=\(controller.speech.starts - speechBefore) watches=0")
-        try await screenshot("stage4-natural-arrival")
-        try await click("完成導航")
-        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
-        XCTAssertFalse(controller.navigating)
-        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
-    }
-
-    func testSimulatorRatesKeepMotionTimeDistanceAndSpeed() async throws {
-        let simulator = SimulatorLocationSource()
-        var samples: [(wall: Double, motion: Double, distance: Double, speed: Double)] = []
-        simulator.onFix = { location, motion in
-            samples.append((location.timestamp.timeIntervalSince1970, motion, simulator.distanceM, location.speed))
-        }
-        defer { simulator.stop() }
-        XCTAssertTrue(simulator.prepare([[120.2758, 22.7327], [120.2758, 22.744]]))
-        simulator.start()
-        for rate in SimulatorLocationSource.Rate.allCases {
-            simulator.setRate(rate)
-            samples.removeAll()
-            try await waitForSimulator { samples.filter { $0.speed > 0 }.count >= 3 }
-            let moving = Array(samples.filter { $0.speed > 0 }.suffix(3))
-            for (a, b) in zip(moving, moving.dropFirst()) {
-                XCTAssertEqual(b.motion - a.motion, 1000, accuracy: 0.01)
-                XCTAssertEqual(b.distance - a.distance, 8, accuracy: 0.01)
-                XCTAssertEqual(b.speed * 3.6, 28.8, accuracy: 0.01)
-            }
-            let interval = (moving[2].wall - moving[0].wall) / 2
-            let expected = 1 / Double(rate.rawValue)
-            XCTAssertEqual(interval, expected, accuracy: max(0.08, expected * 0.4))
-            print("IOS_STAGE4_RATE: \(rate.rawValue)x wall=\(String(format: "%.3f", interval))s logical=1s distance=8m speed=28.8km/h")
-        }
-        simulator.stop()
-        XCTAssertFalse(simulator.hasPendingWork)
-    }
-
-    func waitForSimulator(seconds: Double = 10, _ condition: @escaping () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition() && Date() < deadline { try await Task.sleep(for: .milliseconds(35)) }
-        guard condition() else {
-            XCTFail("Timed out waiting for Simulator playback")
-            throw NSError(domain: "LaneDevSimulatorTests", code: 1)
-        }
-    }
-
     private func observeAcceptance() async throws {
         _ = try await js("""
             const state = window.stage7 = { fixes: [], hud: [], reroutes: [] };
             window.addEventListener('lane-native', ({detail}) => {
               if (detail.type === 'position') {
-                state.fixes.push({ time: performance.now(), timestamp: detail.timestamp, coords: detail.coords,
-                  virtual: detail.motionTimestamp != null });
+                state.fixes.push({ time: performance.now(), coords: detail.coords });
               }
             });
             const original = console.log;
@@ -691,12 +565,12 @@ final class ForegroundNavigationTests: XCTestCase {
             """)
     }
 
-    private func acceptanceMetrics(_ name: String, virtual: Bool) async throws {
+    private func acceptanceMetrics(_ name: String) async throws {
         let metrics = try await js("""
-            const points = stage7.fixes.filter(fix => fix.virtual === \(virtual));
+            const points = stage7.fixes;
             const median = xs => { const sorted = [...xs].sort((a,b) => a-b); return sorted[Math.floor(sorted.length/2)]; };
             const gaps = points.slice(1).map((point,i) => point.time - points[i].time);
-            const hud = stage7.hud.filter(({fix, delay}) => stage7.fixes[fix-1].virtual === \(virtual) && delay < 1000);
+            const hud = stage7.hud.filter(({delay}) => delay < 1000);
             const distinct = [...new Map(hud.map(sample => [sample.fix, sample.delay])).values()];
             return { fixes: points.length, hud: distinct.length, intervalMs: median(gaps), updateMs: median(distinct),
               reroutes: stage7.reroutes.filter(entry => entry.line.includes('重規劃完成'))
@@ -719,7 +593,7 @@ final class ForegroundNavigationTests: XCTestCase {
             window.stage7Watch = window.LaneGeolocation.watchPosition(() => {}, () => {}, {timeout:8000});
             window.addEventListener('lane-native', function receive({detail}) {
               const c = detail.coords;
-              if (detail.type === 'position' && !detail.motionTimestamp && Math.abs(c.latitude - \(lat)) < 0.00005
+              if (detail.type === 'position' && Math.abs(c.latitude - \(lat)) < 0.00005
                  && Math.abs(c.longitude - \(lng)) < 0.00005) {
                 window.stage7Point = c;
                 window.removeEventListener('lane-native', receive);
@@ -729,13 +603,12 @@ final class ForegroundNavigationTests: XCTestCase {
         systemFixture(name)
         try await wait("window.stage7Point", seconds: 12)
         _ = try await js("window.LaneGeolocation.clearWatch(window.stage7Watch)")
-        try await waitForSimulator { self.controller.locations.watches.isEmpty }
+        try await waitForNativeState { self.controller.locations.watches.isEmpty }
     }
 
     private func planSchoolRoute() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         try await awaitSystemPoint("school", lat: 22.729232, lng: 120.277426)
-        try await plan(useVirtual: false)
+        try await plan()
         try await editLocalStop("起點", as: "高雄市楠梓區援中國民小學", query: "援中國民小學")
         try await editLocalStop("終點", as: "綜合籃球場")
         try await wait("document.querySelector('.route-start-button')?.disabled === false")
@@ -758,7 +631,6 @@ final class ForegroundNavigationTests: XCTestCase {
         try await observeAcceptance()
         _ = try await js("document.querySelector('.route-start-button').click()")
         try await wait("document.querySelector('.banner-two-stage') && document.querySelector('.two-stage-sign')", seconds: 14)
-        XCTAssertFalse(controller.locations.virtual)
         XCTAssertEqual(controller.locations.watches.count, 1)
         try await wait("document.querySelector('.speed-num')?.textContent === '0'")
         try await screenshot("stage7-system-two-stage")
@@ -788,7 +660,7 @@ final class ForegroundNavigationTests: XCTestCase {
         try await wait("stage7.fixes.some(f => f.coords.accuracy < 20) && !document.querySelector('.gps-weak')?.textContent.includes('GPS 訊號不可用')", seconds: 12)
         try await wait("document.querySelector('.banner-dist span')?.textContent.includes('右轉')", seconds: 24)
         try await wait("document.querySelector('.arrival-card')", seconds: 58)
-        try await acceptanceMetrics("CoreLocation", virtual: false)
+        try await acceptanceMetrics("CoreLocation")
         try await screenshot("stage7-system-arrival")
         try await click("完成導航")
         try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
@@ -796,6 +668,22 @@ final class ForegroundNavigationTests: XCTestCase {
         XCTAssertNil(controller.speech.currentText)
         XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
         print("IOS_STAGE7_SYSTEM_DRIVE: stop, delegate accuracy and interruption fixtures, actual OS recovery, two-stage, right turn, natural arrival and end")
+    }
+
+    func testSystemSpeedCameraGuidance() async throws {
+        try await awaitSystemPoint("home", lat: 22.7327, lng: 120.2758)
+        try await plan()
+        try await editLocalStop("起點", as: "中和里里辦公室")
+        try await editLocalStop("終點", as: "中和兒童公園")
+        try await wait("document.querySelector('.route-start-button')?.disabled === false")
+        try await awaitSystemPoint("camera", lat: 22.723815, lng: 120.27676)
+        try await click("開始導航")
+        try await wait("document.querySelector('.camera-card:not(.camera-passed)')?.textContent.includes('測速') && document.querySelector('.camera-card')?.textContent.includes('60')", seconds: 18)
+        try await screenshot("stage8-system-speed-camera")
+        try await click("✕ 結束")
+        try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
+        XCTAssertTrue(controller.locations.watches.isEmpty)
+        print("IOS_CORE_CAMERA: 60 km/h camera rendered from the system location path")
     }
 
     func testStage7SystemReroute() async throws {
@@ -831,7 +719,7 @@ final class ForegroundNavigationTests: XCTestCase {
         let earlyStop = try await js("return window.stage7EarlyStop") as? Bool
         XCTAssertEqual(earlyStop, false, "The order only advances after a fix near the current stop")
         try await screenshot("stage7-system-rejoined")
-        try await acceptanceMetrics("CoreLocation-reroute", virtual: false)
+        try await acceptanceMetrics("CoreLocation-reroute")
         try await click("✕ 結束")
         try await wait("document.querySelector('.app')?.dataset.mode === 'browse'")
         XCTAssertTrue(controller.locations.watches.isEmpty)
@@ -839,9 +727,8 @@ final class ForegroundNavigationTests: XCTestCase {
     }
 
     func testStage7SystemPermissionCycle() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         try await awaitSystemPoint("home", lat: 22.7327, lng: 120.2758)
-        try await plan(useVirtual: false)
+        try await plan()
         try await observeAcceptance()
         _ = try await js("document.querySelector('.route-start-button').click()")
         try await wait("stage7.fixes.length && document.querySelector('.banner')")
@@ -862,7 +749,6 @@ final class ForegroundNavigationTests: XCTestCase {
     }
 
     func testStage7SystemPlanningFailures() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         let saved = try await js("return localStorage.getItem('client.savedPlaces')") as? String
         let savedJSON = String(data: try JSONEncoder().encode(saved), encoding: .utf8)!
         addTeardownBlock { [weak self] in
@@ -906,10 +792,9 @@ final class ForegroundNavigationTests: XCTestCase {
         print("IOS_STAGE7_FAILURES: empty search, outside start, unreachable official graph component and outside saved destination")
     }
 
-    /// Run separately with simctl privacy grant and simctl location start; no virtual source.
+    /// Run separately with simctl privacy grant and simctl location start.
     func testSystemCoreLocationBridge() async throws {
         if controller.navigating { throw XCTSkip("Navigation from a failed test is still active") }
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         guard controller.locations.manager.authorizationStatus == .authorizedWhenInUse
             || controller.locations.manager.authorizationStatus == .authorizedAlways else {
             throw XCTSkip("Grant Simulator location permission and start a simctl location path before this test")
@@ -965,7 +850,6 @@ final class ForegroundNavigationTests: XCTestCase {
     }
 
     func testSystemLocationDrivesHudAndReloadCancelsWatch() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         XCTAssertEqual(controller.locations.authorization, .full, "Grant Simulator location before starting the test")
         _ = try await js("""
             Object.defineProperty(navigator, 'geolocation', {get() { throw new Error('Browser GPS must not be opened on iOS'); }});
@@ -974,12 +858,11 @@ final class ForegroundNavigationTests: XCTestCase {
               if (detail.type === 'position') window.systemFixes.push(detail);
             });
             """)
-        try await plan(useVirtual: false)
+        try await plan()
         let before = try await js("return window.systemFixes.length") as! Int
         _ = try await js("document.querySelector('.route-start-button').click()")
         try await wait("document.querySelector('.banner') && window.systemFixes.length >= \(before + 2)", seconds: 25)
         XCTAssertTrue(controller.locations.updating)
-        XCTAssertFalse(controller.locations.virtual)
         XCTAssertEqual(controller.locations.watches.count, 1)
         let evidence = try await js("""
             const [a,b] = window.systemFixes.slice(-2);
@@ -1022,7 +905,7 @@ final class ForegroundNavigationTests: XCTestCase {
         XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled)
         XCTAssertNil(controller.speech.currentText)
         XCTAssertEqual(controller.speech.queuedCount, 0)
-        try await plan(useVirtual: false)
+        try await plan()
         _ = try await js("document.querySelector('.route-start-button').click()")
         try await wait("document.querySelector('.banner')")
         XCTAssertEqual(controller.locations.watches.count, 1)
@@ -1035,7 +918,6 @@ final class ForegroundNavigationTests: XCTestCase {
 
     /// Run separately after simctl privacy revoke location, then restore permission.
     func testDeniedLocationPermission() async throws {
-        XCTAssertTrue(controller.locations.selectVirtual(false))
         guard controller.locations.manager.authorizationStatus == .denied else {
             throw XCTSkip("Revoke Simulator location permission before this denial-specific test")
         }

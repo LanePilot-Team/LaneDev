@@ -3,20 +3,18 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		52084A001203F002B10DE006 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52084A001203F002B10DE005 /* GooglePlacesService.swift */; };
-		52084A001203F002B10DE001 /* GooglePlacesSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 52084A001203F002B10DE003 /* GooglePlacesSwift */; };
-		42084A001203F002B10DE004 /* SimulatorNavigationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42084A001203F002B10DE003 /* SimulatorNavigationPanel.swift */; };
 		0ACA6E021C9ACEA9079035CC /* ForegroundNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0344F49AD2E6903B35C637D3 /* ForegroundNavigationTests.swift */; };
 		13B9A566D046EFFEA23F9EDF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9AE5FB9FE2C51A00DE3DEFCD /* Foundation.framework */; };
 		2DDC9287DAC1E621A8A4DEAD /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9C65BDC3884E0C43E34636 /* SceneDelegate.swift */; };
 		44051C66440F195E776A544B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 691E4F966E48F9943DF4D6CF /* public */; };
+		52084A001203F002B10DE001 /* GooglePlacesSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 52084A001203F002B10DE003 /* GooglePlacesSwift */; };
+		52084A001203F002B10DE006 /* GooglePlacesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52084A001203F002B10DE005 /* GooglePlacesService.swift */; };
 		59DB310164AD4CDAD3C34EE8 /* NavigationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83F540CDCC8B6F637E4774AF /* NavigationViewController.swift */; };
 		649CF1F16E0CC6D1BB1300BA /* BundleSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF6ADA1C8FB5ED394811B24 /* BundleSchemeHandler.swift */; };
-		6DFD42ECF0CAFE418B4EC51F /* SimulatorLocationSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 193A76565597487A07E8E50F /* SimulatorLocationSource.swift */; };
 		77A82B7371498EE89FC41EA1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9AE5FB9FE2C51A00DE3DEFCD /* Foundation.framework */; };
 		81B6BBEA06406892FDC94FD3 /* ForegroundUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24255DF7228109EE5461F1CD /* ForegroundUITests.swift */; };
 		91C38AA3D40D381949E325C0 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12942EA17CFE46970732D51 /* LocationService.swift */; };
@@ -44,19 +42,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		52084A001203F002B10DE005 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
-		52084A001203F002B10DE002 /* GooglePlaces.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = GooglePlaces.xcconfig; sourceTree = "<group>"; };
-		42084A001203F002B10DE003 /* SimulatorNavigationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorNavigationPanel.swift; sourceTree = "<group>"; };
 		0344F49AD2E6903B35C637D3 /* ForegroundNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ForegroundNavigationTests.swift; sourceTree = "<group>"; };
 		045483BAD95F4DE12AE4AD77 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0BC1D72AE4E7624C9B1166EE /* LaneDevTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LaneDevTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		193A76565597487A07E8E50F /* SimulatorLocationSource.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SimulatorLocationSource.swift; sourceTree = "<group>"; };
 		24255DF7228109EE5461F1CD /* ForegroundUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ForegroundUITests.swift; sourceTree = "<group>"; };
 		4FF6ADA1C8FB5ED394811B24 /* BundleSchemeHandler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BundleSchemeHandler.swift; sourceTree = "<group>"; };
-		691E4F966E48F9943DF4D6CF /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; name = public; path = ".web/$(LANE_WEB_MODE)/public"; sourceTree = SOURCE_ROOT; };
-		6D4FF0312090E2E29009FB2E /* Bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; path = Bridge.js; sourceTree = "<group>"; };
+		52084A001203F002B10DE002 /* LaneDev.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LaneDev.xcconfig; sourceTree = "<group>"; };
+		52084A001203F002B10DE005 /* GooglePlacesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesService.swift; sourceTree = "<group>"; };
+		691E4F966E48F9943DF4D6CF /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; name = public; path = .web/public; sourceTree = SOURCE_ROOT; };
+		6D4FF0312090E2E29009FB2E /* Bridge.js */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.javascript; path = Bridge.js; sourceTree = "<group>"; };
 		794D99F1787A2A3411D06A23 /* AppDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		80C9AA46F13C24B6EB4BD091 /* SpeechService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
+		82084A001203F002B10DE001 /* GooglePlaces.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = GooglePlaces.xcconfig; sourceTree = "<group>"; };
 		83F540CDCC8B6F637E4774AF /* NavigationViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NavigationViewController.swift; sourceTree = "<group>"; };
 		8C1495D1E3A6879F870BC331 /* LaneDevUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LaneDevUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8D9C65BDC3884E0C43E34636 /* SceneDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -117,7 +114,6 @@
 			children = (
 				0344F49AD2E6903B35C637D3 /* ForegroundNavigationTests.swift */,
 			);
-			name = LaneDevTests;
 			path = LaneDevTests;
 			sourceTree = "<group>";
 		};
@@ -126,7 +122,8 @@
 			children = (
 				8C45A1CD244A17A7CC38926F /* Products */,
 				79152EF2BCD1DABC210806BD /* Frameworks */,
-				52084A001203F002B10DE002 /* GooglePlaces.xcconfig */,
+				52084A001203F002B10DE002 /* LaneDev.xcconfig */,
+				82084A001203F002B10DE001 /* GooglePlaces.xcconfig */,
 				D8A84B6B4619360FD0F772CD /* LaneDev */,
 				691E4F966E48F9943DF4D6CF /* public */,
 				9379FB8B10F34FF5097A5C2E /* LaneDevTests */,
@@ -147,7 +144,6 @@
 			children = (
 				24255DF7228109EE5461F1CD /* ForegroundUITests.swift */,
 			);
-			name = LaneDevUITests;
 			path = LaneDevUITests;
 			sourceTree = "<group>";
 		};
@@ -160,13 +156,10 @@
 				D12942EA17CFE46970732D51 /* LocationService.swift */,
 				83F540CDCC8B6F637E4774AF /* NavigationViewController.swift */,
 				8D9C65BDC3884E0C43E34636 /* SceneDelegate.swift */,
-				193A76565597487A07E8E50F /* SimulatorLocationSource.swift */,
-				42084A001203F002B10DE003 /* SimulatorNavigationPanel.swift */,
 				80C9AA46F13C24B6EB4BD091 /* SpeechService.swift */,
 				6D4FF0312090E2E29009FB2E /* Bridge.js */,
 				045483BAD95F4DE12AE4AD77 /* Info.plist */,
 			);
-			name = LaneDev;
 			path = LaneDev;
 			sourceTree = "<group>";
 		};
@@ -216,14 +209,16 @@
 				5C700912F63A7B677E6F17BD /* Sources */,
 				EF8E4F009148FCC0EE7D035F /* Frameworks */,
 				4E23C24915CBC4F8A6442882 /* Resources */,
-				926645953204A2B3B88EBE31 /* Verify web asset mode */,
+				926645953204A2B3B88EBE31 /* Verify bundled web assets */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = LaneDev;
-			packageProductDependencies = (52084A001203F002B10DE003 /* GooglePlacesSwift */,);
+			packageProductDependencies = (
+				52084A001203F002B10DE003 /* GooglePlacesSwift */,
+			);
 			productName = LaneDev;
 			productReference = AC1035A49254BF8AE680CC08 /* LaneDev.app */;
 			productType = "com.apple.product-type.application";
@@ -246,10 +241,10 @@
 				Base,
 			);
 			mainGroup = 9B7E0E76DBF8548ECF160C5D;
-			minimizedProjectReferenceProxies = 0;
-			preferredProjectObjectVersion = 77;
+			packageReferences = (
+				52084A001203F002B10DE004 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
+			);
 			productRefGroup = 8C45A1CD244A17A7CC38926F /* Products */;
-			packageReferences = (52084A001203F002B10DE004 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -287,16 +282,19 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		926645953204A2B3B88EBE31 /* Verify web asset mode */ = {
+		926645953204A2B3B88EBE31 /* Verify bundled web assets */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
-			files = ();
-			inputPaths = (
-				"$(SRCROOT)/tools/verify-web-mode.sh",
-				"$(SRCROOT)/.web/$(LANE_WEB_MODE)/public/client-policy.json",
+			files = (
 			);
-			name = "Verify web asset mode";
+			inputPaths = (
+				"$(SRCROOT)/tools/verify-web-assets.sh",
+				"$(SRCROOT)/.web/public/client-policy.json",
+			);
+			name = "Verify bundled web assets";
+			outputPaths = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$SCRIPT_INPUT_FILE_0\"\n";
@@ -322,8 +320,6 @@
 				91C38AA3D40D381949E325C0 /* LocationService.swift in Sources */,
 				59DB310164AD4CDAD3C34EE8 /* NavigationViewController.swift in Sources */,
 				2DDC9287DAC1E621A8A4DEAD /* SceneDelegate.swift in Sources */,
-				6DFD42ECF0CAFE418B4EC51F /* SimulatorLocationSource.swift in Sources */,
-				42084A001203F002B10DE004 /* SimulatorNavigationPanel.swift in Sources */,
 				9278C37A3F0B69CD71F900DB /* SpeechService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -372,7 +368,7 @@
 		};
 		1944EEA0977ECD4C71F77D34 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 52084A001203F002B10DE002 /* GooglePlaces.xcconfig */;
+			baseConfigurationReference = 52084A001203F002B10DE002 /* LaneDev.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -381,8 +377,10 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = LaneDev/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
-				LANE_WEB_MODE = "ios-release";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -540,7 +538,7 @@
 		};
 		DAAC402CCD19935C161E711A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 52084A001203F002B10DE002 /* GooglePlaces.xcconfig */;
+			baseConfigurationReference = 52084A001203F002B10DE002 /* LaneDev.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -549,10 +547,10 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = LaneDev/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
-				LANE_WEB_MODE = "ios-release";
-				"LANE_WEB_MODE[sdk=iphonesimulator*]" = "ios-simulator";
-				"SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]" = "DEBUG LANE_SIMULATOR_NAVIGATION";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = tw.lanepilot.lanedev.ios;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -618,11 +616,15 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		52084A001203F002B10DE004 /* XCRemoteSwiftPackageReference "ios-places-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/googlemaps/ios-places-sdk.git";
-			requirement = { kind = exactVersion; version = 10.15.0; };
+			requirement = {
+				kind = exactVersion;
+				version = 10.15.0;
+			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 

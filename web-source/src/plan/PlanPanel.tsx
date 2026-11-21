@@ -1,5 +1,5 @@
 import { requestCurrentPosition } from '../nav/geolocation.ts'
-import { useRef, useState, useEffect, useEffectEvent } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { ManeuverList } from './ManeuverList.tsx'
 import type { Planner } from './usePlanner.ts'
 import type { MapCore } from '../app/mapCore.ts'
@@ -59,27 +59,6 @@ export function PlanPanel({ core, planner, onClose, startGpsNav, startSimDrive }
     if (id === planner.stopsRef.current[0]?.id) setLocationError('')
   }
   const routeStepsClass = routeSummary ? (stepsOpen ? ' route-steps-open' : ' route-steps-closed') : ''
-  const simulatorStart = useEffectEvent((event: Event) => {
-    if (import.meta.env.MODE !== 'ios-simulator') return
-    const data = (event as CustomEvent).detail
-    if (data?.type === 'simulatorControl' && data.action === 'start' && routeSummary && editing === null && !locating && planner.mapPickId === null) {
-      startGpsNav()
-    }
-  })
-  useEffect(() => {
-    if (import.meta.env.MODE !== 'ios-simulator') return
-    const control = (event: Event) => simulatorStart(event)
-    window.addEventListener('lane-native', control)
-    return () => {
-      window.removeEventListener('lane-native', control)
-      window.LaneSimulator?.planStatus(false, false)
-    }
-  }, [])
-  useEffect(() => {
-    if (import.meta.env.MODE === 'ios-simulator') {
-      window.LaneSimulator?.planStatus(Boolean(routeSummary && editing === null && !locating && planner.mapPickId === null), true)
-    }
-  }, [routeSummary, editing, locating, planner.mapPickId])
   if (planner.mapPickId !== null) {
     const index = stops.findIndex(stop => stop.id === planner.mapPickId)
     return <section className="route-map-pick" aria-label="從地圖設定停靠點">

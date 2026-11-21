@@ -8,9 +8,9 @@ import { runtimeInputHash } from './runtime-inputs.mjs'
 // Only generated dist files are modified. Canonical road data remains unchanged.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mode = process.argv[2] ?? 'production'
-const ios = mode === 'ios-simulator' || mode === 'ios-release'
+const ios = mode === 'ios'
 if (!ios && mode !== 'production') throw new Error(`Unknown client build mode: ${mode}`)
-const dist = path.join(root, ios ? `.ios-dist/${mode}` : 'dist')
+const dist = path.join(root, ios ? '.ios-dist' : 'dist')
 const modeFile = path.join(dist, 'client-build-mode.json')
 if (JSON.parse(await readFile(modeFile, 'utf8')) !== mode) throw new Error(`Expected Vite mode ${mode}`)
 for (const name of ['transit.json', 'transit_bus_shapes.json']) {
@@ -44,18 +44,14 @@ for (const record of [manifest.navigation, ...Object.values(manifest.sources)]) 
   const actual = createHash('sha256').update(await readFile(path.join(runtimeDir, record.file))).digest('hex')
   if (actual !== record.sha256) throw new Error('Runtime checksum mismatch: ' + record.file)
 }
-let simulatorHook = false
 for (const name of await readdir(path.join(dist, 'assets'))) {
   if (!name.endsWith('.js')) continue
   const bytes = await readFile(path.join(dist, 'assets', name))
-  simulatorHook ||= bytes.includes('LaneSimulator')
   scripts[name] = createHash('sha256').update(bytes).digest('hex')
 }
-if (simulatorHook !== (mode === 'ios-simulator')) throw new Error(`Unexpected Simulator capability in ${mode}`)
 await writeFile(path.join(dist, 'client-policy.json'), JSON.stringify({
-  format: ios ? 'lanedev-ios-client-v1' : 'lanedev-android-client-v1', source: '64a1fd8',
+  format: ios ? 'lanedev-ios-client-v2' : 'lanedev-android-client-v1', source: '64a1fd8',
   editor: false, simulation: false, transit: false, scripts,
-  ...(ios ? { mode, simulatorTools: simulatorHook } : {}),
   runtimeManifest: createHash('sha256').update(manifestBytes).digest('hex'),
 }, null, 2))
 await rm(path.join(dist, 'client-modules.json'))

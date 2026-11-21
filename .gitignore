@@ -52,10 +52,13 @@ captures/
 # Comment next line if keeping position of elements in Navigation Editor is relevant for you
 .idea/navEditor.xml
 
-# Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# Signing credentials
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
@@ -96,6 +99,7 @@ web-source/*.tsbuildinfo
 web-source/.runtime-build/
 web-source/public/data/runtime/
 web-source/.env.local
+web-source/.env.*.local
 web-source.zip
 
 # The compiled LaneDev assets are deliberately tracked: this repository must
@@ -112,5 +116,9 @@ ios/.build/
 ios/.web/
 ios/.build-device/
 ios/GooglePlaces.local.xcconfig
+ios/Signing.local.xcconfig
 **/xcuserdata/
 *.xcresult/
+*.xcarchive/
+*.ipa
+.DS_Store

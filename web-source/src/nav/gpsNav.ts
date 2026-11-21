@@ -97,7 +97,6 @@ export class GpsDriver {
   /** 偏離時平滑後的顯示座標 */
   private freePos: [number, number] | null = null
   private lastFixTs = 0
-  declare private lastMotionTimestamp: number | undefined
   private lastSpeedMps = 0
   private lastFixPos: [number, number] | null = null
   private smoothBrg: number | null = null
@@ -205,18 +204,7 @@ export class GpsDriver {
       gpsLog('fix 丟棄', `間隔 ${gap}  時間戳記落後 ${((Date.now() - now) / 1000).toFixed(1)}s`)
       return
     }
-    let elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
-    let motionNow = now
-    if (import.meta.env.MODE === 'ios-simulator') {
-      const timing = window.LaneSimulator?.timing(now)
-      if (timing) {
-        motionNow = timing.motionTimestamp
-        const previous = this.lastMotionTimestamp
-        if (previous !== undefined && motionNow <= previous) return
-        elapsedS = previous === undefined ? 0 : (motionNow - previous) / 1000
-        this.lastMotionTimestamp = motionNow
-      }
-    }
+    const elapsedS = this.lastFixTs ? (now - this.lastFixTs) / 1000 : 0
 
     // 車速：優先用裝置回報值；沒有就用位移/時間推（低速時 GPS 常回 null）
     let speedMps = speed != null && Number.isFinite(speed) && speed >= 0 ? speed : null
@@ -379,11 +367,11 @@ export class GpsDriver {
     // 停在終點附近夠久 → 視同抵達（GPS 推不到路線盡頭時的保底）
     const lastLeg = !next || next.kind === 'arrive'
     if (lastLeg && remainM < STOP_ARRIVE_M && speedKmh < STOP_SPEED_KMH) {
-      if (!this.stoppedNearDestSince) this.stoppedNearDestSince = motionNow
+      if (!this.stoppedNearDestSince) this.stoppedNearDestSince = now
     } else {
       this.stoppedNearDestSince = 0
     }
-    const heldAtDest = this.stoppedNearDestSince > 0 && motionNow - this.stoppedNearDestSince > STOP_HOLD_MS
+    const heldAtDest = this.stoppedNearDestSince > 0 && now - this.stoppedNearDestSince > STOP_HOLD_MS
     const lastStop = this.passedViaCount === (this.route.viaDistM?.length ?? 0)
     const arrived = lastStop && (remainM < ARRIVE_THRESHOLD_M || directToDestM < DIRECT_ARRIVE_M || heldAtDest)
     const arriving = lastStop && !arrived && remainM < ARRIVING_THRESHOLD_M
@@ -496,13 +484,6 @@ export class GpsDriver {
 
   private emit(state: DriveState, fix?: GpsDisplayFix) {
     state.passedViaCount = this.passedViaCount
-    if (import.meta.env.MODE === 'ios-simulator' && fix) {
-      const timing = window.LaneSimulator?.timing(fix.timestamp)
-      if (timing) {
-        state = { ...state, motionTimestamp: timing.motionTimestamp }
-        fix = { ...fix, playbackRate: timing.playbackRate }
-      }
-    }
     this.lastState = state
     this.onTick(state, fix)
   }

@@ -16,20 +16,21 @@ app.package_product_dependencies << places
 linked_places = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 linked_places.product_ref = places
 app.frameworks_build_phase.files << linked_places
-places_config = project.main_group.new_file('GooglePlaces.xcconfig')
+app_config = project.main_group.new_file('LaneDev.xcconfig')
+project.main_group.new_file('GooglePlaces.xcconfig')
 group = project.main_group.new_group('LaneDev', 'LaneDev')
 Dir[File.join(root, 'LaneDev', '*.swift')].sort.each { |f| app.source_build_phase.add_file_reference(group.new_file(File.basename(f))) }
 app.resources_build_phase.add_file_reference(group.new_file('Bridge.js'))
-assets = project.main_group.new_file('.web/$(LANE_WEB_MODE)/public')
+assets = project.main_group.new_file('.web/public')
 assets.last_known_file_type = 'folder'
 app.resources_build_phase.add_file_reference(assets)
-verify = app.new_shell_script_build_phase('Verify web asset mode')
-verify.input_paths = ['$(SRCROOT)/tools/verify-web-mode.sh', '$(SRCROOT)/.web/$(LANE_WEB_MODE)/public/client-policy.json']
+verify = app.new_shell_script_build_phase('Verify bundled web assets')
+verify.input_paths = ['$(SRCROOT)/tools/verify-web-assets.sh', '$(SRCROOT)/.web/public/client-policy.json']
 verify.shell_script = '/bin/sh "$SCRIPT_INPUT_FILE_0"'
 verify.always_out_of_date = '1'
 group.new_file('Info.plist')
 app.build_configurations.each do |c|
-  c.base_configuration_reference = places_config
+  c.base_configuration_reference = app_config
   c.build_settings.merge!({
     'PRODUCT_BUNDLE_IDENTIFIER' => 'tw.lanepilot.lanedev.ios',
     'INFOPLIST_FILE' => 'LaneDev/Info.plist',
@@ -37,14 +38,9 @@ app.build_configurations.each do |c|
     'TARGETED_DEVICE_FAMILY' => '1,2',
     'CODE_SIGN_STYLE' => 'Automatic',
     'ENABLE_USER_SCRIPT_SANDBOXING' => 'YES',
-    'LANE_WEB_MODE' => 'ios-release',
     'SUPPORTS_MACCATALYST' => 'NO',
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => c.name == 'Debug' ? 'DEBUG' : '',
   })
-  if c.name == 'Debug'
-    c.build_settings['LANE_WEB_MODE[sdk=iphonesimulator*]'] = 'ios-simulator'
-    c.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]'] = 'DEBUG LANE_SIMULATOR_NAVIGATION'
-  end
 end
 tests = project.new_target(:unit_test_bundle, 'LaneDevTests', :ios, minimum_ios)
 test_group = project.main_group.new_group('LaneDevTests', 'LaneDevTests')
@@ -78,6 +74,7 @@ scheme.set_launch_target(app)
 scheme.add_test_target(tests)
 scheme.add_test_target(ui_tests)
 scheme.test_action.build_configuration = 'Debug'
+scheme.launch_action.allow_location_simulation = false
 scheme.save_as(project.path, 'LaneDev', true)
 release = Xcodeproj::XCScheme.new
 release.add_build_target(app)

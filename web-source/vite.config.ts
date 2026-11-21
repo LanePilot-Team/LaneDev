@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => ({
     transformIndexHtml: {
       order: 'pre',
       handler(html) {
-        if (mode === 'ios-simulator' || mode === 'ios-release') {
+        if (mode === 'ios') {
           return html.replace(/<script data-web-google-places>[\s\S]*?<\/script>\s*/, '')
         }
         return html
@@ -27,7 +27,7 @@ export default defineConfig(({ command, mode }) => ({
   } : {},
   build: {
     sourcemap: false, manifest: true,
-    outDir: mode === 'ios-simulator' || mode === 'ios-release' ? `.ios-dist/${mode}` : 'dist',
+    outDir: mode === 'ios' ? '.ios-dist' : 'dist',
   },
   server: { host: '127.0.0.1', port: 5190 },
 }))

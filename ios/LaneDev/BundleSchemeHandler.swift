@@ -5,19 +5,11 @@ import UniformTypeIdentifiers
 /// Read-only, local bundle origin. No HTTP server, writes, or private WebKit preferences.
 final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
     static let origin = URL(string: "lanedev://app/index.html")!
-    #if DEBUG && LANE_SIMULATOR_NAVIGATION && targetEnvironment(simulator)
-    static let expectedMode = "ios-simulator"
-    #else
-    static let expectedMode = "ios-release"
-    #endif
-
     private struct Policy: Decodable {
         let format: String
-        let mode: String
         let editor: Bool
         let simulation: Bool
         let transit: Bool
-        let simulatorTools: Bool
         let runtimeManifest: String
     }
 
@@ -42,9 +34,7 @@ final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
               let manifestBytes = try? Data(contentsOf: root.appendingPathComponent("data/runtime/manifest.json"))
         else { throw ValidationError.missing }
         guard let policy = try? JSONDecoder().decode(Policy.self, from: policyBytes),
-              policy.format == "lanedev-ios-client-v1", policy.mode == Self.expectedMode,
-              !policy.editor, !policy.simulation, !policy.transit,
-              policy.simulatorTools == (Self.expectedMode == "ios-simulator")
+              policy.format == "lanedev-ios-client-v2", !policy.editor, !policy.simulation, !policy.transit
         else { throw ValidationError.incompatible }
         guard Self.sha256(manifestBytes) == policy.runtimeManifest else { throw ValidationError.checksum }
     }
